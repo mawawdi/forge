@@ -75,6 +75,12 @@ export interface PatchSet {
   operations: Array<
     | { type: "create_script"; path: RelativePath; source: string; executionContext: "server" | "client" | "shared" }
     | { type: "replace_function"; path: RelativePath; symbol: string; beforeHash: Hash; source: string }
+    | { type: "replace_text"; path: RelativePath; beforeHash: Hash; before: string; after: string }
+    | { type: "create_instance"; opId?: ID; path: string; className: string; properties?: Record<string, string | number | boolean>; attributes?: Record<string, string | number | boolean>; tags?: string[] }
+    | { type: "delete_instance"; opId?: ID; path: string; expectedClassName?: string }
+    | { type: "set_property"; opId?: ID; path: string; property: string; value: string | number | boolean; before?: string | number | boolean }
+    | { type: "set_attribute"; opId?: ID; path: string; attribute: string; value: string | number | boolean; before?: string | number | boolean }
+    | { type: "move_instance"; opId?: ID; path: string; parentPath: string }
     | { type: "insert_statement"; path: RelativePath; symbol: string; anchor: string; source: string }
     | { type: "create_remote"; path: RelativePath; name: string; direction: "client_to_server" | "server_to_client" }
     | { type: "bind_ui"; path: RelativePath; binding: string; sourceField: string }
@@ -113,6 +119,23 @@ export interface StudioAssertion {
   tags: string[];
 }
 
+export type TrajectoryEventName = "intent_received" | "core_loop_resolved" | "contract_compiled" | "patch_proposed" | "verification_completed" | "repair_applied" | "studio_run_completed" | "creator_accepted" | "creator_rejected";
+
+export interface TrajectoryEvent {
+  kind: "TrajectoryEvent";
+  schemaVersion: 1;
+  id: ID;
+  sequence: number;
+  occurredAt: ISO8601;
+  event: TrajectoryEventName;
+  actor: "creator" | "forge" | "model" | "tool" | "studio" | "system";
+  projectId: ID;
+  references: Partial<BuildTrace["references"]>;
+  payloadHash: Hash;
+  attributes: Record<string, TraceAttributeValue>;
+  privacyClass: "none" | "project" | "creator_sensitive";
+}
+
 export interface ProofBundle {
   kind: "ProofBundle";
   schemaVersion: 1;
@@ -124,6 +147,16 @@ export interface ProofBundle {
   checks: Array<{ name: string; tier: "static" | "preflight" | "studio"; status: VerificationStatus; issueIds: ID[]; resultHash?: Hash }>;
   issues: VerificationIssue[];
   assertions: Array<{ assertionId: ID; status: VerificationStatus; observed?: Record<string, string | number | boolean>; runId?: ID }>;
+  studioProof?: {
+    testPlanId: ID;
+    runId: ID;
+    beforeSnapshotHash: Hash;
+    afterSnapshotHash?: Hash;
+    pluginVersion: string;
+    studioVersion: string;
+    assertionResultIds: ID[];
+    authoritative: boolean;
+  };
   gate: { status: "verified" | "rejected" | "incomplete"; reasons: string[] };
   reproducibility: { inputHash: Hash; dependencyHash: Hash; ruleSetHash: Hash; deterministic: boolean };
 }
@@ -145,9 +178,18 @@ export type ForgeSpanName =
   | "forge.verify.structure"
   | "forge.repair.deterministic"
   | "forge.repair.model"
+  | "forge.studio.connect"
+  | "forge.studio.snapshot"
+  | "forge.studio.transaction.begin"
+  | "forge.studio.patch.apply"
   | "forge.studio.start"
   | "forge.studio.playtest"
+  | "forge.studio.action"
   | "forge.studio.assert"
+  | "forge.studio.adversarial"
+  | "forge.studio.playtest.stop"
+  | "forge.studio.transaction.commit"
+  | "forge.studio.transaction.rollback"
   | "forge.commit.verified"
   | "forge.commit.rejected";
 
@@ -211,6 +253,9 @@ export interface BuildTrace {
     id: ID;
     startingSnapshotHash?: Hash;
     resultingSnapshotHash?: Hash;
+    sourceHash?: Hash;
+    structureHash?: Hash;
+    semanticHash?: Hash;
     manifestHash?: Hash;
     snapshotRetention: "not_retained" | "external_reference" | "embedded_fixture";
   };
@@ -227,9 +272,18 @@ export interface BuildTrace {
     agent?: ComponentVersion;
     model?: ModelConfiguration;
     repairPolicy?: ComponentVersion;
+    studio?: ComponentVersion;
   };
   spans: BuildTraceSpan[];
   events: BuildTraceEvent[];
+  context?: {
+    itemCount: number;
+    requiredItemCount: number;
+    totalTokenEstimate: number;
+    candidateTokenEstimate: number;
+    evictedTokenEstimate: number;
+    compositionHash: Hash;
+  };
   outcome: BuildOutcome;
   evidence: {
     verificationReportHash?: Hash;
@@ -275,6 +329,9 @@ export interface ForgeFixtureManifest {
   name: string;
   luauRoots: RelativePath[];
   remoteFlows: RemoteFlowDeclaration[];
+  instances?: Array<{ path: string; className: string; parentPath?: string; properties?: Record<string, string | number | boolean>; attributes?: Record<string, string | number | boolean>; tags?: string[] }>;
+  persistentState?: Array<{ field: string; type: string; owner: "server"; durability: "session" | "persistent" }>;
+  uiBindings?: Array<{ path: string; sourceField: string; direction: "server_to_client" | "local" }>;
 }
 
 export interface VerificationReport {
@@ -307,7 +364,7 @@ export function assertBuildTrace(value: unknown): asserts value is BuildTrace {
   if (!isProjectReference(value.project)) {
     throw new Error("Invalid BuildTrace: invalid project reference");
   }
-  if (!isTraceReferences(value.references) || !isTraceComponents(value.components) || !Array.isArray(value.spans) || !Array.isArray(value.events)) {
+  if (!isTraceReferences(value.references) || !isTraceComponents(value.components) || (value.context !== undefined && !isTraceContext(value.context)) || !Array.isArray(value.spans) || !Array.isArray(value.events)) {
     throw new Error("Invalid BuildTrace: invalid execution context");
   }
   if (!isBuildOutcome(value.outcome) || !isTraceEvidence(value.evidence) || !isReplayability(value.replayability) || !isPrivacy(value.privacy)) {
@@ -333,7 +390,67 @@ export function assertFixtureManifest(value: unknown): asserts value is ForgeFix
   if (!Array.isArray(value.remoteFlows)) {
     throw new Error("Invalid ForgeFixture manifest: remoteFlows must be an array");
   }
+  if (value.instances !== undefined && (!Array.isArray(value.instances) || !value.instances.every((entry) => isRecord(entry) && isString(entry.path) && isString(entry.className)))) throw new Error("Invalid ForgeFixture instances");
+  if (value.persistentState !== undefined && !Array.isArray(value.persistentState)) throw new Error("Invalid ForgeFixture persistentState");
+  if (value.uiBindings !== undefined && !Array.isArray(value.uiBindings)) throw new Error("Invalid ForgeFixture uiBindings");
   for (const flow of value.remoteFlows) assertRemoteFlow(flow);
+}
+
+export function assertGameIntent(value: unknown): asserts value is GameIntent {
+  if (!isRecord(value) || value.kind !== "GameIntent" || value.schemaVersion !== 1 || !isString(value.id) || !isString(value.rawPrompt) || !isString(value.normalizedGoal) || !Array.isArray(value.genreSignals) || !Array.isArray(value.desiredOutcomes) || !Array.isArray(value.constraints) || !Array.isArray(value.referencedMechanics) || !Array.isArray(value.unresolvedQuestions) || !isRecord(value.source) || value.source.type !== "creator_prompt" || !isString(value.source.createdAt)) {
+    throw new Error("Invalid GameIntent: expected schemaVersion 1");
+  }
+}
+
+export function assertCoreLoop(value: unknown): asserts value is CoreLoop {
+  if (!isRecord(value) || value.kind !== "CoreLoop" || value.schemaVersion !== 1 || !isString(value.id) || !isString(value.intentId) || !isString(value.title) || !Array.isArray(value.nodes) || !Array.isArray(value.edges) || !isString(value.entryNodeId) || !Array.isArray(value.invariants)) {
+    throw new Error("Invalid CoreLoop: expected schemaVersion 1");
+  }
+}
+
+export function assertMechanicContract(value: unknown): asserts value is MechanicContract {
+  if (!isRecord(value) || value.kind !== "MechanicContract" || value.schemaVersion !== 1 || !isString(value.id) || !isString(value.coreLoopId) || !isString(value.name) || !isString(value.playerGoal) || !isArrayOfRecords(value.preconditions) || !isArrayOfRecords(value.postconditions) || !isRecord(value.authorityModel) || !isString(value.authorityModel.stateOwner) || !Array.isArray(value.authorityModel.clientInputs) || !Array.isArray(value.authorityModel.serverValidations) || !Array.isArray(value.authorityModel.stateMutations) || !Array.isArray(value.persistentState) || !Array.isArray(value.uiOutputs) || !Array.isArray(value.economyEffects) || !Array.isArray(value.instrumentation) || !Array.isArray(value.studioAssertions) || !isRisk(value.risk)) {
+    throw new Error("Invalid MechanicContract: expected schemaVersion 1");
+  }
+}
+
+export function assertPatchSet(value: unknown): asserts value is PatchSet {
+  if (!isRecord(value) || value.kind !== "PatchSet" || value.schemaVersion !== 1 || !isString(value.id) || !isString(value.projectHash) || !isString(value.mechanicContractId) || !Array.isArray(value.operations) || !Array.isArray(value.expectedEffects) || !isRecord(value.provenance) || !isString(value.provenance.generatedAt) || !isRecord(value.bounds) || !isNonNegativeInteger(value.bounds.maxFiles) || !isNonNegativeInteger(value.bounds.maxAddedLines) || !isNonNegativeInteger(value.bounds.maxRemovedLines)) {
+    throw new Error("Invalid PatchSet: expected schemaVersion 1");
+  }
+  for (const operation of value.operations) {
+    if (!isRecord(operation) || !isString(operation.type) || !isString(operation.path)) throw new Error("Invalid PatchSet operation");
+    if (operation.type === "replace_text" && (!isString(operation.beforeHash) || !isString(operation.before) || !isString(operation.after))) throw new Error("Invalid PatchSet replace_text operation");
+    if (operation.type === "replace_function" && (!isString(operation.symbol) || !isString(operation.beforeHash) || !isString(operation.source))) throw new Error("Invalid PatchSet replace_function operation");
+    if (operation.type === "create_script" && (!isString(operation.source) || !isExecutionContext(operation.executionContext))) throw new Error("Invalid PatchSet create_script operation");
+    if (operation.type === "create_instance" && (!isString(operation.className) || !optionalRecord(operation.properties) || !optionalRecord(operation.attributes) || !optionalStringArray(operation.tags))) throw new Error("Invalid PatchSet create_instance operation");
+    if (operation.type === "delete_instance" && operation.expectedClassName !== undefined && !isString(operation.expectedClassName)) throw new Error("Invalid PatchSet delete_instance operation");
+    if (operation.type === "set_property" && (!isString(operation.property) || !isPrimitive(operation.value) || !optionalPrimitive(operation.before))) throw new Error("Invalid PatchSet set_property operation");
+    if (operation.type === "set_attribute" && (!isString(operation.attribute) || !isPrimitive(operation.value) || !optionalPrimitive(operation.before))) throw new Error("Invalid PatchSet set_attribute operation");
+    if (operation.type === "move_instance" && !isString(operation.parentPath)) throw new Error("Invalid PatchSet move_instance operation");
+    if (operation.type === "insert_statement" && (!isString(operation.symbol) || !isString(operation.anchor) || !isString(operation.source))) throw new Error("Invalid PatchSet insert_statement operation");
+    if (operation.type === "create_remote" && (!isString(operation.name) || !isRemoteDirection(operation.direction))) throw new Error("Invalid PatchSet create_remote operation");
+    if (operation.type === "bind_ui" && (!isString(operation.binding) || !isString(operation.sourceField))) throw new Error("Invalid PatchSet bind_ui operation");
+    if (!["replace_text", "replace_function", "create_script", "create_instance", "delete_instance", "set_property", "set_attribute", "move_instance", "insert_statement", "create_remote", "bind_ui"].includes(operation.type)) throw new Error(`Invalid PatchSet operation type: ${operation.type}`);
+  }
+}
+
+export function assertStudioAssertion(value: unknown): asserts value is StudioAssertion {
+  if (!isRecord(value) || value.kind !== "StudioAssertion" || value.schemaVersion !== 1 || !isString(value.id) || !isString(value.mechanicContractId) || !isString(value.name) || !Array.isArray(value.setup) || !Array.isArray(value.actions) || !Array.isArray(value.observations) || !isNonNegativeInteger(value.timeoutMs) || !Array.isArray(value.tags)) {
+    throw new Error("Invalid StudioAssertion: expected schemaVersion 1");
+  }
+}
+
+export function assertTrajectoryEvent(value: unknown): asserts value is TrajectoryEvent {
+  if (!isRecord(value) || value.kind !== "TrajectoryEvent" || value.schemaVersion !== 1 || !isString(value.id) || !isNonNegativeInteger(value.sequence) || !isString(value.occurredAt) || !isTrajectoryEventName(value.event) || !isString(value.actor) || !isString(value.projectId) || !isTraceReferences(value.references) || !isString(value.payloadHash) || !isTraceAttributes(value.attributes) || !["none", "project", "creator_sensitive"].includes(String(value.privacyClass))) {
+    throw new Error("Invalid TrajectoryEvent: expected schemaVersion 1");
+  }
+}
+
+export function assertProofBundle(value: unknown): asserts value is ProofBundle {
+  if (!isRecord(value) || value.kind !== "ProofBundle" || value.schemaVersion !== 1 || !isString(value.id) || !isString(value.projectHash) || !isString(value.generatedAt) || !Array.isArray(value.toolchain) || !Array.isArray(value.checks) || !Array.isArray(value.issues) || !Array.isArray(value.assertions) || !isRecord(value.gate) || !isGateStatus(value.gate.status) || !Array.isArray(value.gate.reasons) || !isRecord(value.reproducibility) || (value.studioProof !== undefined && !isStudioProof(value.studioProof))) {
+    throw new Error("Invalid ProofBundle: expected schemaVersion 1");
+  }
 }
 
 function assertRemoteFlow(value: unknown): asserts value is RemoteFlowDeclaration {
@@ -388,6 +505,10 @@ function isTraceEvidence(value: unknown): boolean {
   return isRecord(value) && Array.isArray(value.issues) && value.issues.every((issue) => isRecord(issue) && isString(issue.id) && isString(issue.ruleId) && isIssueSeverity(issue.severity) && isIssueCategory(issue.category) && isString(issue.evidenceHash));
 }
 
+function isTraceContext(value: unknown): boolean {
+  return isRecord(value) && isNonNegativeInteger(value.itemCount) && isNonNegativeInteger(value.requiredItemCount) && isNonNegativeInteger(value.totalTokenEstimate) && isNonNegativeInteger(value.candidateTokenEstimate) && isNonNegativeInteger(value.evictedTokenEstimate) && isString(value.compositionHash);
+}
+
 function isReplayability(value: unknown): boolean {
   return isRecord(value) && (value.level === "none" || value.level === "semantic_reproduction" || value.level === "exact_replay") && Array.isArray(value.reasons) && isRecord(value.randomSeeds);
 }
@@ -398,6 +519,42 @@ function isPrivacy(value: unknown): boolean {
 
 function isString(value: unknown): value is string {
   return typeof value === "string";
+}
+
+function isPrimitive(value: unknown): value is string | number | boolean {
+  return typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value));
+}
+
+function optionalPrimitive(value: unknown): boolean { return value === undefined || isPrimitive(value); }
+function optionalRecord(value: unknown): boolean { return value === undefined || isRecord(value); }
+function optionalStringArray(value: unknown): boolean { return value === undefined || (Array.isArray(value) && value.every(isString)); }
+
+function isStudioProof(value: unknown): boolean {
+  return isRecord(value) && isString(value.testPlanId) && isString(value.runId) && isString(value.beforeSnapshotHash) && optionalString(value.afterSnapshotHash) && isString(value.pluginVersion) && isString(value.studioVersion) && Array.isArray(value.assertionResultIds) && value.assertionResultIds.every(isString) && value.authoritative === true;
+}
+
+function isArrayOfRecords(value: unknown): value is Array<Record<string, unknown>> {
+  return Array.isArray(value) && value.every(isRecord);
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isRisk(value: unknown): value is Risk {
+  return value === "low" || value === "medium" || value === "high" || value === "critical";
+}
+
+function isExecutionContext(value: unknown): boolean {
+  return value === "server" || value === "client" || value === "shared";
+}
+
+function isRemoteDirection(value: unknown): boolean {
+  return value === "client_to_server" || value === "server_to_client";
+}
+
+function isGateStatus(value: unknown): boolean {
+  return value === "verified" || value === "rejected" || value === "incomplete";
 }
 
 function isOutcomeStatus(value: unknown): value is BuildOutcome["status"] {
@@ -413,7 +570,7 @@ function isTracePersistenceStatus(value: unknown): value is TracePersistence["st
 }
 
 function isProjectReference(value: unknown): boolean {
-  return isRecord(value) && isString(value.id) && (value.snapshotRetention === "not_retained" || value.snapshotRetention === "external_reference" || value.snapshotRetention === "embedded_fixture") && optionalString(value.startingSnapshotHash) && optionalString(value.resultingSnapshotHash) && optionalString(value.manifestHash);
+  return isRecord(value) && isString(value.id) && (value.snapshotRetention === "not_retained" || value.snapshotRetention === "external_reference" || value.snapshotRetention === "embedded_fixture") && optionalString(value.startingSnapshotHash) && optionalString(value.resultingSnapshotHash) && optionalString(value.sourceHash) && optionalString(value.structureHash) && optionalString(value.semanticHash) && optionalString(value.manifestHash);
 }
 
 function isTraceReferences(value: unknown): boolean {
@@ -421,7 +578,7 @@ function isTraceReferences(value: unknown): boolean {
 }
 
 function isTraceComponents(value: unknown): boolean {
-  return isRecord(value) && Array.isArray(value.toolchain) && value.toolchain.every(isComponentVersion) && Array.isArray(value.verifiers) && value.verifiers.every(isComponentVersion) && optionalComponent(value.agent) && optionalModel(value.model) && optionalComponent(value.repairPolicy);
+  return isRecord(value) && Array.isArray(value.toolchain) && value.toolchain.every(isComponentVersion) && Array.isArray(value.verifiers) && value.verifiers.every(isComponentVersion) && optionalComponent(value.agent) && optionalModel(value.model) && optionalComponent(value.repairPolicy) && optionalComponent(value.studio);
 }
 
 function isComponentVersion(value: unknown): value is ComponentVersion {
@@ -460,6 +617,10 @@ function isForgeEventName(value: unknown): value is ForgeEventName {
   return value === "forge.issue.detected" || value === "forge.build.completed";
 }
 
+function isTrajectoryEventName(value: unknown): value is TrajectoryEventName {
+  return value === "intent_received" || value === "core_loop_resolved" || value === "contract_compiled" || value === "patch_proposed" || value === "verification_completed" || value === "repair_applied" || value === "studio_run_completed" || value === "creator_accepted" || value === "creator_rejected";
+}
+
 function isIssueSeverity(value: unknown): value is VerificationIssue["severity"] {
   return value === "info" || value === "warning" || value === "error" || value === "critical";
 }
@@ -477,5 +638,5 @@ function optionalNumber(value: unknown): boolean {
 }
 
 const FORGE_SPAN_NAMES = new Set<ForgeSpanName>([
-  "forge.project.snapshot", "forge.intent.compile", "forge.contract.validate", "forge.agent.execute", "forge.model.generate", "forge.tool.call", "forge.patch.create", "forge.patch.apply", "forge.verify.luau", "forge.verify.replication", "forge.verify.economy", "forge.verify.structure", "forge.repair.deterministic", "forge.repair.model", "forge.studio.start", "forge.studio.playtest", "forge.studio.assert", "forge.commit.verified", "forge.commit.rejected"
+  "forge.project.snapshot", "forge.intent.compile", "forge.contract.validate", "forge.agent.execute", "forge.model.generate", "forge.tool.call", "forge.patch.create", "forge.patch.apply", "forge.verify.luau", "forge.verify.replication", "forge.verify.economy", "forge.verify.structure", "forge.repair.deterministic", "forge.repair.model", "forge.studio.connect", "forge.studio.snapshot", "forge.studio.transaction.begin", "forge.studio.patch.apply", "forge.studio.start", "forge.studio.playtest", "forge.studio.action", "forge.studio.assert", "forge.studio.adversarial", "forge.studio.playtest.stop", "forge.studio.transaction.commit", "forge.studio.transaction.rollback", "forge.commit.verified", "forge.commit.rejected"
 ]);

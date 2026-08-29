@@ -1,0 +1,14 @@
+{
+  "kind": "GameIntent",
+  "schemaVersion": 1,
+  "id": "intent_collect_fruit",
+  "rawPrompt": "Make a fruit game on floating islands where I get richer.",
+  "normalizedGoal": "Collect fruit and convert it into progression currency.",
+  "audience": "novice_creator",
+  "genreSignals": ["collection", "tycoon", "progression"],
+  "desiredOutcomes": ["collect fruit", "earn currency", "upgrade capacity"],
+  "constraints": [{ "id": "constraint_server_authority", "statement": "Rewards and inventory mutations are server-owned.", "source": "system" }],
+  "referencedMechanics": ["CollectFruit"],
+  "unresolvedQuestions": ["What fruit definitions and island layout should the final Studio place use?"],
+  "source": { "type": "creator_prompt", "createdAt": "2026-08-29T00:00:00.000Z" }
+}

@@ -1,0 +1,19 @@
+{
+  "kind": "CoreLoop",
+  "schemaVersion": 1,
+  "id": "loop_fruit_progression",
+  "intentId": "intent_collect_fruit",
+  "title": "Collect, sell, upgrade",
+  "nodes": [
+    { "id": "node_collect", "label": "Collect fruit", "category": "acquisition", "mechanicContractId": "contract_collect_fruit", "status": "in_progress" },
+    { "id": "node_sell", "label": "Sell fruit", "category": "conversion", "status": "proposed" },
+    { "id": "node_upgrade", "label": "Upgrade basket", "category": "progression", "status": "proposed" }
+  ],
+  "edges": [
+    { "from": "node_collect", "to": "node_sell", "condition": "inventory contains fruit" },
+    { "from": "node_sell", "to": "node_upgrade", "condition": "coins cover upgrade cost" }
+  ],
+  "entryNodeId": "node_collect",
+  "nextRecommendedNodeId": "node_sell",
+  "invariants": ["A client cannot choose the reward amount.", "Each collect request changes inventory at most once."]
+}

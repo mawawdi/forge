@@ -1,0 +1,24 @@
+{
+  "kind": "ForgeFixture",
+  "schemaVersion": 1,
+  "name": "collect-fruit-studio",
+  "luauRoots": ["src"],
+  "instances": [
+    { "path": "ReplicatedStorage/Remotes", "className": "Folder", "tags": ["network"] },
+    { "path": "ReplicatedStorage/Remotes/CollectFruit", "className": "RemoteEvent", "parentPath": "ReplicatedStorage/Remotes" },
+    { "path": "Workspace/Fruit42", "className": "Part", "properties": { "CanTouch": true }, "attributes": { "FruitType": "Apple", "Reward": 1, "Consumed": false }, "tags": ["collectible"] }
+  ],
+  "persistentState": [{ "field": "Inventory", "type": "number", "owner": "server", "durability": "session" }],
+  "uiBindings": [],
+  "remoteFlows": [
+    {
+      "name": "CollectFruit",
+      "direction": "client_to_server",
+      "clientScript": "src/client/ForgeTestClient.client.luau",
+      "serverScript": "src/server/CollectFruit.server.luau",
+      "clientInput": { "name": "fruitId", "type": "string" },
+      "serverValidations": ["type", "value", "context"],
+      "mutation": { "field": "Inventory", "sourceExpression": "server_owned_reward", "authority": "server" }
+    }
+  ]
+}

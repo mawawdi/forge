@@ -1,6 +1,6 @@
 # CoreLoopBench and Verification Evals
 
-Status: M1 and M1.5 complete  
+Status: M1, M1.5, M2, and M2.5 complete; M3 Studio Plugin + StudioProof in progress
 Purpose: executable evidence for verified Roblox mechanic generation
 
 ## 1. Evaluation philosophy
@@ -16,13 +16,15 @@ The evaluation hierarchy is:
 5. Roblox Studio execution for authoritative runtime facts;
 6. optional human creator acceptance as product feedback.
 
-M1 executes the first three layers locally. M2 may add preflight. M3 is the first milestone that can claim Studio-backed runtime proof.
+M1 and M2 execute the first three layers locally. M2 records a static/semantic ProofBundle and deterministic repair but still leaves preflight and Studio `not_run`. M3 is the first milestone that can claim Studio-backed runtime proof.
+
+M3 accepts Studio evidence only from the Forge Studio Plugin's validated protocol and a real Studio test session. A mock bridge, MCP-only result, pure Luau runtime, or successful plugin HTTP response cannot satisfy an authoritative assertion.
 
 ## 1.1 Trace, proof, regression, and experiment relationship
 
-`BuildTrace` records an execution and its objective outcome dimensions. `ProofBundle` will compact the evidence for a verification/commit decision. A CoreLoopBench case is a reusable fixture with expected assertions. `ExperimentResult` later records one candidate configuration's result against a fixed case/dataset. They must link by IDs/hashes instead of copying raw source or every historical event into each object.
+`BuildTrace` records an execution and its objective outcome dimensions. `ProofBundle` compacts the evidence for a verification/commit decision. A CoreLoopBench case is a reusable fixture with expected assertions. `ExperimentResult` later records one candidate configuration's result against a fixed case/dataset. They must link by IDs/hashes instead of copying raw source or every historical event into each object.
 
-A build trace is eligible for promotion only when it has sufficient retained references to reproduce the task: minimized intent/contract references, starting snapshot reference and hash, failure evidence, assertion/adversarial sequence, toolchain/environment versions, and seed when applicable. M1.5 records the trace foundation; it does not claim a trace can yet be promoted or replayed exactly.
+A build trace is eligible for promotion only when it has sufficient retained references to reproduce the task: minimized intent/contract references, starting snapshot reference and hash, failure evidence, assertion/adversarial sequence, toolchain/environment versions, and seed when applicable. M1.5 records the trace foundation; M2 adds contract and patch references; M2.5 adds canonical semantic snapshot hashes and context composition metadata. None of these milestones claims a trace can yet be promoted or replayed exactly.
 
 ## 2. Fixture contract
 
@@ -108,6 +110,7 @@ Do not collapse these into one leaderboard score until the weighting is justifie
 Each result must record:
 
 - initial project hash;
+- source, structure, contract, and aggregate semantic snapshot hashes when a ProjectSemanticMap is available;
 - patch hash;
 - dependency/toolchain hash;
 - rule-set hash;
@@ -149,9 +152,10 @@ CI must fail for critical security regressions, reintroduced promoted exploits, 
 ## 9. Initial benchmark execution plan
 
 1. M1: validate manifests and run static/semantic checks on local fixtures.
-2. M2: add deterministic repair and pure-Luau preflight for CLB-001 to CLB-003 and CLB-009.
-3. M3: run Studio assertions for CLB-001, CLB-002, CLB-003, CLB-005, CLB-006, CLB-008, and CLB-010.
-4. M4: complete all ten cases, add hidden assertions, and compare model adapters.
+2. M2: add deterministic repair and static/semantic ProofBundle evidence for CLB-001 and CLB-009; preflight remains an explicit follow-on layer.
+3. M2.5: use canonical semantic maps, affected cones, and explainable context selection for CLB-001 and CLB-009 without narrowing correctness checks unsafely.
+4. M3: run Studio assertions through the Forge Plugin for CLB-001, CLB-002, CLB-003, CLB-005, CLB-006, CLB-008, and CLB-010.
+5. M4: complete all ten cases, add hidden assertions, and compare model adapters.
 
 The first benchmark report should include failures and tool-health errors, not only a success percentage. “Could not run” is operationally different from “ran and failed.”
 

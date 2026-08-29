@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { JsonFileTraceSink, FlightRecorder, defaultTraceDirectory, type TraceSink } from "../../flight-recorder/src/index.js";
-import { buildSemanticMap, type ProjectSemanticMap } from "../../semantic-map/src/index.js";
+import { createProjectSnapshot, FilesystemProjectSourceAdapter, type ProjectSemanticMap } from "../../semantic-map/src/index.js";
 import { analyzeWithOfficialLuau } from "../../luau-toolchain/src/index.js";
 import { assertFixtureManifest, contentHash, stableJson, type BuildOutcome, type BuildTrace, type ForgeFixtureManifest, type TracePersistence, type VerificationIssue, type VerificationReport } from "../../contracts/src/index.js";
 
@@ -16,22 +16,31 @@ export interface VerificationRun {
 export interface VerificationRunOptions {
   traceDirectory?: string;
   traceSink?: TraceSink;
+  traceReferences?: Partial<BuildTrace["references"]>;
+  tracePreludeSpans?: Array<{ name: "forge.patch.create" | "forge.patch.apply" | "forge.repair.deterministic"; status: "ok" | "error"; attributes?: Record<string, string | number | boolean | string[]>; durationMs?: number }>;
+  traceComponents?: Partial<BuildTrace["components"]>;
+  traceContextSummary?: NonNullable<BuildTrace["context"]>;
+  outcomeOverrides?: Partial<BuildOutcome>;
 }
 
 export async function verifyProject(projectPath: string, options: VerificationRunOptions = {}): Promise<VerificationRun> {
   const root = resolve(projectPath);
   const projectId = `project_${contentHash(projectPath.replaceAll("\\", "/")).slice(0, 24)}`;
-  const recorder = new FlightRecorder({ projectId, components: { toolchain: [], verifiers: [{ name: "forge-verifier", version: RULE_SET }] } });
+  const recorder = new FlightRecorder({ projectId, ...(options.traceReferences ? { references: options.traceReferences } : {}), components: { toolchain: [], verifiers: [{ name: "forge-verifier", version: RULE_SET }], ...options.traceComponents } });
+  if (options.traceContextSummary) recorder.setContextSummary(options.traceContextSummary);
+  for (const span of options.tracePreludeSpans ?? []) recorder.recordSpan(span.name, span.status, span.attributes, span.durationMs);
   let projectHash = contentHash(`unavailable:${projectPath}`);
 
   try {
     const snapshotSpan = recorder.startSpan("forge.project.snapshot", { "forge.project_id": projectId, "forge.attempt": 1 });
     const manifest = await loadManifest(root);
-    const semanticMap = await buildSemanticMap(root, manifest);
-    projectHash = projectSnapshotHash(semanticMap);
+    const sourceAdapter = new FilesystemProjectSourceAdapter();
+    const semanticMap = await sourceAdapter.load({ root, manifest });
+    const snapshot = sourceAdapter.snapshot(semanticMap);
+    projectHash = snapshot.sourceHash;
     const manifestHash = contentHash(stableJson(manifest));
-    const snapshotLatency = recorder.endSpan(snapshotSpan, "ok", { "forge.project_hash_before": projectHash, "forge.project_hash_after": projectHash });
-    recorder.setProject({ startingSnapshotHash: projectHash, resultingSnapshotHash: projectHash, manifestHash, snapshotRetention: "not_retained" });
+    const snapshotLatency = recorder.endSpan(snapshotSpan, "ok", { "forge.project_hash_before": snapshot.projectSemanticHash, "forge.project_hash_after": snapshot.projectSemanticHash });
+    recorder.setProject({ startingSnapshotHash: snapshot.projectSemanticHash, resultingSnapshotHash: snapshot.projectSemanticHash, sourceHash: snapshot.sourceHash, structureHash: snapshot.structureHash, semanticHash: snapshot.projectSemanticHash, manifestHash, snapshotRetention: "not_retained" });
 
     const luauSpan = recorder.startSpan("forge.verify.luau", { "forge.verifier.name": "luau-analyze", "forge.attempt": 1 });
     const luau = analyzeWithOfficialLuau(root, semanticMap.files.map((file) => file.path));
@@ -45,11 +54,11 @@ export async function verifyProject(projectPath: string, options: VerificationRu
     const issues = stableIssuesOnly([...luau.issues, ...semantic]);
     const report = createVerificationReport(projectPath, projectHash, manifest, semanticMap, luau.tool, luau.exitCode, luau.issues, issues);
     for (const issue of issues) recorder.addEvent("forge.issue.detected", { "forge.issue.code": issue.ruleId, "forge.issue.severity": issue.severity, "forge.issue.id": issue.id });
-    return persistRun(report, recorder, options, buildOutcome(report, { projectSnapshot: snapshotLatency, luau: luauLatency, replication: replicationLatency, total: recorder.elapsedMs() }));
+    return persistRun(report, recorder, options, { ...buildOutcome(report, { projectSnapshot: snapshotLatency, luau: luauLatency, replication: replicationLatency, total: recorder.elapsedMs() }), ...options.outcomeOverrides });
   } catch (error) {
     const report = incompleteReport(projectPath, projectHash, error);
     recorder.addEvent("forge.issue.detected", { "forge.issue.code": "FORGE_VERIFICATION_INCOMPLETE", "forge.issue.severity": "error" });
-    return persistRun(report, recorder, options, buildOutcome(report, { total: recorder.elapsedMs() }));
+    return persistRun(report, recorder, options, { ...buildOutcome(report, { total: recorder.elapsedMs() }), ...options.outcomeOverrides });
   }
 }
 
@@ -126,10 +135,6 @@ function buildOutcome(report: VerificationReport, latencyMs: BuildOutcome["laten
   };
 }
 
-function projectSnapshotHash(semanticMap: ProjectSemanticMap): string {
-  return contentHash(semanticMap.files.map((file) => `${file.path}\n${file.source}`).join("\n"));
-}
-
 async function loadManifest(root: string): Promise<ForgeFixtureManifest> {
   let raw: string;
   try {
@@ -162,15 +167,27 @@ function semanticIssues(map: ProjectSemanticMap): VerificationIssue[] {
     if (declaration.direction === "client_to_server" && declaration.mutation.authority !== "server") {
       issues.push(makeIssue("REMOTE_NON_SERVER_MUTATION", "critical", "security", `Client-to-server remote ${declaration.name} reaches ${declaration.mutation.field}, but the declared mutation authority is ${declaration.mutation.authority}.`, server.path, `${serverEvidence.handler}; ${serverEvidence.mutation}`));
     }
-    if (declaration.direction === "client_to_server" && declaration.mutation.sourceExpression === declaration.clientInput.name) {
+    if (declaration.direction === "client_to_server" && new RegExp(`\\b${escapeRegExp(declaration.clientInput.name)}\\b`).test(serverEvidence.mutationExpression)) {
       const line = lineOf(server.source, serverEvidence.mutation);
       issues.push(makeIssue("REMOTE_CLIENT_CONTROLLED_REWARD", "critical", "security", `Untrusted client input ${declaration.clientInput.name} reaches authoritative mutation ${declaration.mutation.field} through ${declaration.name}.`, server.path, `Client evidence: ${clientEvidence.remoteCall}; server evidence: ${serverEvidence.mutation}; allowed server validations: ${declaration.serverValidations.join(", ") || "none"}.`, line));
     }
-    if (declaration.serverValidations.length === 0) {
-      issues.push(makeIssue("REMOTE_UNVALIDATED_INPUT", "error", "security", `Remote ${declaration.name} declares no server-side validation for client input ${declaration.clientInput.name}.`, server.path, `Handler: ${serverEvidence.handler}`));
+    const missingValidations = declaration.serverValidations.filter((validation) => !hasServerValidation(server.source, declaration.clientInput.name, validation));
+    if (missingValidations.length > 0) {
+      issues.push(makeIssue("REMOTE_UNVALIDATED_INPUT", "error", "security", `Remote ${declaration.name} is missing server-side ${missingValidations.join(", ")} validation for client input ${declaration.clientInput.name}.`, server.path, `Handler: ${serverEvidence.handler}`));
     }
   }
   return issues;
+}
+
+function hasServerValidation(source: string, inputName: string, validation: ForgeFixtureManifest["remoteFlows"][number]["serverValidations"][number]): boolean {
+  const input = escapeRegExp(inputName);
+  if (validation === "type") return new RegExp(`typeof\\s*\\(\\s*${input}\\s*\\)`).test(source);
+  if (validation === "value") return new RegExp(`\\b${input}\\b\\s*[<>!=]=?`).test(source);
+  if (validation === "context") return /Distance|distance|Magnitude|magnitude|Position|position/.test(source);
+  if (validation === "permission") return /permission|role|UserId|userId/.test(source);
+  if (validation === "rate_limit") return /cooldown|rate.?limit|last.?request/i.test(source);
+  if (validation === "ownership") return /owner|ownership|UserId|userId/.test(source);
+  return false;
 }
 
 function makeIssue(ruleId: string, severity: VerificationIssue["severity"], category: VerificationIssue["category"], message: string, path: string, evidenceStatement: string, line?: number): VerificationIssue {
@@ -180,6 +197,10 @@ function makeIssue(ruleId: string, severity: VerificationIssue["severity"], cate
 function lineOf(source: string, fragment: string): number | undefined {
   const index = source.indexOf(fragment);
   return index < 0 ? undefined : source.slice(0, index).split("\n").length;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function stableIssuesOnly(issues: VerificationIssue[]): VerificationIssue[] {

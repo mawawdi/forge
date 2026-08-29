@@ -1,0 +1,54 @@
+{
+  "name": "ForgeCollectFruit",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Remotes": {
+        "$className": "Folder",
+        "CollectFruit": { "$className": "RemoteEvent" },
+        "ForgeTestControl": { "$className": "RemoteEvent" },
+        "ForgeTestReply": { "$className": "RemoteEvent" }
+      }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "CollectFruit.server.luau": { "$path": "src/server/CollectFruit.server.luau" },
+      "ForgeTestHarness.server.luau": { "$path": "src/server/ForgeTestHarness.server.luau" }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "ForgeTestClient.client.luau": { "$path": "src/client/ForgeTestClient.client.luau" }
+      }
+    },
+    "Workspace": {
+      "$className": "Workspace",
+      "Baseplate": {
+        "$className": "Part",
+        "$properties": {
+          "Anchored": true,
+          "CanCollide": true,
+          "Size": [64.0, 1.0, 64.0],
+          "Position": [0.0, -0.5, 0.0]
+        }
+      },
+      "Fruit42": {
+        "$className": "Part",
+        "$properties": {
+          "Anchored": true,
+          "CanCollide": true,
+          "Size": [4.0, 4.0, 4.0],
+          "Position": [0.0, 3.0, 0.0],
+          "Attributes": {
+            "FruitType": { "String": "Apple" },
+            "Reward": { "Float64": 1.0 },
+            "Consumed": { "Bool": false }
+          },
+          "Tags": ["collectible"]
+        }
+      }
+    }
+  }
+}

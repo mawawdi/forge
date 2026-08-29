@@ -1,0 +1,22 @@
+{
+  "kind": "PatchSet",
+  "schemaVersion": 1,
+  "id": "patch_163f7d3795fe79501f302b15",
+  "projectHash": "728c8d9edc5f8407b8df677893c4fe2b0a9560c732ad50be46ed31cbf40dd40f",
+  "mechanicContractId": "contract_collect_fruit",
+  "operations": [
+    {
+      "type": "replace_text",
+      "path": "src/server/CollectFruit.server.luau",
+      "beforeHash": "b6bb0cd033664e8f6e5a3caecffecf95e94533e13a68ba98b2a84c43a4435a31",
+      "before": "-- Fixture-local stubs; Roblox provides the real global/type in Studio.\nlocal game: any = nil\ntype Player = string\nlocal ReplicatedStorage = game:GetService(\"ReplicatedStorage\")\nlocal CollectFruit = ReplicatedStorage.Remotes.CollectFruit\n\nlocal Inventory: {[Player]: number} = {}\n\nCollectFruit.OnServerEvent:Connect(function(player: Player, amount: number)\n    Inventory[player] = (Inventory[player] or 0) + amount\nend)\n\nreturn Inventory\n",
+      "after": "-- Fixture-local stubs; Roblox provides the real global/type in Studio.\nlocal game: any = nil\ntype Player = string\nlocal ReplicatedStorage = game:GetService(\"ReplicatedStorage\")\nlocal CollectFruit = ReplicatedStorage.Remotes.CollectFruit\n\nlocal Inventory: {[Player]: number} = {}\n\nCollectFruit.OnServerEvent:Connect(function(player: Player, amount: number)\n    if typeof(amount) ~= \"number\" then return end\n    if amount <= 0 then return end\n    Inventory[player] = (Inventory[player] or 0) + 1\nend)\n\nreturn Inventory\n"
+    }
+  ],
+  "expectedEffects": [
+    { "statement": "Reject invalid client amount values at the server boundary.", "evidence": "contract" },
+    { "statement": "Compute the inventory reward from server-owned state rather than the client amount.", "evidence": "contract" }
+  ],
+  "provenance": { "generatedAt": "2026-08-29T00:00:00.000Z" },
+  "bounds": { "maxFiles": 1, "maxAddedLines": 2, "maxRemovedLines": 0 }
+}

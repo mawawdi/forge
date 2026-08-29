@@ -1,0 +1,18 @@
+{
+  "kind": "StudioAssertion",
+  "schemaVersion": 1,
+  "id": "assert_collect_fruit_server_reward",
+  "mechanicContractId": "contract_collect_fruit",
+  "name": "CollectFruit rejects client-selected reward",
+  "setup": [{ "action": "spawn_player", "actor": "system" }],
+  "actions": [
+    { "action": "fire_collect_fruit", "actor": "client_1", "args": { "amount": 999999 } }
+  ],
+  "observations": [
+    { "path": "server.Inventory[player]", "relation": "equals", "expected": 1 },
+    { "path": "server.Inventory[player]", "relation": "not_equals", "expected": 999999 }
+  ],
+  "authorityExpectation": { "mutationPath": "server.Inventory[player]", "owner": "server", "clientCannotSet": ["Inventory", "reward"] },
+  "timeoutMs": 5000,
+  "tags": ["security", "authority", "collect"]
+}

@@ -37,6 +37,7 @@ export class FlightRecorder {
   private project: BuildTrace["project"];
   private references: BuildTrace["references"];
   private components: BuildTrace["components"];
+  private context: BuildTrace["context"];
   private completed = false;
 
   constructor(context: FlightRecorderContext, options: FlightRecorderOptions = {}) {
@@ -49,15 +50,17 @@ export class FlightRecorder {
       ...withoutUndefined(context.project ?? {})
     };
     this.references = withoutUndefined(context.references ?? {});
-    const optionalComponents: Pick<BuildTrace["components"], "agent" | "model" | "repairPolicy"> = {};
+    const optionalComponents: Pick<BuildTrace["components"], "agent" | "model" | "repairPolicy" | "studio"> = {};
     if (context.components?.agent) optionalComponents.agent = context.components.agent;
     if (context.components?.model) optionalComponents.model = context.components.model;
     if (context.components?.repairPolicy) optionalComponents.repairPolicy = context.components.repairPolicy;
+    if (context.components?.studio) optionalComponents.studio = context.components.studio;
     this.components = {
       toolchain: context.components?.toolchain ?? [],
       verifiers: context.components?.verifiers ?? [],
       ...optionalComponents
     };
+    this.context = undefined;
   }
 
   setProject(project: Partial<BuildTrace["project"]>): void {
@@ -75,6 +78,11 @@ export class FlightRecorder {
     this.components = { ...this.components, ...withoutUndefined(components) };
   }
 
+  setContextSummary(context: NonNullable<BuildTrace["context"]>): void {
+    this.assertOpen();
+    this.context = { ...context };
+  }
+
   startSpan(name: ForgeSpanName, attributes: Record<string, TraceAttributeValue> = {}): ActiveSpan {
     this.assertOpen();
     const span: ActiveSpan = { id: `span_${this.sequence + 1}`, name, startedAt: this.now(), attributes: { ...attributes } };
@@ -89,6 +97,13 @@ export class FlightRecorder {
     const durationMs = Math.max(0, endedAt.getTime() - span.startedAt.getTime());
     this.spans.push({ id: span.id, sequence: this.nextSequence(), name: span.name, startedAt: span.startedAt.toISOString(), endedAt: endedAt.toISOString(), durationMs, status, attributes: { ...span.attributes, ...attributes } });
     return durationMs;
+  }
+
+  recordSpan(name: ForgeSpanName, status: BuildTraceSpan["status"], attributes: Record<string, TraceAttributeValue> = {}, durationMs = 0): void {
+    this.assertOpen();
+    const startedAt = this.now();
+    const endedAt = new Date(startedAt.getTime() + Math.max(0, durationMs));
+    this.spans.push({ id: `span_${this.sequence + 1}`, sequence: this.nextSequence(), name, startedAt: startedAt.toISOString(), endedAt: endedAt.toISOString(), durationMs: Math.max(0, durationMs), status, attributes: { ...attributes } });
   }
 
   addEvent(name: ForgeEventName, attributes: Record<string, TraceAttributeValue> = {}): void {
@@ -118,6 +133,7 @@ export class FlightRecorder {
       components: this.components,
       spans: [...this.spans].sort(bySequence),
       events: [...this.events].sort(bySequence),
+      ...(this.context ? { context: this.context } : {}),
       outcome,
       evidence,
       replayability,

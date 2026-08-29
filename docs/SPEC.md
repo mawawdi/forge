@@ -1,6 +1,6 @@
 # Lemonade Forge Specification
 
-Status: M1 and M1.5 complete  
+Status: M1, M1.5, M2, and M2.5 complete; M3 Studio Plugin + StudioProof in progress
 Scope: candidate proof-of-work; deterministic verifier plus local execution evidence
 
 ## 1. Product thesis
@@ -38,6 +38,7 @@ The following are requirements for this proof-of-work because they are directly 
 | Executable evals | Benchmark fixtures have inputs, assertions, expected outcomes, and budgets | CoreLoopBench fixture manifest and runner contract |
 | Reproducibility | Inputs, tool versions, rule version, and project hash are recorded | ProofBundle and benchmark result metadata |
 | Flight Recorder foundation | Every local verification run creates versioned, privacy-minimized execution evidence | a `BuildTrace` is persisted separately from deterministic CLI JSON |
+| Canonical project semantics | Verification and future Studio work share a normalized representation of Roblox structure and source relationships | versioned `ProjectSemanticMap` and layered `ProjectSnapshot` hashes |
 
 ## 3. Explicit non-goals
 
@@ -64,7 +65,8 @@ The report contains a strong strategic direction and several future systems. The
 | Required now | typed contracts; official Luau analysis; deterministic issue model; project semantic map sufficient for remote analysis; insecure fixture; structured CLI diagnostics; 10 benchmark definitions; reproducible rule/config metadata | — |
 | Required for the thesis slice | intent-to-contract example; bounded patch representation; deterministic repair or repair recommendation; Studio-backed assertion protocol; proof bundle; one coherent collect -> sell -> upgrade loop | production creator UX and real model routing |
 | Useful preflight | Lute programmable lint rules; pure Luau tests; mocked services; state-machine/economy checks; fuzzed hostile inputs | must never be labeled authoritative Roblox execution |
-| Later, not required for candidate MVP | Studio plugin/MCP connection; isolated Studio workers; OpenGameEval-compatible benchmark execution; atomic Studio commit/rollback | all require environment access and operational design |
+| M3 implementation now | Forge Studio Plugin, typed Studio protocol, live semantic observation, bounded PatchSet execution, ChangeHistory transaction boundary, and authoritative CollectFruit test harness | requires real Studio installation/run; no mock may satisfy the gate |
+| Later, not required for candidate MVP | MCP connection as product interface; isolated Studio workers; OpenGameEval-compatible benchmark execution; production auth; distributed relay | all require environment access and operational design |
 | Speculative/future | ModelArena; model posterior routing; FirstDollar; trajectory learning; performance regression gates; large-scale queues and multi-tenant services | no dependency from M1 |
 
 ## 5. Smallest vertical slice that proves the thesis
@@ -136,13 +138,39 @@ The detailed checklist lives in `ROADMAP.md`; the benchmark contract lives in `E
 Every Forge build has two evidence products:
 
 - `BuildTrace` is the complete execution history: build key, execution ID, spans, events, versions, hashes, objective outcome dimensions, and compact issue summaries.
-- `ProofBundle` remains the compact immutable evidence for a verification/commit decision. M1 emits a `VerificationReport`; M2 will assemble the first ProofBundle rather than duplicating it in the trace.
+- `ProofBundle` remains the compact immutable evidence for a verification/commit decision. M1 emits a `VerificationReport`; M2 assembles a static/semantic ProofBundle with preflight and Studio explicitly marked `not_run`.
 
 BuildTrace persistence is local JSON in M1.5 and contains no raw source tree, raw creator prompt, credentials, or creator identity by default. Its content-derived `buildKey` supports semantic reproduction; its unique `traceId` identifies one observed execution. A trace is not an exact replay guarantee unless snapshot artifacts, all model responses, and runtime environment versions are retained.
 
 The Flight Recorder is required plumbing now because it is cheap to attach to the verifier and expensive to reconstruct after patches, repairs, and Studio execution exist. CoreLoopBench promotion, experiment runs, model routing, dashboards, and remote telemetry backends remain later work.
 
-## 10. Open questions
+## 10. Semantic state and context foundations
+
+Forge does not define a Roblox project as only Luau source. The M2.5 `ProjectSemanticMap` captures the relevant Instance hierarchy, script execution contexts and hashes, modules, remotes and M2 graph relationships, persistent-state declarations, UI bindings, mechanic-contract IDs, and dependency edges. The current filesystem adapter infers only what the fixture and path conventions establish; missing world knowledge remains unknown.
+
+`ProjectSnapshot` separates source, structure, contract, and aggregate semantic hashes. Ordering, paths, tags, attributes, and metadata are canonicalized before hashing. The source hash remains the patch/verifier precondition; the aggregate semantic hash is the comparison key for semantically equivalent starting states. A future Studio adapter must produce the same shape without pretending static data is live truth.
+
+The `ContextCompiler` selects only context relevant to one bounded mechanic task and records provenance for every item. M2.5 implements deterministic P0/P1/P2 selection and composition metadata, not retrieval, budget optimization, or a model runtime. A `VerifiedMechanicCapsule` is candidate-only until a ProofBundle contains authoritative Studio evidence; reuse always triggers re-verification.
+
+## 11. Studio Plugin and StudioProof boundary
+
+Forge owns Studio integration through a first-class, thin Roblox Studio Plugin. The backend remains the reasoning/compiler boundary; the plugin executes only validated, correlated operations against the current Studio project. Roblox Studio MCP is optional development/debugging infrastructure, not Forge's product interface.
+
+The authoritative path is:
+
+```text
+MechanicContract + PatchSet + StudioTestPlan
+  -> paired Forge Studio Plugin
+  -> live DataModel observation
+  -> ChangeHistory transaction
+  -> real Studio playtest and adversarial assertions
+  -> StudioAssertionResult evidence
+  -> existing ProofBundle + BuildTrace
+```
+
+A connected plugin or successful HTTP request alone is never proof. The Studio tier is verified only when real assertion results are authoritative, correlated to exact contract/patch/snapshots, and all required adversarial assertions pass.
+
+## 12. Open questions
 
 These questions are intentionally unresolved rather than silently guessed:
 
@@ -158,3 +186,5 @@ These questions are intentionally unresolved rather than silently guessed:
 - What privacy, retention, and consent review is required before any creator trajectory is stored?
 - Which immutable project snapshot format should become the promotion/replay artifact in M2 or M3?
 - What review policy decides that a failed trace is a legitimate permanent CoreLoopBench regression?
+- Which current Studio test harness can expose server/client observations without making test hooks authoritative themselves?
+- Can the plugin's permitted source-edit path provide stable source hashes without sending unnecessary raw source over the local bridge?

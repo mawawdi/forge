@@ -1,0 +1,28 @@
+{
+  "kind": "MechanicContract",
+  "schemaVersion": 1,
+  "id": "contract_collect_fruit",
+  "coreLoopId": "loop_fruit_progression",
+  "name": "CollectFruit",
+  "playerGoal": "Collect one fruit and add its server-defined reward to inventory.",
+  "preconditions": [
+    { "id": "precondition_valid_request", "statement": "The request contains a numeric amount request.", "authority": "client" },
+    { "id": "precondition_server_boundary", "statement": "The server accepts only a valid request context.", "authority": "server" }
+  ],
+  "postconditions": [
+    { "id": "postcondition_one_reward", "statement": "The server adds exactly one server-defined reward to inventory.", "authority": "server" },
+    { "id": "postcondition_no_client_reward", "statement": "The client cannot select the reward amount.", "authority": "server" }
+  ],
+  "authorityModel": {
+    "stateOwner": "server",
+    "clientInputs": [{ "name": "amount", "type": "number", "trust": "untrusted" }],
+    "serverValidations": ["type", "value"],
+    "stateMutations": [{ "field": "Inventory", "authority": "server", "operation": "increment by server-owned reward" }]
+  },
+  "persistentState": [{ "field": "Inventory", "type": "number", "owner": "server", "durability": "session" }],
+  "uiOutputs": [{ "binding": "InventoryCount", "sourceField": "Inventory", "direction": "server_to_client" }],
+  "economyEffects": [{ "currency": "fruit", "delta": "+1", "computedBy": "server" }],
+  "instrumentation": [{ "event": "fruit.collected", "fields": ["player_hash", "fruit_type"], "privacyClass": "project" }],
+  "studioAssertions": ["assert_collect_fruit_server_reward"],
+  "risk": "critical"
+}

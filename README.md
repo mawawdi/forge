@@ -1,6 +1,6 @@
 # Lemonade Forge
 
-Lemonade Forge is a verified, model-agnostic Roblox game compiler. Milestone 1 is a local deterministic verifier around the official Luau analyzer.
+Lemonade Forge is a verified, model-agnostic Roblox game compiler. M2.5 adds canonical project semantics, explainable context selection, and candidate mechanic-capability records around the contracted repair loop.
 
 ## Prerequisites
 
@@ -34,7 +34,26 @@ Every invocation also writes a privacy-minimized Flight Recorder trace to `.forg
 forge trace show <trace-id>
 ```
 
+M2 can deterministically repair the bounded `CollectFruit` fixture into a new output directory:
+
+```bash
+forge repair ./examples/collect-fruit/vulnerable \
+  --contract ./examples/collect-fruit/contracts/MechanicContract.json \
+  --out ./tmp/collect-fruit-repaired
+```
+
+The command rejects the vulnerable input, applies an exact hash-checked one-file patch atomically, and re-runs official Luau and semantic verification. Its ProofBundle records static/semantic success while remaining `incomplete` until pure-Luau preflight and Roblox Studio are run.
+
 Use `--format json` explicitly when integrating with another tool, and `--trace-dir <path>` to direct local trace artifacts elsewhere. M1 does not invoke a model or Roblox Studio, and it does not claim to verify Roblox physics or runtime replication.
+
+M3 includes a source-installable Studio Plugin and a real Studio target under `examples/collect-fruit/studio`. Build the place with Rojo, open it in Studio, then start the local bridge:
+
+```bash
+rojo build ./examples/collect-fruit/studio/default.project.json --output /tmp/ForgeCollectFruit.rbxlx
+node bin/forge.js studio bridge
+```
+
+The plugin's seven assertion results are authoritative only after an actual Studio playtest through the paired plugin; local tests and pure Luau execution never substitute for that run.
 
 ## Test
 

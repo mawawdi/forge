@@ -16,7 +16,7 @@ Introduce an internal Flight Recorder with four separate concepts:
 | Object | Purpose | Mutability |
 | --- | --- | --- |
 | `BuildTrace` | Complete execution history: spans, events, versions, hashes, outcome, and compact failure summaries | append during a run; immutable once persisted |
-| `ProofBundle` | Compact evidence supporting a verification/commit decision | immutable decision artifact; first assembled in M2 |
+| `ProofBundle` | Compact evidence supporting a verification/commit decision | immutable decision artifact; M2 assembles a static/semantic bundle |
 | CoreLoopBench case | Reproducible task/regression fixture derived from an intent, contract, snapshot reference, assertions, and failure evidence | versioned fixture |
 | `ExperimentResult` | Result of applying one candidate configuration to a fixed benchmark case/set | append-only result record |
 
@@ -36,6 +36,10 @@ Implement now:
 - serialization, deterministic hashing, persistence, failure-isolation, and M1-regression tests.
 
 The existing `forge verify` stdout remains a deterministic `VerificationReport`. Its trace ID is emitted on stderr and the full trace is stored independently. This keeps the M1 report contract reproducible while retaining every execution locally.
+
+## M2.5 context and semantic snapshot metadata
+
+The recorder may store only context composition metadata: item count, required-item count, token estimates, eviction count, and a composition hash. It does not store the selected context body or raw source in telemetry. The trace's project reference also carries source, structure, and semantic snapshot hashes produced by the canonical ProjectSemanticMap. These references make later context-effectiveness and affected-cone analysis possible without claiming exact replay.
 
 ## Event and span taxonomy
 

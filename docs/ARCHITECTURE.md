@@ -1,6 +1,6 @@
 # Lemonade Forge Architecture
 
-Status: M1 and M1.5 complete  
+Status: M1, M1.5, M2, and M2.5 complete; M3 Studio Plugin + StudioProof in progress
 Scope: candidate proof-of-work; local verifier plus portable execution evidence
 
 ## 1. Architectural stance
@@ -33,23 +33,38 @@ GameIntent -> CoreLoop -> MechanicContract -> PatchSet
 forge/
 ├── docs/
 │   ├── deep-research-report.md
-│   └── rfcs/flight-recorder.md
+│   ├── SPEC.md
+│   ├── ARCHITECTURE.md
+│   ├── ROADMAP.md
+│   ├── EVALS.md
+│   └── rfcs/
+│       ├── flight-recorder.md
+│       ├── project-semantic-map.md
+│       ├── context-compiler.md
+│       ├── verified-mechanic-capsules.md
+│       └── studio-plugin-protocol.md
 ├── packages/
 │   ├── contracts/              # JSON schemas and TypeScript types; no I/O
 │   ├── intent/                 # intent -> CoreLoop resolution interfaces
 │   ├── semantic-map/            # project tree, scripts, remotes, services, dependencies
-│   ├── patch-model/             # bounded PatchSet operations and diff normalization
+│   ├── patch-model/             # bounded PatchSet operations, hashes, and atomic staging
 │   ├── luau-toolchain/          # official luau-analyze/Lute adapters and version checks
 │   ├── verifier/                # rule engine, issue normalization, deterministic ordering
-│   ├── flight-recorder/          # BuildTrace, spans/events, sink interface, local JSON sink
+│   ├── flight-recorder/         # BuildTrace, spans/events, sink interface, local JSON sink
+│   ├── repair/                  # narrow deterministic repairs; no model dependency in M2
+│   ├── context-compiler/        # bounded, provenance-bearing model-neutral context selection
+│   ├── capsules/                # candidate/verified mechanic capability schema
+│   ├── studio-protocol/         # versioned plugin/backend messages and validators
+│   ├── studio-bridge/           # loopback HTTP polling transport and pairing
+│   ├── studio-proof/            # StudioTestPlan, assertion results, ProofBundle integration
 │   ├── preflight/               # pure Luau/Lute/Lune test adapter; never authoritative
-│   ├── studio-proof/             # Studio assertion protocol; later implementation
 │   ├── proofs/                  # ProofBundle assembly and serialization
 │   ├── benchmarks/              # CoreLoopBench manifest and fixture loader
-│   └── cli/                     # forge commands; M1 exposes verify
+│   └── cli/                     # forge verify, repair, and trace inspection
 ├── examples/
 │   ├── insecure-tycoon/         # M1 fixture: valid Luau plus intentional vulnerabilities
-│   └── fruit-loop/               # later vertical-slice place/contract/Studio fixture
+│   └── collect-fruit/            # M2 contract, vulnerable/repaired projects, and patch fixtures
+│       └── studio/               # Rojo place tree and real Studio assertion harness
 ├── benchmarks/
 │   └── core-loop-bench/         # ten initial fixture directories and manifest
 ├── tools/
@@ -59,10 +74,7 @@ forge/
 │   ├── verifier/
 │   ├── cli/
 │   └── fixtures/
-├── SPEC.md
-├── ARCHITECTURE.md
-├── ROADMAP.md
-└── EVALS.md
+└── README.md
 ```
 
 M1 should remain a local CLI and library monorepo. A database, hosted API, auth system, queue, dashboard, and Studio worker fleet are not prerequisites.
@@ -77,13 +89,19 @@ Pure, serializable schemas are the system boundary. They must validate at load a
 
 Transforms a raw creator request into a candidate `CoreLoop`. It may use a model in a later milestone, but its output is always validated and may contain unresolved questions. It must not generate arbitrary source as its primary output.
 
-### Semantic map
+### Agent runtime boundary
 
-Represents the relevant project structure: paths, script execution context, services, instances, remotes, module dependencies, persistence calls, and known state fields. M1 may build this from a deterministic filesystem fixture. Dynamic runtime discovery is an open question.
+There is no autonomous `AgentRuntime` implementation in M2.5. The future runtime should depend on the stable interfaces around intent, context, patches, tool calls, verification, Studio sessions, and traces—not on a specific model or planner topology. Its capability profile is explicit: read a retained project view, write only an isolated workspace, call allowlisted tools, and spend bounded attempts. Provider-specific model telemetry remains an optional component behind the generic `BuildTrace` model/component fields.
+
+### Project Semantic Map
+
+Represents the relevant project structure: Instances, script execution context and hashes, modules, remotes, M2 replication relationships, persistent state, UI bindings, mechanic contracts, and dependency edges. M2.5 formalizes the existing script/remote graph inside a versioned map and derives a canonical projection that excludes absolute paths and raw source. The loaded source remains available only to the local analyzer. `ProjectSnapshot` carries layered source, structure, contract, aggregate semantic, and canonical-map hashes.
+
+The map is adapter-owned. The current adapter is deterministic filesystem/fixture input; M3 adds a live Studio adapter. An optional rbx-dom adapter remains behind the same boundary for serialized Roblox place/model input. A missing world fact is unknown, not inferred as safe.
 
 ### Patch model
 
-Represents a bounded proposed change as operations with provenance and expected effects. A raw whole-repository replacement is outside the initial safe patch surface. Patch application and rollback are later milestones; M1 only needs the representation for fixtures and diagnostic evidence.
+Represents a bounded proposed change as operations with provenance and expected effects. M2 applies exact text replacements only after matching project and before-content hashes. It stages a copied project and atomically publishes the destination after bounds checks; this is filesystem atomicity, not a Roblox Studio commit. The semantic map supplies the affected verification cone; it does not yet authorize skipping global verification.
 
 ### Luau toolchain adapter
 
@@ -110,11 +128,19 @@ Runs pure Luau tests and modeled simulations in Lute/Lune or an equivalent contr
 
 ### StudioProof
 
-Later, a Studio connector executes `StudioAssertion` actions in an isolated place/session and reports observed state. It is the only component allowed to produce authoritative claims about engine behavior. The connector should use Roblox-native/official integration where available and keep interactive checks separate from long-running benchmark runs.
+The Forge Studio Plugin executes `StudioAssertion` actions in an isolated place/session and reports observed state. It is the only Forge component allowed to produce authoritative claims about engine behavior. The plugin uses Roblox-native/official APIs and keeps interactive checks separate from long-running benchmark runs. MCP is optional development/debugging infrastructure, not the Forge product boundary.
 
 ### Proof assembler
 
 Combines all tier results into an immutable `ProofBundle` identified by source/dependency/rule/tool hashes. “Not run” and “unknown” remain visible. It does not infer a pass from a green static result.
+
+### Context Compiler
+
+Compiles one bounded mechanic task into ordered `ContextItem` values. P0 contains the contract, requested change, and current failures; P1 contains directly affected scripts and the M2 remote neighborhood; P2 contains canonical project metadata. Each item carries a reason, source, entity, content hash, token estimate, and required/evictable flags. M2.5 selects deterministically and evicts nothing. Retrieval, budget optimization, and provider formatting remain future work.
+
+### Verified Mechanic Capsules
+
+Defines a reusable parameterized capability linked to a contract, invariants, adaptation rules, executable assertions, and provenance. M2.5 permits candidate schemas only. A capsule cannot claim `verified` without ProofBundle IDs, Studio runtime versions, assertions, and timestamped provenance. Adaptation always creates a new candidate and re-runs verification.
 
 ### Flight Recorder
 
@@ -122,17 +148,22 @@ Records one build execution without becoming the verification authority. A `Buil
 
 The recorder owns a generic sink interface. M1.5 provides an atomic local JSON/debug sink; future OpenTelemetry collectors, optional Langfuse export, and production backends are adapters. They are never required for Forge to verify a project.
 
+M2.5 may attach context composition counts and a composition hash to the trace. It does not store the selected context body in telemetry.
+
 `BuildTrace` is execution history. `ProofBundle` is decision evidence. A CoreLoopBench case is a reproducible fixture promoted from a reviewed failure. `ExperimentResult` later compares a fixed case/dataset across candidate configurations. These objects link by IDs and content hashes rather than embed redundant source trees.
 
 ### CLI
 
-M1 command surface:
+Current command surface:
 
 ```text
 forge verify <project-path> [--format json]
+forge repair <project-path> --contract <path> --out <directory> [--trace-dir <path>]
+forge trace show <trace-id> [--trace-dir <path>]
+forge studio bridge [--host <host>] [--port <port>]
 ```
 
-The CLI discovers the fixture, validates its manifest, invokes the official toolchain, runs deterministic Forge rules, emits one structured result, and sets exit status. Future commands (`intent`, `compile`, `proof`, `commit`, `bench`) are intentionally not required in M1.
+The CLI discovers the fixture, validates its manifest, invokes the official toolchain, runs deterministic Forge rules, emits one structured result, and sets exit status. `repair` composes the same verifier around one bounded deterministic repair and emits the resulting ProofBundle. Future commands (`intent`, `compile`, `commit`, `bench`) remain deferred.
 
 ## 4. M1 verification data flow
 
@@ -165,16 +196,46 @@ Current M1.5 replay is semantic reproduction only: use the recorded snapshot has
 
 Instrumentation failures are visible but non-gating. A sink failure must not convert a valid verifier result into a rejected result, and it must not be hidden.
 
-## 6. Official tooling references
+## 6. Capability and trust boundaries
+
+The eventual autonomous worker is modeled by a capability profile, not by an instruction to the model:
+
+```text
+WorkerCapabilityProfile
+├── filesystem: read project snapshot; write isolated temporary workspace
+├── network: explicit allowlist; deny by default where practical
+├── credentials: no production DataStore; test credentials scoped
+├── execution: timeout, CPU/memory, token, and attempt budgets
+└── Studio: test place/universe only; never production persistence
+```
+
+M2.5 documents this boundary but does not build sandbox infrastructure. Static analysis proves static properties, semantic analysis proves modeled graph properties, pure Luau proves pure-code behavior, and only real Studio proves Roblox engine behavior.
+
+## 7. M3 Studio Plugin + StudioProof integration
+
+```text
+ProjectSemanticMap (static adapter)
+          + live Studio DataModel adapter
+          -> mapped Studio session
+          -> StudioAssertion actions and observations
+          -> authoritative StudioProof
+          -> ProofBundle linked to MechanicContract, Snapshot, and BuildTrace
+```
+
+The Forge Plugin is the product transport and execution boundary. Roblox Studio's built-in MCP server remains development/debugging infrastructure: it exposes generic data-model exploration, script reads/edits, Luau execution, play state, console output, and input simulation through a local stdio process. Forge will not make MCP a product dependency or clone the archived `studio-rust-mcp-server`.
+
+M3 must merge live hierarchy facts with the static map, reject identity/path mismatches, run the `CollectFruit` assertions (valid collect, duplicate, spoofed ID, impossible distance, and server-owned inventory), and mark every unavailable tier explicitly. No pure runtime, mock, or MCP-only run can substitute for Studio authority.
+
+## 8. Official tooling references
 
 The initial toolchain decision is based on the official Luau implementation and its maintained tooling:
 
 - [Luau](https://github.com/luau-lang/luau) provides the language implementation, AST, and `luau-analyze` command-line type checker/linter.
 - [Lute lint](https://lute.luau.org/cli/lint/index.html) is a programmable linter built on the official Luau language stack and is a candidate source for custom rules after its version is pinned.
 
-These references are implementation inputs, not a commitment to embed native C++ libraries in M1. A subprocess adapter is the smallest inspectable boundary; embedding or a long-running sidecar can be evaluated after correctness is established.
+These references are implementation inputs, not a commitment to embed native C++ libraries in M1 or M2. A subprocess adapter is the smallest inspectable boundary; embedding or a long-running sidecar can be evaluated after correctness is established.
 
-## 7. TypeScript contracts
+## 9. TypeScript contracts
 
 These are the proposed canonical shapes. They are intentionally JSON-serializable and use discriminated unions. The implementation should generate runtime validators from the same source or maintain equivalent checked schemas; hand-waving that “the TypeScript compiler validates JSON” is insufficient.
 
@@ -322,11 +383,26 @@ export interface BuildTrace {
   replayability: { level: "none" | "semantic_reproduction" | "exact_replay"; reasons: string[]; randomSeeds: Record<string, number> };
   privacy: { rawSourceStored: false; rawPromptStored: false; creatorIdentityStored: false };
 }
+
+export interface TrajectoryEvent {
+  kind: "TrajectoryEvent";
+  schemaVersion: 1;
+  id: ID;
+  sequence: number;
+  occurredAt: ISO8601;
+  event: "intent_received" | "core_loop_resolved" | "contract_compiled" | "patch_proposed" | "verification_completed" | "repair_applied" | "studio_run_completed" | "creator_accepted" | "creator_rejected";
+  actor: "creator" | "forge" | "model" | "tool" | "studio" | "system";
+  projectId: ID;
+  references: Partial<BuildTrace["references"]>;
+  payloadHash: Hash;
+  attributes: Record<string, TraceAttributeValue>;
+  privacyClass: "none" | "project" | "creator_sensitive";
+}
 ```
 
 The schema is intentionally one current format. A future breaking change updates the schema version and replaces affected fixtures/results; readers will not accept a mixture of old and new shapes.
 
-## 8. Rule and issue identity
+## 10. Rule and issue identity
 
 Initial rule IDs should be explicit and stable:
 
@@ -347,7 +423,7 @@ STRUCTURE_ORPHAN_SCRIPT
 
 For M1, at minimum `LUAU_PARSE_ERROR`, `LUAU_TYPE_ERROR`, and `REMOTE_CLIENT_CONTROLLED_REWARD` must be exercised by `examples/insecure-tycoon`. The semantic rule must be derived from a project graph/data-flow representation, not a string search for a particular variable name.
 
-## 9. Security and reproducibility boundaries
+## 11. Security and reproducibility boundaries
 
 - Analyzer and verifier workers receive a project-scoped read-only view for verification.
 - No model or verifier gets production credentials.
