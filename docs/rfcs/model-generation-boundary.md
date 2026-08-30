@@ -1,6 +1,6 @@
 # RFC: Model Generation Boundary
 
-Status: implemented and accepted in M3.25  
+Status: historical M3.25 decision, preserved for regression; not the post-M3.5 default
 Date: 2026-08-30
 
 ## Decision

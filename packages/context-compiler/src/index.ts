@@ -1,6 +1,8 @@
 import { contentHash, stableJson, type MechanicContract, type MechanicImplementationSpec, type PatchSet, type VerificationIssue } from "../../contracts/src/index.js";
 import { affectedVerificationCone, canonicalProjectSemanticMap, type ProjectSemanticMap } from "../../semantic-map/src/index.js";
 
+export { compileAgentOrientation, type AgentOrientation } from "./agent-orientation.js";
+
 export type ContextPriority = 0 | 1 | 2 | 3 | 4;
 export type ContextItemType = "game_intent" | "core_loop" | "mechanic_contract" | "mechanic_implementation_spec" | "generation_policy" | "verification_issue" | "requested_change" | "source" | "semantic_map" | "project_memory" | "retrieved_knowledge";
 

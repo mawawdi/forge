@@ -1,11 +1,11 @@
 # RFC: Verified Mechanic Capsules
 
-Status: domain schema only; promotion deferred until StudioProof  
+Status: archived M2/M3 domain decision; not a post-M3.5 production architecture
 Date: 2026-08-29
 
 ## Decision
 
-`VerifiedMechanicCapsule` is a parameterized, reusable capability backed by a `MechanicContract`, invariants, adaptation rules, executable assertion IDs, and provenance. It is not a source snippet, template, RAG result, or genre-specific code copy.
+`VerifiedMechanicCapsule` is a preserved historical domain shape backed by a `MechanicContract`, invariants, adaptation rules, executable assertion IDs, and provenance. It is not a post-M3.5 generalization mechanism, source snippet, template, RAG result, or genre-specific code copy.
 
 The schema supports a `candidate` state now. A capsule may enter `verified` only when it carries non-empty ProofBundle IDs, assertion IDs, Studio runtime versions, and a verification timestamp. This prevents a successful static repair from becoming universal truth.
 

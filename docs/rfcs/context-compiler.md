@@ -1,6 +1,6 @@
 # RFC: Context Compiler Boundary
 
-Status: implemented as a deterministic foundation; optimization deferred  
+Status: implemented deterministic foundation; its exact M3.25 selection policy is historical
 Date: 2026-08-29
 
 ## Decision

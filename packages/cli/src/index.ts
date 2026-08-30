@@ -1,6 +1,7 @@
 import { JsonFileTraceSink, defaultTraceDirectory } from "../../flight-recorder/src/index.js";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { loadMechanicContract, repairProject } from "../../repair/src/orchestrator.js";
 import { StudioBridgeServer, readStudioBridgeDiscovery, removeStudioBridgeDiscovery, writeStudioBridgeDiscovery } from "../../studio-bridge/src/index.js";
@@ -8,10 +9,11 @@ import { runStudioPatchVerification, runStudioVerification, type StudioFaultMode
 import type { PluginToBackendMessage } from "../../studio-protocol/src/index.js";
 import { verifyProject } from "../../verifier/src/index.js";
 import { OPENROUTER_MODELS, OpenRouterProvider, buildGeneratedCandidate, loadCandidateArtifact, repairCandidateRegression, reverifyCandidateRegression, type OpenRouterModel } from "../../generation/src/index.js";
+import { runBoundedAgent } from "../../agent-runtime/src/index.js";
+import { ClaudeAgentProvider, CLAUDE_AGENT_SDK_VERSION } from "../../agent-claude/src/index.js";
+import { assertRequirementSet, type RequirementSet } from "../../semantic-authority/src/index.js";
 
 const args = process.argv.slice(2);
-
-loadLocalEnvironment();
 
 /** Deliberately narrow local configuration: do not add a general dotenv surface. */
 function loadLocalEnvironment(): void {
@@ -27,6 +29,12 @@ function loadLocalEnvironment(): void {
 
 async function main(): Promise<void> {
   const [command, subcommand, ...rest] = args;
+  // The M4.1 agent path intentionally does not load a project .env file.
+  if (command !== "agent") loadLocalEnvironment();
+  if (command === "agent" && subcommand === "build") {
+    await agentBuild(rest[0], rest.slice(1));
+    return;
+  }
   if (command === "verify") {
     await verify(subcommand, rest);
     return;
@@ -170,6 +178,37 @@ async function candidateStudio(artifactPath: string | undefined, optionArgs: str
     if (!options.fault && /source precondition mismatch/i.test(detail)) {
       process.stderr.write("Studio is not at the artifact's seed revision. Reopen the original seed project, not the generated candidate output; candidate studio applies the artifact PatchSet itself.\n");
     }
+    process.exitCode = 2;
+  }
+}
+
+async function agentBuild(projectPath: string | undefined, optionArgs: string[]): Promise<void> {
+  const options = parseAgentBuildOptions(optionArgs);
+  if (!projectPath || !options.valid || !options.prompt || !options.requirementsPath) {
+    process.stderr.write("Usage: forge agent build <project> --prompt <creator request> --requirements <requirement-set.json> [--environment production|benchmark] [--model <exact-model-id>] [--run-dir <path>] [--trace-dir <path>] [--format json]\n");
+    process.exitCode = 2;
+    return;
+  }
+  try {
+    const requirementSet = JSON.parse(await readFile(resolve(options.requirementsPath), "utf8")) as unknown;
+    assertRequirementSet(requirementSet);
+    const runDirectory = resolve(options.runDirectory ?? ".forge/agent-runs");
+    const traceDirectory = resolve(options.traceDirectory ?? ".forge/flight-recorder");
+    const model = options.model ?? "claude-sonnet-5";
+    const result = await runBoundedAgent({
+      seedRoot: resolve(projectPath),
+      creatorPrompt: options.prompt,
+      requirementSet: requirementSet as RequirementSet,
+      provider: new ClaudeAgentProvider(model),
+      model: { provider: "anthropic", name: model, version: CLAUDE_AGENT_SDK_VERSION },
+      runDirectory,
+      traceDirectory,
+      ...(options.environment ? { environment: options.environment } : {})
+    });
+    process.stdout.write(`${JSON.stringify({ kind: "ForgeAgentBuildSummary", schemaVersion: 1, status: result.status, classification: result.classification, studio: "not_run", agentRunId: result.run.id, agentRunArtifact: result.persistence.path, buildTraceId: result.trace.id, finalVerifierTraceId: result.finalVerification.trace.id, finalGate: result.finalVerification.report.gate.status === "verified" ? "locally_eligible" : result.finalVerification.report.gate.status, candidateRoot: result.candidateRoot, harnessConfigurationId: result.run.harnessConfigurationId, harnessConfigurationHash: result.run.harnessConfigurationHash, budgets: result.run.budgets }, null, 2)}\n`);
+    process.exitCode = result.status === "locally_eligible" ? 0 : result.status === "rejected" ? 1 : 2;
+  } catch (error) {
+    process.stderr.write(`Forge agent build did not complete: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 2;
   }
 }
@@ -455,6 +494,29 @@ function parseBuildOptions(values: string[]): { valid: boolean; prompt?: string;
   return { valid: true, formatJson, ...(prompt ? { prompt } : {}), ...(model ? { model } : {}), ...(modelTimeoutMs !== undefined ? { modelTimeoutMs } : {}), ...(runDirectory ? { runDirectory } : {}), ...(traceDirectory ? { traceDirectory } : {}) };
 }
 
+function parseAgentBuildOptions(values: string[]): { valid: boolean; prompt?: string; requirementsPath?: string; environment?: "production" | "benchmark"; model?: string; runDirectory?: string; traceDirectory?: string; formatJson?: boolean } {
+  let prompt: string | undefined;
+  let requirementsPath: string | undefined;
+  let environment: "production" | "benchmark" | undefined;
+  let model: string | undefined;
+  let runDirectory: string | undefined;
+  let traceDirectory: string | undefined;
+  let formatJson = false;
+  for (let index = 0; index < values.length; index += 1) {
+    const option = values[index];
+    const next = values[index + 1];
+    if (option === "--prompt" && next) { prompt = next; index += 1; continue; }
+    if (option === "--requirements" && next) { requirementsPath = next; index += 1; continue; }
+    if (option === "--environment" && (next === "production" || next === "benchmark")) { environment = next; index += 1; continue; }
+    if (option === "--model" && next) { model = next; index += 1; continue; }
+    if (option === "--run-dir" && next) { runDirectory = next; index += 1; continue; }
+    if (option === "--trace-dir" && next) { traceDirectory = next; index += 1; continue; }
+    if (option === "--format" && next === "json") { formatJson = true; index += 1; continue; }
+    return { valid: false };
+  }
+  return { valid: true, ...(prompt ? { prompt } : {}), ...(requirementsPath ? { requirementsPath } : {}), ...(environment ? { environment } : {}), ...(model ? { model } : {}), ...(runDirectory ? { runDirectory } : {}), ...(traceDirectory ? { traceDirectory } : {}), ...(formatJson ? { formatJson } : {}) };
+}
+
 function parseStudioVerifyOptions(values: string[]): { valid: boolean; contractPath?: string; timeoutMs?: number; traceDirectory?: string; proofDirectory?: string; fault?: StudioFaultMode } {
   let contractPath: string | undefined;
   let timeoutMs: number | undefined;
@@ -475,7 +537,7 @@ function parseStudioVerifyOptions(values: string[]): { valid: boolean; contractP
 }
 
 function usage(): void {
-  process.stderr.write("Usage:\n  forge verify <project-path> [--format json] [--trace-dir <path>]\n  forge repair <project-path> --contract <path> --out <directory> [--trace-dir <path>]\n  forge build <generated-seed-project> --prompt <creator request> [--model <model>] [--model-timeout-ms <ms>] [--run-dir <path>] [--trace-dir <path>] [--format json]\n  forge candidate reverify <candidate-regression> [--trace-dir <path>] [--studio] [--timeout-ms <ms>] [--proof-dir <path>]\n  forge candidate repair <candidate-regression> [--model <model>] [--model-timeout-ms <ms>] [--run-dir <path>] [--trace-dir <path>] [--format json]\n  forge candidate studio <candidate-artifact> [--fault client-controlled-reward|client-controlled-payout] [--timeout-ms <ms>] [--trace-dir <path>] [--proof-dir <path>]\n  forge trace show <trace-id> [--trace-dir <path>]\n  forge studio bridge\n  forge studio verify <project-path> [--contract <path>] [--timeout-ms <ms>] [--trace-dir <path>] [--proof-dir <path>] [--fault client-controlled-reward|client-controlled-payout]\n");
+  process.stderr.write("Usage:\n  forge agent build <project> --prompt <creator request> --requirements <requirement-set.json> [--environment production|benchmark] [--model <exact-model-id>] [--run-dir <path>] [--trace-dir <path>] [--format json]\n  forge verify <project-path> [--format json] [--trace-dir <path>]\n  forge repair <project-path> --contract <path> --out <directory> [--trace-dir <path>]\n  forge build <generated-seed-project> --prompt <creator request> [--model <model>] [--model-timeout-ms <ms>] [--run-dir <path>] [--trace-dir <path>] [--format json]\n  forge candidate reverify <candidate-regression> [--trace-dir <path>] [--studio] [--timeout-ms <ms>] [--proof-dir <path>]\n  forge candidate repair <candidate-regression> [--model <model>] [--model-timeout-ms <ms>] [--run-dir <path>] [--trace-dir <path>] [--format json]\n  forge candidate studio <candidate-artifact> [--fault client-controlled-reward|client-controlled-payout] [--timeout-ms <ms>] [--trace-dir <path>] [--proof-dir <path>]\n  forge trace show <trace-id> [--trace-dir <path>]\n  forge studio bridge\n  forge studio verify <project-path> [--contract <path>] [--timeout-ms <ms>] [--trace-dir <path>] [--proof-dir <path>] [--fault client-controlled-reward|client-controlled-payout]\n");
 }
 
 void main();

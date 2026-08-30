@@ -419,6 +419,13 @@ export interface BuildTrace {
     generationRunId?: ID;
     generationAttemptId?: ID;
     modelResponseHash?: Hash;
+    /** Additive M4.1 harness references. Absent on preserved historical traces. */
+    agentRunId?: ID;
+    requirementSetId?: ID;
+    requirementViewId?: ID;
+    workspaceDeltaId?: ID;
+    harnessConfigurationId?: ID;
+    harnessConfigurationHash?: Hash;
   };
   components: {
     toolchain: ComponentVersion[];
@@ -810,7 +817,7 @@ function isProjectReference(value: unknown): boolean {
 }
 
 function isTraceReferences(value: unknown): boolean {
-  return isRecord(value) && optionalString(value.gameIntentId) && optionalString(value.coreLoopId) && optionalString(value.mechanicContractId) && optionalString(value.patchSetId) && optionalString(value.benchmarkCaseId) && optionalString(value.generationRunId) && optionalString(value.generationAttemptId) && optionalString(value.modelResponseHash);
+  return isRecord(value) && optionalString(value.gameIntentId) && optionalString(value.coreLoopId) && optionalString(value.mechanicContractId) && optionalString(value.patchSetId) && optionalString(value.benchmarkCaseId) && optionalString(value.generationRunId) && optionalString(value.generationAttemptId) && optionalString(value.modelResponseHash) && optionalString(value.agentRunId) && optionalString(value.requirementSetId) && optionalString(value.requirementViewId) && optionalString(value.workspaceDeltaId) && optionalString(value.harnessConfigurationId) && optionalString(value.harnessConfigurationHash);
 }
 
 function isTraceComponents(value: unknown): boolean {
