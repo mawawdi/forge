@@ -1,0 +1,15 @@
+--!strict
+return {
+	PROTOCOL = 7,
+	VERSION = "forge-studio-plugin-3.9.0",
+	BRIDGE_URL = "http://127.0.0.1:8787",
+	HARNESS_ID = "collect-fruit",
+	HARNESS_VERSION = "collect-fruit-v7",
+	HARNESS_HASH = "984a4ad2ff160f15148cf194dee9c859f12f58f6a7b84dc8b3a7fb6c0c1a5e52",
+	MAX_MESSAGE_BYTES = 1024 * 1024,
+	MAX_SNAPSHOT_BYTES = 256 * 1024,
+	MAX_SNAPSHOT_CHUNKS = 64,
+	MAX_DIAGNOSTIC_CHARS = 4 * 1024,
+	EXECUTION_DEADLINE_SECONDS = 90,
+	IDENTITY_ATTRIBUTE = "_forgeStableId",
+}

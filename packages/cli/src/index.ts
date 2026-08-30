@@ -1,9 +1,29 @@
 import { JsonFileTraceSink, defaultTraceDirectory } from "../../flight-recorder/src/index.js";
+import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { loadMechanicContract, repairProject } from "../../repair/src/orchestrator.js";
-import { StudioBridgeServer } from "../../studio-bridge/src/index.js";
+import { StudioBridgeServer, readStudioBridgeDiscovery, removeStudioBridgeDiscovery, writeStudioBridgeDiscovery } from "../../studio-bridge/src/index.js";
+import { runStudioPatchVerification, runStudioVerification } from "../../studio-proof/src/runner.js";
+import type { PluginToBackendMessage } from "../../studio-protocol/src/index.js";
 import { verifyProject } from "../../verifier/src/index.js";
+import { OPENROUTER_MODELS, OpenRouterProvider, buildGeneratedCandidate, loadCandidateRepairArtifact, repairCandidateRegression, reverifyCandidateRegression, type OpenRouterModel } from "../../generation/src/index.js";
 
 const args = process.argv.slice(2);
+
+loadLocalEnvironment();
+
+/** Deliberately narrow local configuration: do not add a general dotenv surface. */
+function loadLocalEnvironment(): void {
+  if (process.env.OPENROUTER_API_KEY) return;
+  try {
+    const source = readFileSync(resolve(process.cwd(), ".env"), "utf8");
+    const match = source.match(/^OPENROUTER_API_KEY=(.+)$/m);
+    if (match?.[1]) process.env.OPENROUTER_API_KEY = match[1].trim().replace(/^['"]|['"]$/g, "");
+  } catch {
+    // A local .env is optional. The provider reports a precise missing-key error.
+  }
+}
 
 async function main(): Promise<void> {
   const [command, subcommand, ...rest] = args;
@@ -15,6 +35,22 @@ async function main(): Promise<void> {
     await repair(subcommand, rest);
     return;
   }
+  if (command === "build") {
+    await build(subcommand, rest);
+    return;
+  }
+  if (command === "candidate" && subcommand === "reverify") {
+    await candidateReverify(rest[0], rest.slice(1));
+    return;
+  }
+  if (command === "candidate" && subcommand === "repair") {
+    await candidateRepair(rest[0], rest.slice(1));
+    return;
+  }
+  if (command === "candidate" && subcommand === "studio") {
+    await candidateStudio(rest[0], rest.slice(1));
+    return;
+  }
   if (command === "trace" && subcommand === "show") {
     await showTrace(rest[0], rest.slice(1));
     return;
@@ -23,8 +59,122 @@ async function main(): Promise<void> {
     await studioBridge(rest);
     return;
   }
+  if (command === "studio" && subcommand === "verify") {
+    await studioVerify(rest[0], rest.slice(1));
+    return;
+  }
   usage();
   process.exitCode = 2;
+}
+
+async function candidateReverify(regressionPath: string | undefined, optionArgs: string[]): Promise<void> {
+  const options = parseCandidateReverifyOptions(optionArgs);
+  if (!regressionPath || !options.valid) {
+    process.stderr.write("Usage: forge candidate reverify <candidate-regression> [--trace-dir <path>] [--studio] [--timeout-ms <ms>] [--proof-dir <path>]\n");
+    process.exitCode = 2;
+    return;
+  }
+  try {
+    const root = resolve(regressionPath);
+    const result = await reverifyCandidateRegression(root, options.traceDirectory);
+    process.stdout.write(`${JSON.stringify({ kind: result.kind, schemaVersion: result.schemaVersion, regressionId: result.regressionId, sourceUnchanged: result.sourceUnchanged, historical: result.historical, patchSetId: result.patchSet.id, verification: result.verification.report, traceId: result.verification.trace.id }, null, 2)}\n`);
+    if (result.verification.report.gate.status !== "verified" || !options.studio) {
+      process.exitCode = result.verification.report.gate.status === "verified" ? 0 : result.verification.report.gate.status === "incomplete" ? 2 : 1;
+      return;
+    }
+    const discovery = await readStudioBridgeDiscovery();
+    process.stdout.write("The unchanged historical candidate passed corrected local gates. Attaching it to the existing authoritative StudioProof path.\n");
+    const studio = await runStudioPatchVerification({ projectRoot: result.seedRoot, candidateProjectRoot: root, candidatePatchSet: result.patchSet, candidateVerification: result.verification, contract: result.contract, controlToken: discovery.controlToken, host: discovery.host, port: discovery.port, ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}), ...(options.traceDirectory ? { traceDirectory: options.traceDirectory } : {}), ...(options.proofDirectory ? { proofDirectory: options.proofDirectory } : {}), onReady: (address) => process.stdout.write(`Attaching to discovered Forge Studio bridge at http://${address.host}:${address.port}\nWaiting for Studio to connect and send a live snapshot...\n`), onMessage: printStudioVerificationMessage });
+    process.stdout.write(`${JSON.stringify({ kind: "CandidateStudioReverification", schemaVersion: 1, regressionId: result.regressionId, sourceUnchanged: true, studioStatus: studio.status, proofBundleId: studio.proofBundle.id, traceId: studio.trace?.id }, null, 2)}\n`);
+    process.exitCode = studio.status === "verified" ? 0 : studio.status === "incomplete" ? 2 : 1;
+  } catch (error) {
+    process.stderr.write(`Candidate re-verification did not complete: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 2;
+  }
+}
+
+async function candidateRepair(regressionPath: string | undefined, optionArgs: string[]): Promise<void> {
+  const options = parseCandidateRepairOptions(optionArgs);
+  if (!regressionPath || !options.valid) {
+    process.stderr.write("Usage: forge candidate repair <candidate-regression> [--model openai/gpt-5.6-luna|google/gemini-3.7-flash] [--model-timeout-ms <ms>] [--run-dir <path>] [--trace-dir <path>] [--format json]\n");
+    process.exitCode = 2;
+    return;
+  }
+  try {
+    const model = options.model ?? "openai/gpt-5.6-luna";
+    if (!options.formatJson) process.stdout.write(`Forge candidate repair: ${model}; one bounded repair call against the preserved regression.\n`);
+    const result = await repairCandidateRegression({ regressionRoot: resolve(regressionPath), provider: new OpenRouterProvider(), model, ...(options.modelTimeoutMs !== undefined ? { modelTimeoutMs: options.modelTimeoutMs } : {}), ...(options.runDirectory ? { runDirectory: options.runDirectory } : {}), ...(options.traceDirectory ? { traceDirectory: options.traceDirectory } : {}) });
+    process.stdout.write(`${JSON.stringify({ kind: result.kind, schemaVersion: result.schemaVersion, id: result.id, regressionId: result.regressionId, source: result.source, model: result.model, attempt: result.attempt, outputRoot: result.outputRoot, artifactPath: result.artifactPath, patchSetId: result.patchSet.id, verification: result.verification.report, traceId: result.verification.trace.id, context: result.contextSummary }, null, 2)}\n`);
+    if (!options.formatJson && result.verification.report.gate.status === "verified") process.stdout.write(`Repaired candidate passed local gates. Immutable Studio input: ${result.artifactPath}\n`);
+    else if (!options.formatJson) process.stdout.write(`Repaired candidate was retained for diagnosis but is not eligible for Studio: ${result.artifactPath}\n`);
+    process.exitCode = result.verification.report.gate.status === "verified" ? 0 : result.verification.report.gate.status === "incomplete" ? 2 : 1;
+  } catch (error) {
+    process.stderr.write(`Candidate repair did not complete: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 2;
+  }
+}
+
+async function candidateStudio(artifactPath: string | undefined, optionArgs: string[]): Promise<void> {
+  const options = parseCandidateStudioOptions(optionArgs);
+  if (!artifactPath || !options.valid) {
+    process.stderr.write("Usage: forge candidate studio <candidate-repair-artifact> [--timeout-ms <ms>] [--trace-dir <path>] [--proof-dir <path>]\n");
+    process.exitCode = 2;
+    return;
+  }
+  try {
+    process.stdout.write("Validating the retained candidate artifact and rerunning current local gates; no model will be called.\n");
+    const loaded = await loadCandidateRepairArtifact(resolve(artifactPath), options.traceDirectory);
+    const discovery = await readStudioBridgeDiscovery();
+    process.stdout.write(`Candidate ${loaded.artifact.id} passed artifact integrity and local verification. Attaching its exact PatchSet to StudioProof.\n`);
+    const studio = await runStudioPatchVerification({
+      projectRoot: loaded.artifact.seedRoot,
+      candidateProjectRoot: loaded.artifact.outputRoot,
+      candidatePatchSet: loaded.artifact.patchSet,
+      candidateVerification: loaded.verification,
+      contract: loaded.artifact.contract,
+      controlToken: discovery.controlToken,
+      host: discovery.host,
+      port: discovery.port,
+      ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+      ...(options.traceDirectory ? { traceDirectory: options.traceDirectory } : {}),
+      ...(options.proofDirectory ? { proofDirectory: options.proofDirectory } : {}),
+      onReady: (address) => process.stdout.write(`Attaching to discovered Forge Studio bridge at http://${address.host}:${address.port}\nWaiting for Studio to connect and send a live snapshot...\n`),
+      onMessage: printStudioVerificationMessage
+    });
+    process.stdout.write(`${JSON.stringify({ kind: "CandidateStudioResult", schemaVersion: 1, candidateRepairId: loaded.artifact.id, artifactHash: loaded.artifact.artifactHash, regressionId: loaded.artifact.regressionId, patchSetId: loaded.artifact.patchSet.id, localVerificationTraceId: loaded.verification.trace.id, studioStatus: studio.status, proofBundleId: studio.proofBundle.id, traceId: studio.trace?.id }, null, 2)}\n`);
+    process.exitCode = studio.status === "verified" ? 0 : studio.status === "incomplete" ? 2 : 1;
+  } catch (error) {
+    process.stderr.write(`Candidate StudioProof did not complete: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 2;
+  }
+}
+
+async function build(seedPath: string | undefined, optionArgs: string[]): Promise<void> {
+  const options = parseBuildOptions(optionArgs);
+  if (!seedPath || !options.valid || !options.prompt) {
+    process.stderr.write("Usage: forge build <generated-seed-project> --prompt <creator request> [--model openai/gpt-5.6-luna|google/gemini-3.7-flash] [--model-timeout-ms <ms>] [--run-dir <path>] [--trace-dir <path>] [--proof-dir <path>] [--studio] [--timeout-ms <ms>] [--format json]\n");
+    process.exitCode = 2;
+    return;
+  }
+  try {
+    process.stdout.write(`Forge build: ${options.model ?? "openai/gpt-5.6-luna"}; compiling bounded intent and candidate.\n`);
+    const result = await buildGeneratedCandidate({ seedRoot: resolve(seedPath), prompt: options.prompt, provider: new OpenRouterProvider(), ...(options.model ? { model: options.model } : {}), ...(options.modelTimeoutMs !== undefined ? { modelTimeoutMs: options.modelTimeoutMs } : {}), ...(options.runDirectory ? { runDirectory: options.runDirectory } : {}), ...(options.traceDirectory ? { traceDirectory: options.traceDirectory } : {}) });
+    const summary = { kind: "ForgeBuildSummary", schemaVersion: 1, run: result.run, outputRoot: result.outputRoot, verification: result.verification?.report.gate, context: result.contextSummary };
+    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    if (result.run.status === "verified" && options.studio && result.intent && result.patchSet && result.verification && result.outputRoot) {
+      const discovery = await readStudioBridgeDiscovery();
+      process.stdout.write("Candidate passed static and semantic gates. Attaching the unchanged StudioProof protocol to the live seed place.\n");
+      const studio = await runStudioPatchVerification({ projectRoot: resolve(seedPath), candidateProjectRoot: result.outputRoot, candidatePatchSet: result.patchSet, candidateVerification: result.verification, contract: result.intent.mechanicContract, controlToken: discovery.controlToken, host: discovery.host, port: discovery.port, ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}), ...(options.traceDirectory ? { traceDirectory: options.traceDirectory } : {}), ...(options.proofDirectory ? { proofDirectory: options.proofDirectory } : {}), onReady: (address) => process.stdout.write(`Attaching to discovered Forge Studio bridge at http://${address.host}:${address.port}\nWaiting for Studio to connect and send a live snapshot...\n`), onMessage: printStudioVerificationMessage });
+      process.stdout.write(`${JSON.stringify({ kind: "ForgeStudioBuildResult", studioStatus: studio.status, proofBundleId: studio.proofBundle.id, traceId: studio.trace?.id }, null, 2)}\n`);
+      process.exitCode = studio.status === "verified" ? 0 : studio.status === "incomplete" ? 2 : 1;
+      return;
+    }
+    if (result.run.status === "verified") process.stdout.write("Candidate passed static and semantic gates. Run the same command with --studio after building/opening the fresh generated seed place and starting the user-owned bridge.\n");
+    process.exitCode = result.run.status === "verified" ? 0 : result.run.status === "incomplete" ? 2 : 1;
+  } catch (error) {
+    process.stderr.write(`Forge build did not complete: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 2;
+  }
 }
 
 async function repair(projectPath: string | undefined, optionArgs: string[]): Promise<void> {
@@ -83,21 +233,76 @@ async function showTrace(traceId: string | undefined, optionArgs: string[]): Pro
 async function studioBridge(optionArgs: string[]): Promise<void> {
   const options = parseBridgeOptions(optionArgs);
   if (!options.valid) {
-    process.stderr.write("Usage: forge studio bridge [--host <host>] [--port <port>]\n");
+    process.stderr.write("Usage: forge studio bridge\n");
     process.exitCode = 2;
     return;
   }
-  const bridge = new StudioBridgeServer({ ...(options.host ? { host: options.host } : {}), ...(options.port !== undefined ? { port: options.port } : {}) });
+  const bridge = new StudioBridgeServer();
   bridge.subscribe((message) => {
     process.stdout.write(`\n[studio -> forge] ${message.type}${message.sessionId ? ` (${message.sessionId})` : ""}\n${JSON.stringify(message, null, 2)}\n`);
   });
   const address = await bridge.listen();
-  process.stdout.write(`Forge Studio bridge listening at http://${address.host}:${address.port}\nPairing token (one use, expires ${address.pairing.expiresAt}): ${address.pairing.token}\n`);
-  await new Promise<void>((resolve, reject) => {
-    const close = () => { void bridge.close().then(resolve).catch(reject); };
-    process.once("SIGINT", close);
-    process.once("SIGTERM", close);
-  });
+  const discovery = { kind: "ForgeStudioBridgeDiscovery" as const, schemaVersion: 1 as const, bridgeId: `bridge_${randomUUID()}`, host: address.host, port: address.port, controlToken: address.controlToken, pid: process.pid, startedAt: new Date().toISOString() };
+  await writeStudioBridgeDiscovery(discovery);
+  process.stdout.write(`Forge Studio bridge listening at http://${address.host}:${address.port}\nStudio plugin and verifier will connect automatically. No tokens are required.\n`);
+  try {
+    await new Promise<void>((done) => {
+      process.once("SIGINT", done);
+      process.once("SIGTERM", done);
+    });
+  } finally {
+    await bridge.close();
+    await removeStudioBridgeDiscovery(discovery.bridgeId);
+  }
+}
+
+async function studioVerify(projectPath: string | undefined, optionArgs: string[]): Promise<void> {
+  const options = parseStudioVerifyOptions(optionArgs);
+  if (!projectPath || !options.valid) {
+    process.stderr.write("Usage: forge studio verify <project-path> [--contract <path>] [--timeout-ms <ms>] [--trace-dir <path>] [--proof-dir <path>] [--fault-client-reward]\n");
+    process.exitCode = 2;
+    return;
+  }
+  const projectRoot = resolve(projectPath);
+  const contractPath = options.contractPath ?? resolve(projectRoot, "../contracts/MechanicContract.json");
+  try {
+    process.stdout.write(options.faultClientReward
+      ? "INTENTIONAL FAULT MODE: CLIENT_CONTROLLED_REWARD\nExpected outcome: CF-007 fails, ProofBundle is rejected, and the Studio transaction rolls back.\n"
+      : "Studio verification mode: SAFE CANDIDATE\n");
+    const contract = await loadMechanicContract(contractPath);
+    const discovery = await readStudioBridgeDiscovery();
+    const result = await runStudioVerification({ projectRoot, contract, controlToken: discovery.controlToken, host: discovery.host, port: discovery.port, ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}), ...(options.traceDirectory ? { traceDirectory: options.traceDirectory } : {}), ...(options.proofDirectory ? { proofDirectory: options.proofDirectory } : {}), ...(options.faultClientReward ? { faultClientReward: true } : {}), onReady: (address) => process.stdout.write(`Attaching to discovered Forge Studio bridge at http://${address.host}:${address.port}\nWaiting for Studio to connect and send a live snapshot...\n`), onMessage: printStudioVerificationMessage });
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    if (result.proofPath) process.stderr.write(`Forge Studio ProofBundle: ${result.proofPath}\n`);
+    if (result.proofRunPath) process.stderr.write(`Forge Studio proof run: ${result.proofRunPath}\n`);
+    if (result.tracePath) process.stderr.write(`Forge Studio trace: ${result.tracePath}\n`);
+    process.exitCode = result.status === "verified" ? 0 : result.status === "incomplete" ? 2 : 1;
+  } catch (error) {
+    process.stderr.write(`Studio verification did not complete: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = error instanceof Error && "status" in error && (error as { status?: string }).status === "incomplete" ? 2 : 1;
+  }
+}
+
+function printStudioVerificationMessage(message: PluginToBackendMessage): void {
+  if (message.type === "ProjectObservation") {
+    process.stdout.write(`[studio -> forge] ProjectObservation (${message.payload.observation.scripts.length} scripts, ${message.payload.observation.instances.length} instances, ${message.payload.revision.observationHash})\n`);
+    return;
+  }
+  if (message.type === "AssertionPlanAccepted") {
+    process.stdout.write(`[studio -> forge] ${message.type}: ${message.payload.instruction}\n`);
+    return;
+  }
+  if (message.type === "StudioTestResult") {
+    process.stdout.write(`[studio result] ${message.payload.status}: ${message.payload.assertions.length} correlated assertions\n`);
+    for (const assertion of message.payload.assertions) process.stdout.write(`[studio assertion] ${assertion.assertionId}: ${assertion.status} (observed ${String(assertion.observed)})\n`);
+    return;
+  }
+  if (message.type === "PluginError") {
+    process.stdout.write(`[studio plugin error] ${message.payload.code}: ${message.payload.message}${message.payload.retryable ? " (retryable)" : ""}\n`);
+    return;
+  }
+  if (message.type === "Heartbeat") return;
+  process.stdout.write(`[studio -> forge] ${message.type}\n`);
 }
 
 function parseOptions(values: string[]): { valid: boolean; traceDirectory?: string } {
@@ -144,21 +349,108 @@ function parseRepairOptions(values: string[]): { valid: boolean; contractPath?: 
   return { valid: true, ...(contractPath ? { contractPath } : {}), ...(destinationRoot ? { destinationRoot } : {}), ...(traceDirectory ? { traceDirectory } : {}) };
 }
 
-function parseBridgeOptions(values: string[]): { valid: boolean; host?: string; port?: number } {
-  let host: string | undefined;
-  let port: number | undefined;
+function parseBridgeOptions(values: string[]): { valid: boolean } {
+  return { valid: values.length === 0 };
+}
+
+function parseCandidateReverifyOptions(values: string[]): { valid: boolean; traceDirectory?: string; proofDirectory?: string; studio?: boolean; timeoutMs?: number } {
+  let traceDirectory: string | undefined;
+  let proofDirectory: string | undefined;
+  let studio = false;
+  let timeoutMs: number | undefined;
   for (let index = 0; index < values.length; index += 1) {
     const option = values[index];
     const next = values[index + 1];
-    if (option === "--host" && next) { host = next; index += 1; continue; }
-    if (option === "--port" && next && /^\d+$/.test(next)) { port = Number(next); index += 1; continue; }
+    if (option === "--trace-dir" && next) { traceDirectory = next; index += 1; continue; }
+    if (option === "--proof-dir" && next) { proofDirectory = next; index += 1; continue; }
+    if (option === "--studio") { studio = true; continue; }
+    if (option === "--timeout-ms" && next && /^\d+$/.test(next)) { timeoutMs = Number(next); index += 1; continue; }
     return { valid: false };
   }
-  return { valid: true, ...(host ? { host } : {}), ...(port !== undefined ? { port } : {}) };
+  return { valid: true, ...(traceDirectory ? { traceDirectory } : {}), ...(proofDirectory ? { proofDirectory } : {}), ...(studio ? { studio: true } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}) };
+}
+
+function parseCandidateRepairOptions(values: string[]): { valid: boolean; model?: OpenRouterModel; modelTimeoutMs?: number; runDirectory?: string; traceDirectory?: string; formatJson?: true } {
+  let model: OpenRouterModel | undefined;
+  let modelTimeoutMs: number | undefined;
+  let runDirectory: string | undefined;
+  let traceDirectory: string | undefined;
+  let formatJson = false;
+  for (let index = 0; index < values.length; index += 1) {
+    const option = values[index];
+    const next = values[index + 1];
+    if (option === "--model" && next && (OPENROUTER_MODELS as readonly string[]).includes(next)) { model = next as OpenRouterModel; index += 1; continue; }
+    if (option === "--model-timeout-ms" && next && /^\d+$/.test(next)) { modelTimeoutMs = Number(next); index += 1; continue; }
+    if (option === "--run-dir" && next) { runDirectory = next; index += 1; continue; }
+    if (option === "--trace-dir" && next) { traceDirectory = next; index += 1; continue; }
+    if (option === "--format" && next === "json") { formatJson = true; index += 1; continue; }
+    return { valid: false };
+  }
+  return { valid: true, ...(model ? { model } : {}), ...(modelTimeoutMs !== undefined ? { modelTimeoutMs } : {}), ...(runDirectory ? { runDirectory } : {}), ...(traceDirectory ? { traceDirectory } : {}), ...(formatJson ? { formatJson: true as const } : {}) };
+}
+
+function parseCandidateStudioOptions(values: string[]): { valid: boolean; timeoutMs?: number; traceDirectory?: string; proofDirectory?: string } {
+  let timeoutMs: number | undefined;
+  let traceDirectory: string | undefined;
+  let proofDirectory: string | undefined;
+  for (let index = 0; index < values.length; index += 1) {
+    const option = values[index];
+    const next = values[index + 1];
+    if (option === "--timeout-ms" && next && /^\d+$/.test(next)) { timeoutMs = Number(next); index += 1; continue; }
+    if (option === "--trace-dir" && next) { traceDirectory = next; index += 1; continue; }
+    if (option === "--proof-dir" && next) { proofDirectory = next; index += 1; continue; }
+    return { valid: false };
+  }
+  return { valid: true, ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(traceDirectory ? { traceDirectory } : {}), ...(proofDirectory ? { proofDirectory } : {}) };
+}
+
+function parseBuildOptions(values: string[]): { valid: boolean; prompt?: string; model?: OpenRouterModel; modelTimeoutMs?: number; runDirectory?: string; traceDirectory?: string; proofDirectory?: string; studio?: boolean; timeoutMs?: number } {
+  let prompt: string | undefined;
+  let model: OpenRouterModel | undefined;
+  let modelTimeoutMs: number | undefined;
+  let runDirectory: string | undefined;
+  let traceDirectory: string | undefined;
+  let proofDirectory: string | undefined;
+  let studio = false;
+  let timeoutMs: number | undefined;
+  for (let index = 0; index < values.length; index += 1) {
+    const option = values[index];
+    const next = values[index + 1];
+    if (option === "--prompt" && next) { prompt = next; index += 1; continue; }
+    if (option === "--model" && next && (OPENROUTER_MODELS as readonly string[]).includes(next)) { model = next as OpenRouterModel; index += 1; continue; }
+    if (option === "--model-timeout-ms" && next && /^\d+$/.test(next)) { modelTimeoutMs = Number(next); index += 1; continue; }
+    if (option === "--run-dir" && next) { runDirectory = next; index += 1; continue; }
+    if (option === "--trace-dir" && next) { traceDirectory = next; index += 1; continue; }
+    if (option === "--proof-dir" && next) { proofDirectory = next; index += 1; continue; }
+    if (option === "--studio") { studio = true; continue; }
+    if (option === "--timeout-ms" && next && /^\d+$/.test(next)) { timeoutMs = Number(next); index += 1; continue; }
+    if (option === "--format" && next === "json") { index += 1; continue; }
+    return { valid: false };
+  }
+  return { valid: true, ...(prompt ? { prompt } : {}), ...(model ? { model } : {}), ...(modelTimeoutMs !== undefined ? { modelTimeoutMs } : {}), ...(runDirectory ? { runDirectory } : {}), ...(traceDirectory ? { traceDirectory } : {}), ...(proofDirectory ? { proofDirectory } : {}), ...(studio ? { studio: true } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}) };
+}
+
+function parseStudioVerifyOptions(values: string[]): { valid: boolean; contractPath?: string; timeoutMs?: number; traceDirectory?: string; proofDirectory?: string; faultClientReward?: boolean } {
+  let contractPath: string | undefined;
+  let timeoutMs: number | undefined;
+  let traceDirectory: string | undefined;
+  let proofDirectory: string | undefined;
+  let faultClientReward = false;
+  for (let index = 0; index < values.length; index += 1) {
+    const option = values[index];
+    const next = values[index + 1];
+    if (option === "--contract" && next) { contractPath = next; index += 1; continue; }
+    if (option === "--timeout-ms" && next && /^\d+$/.test(next)) { timeoutMs = Number(next); index += 1; continue; }
+    if (option === "--trace-dir" && next) { traceDirectory = next; index += 1; continue; }
+    if (option === "--proof-dir" && next) { proofDirectory = next; index += 1; continue; }
+    if (option === "--fault-client-reward") { faultClientReward = true; continue; }
+    return { valid: false };
+  }
+  return { valid: true, ...(contractPath ? { contractPath } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(traceDirectory ? { traceDirectory } : {}), ...(proofDirectory ? { proofDirectory } : {}), ...(faultClientReward ? { faultClientReward: true } : {}) };
 }
 
 function usage(): void {
-  process.stderr.write("Usage:\n  forge verify <project-path> [--format json] [--trace-dir <path>]\n  forge repair <project-path> --contract <path> --out <directory> [--trace-dir <path>]\n  forge trace show <trace-id> [--trace-dir <path>]\n  forge studio bridge [--host <host>] [--port <port>]\n");
+  process.stderr.write("Usage:\n  forge verify <project-path> [--format json] [--trace-dir <path>]\n  forge repair <project-path> --contract <path> --out <directory> [--trace-dir <path>]\n  forge build <generated-seed-project> --prompt <creator request> [--model <model>] [--model-timeout-ms <ms>] [--run-dir <path>] [--trace-dir <path>] [--proof-dir <path>] [--studio] [--timeout-ms <ms>] [--format json]\n  forge candidate reverify <candidate-regression> [--trace-dir <path>] [--studio] [--timeout-ms <ms>] [--proof-dir <path>]\n  forge candidate repair <candidate-regression> [--model <model>] [--model-timeout-ms <ms>] [--run-dir <path>] [--trace-dir <path>] [--format json]\n  forge candidate studio <candidate-repair-artifact> [--timeout-ms <ms>] [--trace-dir <path>] [--proof-dir <path>]\n  forge trace show <trace-id> [--trace-dir <path>]\n  forge studio bridge\n  forge studio verify <project-path> [--contract <path>] [--timeout-ms <ms>] [--trace-dir <path>] [--proof-dir <path>] [--fault-client-reward]\n");
 }
 
 void main();

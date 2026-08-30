@@ -8,7 +8,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test dist/test/*.test.js",
+    "test": "npm run build && node --test dist/test/*.test.js && npm run plugin:test",
+    "plugin:test": "find plugin/src -name '*.luau' -print0 | xargs -0 luau-compile --only-parse && luau-analyze plugin/src/Forge/ObservationRevision.luau scripts/test-plugin-modules.luau && lune run scripts/test-plugin-modules.luau",
+    "plugin:build": "rojo build plugin/default.project.json -o plugin/ForgeStudioPlugin.rbxmx",
     "verify": "npm run build --silent && node dist/packages/cli/src/index.js verify"
   },
   "devDependencies": {

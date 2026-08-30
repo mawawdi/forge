@@ -1,6 +1,6 @@
 # Lemonade Forge Roadmap
 
-Status: M1, M1.5, M2, and M2.5 complete; M3 Studio Plugin + StudioProof in progress
+Status: M1, M1.5, M2, M2.5, M3, and M3.25 complete; M3.5 next
 Principle: prove the semantic thesis before adding product surface or scale
 
 ## Milestone map
@@ -12,7 +12,8 @@ Principle: prove the semantic thesis before adding product surface or scale
 | M1.5 — Flight Recorder foundations ✅ | Every verifier execution has local, versioned, privacy-minimized trace evidence | BuildTrace, stable spans/events, local sink, `forge trace show`, and regression tests |
 | M2 — Contracted patch and semantic loop ✅ | One mechanic can be represented as a contract, bounded patch, deeper replication verification, and deterministic repair | insecure `CollectFruit` patch is rejected, repaired, traced, and rechecked without a model |
 | M2.5 — Semantic state foundations ✅ | The verifier has a canonical, hashed project representation and a model-neutral context boundary | ProjectSemanticMap, ProjectSnapshot, affected cones, context provenance, and capsule schema tests pass |
-| M3 — Forge Studio Plugin + StudioProof vertical slice 🔧 | CollectFruit runs through the first-class plugin in real Studio with authoritative assertions; sell/upgrade remain contract-level follow-ons | ProofBundle contains passing Studio assertions and explicit static/preflight/Studio tiers |
+| M3 — Forge Studio Plugin + StudioProof vertical slice ✅ | CollectFruit runs through the first-class plugin in real Studio with authoritative assertions; sell/upgrade remain contract-level follow-ons | Showcase evidence includes safe pass, fault rejection, exact rollback, repaired rerun, and interrupted incomplete run |
+| M3.25 — Prompt-to-proof generation ✅ | One OpenRouter proposal path produces a bounded CollectFruit candidate that must pass M1/M2 then the unchanged M3 StudioProof | model-authored repair -> sealed artifact -> typed PatchSet -> 7/7 real Studio assertions -> verified ProofBundle |
 | M3.5 — Context and capsule promotion | Context composition and reusable capability promotion are backed by real Studio evidence | context metrics are tied to verified outcomes; first capsule has authoritative provenance |
 | M4 — CoreLoopBench and model comparison | Ten executable cases compare candidate implementations by verified outcome | benchmark results are reproducible, hidden assertions are supported, no LLM judge is primary |
 | M4.5 — Capability adaptation research | Compare fresh generation with re-verified capsule adaptation | adaptation never bypasses verification; evidence supports or rejects reuse |
@@ -36,7 +37,7 @@ Exit criteria: a reviewer can identify what is authoritative, what is preflight,
 Implementation plan:
 
 1. Scaffold the monorepo packages and runtime schema validators.
-2. Add a pinned `luau-analyze` adapter with explicit tool discovery and health errors.
+2. Add pinned official Luau syntax and Roblox-aware type-analysis adapters with explicit tool discovery and health errors.
 3. Build a fixture manifest for `examples/insecure-tycoon`.
 4. Normalize official analyzer diagnostics into `VerificationIssue` objects.
 5. Build a deterministic semantic map for script contexts, remotes, handlers, and obvious mutation paths.
@@ -52,7 +53,7 @@ Concrete acceptance criteria:
 - The fixture includes a client-to-server state-changing remote whose untrusted value reaches an authoritative reward/inventory mutation; output contains `REMOTE_CLIENT_CONTROLLED_REWARD` with `critical` or `error` severity and evidence naming the client input, remote, and server mutation path.
 - Repeating the command against unchanged inputs yields byte-identical normalized JSON after excluding explicitly documented wall-clock fields; the normalized output must not depend on machine-local absolute paths or hash-map iteration order.
 - Blocking issues produce a non-zero exit status. A clean control fixture produces zero blocking issues and exit status zero.
-- A missing or unusable `luau-analyze` binary produces a structured tooling failure and non-zero exit; Forge never falls back to a third-party or approximate parser.
+- A missing or unusable syntax analyzer, Roblox-aware analyzer, definitions snapshot, or sourcemap capability produces a structured tooling failure and non-zero exit; Forge never falls back to a third-party, approximate, or host-less Roblox parser.
 - Analyzer stdout/stderr is preserved as provenance or a content hash, while normalized diagnostics remain stable.
 - Tests cover malformed project paths, path escape attempts, empty projects, analyzer non-zero exit, duplicate issue keys, stable ordering, and JSON schema validation.
 - M1 does not invoke a model, Roblox Studio, a live DataStore, or a network service.
@@ -117,13 +118,27 @@ Exit criteria: M1/M1.5/M2 behavior is unchanged, canonical semantic projects has
 
 ## M3 — StudioProof vertical slice
 
+Current gate: **M3-P0 through M3-P3 passed.** A temporary standalone API canary,
+whose findings are retained in `docs/research/studio-test-service-blocker.md`, produced exact server
+roundtrips through both `ExecuteRunModeAsync` and `ExecutePlayModeAsync` on the
+target Studio build, then proved a real Play Solo LocalScript-to-server
+RemoteEvent roundtrip. Real CollectFruit requests then verified inventory
+`0 -> 1`, consumed state, duplicate inventory remaining `1`, a client claim of
+`999999` producing only server reward `1`, and a measured distance of `6.71`
+studs. Those canaries informed the production seven-assertion correlated StudioProof, which is now complete for the project showcase.
+
+These P0-P3 canaries are non-authoritative characterization tests. They do not
+emit a ProofBundle, do not count as CoreLoopBench passes, and will not become a
+parallel hard-coded verification system. Their successful kernel is reintegrated
+through the versioned mechanic-runner and StudioTestPlan boundaries.
+
 Implementation plan:
 
 - create the smallest `CollectFruit` place and keep sell/upgrade as contract-level follow-ons until the authority boundary is proven;
 - consume `ProjectSemanticMap` as the static baseline and merge it with a live Studio DataModel view through an adapter;
 - use the Forge Studio Plugin as the product integration; built-in Studio MCP remains optional development/debugging infrastructure;
-- define Studio setup/actions/observations for one and two clients;
-- execute server-authority, duplicate-request, invalid-ID, distance, and state-transition assertions in real Studio;
+- define the versioned `StudioTestPlan` and `StudioRunController` boundary, with an explicit plugin-triggered Play Solo adapter as the M3 path;
+- execute valid collect, exact inventory `0 -> 1`, fruit unavailability, duplicate-request, invalid-ID, impossible-distance, and client-reward-spoof assertions through one real Studio server and client;
 - isolate test data and record Studio version/session/run metadata;
 - emit a proof report where Studio is the authoritative tier for engine/network assertions;
 - make commit conditional on the required assertion set.
@@ -132,14 +147,86 @@ Exit criteria: the same bounded mechanic that passed static verification passes 
 
 Concrete M3 acceptance criteria:
 
-- The source-installable `plugin/ForgeStudioPlugin.lua` pairs with `forge studio bridge` using a one-use, expiring token; authenticated messages require the session token.
-- A real plugin snapshot includes the live DataModel identity, relevant instances, scripts, remotes, attributes, and tags; the backend maps it through `mergeStudioObservation()` and recomputes canonical snapshot hashes.
+- The Rojo-built `plugin/ForgeStudioPlugin.rbxmx` automatically discovers the loopback bridge and exchanges an internal one-use credential; plugin messages require the resulting session token, while CLI bridge-control calls read their separate credential from an owner-only ephemeral discovery file.
+- A real plugin `ProjectObservation` includes the live DataModel identity, relevant instances, scripts, remotes, attributes, and tags; the backend maps it through `mergeStudioObservation()` and is the only component that creates canonical `ProjectSnapshot` hashes.
 - The plugin accepts only versioned, validated PatchSet operations, checks target/precondition identity, groups changes with `ChangeHistoryService`, and emits an explicit apply/reject result with a post-operation snapshot.
-- The real `examples/collect-fruit/studio` place runs the server/client harness through `StudioTestService` and produces correlated results for valid collect, inventory `0 -> 1`, fruit unavailability, duplicate rejection, spoofed ID rejection, impossible-distance rejection, and client reward spoof rejection.
+- The real `examples/collect-fruit/studio` place runs a temporary harness in one explicit `ExecutePlayModeAsync` action and produces correlated results for valid collect, inventory `0 -> 1`, fruit unavailability, duplicate rejection, spoofed ID rejection, impossible-distance rejection, and client reward spoof rejection.
+- Arming and execution are separate. `forge studio verify` patches, gates, and arms the run; it never launches Studio. The creator selects **Verify in Studio** in the plugin. The edit-mode root plugin then owns the yielding Play Solo request, and the sole server harness emits one structured JSON string directly through `EndTest(JSON)`. Output is not a protocol message. The plugin and backend independently validate the envelope before acceptance.
+- The bridge process is explicitly user-owned: `forge studio bridge` is started once, while both the plugin and `forge studio verify` discover and attach to its loopback channels automatically. Neither launches a competing listener or asks the creator to copy a token. Disconnect pauses plugin discovery; Connect resumes it with a fresh internal pairing exchange.
 - A `ProofBundle` is verified only when every required assertion result is present, authoritative, correlated to the plan/run/snapshots, and passing; incomplete or failed Studio runs remain explicit and preservable.
 - A faulted or stale transaction is rejected or canceled, and no mock bridge, MCP-only run, pure Luau run, or successful HTTP response can satisfy the Studio gate.
 
-Current M3 status: protocol, loopback bridge, pairing, semantic observation adapter, typed plugin operations, ChangeHistory transaction boundary, test-plan schema, real Studio fixture, and proof assembly are implemented and unit-tested. The authoritative acceptance run is still pending because this workspace has not executed Roblox Studio with the installed plugin/place.
+Current M3 status: protocol v7, authenticated pair/unpair and loopback control,
+complete observations, typed patching, explicit arm/run separation, proof
+assembly, and local tests are implemented. M3-P0 is empirically green for both
+Run and Play server return values. Forge now uses the canary-proven direct
+result shape and no longer passes `timeoutSeconds` as a test argument. The
+abandoned multiplayer adapter spawned separate Studio workers and remains
+removed. The core-three canary and all three required safe production runs have
+passed. The real client-controlled-reward run is now also green as a rejection:
+M2 reported the critical authority flow, CF-007 demonstrated its runtime
+consequence, the ProofBundle was rejected, and the inverse-backed rollback
+restored the exact starting live revision. A fresh safe PatchSet then passed
+static, M2, and all seven Studio assertions and produced a new verified
+ProofBundle. A user-stopped real Studio run now persists as an explicit
+non-authoritative `PLAYTEST_INTERRUPTED` incomplete result. M3 is complete for
+the showcase; remaining interruption tests are post-showcase hardening.
+
+Real acceptance progress: **safe runs 3/3 verified.** Each run produced seven
+authoritative passes, committed its transaction, and persisted a distinct
+ProofBundle and BuildTrace linked to fresh run/session/correlation identities.
+The exact evidence ledger is in `docs/research/m3-real-studio-runs.md`. M3 is
+closed for the showcase, with its production-hardening boundary documented.
+
+## M3.25 — Prompt-to-proof generation
+
+`forge build examples/collect-fruit/generated-seed --prompt "..."` uses one
+strict OpenRouter structured-output call for `IntentDraft`; Forge then compiles
+the security-sensitive CollectFruit contract and a second strict call may
+propose exactly two source replacements. Forge fills all PatchSet preconditions
+and rejects unsupported paths, source capabilities, and policy violations. A
+candidate is materialized under private local run state and must pass official
+Luau plus M2 before it can attach to Studio.
+
+`forge build ... --studio` sends that prevalidated typed PatchSet through the
+existing M3 transaction and correlated evidence path. It does not alter plugin,
+harness, evidence, or ProofBundle semantics. M3.25 requires an
+OpenRouter-authored candidate to pass all seven real Studio assertions without
+manual source edits, followed by a fresh repeat run.
+
+Current correction result: the exact first Luna proposal from
+`generation_65a285b6-1b69-4e59-8851-cabc2857e056` is preserved unchanged as
+`examples/collect-fruit/regressions/luna-first-pass`. Reverification reconstructs
+the same PatchSet ID. Official syntax and Roblox-aware type analysis pass, which
+removes the historical host-environment false positives. M2 now binds the
+RemoteEvent ABI by argument position and semantic role and does not demand
+inapplicable ownership checks. The candidate is still correctly rejected for
+one genuine model defect: its server distance threshold is `12`, while the
+Forge-owned implementation interface requires exactly `20`. It is therefore
+not eligible for StudioProof. No replacement model candidate or deterministic
+complete mechanic implementation was generated.
+
+The next experiment is implemented as `forge candidate repair`. It performs
+one schema-constrained repair call against the immutable regression, with no
+intent call and no fresh initial proposal. The command records source
+generation/attempt/trace/response/PatchSet identities, compiles complete repair
+context, writes a new candidate outside both regression and seed, runs local
+gates, and emits a content-hashed candidate artifact. It never connects to
+Studio. A separate `forge candidate studio <artifact>` command revalidates the
+sealed source, seed preconditions, interface linkage, and current local gate,
+then reuses the existing M3 path without another model call. A rejected or
+modified artifact cannot enter StudioProof.
+
+M3.25 exit evidence: Luna made one schema-constrained repair call against the
+immutable first-pass regression. Forge sealed candidate
+`candidate_repair_f3e69e1e-2067-432e-8b3b-0f2c86a3964f` as artifact hash
+`fecd5adfe0fcb4392b5e8953186ac213676c6670c104f2e0d4a175ccd4bb7d63`
+and PatchSet `patch_generated_f3213dc3e71fe0050d4e19a2`. Two fresh real
+Studio runs with `collect-fruit-v7` passed all seven correlated assertions and
+committed. The final content-identified evidence is ProofBundle
+`proof_932e3d0abd04b04894b38e73`, linked to accepted BuildTrace
+`trace_596ab00b-5087-449b-8e33-a0ae0f5aee2e`. No manual candidate source edit
+or second model call occurred between repair and StudioProof.
 
 ## M3.5 — Context and capsule promotion
 

@@ -1,8 +1,8 @@
-import { contentHash, stableJson, type MechanicContract, type PatchSet, type VerificationIssue } from "../../contracts/src/index.js";
+import { contentHash, stableJson, type MechanicContract, type MechanicImplementationSpec, type PatchSet, type VerificationIssue } from "../../contracts/src/index.js";
 import { affectedVerificationCone, canonicalProjectSemanticMap, type ProjectSemanticMap } from "../../semantic-map/src/index.js";
 
 export type ContextPriority = 0 | 1 | 2 | 3 | 4;
-export type ContextItemType = "mechanic_contract" | "verification_issue" | "requested_change" | "source" | "semantic_map" | "project_memory" | "retrieved_knowledge";
+export type ContextItemType = "mechanic_contract" | "mechanic_implementation_spec" | "generation_policy" | "verification_issue" | "requested_change" | "source" | "semantic_map" | "project_memory" | "retrieved_knowledge";
 
 export interface ContextItem {
   kind: "ContextItem";
@@ -23,9 +23,13 @@ export interface ContextItem {
 export interface ContextCompilationRequest {
   semanticMap: ProjectSemanticMap;
   mechanicContract: MechanicContract;
+  mechanicImplementationSpec: MechanicImplementationSpec;
   verificationIssues: VerificationIssue[];
   requestedChange?: string;
   patchSet?: PatchSet;
+  generationPolicy?: { allowedPaths: string[]; maxFiles: number; maxAddedLines: number; maxRemovedLines: number; maxSourceBytes: number };
+  /** Explicit seed allow-list. Omitted means normal repair context selection. */
+  allowedSourcePaths?: string[];
 }
 
 export interface CompiledContext {
@@ -50,11 +54,15 @@ export class DeterministicContextCompiler implements ContextCompiler {
     const cone = affectedVerificationCone(input.semanticMap, changedPaths);
     const items: ContextItem[] = [];
     items.push(makeItem("mechanic_contract", `contract:${input.mechanicContract.id}`, 0, "MechanicContract is the non-evictable semantic target.", input.mechanicContract.id, stableJson(input.mechanicContract), true));
+    items.push(makeItem("mechanic_implementation_spec", `implementation:${input.mechanicImplementationSpec.id}`, 0, "MechanicImplementationSpec is the Forge-owned, non-evictable project ABI and state boundary.", input.mechanicImplementationSpec.id, stableJson(input.mechanicImplementationSpec), true));
+    if (input.generationPolicy) items.push(makeItem("generation_policy", "generation-policy", 0, "Generation policy is a non-evictable hard boundary.", input.mechanicContract.id, stableJson(input.generationPolicy), true));
     for (const issue of [...input.verificationIssues].sort((left, right) => left.id.localeCompare(right.id))) items.push(makeItem("verification_issue", `issue:${issue.id}`, 0, "Current verification failure is required to guide a repair.", issue.path, stableJson(issue), true));
     if (input.requestedChange) items.push(makeItem("requested_change", "request:change", 0, "The exact requested change is required context.", input.mechanicContract.id, input.requestedChange, true));
     if (input.patchSet) items.push(makeItem("requested_change", `patch:${input.patchSet.id}`, 0, "The bounded PatchSet is required to explain the candidate change.", input.patchSet.mechanicContractId, stableJson({ id: input.patchSet.id, operations: input.patchSet.operations, expectedEffects: input.patchSet.expectedEffects }), true));
 
-    for (const path of cone.affectedScriptPaths.length > 0 ? cone.affectedScriptPaths : changedPaths) {
+    const candidatePaths = cone.affectedScriptPaths.length > 0 ? cone.affectedScriptPaths : changedPaths;
+    const selectedPaths = input.allowedSourcePaths ? candidatePaths.filter((path) => input.allowedSourcePaths!.includes(path)) : candidatePaths;
+    for (const path of selectedPaths) {
       const source = input.semanticMap.files.find((file) => file.path === path);
       if (source) items.push(makeItem("source", `source:${source.path}`, 1, "Script is directly changed or reachable from the affected verification cone.", source.path, source.source, true));
     }

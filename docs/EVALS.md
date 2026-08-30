@@ -1,7 +1,41 @@
 # CoreLoopBench and Verification Evals
 
-Status: M1, M1.5, M2, and M2.5 complete; M3 Studio Plugin + StudioProof in progress
+Status: M1, M1.5, M2, M2.5, M3, and M3.25 complete; M3.5 next
 Purpose: executable evidence for verified Roblox mechanic generation
+
+## M3.25 acceptance addition
+
+The initial prompt-to-proof case starts from a clean CollectFruit seed and
+records strict intent/proposal validation, policy rejection, static/M2 result,
+and PatchSet hash before using the existing seven M3 runtime assertions. Test
+doubles can exercise compilation, but acceptance requires an OpenRouter-produced
+candidate to pass the real Studio gate twice from fresh seeds without manual
+source edits. That condition is met by two authoritative `collect-fruit-v7`
+runs of PatchSet `patch_generated_f3213dc3e71fe0050d4e19a2`; the final run is
+captured by ProofBundle `proof_932e3d0abd04b04894b38e73` and BuildTrace
+`trace_596ab00b-5087-449b-8e33-a0ae0f5aee2e`.
+
+The exact first Luna candidate is also a permanent diagnosis regression. The
+fixture must retain byte-identical model-authored source and the historical run,
+attempt, response, PatchSet, and trace references. Its corrected local result is:
+
+- official Luau syntax: pass;
+- Roblox-aware type analysis: pass;
+- remote path and positional ABI: pass;
+- applicable validation/authority checks: pass;
+- exact implementation constant: fail (`max_interaction_distance` observed
+  `12`, required `20`).
+
+This case proves both sides of the gate: verifier/tooling false positives must
+be removed, while a genuine model-authored interface divergence must remain a
+blocking rejection. It is not eligible for StudioProof and must not be repaired
+by substituting a deterministic complete CollectFruit implementation.
+
+The repair-only regression requires exactly one provider request whose purpose
+is `repair`; zero intent or initial-patch requests are allowed. Tests require
+the immutable source hashes to survive both a successful repair and a repair
+that retains the defect. The repaired output must be outside the seed and
+regression, and a failed repair must remain rejected before Studio.
 
 ## 1. Evaluation philosophy
 
@@ -121,6 +155,12 @@ Each result must record:
 
 Static and preflight runs with the same inputs must be byte-stable after removing explicitly excluded timestamps. Studio results should be reproducible under a pinned place, seed, version, and isolated data configuration; if they are not, the result is marked nondeterministic and cannot be used as a hard verified gate without further investigation.
 
+For a retained model repair, generation and Studio execution are separate
+observations. The repair eval records exactly one model call and the immutable
+candidate artifact. The Studio eval must consume that artifact with zero model
+calls, reject any changed seed/output source or rejected local report, rerun the
+current local gate, and preserve the exact PatchSet identity in StudioProof.
+
 ## 7. Fault injection
 
 Faults are real fixture mutations, not fake UI states. Initial fault classes:
@@ -154,14 +194,14 @@ CI must fail for critical security regressions, reintroduced promoted exploits, 
 1. M1: validate manifests and run static/semantic checks on local fixtures.
 2. M2: add deterministic repair and static/semantic ProofBundle evidence for CLB-001 and CLB-009; preflight remains an explicit follow-on layer.
 3. M2.5: use canonical semantic maps, affected cones, and explainable context selection for CLB-001 and CLB-009 without narrowing correctness checks unsafely.
-4. M3: run Studio assertions through the Forge Plugin for CLB-001, CLB-002, CLB-003, CLB-005, CLB-006, CLB-008, and CLB-010.
-5. M4: complete all ten cases, add hidden assertions, and compare model adapters.
+4. M3: prove the full authoritative Studio pipeline on CLB-001 only, including its real client-controlled-reward fault and deterministic repair.
+5. M4: make all ten cases executable, add hidden assertions, and compare model adapters.
 
 The first benchmark report should include failures and tool-health errors, not only a success percentage. “Could not run” is operationally different from “ran and failed.”
 
 ## 10. Open evaluation questions
 
-- What exact Studio harness can expose server/client state without making test hooks themselves authoritative?
+- Which post-CLB-001 mechanics need more than one simulated client in their Studio test plan?
 - How should nondeterministic physics assertions be bounded and repeated?
 - Which hidden assertions can be safely public in a candidate repository?
 - What is the minimal exploit corpus that distinguishes semantic verification from pattern matching?

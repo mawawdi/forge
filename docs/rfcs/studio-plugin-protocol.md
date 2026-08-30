@@ -1,157 +1,178 @@
-# RFC: Forge Studio Plugin Protocol
+# RFC: Forge Studio Plugin Protocol v7
 
-Status: M3 foundation implemented; authoritative Studio run pending
-Date: 2026-08-29
+Status: implemented; real-Studio M3 acceptance pending
+Date: 2026-08-30
 
 ## Decision
 
-The Forge Studio Plugin is the product-specific Studio boundary. It is a thin, privileged execution bridge that owns live DataModel inspection, bounded PatchSet execution, ChangeHistory transactions, playtest control, and evidence forwarding. The backend remains responsible for intent, contracts, patch creation, test-plan selection, verification policy, repair, and proof assembly.
-
-Roblox Studio MCP is not the Forge product interface. It remains useful for development, debugging, and comparative tooling. Roblox's current built-in MCP exposes generic DataModel exploration, script operations, Luau execution, play state, and input simulation, but Forge must own its contract, transaction, assertion, and evidence semantics. The archived Rust MCP server is reference material only.
-
-## Transport
-
-M3 uses a replaceable local HTTP polling transport:
+Forge has one Studio protocol and one M3 lifecycle. Protocol v7 replaces v6
+outright. An edit-mode root `Script` plugin owns inspection, typed mutation,
+transaction state, and one explicit creator-triggered Play Solo action. Arming
+never starts Studio. Manual F5 handoff, multiplayer worker processes, test-mode
+plugin relays, Output evidence, and old protocol readers do not exist.
 
 ```text
-Forge CLI/backend
-  └── StudioBridgeServer: 127.0.0.1:<port>
-        ├── POST /v1/message
-        ├── GET  /v1/poll?sessionId=&sessionToken=
-        └── GET  /health
-              ▲
-              │ HttpService:RequestAsync
-       Forge Studio Plugin
+MechanicContract -> StudioTestPlan -> ExecuteAssertionPlan
+  -> READY / creator selects Verify in Studio
+  -> temporary server/client harness
+  -> ExecutePlayModeAsync({ forgeStudioProofRunId })
+  -> sole server EndTest(JSON envelope)
+  -> StudioTestResult -> StudioProofRun -> ProofBundle
 ```
 
-Polling is the smallest reliable candidate transport supported by the plugin APIs. It avoids building a WebSocket or MCP server, works with a local bridge, and keeps protocol semantics independent of infrastructure. Plugin HTTP access may require a user permission prompt for the configured address; production deployment must use an explicit allowlist, TLS/relay policy, and stronger authentication. The demo must not treat an HTTP response as proof until its message, session, project, request, and snapshot checks pass.
+Normal Studio Play Solo runs distinct client and server simulations in one
+Studio window. The server drives the proof and is the sole `EndTest` owner; the
+client participates through replicated boundaries. The server-return value is
+the authority channel; Output is neither transport nor proof.
 
-The session token is sent as `X-Forge-Session-Token` on authenticated POST messages and as the `sessionToken` query parameter for polling. Session IDs are routing identifiers, not credentials.
+## Transport and sessions
 
-The transport boundary is:
+The user owns one loopback bridge process. The plugin discovers its one-use
+pairing credential directly from that bridge, while the bridge writes its
+control credential to `.forge/studio-bridge.json` with owner-only permissions.
+Verification reads that ephemeral file and never starts a competing listener.
+Tokens are not printed, pasted, persisted by the plugin, or accepted as normal
+CLI arguments.
 
-```ts
-interface StudioTransport {
-  send(message: BackendToPluginMessage): Promise<void>;
-  subscribe(handler: (message: PluginToBackendMessage) => void | Promise<void>): () => void;
-}
+```text
+Verifier -> authenticated /v1/command -> bridge -> plugin polling
+Verifier <- authenticated /v1/events  <- bridge <- plugin messages
 ```
 
-The implementation is `StudioBridgeServer` in `packages/studio-bridge`. A future relay or native transport can implement the same interface without changing protocol or proof objects.
+Session secrets travel only in request headers, never in poll URLs.
 
-## Message contract
+Pairing still uses a one-use expiring token internally. Every discovery request
+receives an independent bounded grant, so concurrent Studio windows cannot
+steal one global pairing slot. It is fetched over the fixed `127.0.0.1`
+transport and immediately exchanged; the widget never exposes it. Published
+places are session-keyed by universe/place identity. Unpublished local places
+have zero engine IDs and are therefore keyed by their file/DataModel name rather
+than all collapsing into one project. A verifier fails explicitly when multiple
+distinct Studio projects are connected instead of selecting one arbitrarily.
+`PairProject` includes protocol version,
+plugin/Studio versions, project identity, and required capabilities. Missing
+`studio_play_mode`, SHA-256, stable identity, typed patch, transaction,
+snapshot, or polling capability rejects pairing. An authenticated
+`UnpairProject` removes the bridge session immediately, so a verifier cannot
+attach to a locally abandoned session. **Disconnect** pauses plugin discovery;
+**Connect** resumes it and obtains a fresh one-use credential automatically.
 
-Every message is a discriminated, versioned envelope:
+Auto-discovery deliberately trusts processes on the creator's local machine.
+The bridge refuses non-loopback binding. Backend control endpoints still require
+the random credential stored in the owner-only discovery file, and all plugin
+messages still require the per-session token returned by pairing.
+
+Message IDs are idempotency keys. The bridge bounds retained events and rejects
+expired cursors. The plugin uses adaptive polling, explicit degraded/recovered
+states, and a bounded FIFO outbox for proof lifecycle/result messages. A 401
+cancels local session/transaction state; a transient outage retries without
+reordering the atomic result and stop event.
 
 ```ts
 interface StudioProtocolMessage {
   kind: "StudioProtocolMessage";
-  schemaVersion: 1;
+  schemaVersion: 7;
   direction: "plugin_to_backend" | "backend_to_plugin";
   type: string;
   messageId: string;
   requestId?: string;
-  correlationId?: string;
   sessionId?: string;
   sentAt: string;
-  payload: unknown; // narrowed by type-specific union member at runtime
+  payload: unknown;
 }
 ```
 
-The implementation provides typed union members for:
+## Snapshots and live identity
 
-- plugin → backend: `PluginHello`, `PairProject`, `ProjectConnected`, `ProjectSnapshot`, `ProjectDelta`, `PatchApplied`, `PatchRejected`, `PlaytestStarted`, `PlaytestStopped`, `AssertionResult`, `RuntimeEvidence`, `StudioOutput`, `PluginError`, `Heartbeat`;
-- backend → plugin: `PairProject`, `PairAccepted`, `PairRejected`, `RequestSnapshot`, `ApplyPatchSet`, `BeginTransaction`, `CommitTransaction`, `RollbackTransaction`, `StartPlaytest`, `StopPlaytest`, `ExecuteAssertionPlan`, `RequestRuntimeState`.
+`ProjectObservation` carries a complete `StudioSnapshotObservation` plus a
+`StudioRevision`. It does not carry or fabricate a semantic `ProjectSnapshot`.
+The backend validates the observation and maps it through the semantic adapter;
+only that backend mapping creates the canonical `ProjectSnapshot` used by the
+plan and proof. Properties and attributes use sorted `{name, value}` entry
+arrays on the wire, avoiding Roblox JSON's ambiguous encoding of an empty Lua
+table as `[]`. The live observation hash is derived from a deterministic,
+length-delimited field encoding. It excludes `capturedAt`, so an unchanged place
+has an unchanged revision, and includes stable target identity plus relevant
+class/path/property/attribute/tag/script/remote state. Large JSON observations
+are transported in ordered, bounded, SHA-256-checked chunks without source
+truncation.
 
-Runtime validators reject unknown message directions/types, malformed envelopes, and oversized HTTP bodies. Correlation and request IDs are mandatory for operations initiated by the backend. Messages from the backend are untrusted by the plugin until schema, session, project, operation, and snapshot preconditions pass.
+The plugin assigns `_forgeStableId` to eligible mutable instances in a separate
+visible ChangeHistory recording and repairs collisions. Stable IDs are mutation
+handles, not semantic identity: the backend derives semantic Instance IDs from
+path/class and removes Forge attributes before canonical semantic hashing.
 
-## Pairing
+## Patch and transaction boundary
 
-The candidate pairing flow is deliberately secure enough for a local demo without pretending to be production auth:
+M3 permits only bounded `replace_text` and `create_script` operations. Every
+operation checks stable ID, class, path metadata, exact source/before state, and
+the current `StudioRevision`. There is no arbitrary Luau execution, generic
+instance mutation, asset import, or unrestricted filesystem/network action.
 
-1. `forge studio bridge` binds to loopback and prints a one-use, ten-minute pairing token.
-2. The user pastes the token into the plugin widget.
-3. The plugin sends `PairProject` with place/universe identity, plugin version, and Studio version.
-4. The bridge consumes the token, creates a random session ID and session token, and queues `PairAccepted`.
-5. The plugin persists only the scoped session values through plugin settings and starts polling.
-6. The plugin sends a live `ProjectSnapshot` observation; the backend associates it with the Forge project, session, plugin version, and canonical snapshot computed by the adapter.
+Only one transaction may be active. Forge holds a ChangeHistory recording
+through verification. On rejection it requests cancellation and always applies
+the typed inverse journal in reverse order. The inverse is idempotent when
+cancellation already restored the state and is required because Studio may
+report cancellation success without restoring `ScriptEditorService` edits.
+Forge then captures a complete observation and requires its live revision to
+equal the transaction's starting revision exactly. ChangeHistory is an undo
+facility, not database atomicity. Cancellation/inverse uncertainty, revision
+mismatch, disconnect, timeout, or incomplete evidence can never become a
+verified commit.
 
-The current plugin reports Studio version as `unknown` until a stable, supported version API is selected. It never embeds a secret. Production pairing needs authenticated user/project identity, token revocation, TLS, expiry enforcement across restarts, and audit policy.
+## StudioProof authority and correlation
 
-## Live semantic map
+The plugin generates a fresh nonce after validating the session, project,
+transaction, revision, harness ID/version, and exact seven assertion IDs. The
+raw nonce remains only in ephemeral armed memory until the creator starts the
+run, then is embedded only in the temporary server script.
+`AssertionPlanAccepted` exposes its SHA-256 commitment. Immediately before Play
+Solo, the plugin captures a fresh observation and rejects a changed revision.
 
-The plugin emits `StudioSnapshotObservation`, a wire observation rather than a second domain model. It contains only M3-relevant hierarchy, class/name/path, selected primitive properties, attributes, tags, remotes, and bounded script source/hash data. The backend maps this observation through the existing `ProjectSemanticMap` adapter boundary and recomputes canonical `ProjectSnapshot` hashes. FNV is used only as a plugin-local stale-observation token; it is never an authoritative Forge hash.
+The client harness can invoke only `ReplicatedStorage.Remotes.CollectFruit`.
+The server positions the real player, drives client requests over a play-only
+relay, reads authoritative player/fruit state and actual runtime positions, and
+returns all seven results in one JSON string directly through `EndTest`:
 
-Initial synchronization is snapshot-based:
+- valid collection;
+- exact inventory `0 -> 1`;
+- fruit unavailable;
+- duplicate rejected;
+- nonexistent fruit rejected;
+- impossible runtime distance rejected;
+- client reward spoof rejected.
 
-```text
-snapshot before
-  -> typed transaction / PatchSet
-  -> snapshot after
-  -> semantic diff
-```
+The plugin validates the returned run, plan, session, project snapshot,
+contract, nonce/commitment, and harness hash. The backend validates them again,
+requires exactly the planned unique assertion IDs, and requires start/result/
+stop ordering. A stale, copied, duplicate, late, unknown, wrong-project, or
+wrong-run result is rejected or leaves the proof incomplete.
 
-Real-time deltas are represented by `ProjectDelta` but are not required for M3. This makes correctness possible before reliable event streaming is proven.
+`StudioHarnessRunEnvelope.diagnostics` is the sole bounded diagnostics field.
+`StudioOutput` is not a v7 message type. A printed `CF-001 PASS` line has no
+verification meaning.
 
-## Patch and transaction semantics
+## Operational cleanup
 
-The plugin executes the existing `PatchSet` union. M3 adds typed Instance operations (`create_instance`, `delete_instance`, `set_property`, `set_attribute`, `move_instance`) while retaining M2's bounded source operations. It does not accept arbitrary source blobs outside a declared operation.
+Temporary server/client scripts are destroyed after success or failure and on
+abort/unpair/unload. One task owns the yielding Studio request and a deadline.
+Because Studio exposes no safe edit-plugin cancellation for an already-yielding
+Play Solo request, interruption or deadline expiry blocks that plugin runtime
+from starting a second proof and requires Stop plus a plugin reload.
+The server also has bounded client/readiness timeouts and returns `not_run`
+results plus diagnostics if infrastructure fails. The root plugin exits in any
+running DataModel, so user plugins loaded into server/client test contexts do
+not create duplicate widgets or sessions.
 
-Each operation returns `PatchOperationResult` with operation ID, target, status, optional before/after hashes, and an error. The plugin validates path/target existence, class preconditions, property/attribute preconditions, and transaction identity.
+## Deferred work
 
-Transactions use `ChangeHistoryService:TryBeginRecording()` and `FinishRecording()` with commit or cancel. Roblox documents this as the plugin mechanism for grouping plugin changes into undo/redo history. The guarantee is bounded: a committed recording is one Studio history unit and a canceled recording asks Studio to discard the recording. Forge must still take a post-operation snapshot and treat any mismatch as failure; it cannot claim database-style atomicity or guarantee rollback of external side effects, running code, network calls, or persistence.
+Screenshots/richer capture, stable identity across separately forked places,
+remote bridge relays, distributed Studio workers, and additional lifecycle
+adapters remain future work. Any adapter must preserve this same server-return
+evidence semantics.
 
-## StudioTestPlan and assertions
+## References
 
-`StudioTestPlan` in `packages/studio-proof` compiles one `MechanicContract` and `ProjectSnapshot` into typed setup, actors, actions, assertions, adversarial cases, cleanup, and plan version. The initial `collectFruitTestPlan()` produces seven assertions:
-
-1. valid collection succeeds;
-2. inventory increases by one;
-3. fruit becomes unavailable;
-4. duplicate request is rejected;
-5. nonexistent ID is rejected;
-6. impossible distance is rejected;
-7. client-supplied reward amount is rejected.
-
-`StudioAssertionResult` requires expected and observed values, evidence entries, duration, run/plan/assertion IDs, and an `authoritative` flag. A result is not a pass merely because a plugin command returned successfully. The plugin forwards only results emitted by the real place harness and correlates them to the active run and plan; if the harness is absent or incomplete, the proof collector remains `incomplete`.
-
-Roblox's `StudioTestService` provides plugin-secured play, run, and multiplayer test entry points, and current Studio testing supports up to eight simulated clients. `TestService` and `LogService` provide test result/output surfaces. The first real harness should use those APIs and a development-only test channel in the place, not a mocked runtime.
-
-## Proof and trace integration
-
-`attachStudioProof()` extends the existing `ProofBundle` with the Studio test-plan ID, run ID, before/after snapshot references, plugin/Studio versions, assertion result IDs, and authoritative status. It updates the existing `roblox_studio` check; it does not create a second evidence format.
-
-M3 Flight Recorder spans are reserved for:
-
-```text
-forge.studio.connect
-forge.studio.snapshot
-forge.studio.transaction.begin
-forge.studio.patch.apply
-forge.studio.start
-forge.studio.playtest
-forge.studio.action
-forge.studio.assert
-forge.studio.adversarial
-forge.studio.playtest.stop
-forge.studio.transaction.commit
-forge.studio.transaction.rollback
-```
-
-The trace taxonomy now contains these Studio spans. The current plugin/bridge foundation records the component/version boundary; wiring every span to a real run remains pending the first Studio session. Failed Studio runs retain their run/plan/snapshot references so they can later be promoted into CoreLoopBench without changing the historical result.
-
-## Real versus mocked boundary
-
-Real in this foundation: typed protocol validation, local pairing/session state, plugin DataModel traversal code, ChangeHistory API calls, plugin HTTP calls, PatchSet target checks, and the backend's proof-plan/bridge logic.
-
-Not yet executed here: a live Roblox place, an installed/running plugin session, a real Studio playtest, server/client interaction, TestService harness output, or authoritative CollectFruit assertion results. Until those are run, the M3 ProofBundle remains incomplete and no plugin observation is labeled authoritative.
-
-## References and limitations
-
-- [Roblox Plugin API](https://create.roblox.com/docs/reference/engine/classes/Plugin): toolbar and dock-widget surface.
-- [ScriptEditorService](https://create.roblox.com/docs/reference/engine/classes/ScriptEditorService): supported editor source access/update path.
-- [ChangeHistoryService](https://create.roblox.com/docs/reference/engine/classes/ChangeHistoryService/Undo): undo/redo recording boundary.
-- [StudioTestService](https://create.roblox.com/docs/reference/engine/classes/StudioTestService): plugin-controlled play/run/multiplayer tests.
-- [Studio testing modes](https://create.roblox.com/docs/studio/testing-modes): scripted testing and simulated clients.
-- [HttpService](https://create.roblox.com/docs/cloud-services/http-service): plugin HTTP access and user permission requirement.
-- [LogService](https://create.roblox.com/docs/reference/engine/classes/LogService): output/error observation surface.
+- [StudioTestService](https://create.roblox.com/docs/reference/engine/classes/StudioTestService)
+- [Studio testing modes](https://create.roblox.com/docs/studio/testing-modes)
+- [ChangeHistoryService](https://create.roblox.com/docs/reference/engine/classes/ChangeHistoryService)

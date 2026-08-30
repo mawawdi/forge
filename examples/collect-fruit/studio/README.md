@@ -1,17 +1,39 @@
 # CollectFruit Studio fixture
 
-This directory is a real Studio target for the M3 plugin path. It contains a minimal Rojo place tree, a server-authoritative `CollectFruit` mechanic, and a development-only harness that drives the seven assertions emitted by `collectFruitTestPlan()`.
+This is the real Studio target for M3. The saved place contains the production-
+shaped server-authoritative mechanic and client request boundary, but no Forge
+test context, test remotes, nonce, or permanent assertion harness.
 
-The companion `forge.fixture.json` is the static baseline used by Forge. The live adapter matches Studio script paths to this baseline by unique script name and execution context, then computes canonical hashes from observed source rather than trusting the plugin-local observation token.
-
-Build a place for manual Studio testing with:
+Build and open a fresh place:
 
 ```bash
-rojo build examples/collect-fruit/studio/default.project.json --output /tmp/ForgeCollectFruit.rbxlx
+rojo build examples/collect-fruit/studio/default.project.json \
+  --output /tmp/ForgeCollectFruit.rbxlx
+open /tmp/ForgeCollectFruit.rbxlx
 ```
 
-Open the resulting place in Roblox Studio, install the local plugin from `/Users/mawawdi/Desktop/forge/plugin/ForgeStudioPlugin.lua`, start `node bin/forge.js studio bridge`, and pair the plugin through its widget.
+Build/install the root plugin script as described in `plugin/README.md`, start
+the bridge yourself, pair the widget, then run:
 
-The harness is intentionally development-only. It uses `ForgeTestControl`/`ForgeTestReply` to ask the local test client to issue requests, while all reward, identity, consumed-state, and distance decisions remain in `CollectFruit.server.luau`. The plugin forwards `FORGE_ASSERTION_RESULT:` log records and ends the playtest when it sees `FORGE_TEST_COMPLETE:`.
+```bash
+node bin/forge.js studio verify examples/collect-fruit/studio \
+  --timeout-ms 180000
+```
 
-This fixture is not a fake Roblox runtime and is not proof until the place is actually run in Studio through the paired plugin.
+Forge applies the bounded patch, runs static and semantic gates, then arms the
+exact run without launching Studio. When the verifier prints READY, select
+**Run StudioProof** in the Forge widget. The plugin takes a fresh observation,
+injects temporary scripts, and starts one Play Solo session in the current
+Studio window. The server executes all seven real assertions and returns one
+correlated JSON envelope directly through `StudioTestService:EndTest(JSON)`.
+Do not press F5; it is not the armed-run trigger.
+
+Studio Output is diagnostic only and is not transported as proof. Verification
+requires the atomic server envelope to match the active run, plan, session,
+project, snapshot, contract, nonce commitment, harness version/hash, and exact
+assertion set.
+
+For the explicit M3 client-controlled-reward fault demonstration, use a fresh
+Rojo-built place and add `--fault-client-reward` to the verifier command. The
+CLI must print `INTENTIONAL FAULT MODE: CLIENT_CONTROLLED_REWARD` before the
+bridge attaches. A filename containing `fault` has no behavioral meaning.

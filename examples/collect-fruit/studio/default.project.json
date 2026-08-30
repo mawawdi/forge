@@ -6,21 +6,18 @@
       "$className": "ReplicatedStorage",
       "Remotes": {
         "$className": "Folder",
-        "CollectFruit": { "$className": "RemoteEvent" },
-        "ForgeTestControl": { "$className": "RemoteEvent" },
-        "ForgeTestReply": { "$className": "RemoteEvent" }
+        "CollectFruit": { "$className": "RemoteEvent" }
       }
     },
     "ServerScriptService": {
       "$className": "ServerScriptService",
-      "CollectFruit.server.luau": { "$path": "src/server/CollectFruit.server.luau" },
-      "ForgeTestHarness.server.luau": { "$path": "src/server/ForgeTestHarness.server.luau" }
+      "CollectFruit.server.luau": { "$path": "src/server/CollectFruit.server.luau", "$properties": { "RunContext": "Server" } }
     },
     "StarterPlayer": {
       "$className": "StarterPlayer",
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",
-        "ForgeTestClient.client.luau": { "$path": "src/client/ForgeTestClient.client.luau" }
+        "CollectFruitClient.client.luau": { "$path": "src/client/CollectFruitClient.client.luau" }
       }
     },
     "Workspace": {

@@ -106,6 +106,18 @@ M1 traces support **semantic reproduction**: a reviewer with a matching project 
 
 Raw project source, raw prompt content, credentials, and creator identity are not persisted in trace events by default. Store content hashes, relative artifact references, normalized issue metadata, and explicit version identifiers instead. Promotion must copy only the minimized data needed for a reproducible regression fixture.
 
+For M3.25 model generation, traces record configured provider/model and a
+configuration hash, call count, known usage fields (or `null` when absent),
+context summary, contract/PatchSet references, and verifier/Studio outcomes.
+Validated raw proposals and generated source stay only in private local
+generation-run artifacts and are never copied into the trace.
+
+Candidate regression reverification creates a new trace that references the
+historical generation run, attempt, model-response hash, contract, and exact
+reconstructed PatchSet. The historical trace is immutable. A corrected verdict
+records the current toolchain and rule set; it never overwrites or relabels the
+original observed failure.
+
 ## Promotion to CoreLoopBench
 
 Promotion is designed now and implemented after the patch/Studio vertical slice.

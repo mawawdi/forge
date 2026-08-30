@@ -19,7 +19,10 @@ export async function createCollectFruitRepair(projectRoot: string, contract: Me
   const semanticMap = await buildSemanticMap(root, manifest);
   const mapped = semanticMap.remoteFlows.find((candidate) => candidate.declaration.name === contract.name);
   if (!mapped?.serverEvidence) throw new Error(`No repairable server mutation was found for ${contract.name}`);
-  const inputName = flow.clientInput.name;
+  const input = flow.clientInputs[0];
+  if (!input) throw new Error(`No client input is declared for ${contract.name}`);
+  const inputName = mapped.serverEvidence.parameters.find((parameter) => parameter.position === input.position)?.name;
+  if (!inputName) throw new Error(`No server parameter is bound to ${input.role} at position ${input.position}`);
   if (!new RegExp(`\\b${escapeRegExp(inputName)}\\b`).test(mapped.serverEvidence.mutationExpression)) throw new Error(`No client-controlled reward expression was found for ${contract.name}`);
 
   const before = mapped.server.source;

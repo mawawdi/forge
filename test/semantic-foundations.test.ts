@@ -1,12 +1,13 @@
 import { deepStrictEqual, strict as assert } from "node:assert";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { test } from "node:test";
 import { assertBuildTrace, assertFixtureManifest, assertMechanicContract, assertTrajectoryEvent, contentHash, type BuildOutcome, type ForgeFixtureManifest, type MechanicContract, type TrajectoryEvent } from "../packages/contracts/src/index.js";
 import { candidateCapsule, assertVerifiedMechanicCapsule } from "../packages/capsules/src/index.js";
 import { DeterministicContextCompiler, contextSummary } from "../packages/context-compiler/src/index.js";
 import { FlightRecorder } from "../packages/flight-recorder/src/index.js";
-import { affectedVerificationCone, assertProjectSemanticMap, assertProjectSnapshot, buildSemanticMap, canonicalProjectSemanticMap, createProjectSnapshot, mergeStudioObservation } from "../packages/semantic-map/src/index.js";
+import { affectedVerificationCone, assertProjectSemanticMap, assertProjectSnapshot, buildSemanticMap, canonicalProjectSemanticMap, compileMechanicImplementationSpec, createProjectSnapshot, mergeStudioObservation } from "../packages/semantic-map/src/index.js";
 import { verifyProject } from "../packages/verifier/src/index.js";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -31,25 +32,33 @@ test("ProjectSemanticMap and ProjectSnapshot are canonical, deterministic, and c
 
   const live = mergeStudioObservation(first, {
     kind: "StudioSnapshotObservation",
-    schemaVersion: 1,
+    schemaVersion: 2,
     project: { name: "Fruit Islands", placeId: 123, universeId: 456 },
     capturedAt: "2026-08-29T00:00:00.000Z",
-    instances: [{ path: "Workspace/Fruit", className: "Part", properties: { CanTouch: false }, attributes: { FruitType: "Apple", Consumed: true }, tags: ["collectible"] }],
-    scripts: [{ path: "src/server/CollectFruit.server.luau", executionContext: "server", sourceHash: "studio-source-token", source: first.files.find((file) => file.path.endsWith("CollectFruit.server.luau"))?.source ?? "" }],
+    instances: [{ stableId: "studio_fruit", path: "Workspace/Fruit", className: "Part", properties: [{ name: "CanTouch", value: false }], attributes: [{ name: "Consumed", value: true }, { name: "FruitType", value: "Apple" }], tags: ["collectible"] }],
+    scripts: [{ stableId: "studio_collect", path: "src/server/CollectFruit.server.luau", executionContext: "server", sourceHash: "studio-source-token", source: first.files.find((file) => file.path.endsWith("CollectFruit.server.luau"))?.source ?? "" }],
     remotes: [{ path: "ReplicatedStorage/Remotes/CollectFruit", name: "CollectFruit", className: "RemoteEvent", direction: "client_to_server" }]
   });
   assert.equal(live.instances.find((instance) => instance.path === "Workspace/Fruit")?.properties.CanTouch, false);
   assert.equal(live.instances.find((instance) => instance.path === "Workspace/Fruit")?.attributes.Consumed, true);
   assert.equal(live.scripts.find((script) => script.path.endsWith("CollectFruit.server.luau"))?.sourceHash, contentHash(first.files.find((file) => file.path.endsWith("CollectFruit.server.luau"))?.source ?? ""));
   assert.notEqual(createProjectSnapshot(live).projectSemanticHash, createProjectSnapshot(first).projectSemanticHash);
+  const reidentifiedLive = mergeStudioObservation(first, {
+    kind: "StudioSnapshotObservation", schemaVersion: 2, project: { name: "Fruit Islands", placeId: 123, universeId: 456 }, capturedAt: "2026-08-29T00:00:01.000Z",
+    instances: [{ stableId: "different_live_target_id", path: "Workspace/Fruit", className: "Part", properties: [{ name: "CanTouch", value: false }], attributes: [{ name: "Consumed", value: true }, { name: "FruitType", value: "Apple" }, { name: "_forgeStableId", value: "different_live_target_id" }], tags: ["collectible"] }],
+    scripts: [{ stableId: "different_script_target_id", path: "src/server/CollectFruit.server.luau", executionContext: "server", sourceHash: "different-live-token", source: first.files.find((file) => file.path.endsWith("CollectFruit.server.luau"))?.source ?? "" }],
+    remotes: [{ path: "ReplicatedStorage/Remotes/CollectFruit", name: "CollectFruit", className: "RemoteEvent", direction: "client_to_server" }]
+  });
+  assert.equal(createProjectSnapshot(reidentifiedLive).projectSemanticHash, createProjectSnapshot(live).projectSemanticHash);
 
   const studioManifestValue: unknown = JSON.parse(await readFile(resolve(root, "examples/collect-fruit/studio/forge.fixture.json"), "utf8"));
   assertFixtureManifest(studioManifestValue);
   const studioMap = await buildSemanticMap(resolve(root, "examples/collect-fruit/studio"), studioManifestValue);
+  assert.match(studioMap.remoteFlows[0]?.serverEvidence?.mutationExpression ?? "", /Fruit42:GetAttribute\("Reward"\)/);
   const observedStudio = mergeStudioObservation(studioMap, {
-    kind: "StudioSnapshotObservation", schemaVersion: 1, project: { name: "ForgeCollectFruit", placeId: 0, universeId: 0 }, capturedAt: "2026-08-29T00:00:00.000Z",
+    kind: "StudioSnapshotObservation", schemaVersion: 2, project: { name: "ForgeCollectFruit", placeId: 0, universeId: 0 }, capturedAt: "2026-08-29T00:00:00.000Z",
     instances: [],
-    scripts: studioMap.files.map((file) => ({ path: "ServerScriptService/" + file.path.split("/").pop(), executionContext: file.executionContext, sourceHash: "local-token", source: file.source })),
+    scripts: studioMap.files.map((file, index) => ({ stableId: `studio_script_${index}`, path: "ServerScriptService/" + file.path.split("/").pop(), executionContext: file.executionContext, sourceHash: "local-token", source: file.source })),
     remotes: []
   });
   assert.equal(createProjectSnapshot(observedStudio).sourceHash, createProjectSnapshot(studioMap).sourceHash);
@@ -77,10 +86,13 @@ test("DeterministicContextCompiler selects relevant evidence with provenance", a
   const semanticMap = await buildSemanticMap(projectRoot, manifest);
   semanticMap.files.push({ path: "src/unrelated/Unrelated.luau", absolutePath: resolve(projectRoot, "src/unrelated/Unrelated.luau"), source: "return 42", executionContext: "shared" });
   const contract = await loadContract();
-  const report = await verifyProject(projectRoot, { traceDirectory: resolve(root, ".forge", "test-traces") });
+  const traceDirectory = await mkdtemp(resolve(tmpdir(), "forge-context-test-"));
+  const report = await verifyProject(projectRoot, { traceDirectory });
+  await rm(traceDirectory, { recursive: true, force: true });
   const compiler = new DeterministicContextCompiler();
-  const context = await compiler.compile({ semanticMap, mechanicContract: contract, verificationIssues: report.report.issues, requestedChange: "Make collection reward server-owned." });
-  const repeated = await compiler.compile({ semanticMap, mechanicContract: contract, verificationIssues: report.report.issues, requestedChange: "Make collection reward server-owned." });
+  const mechanicImplementationSpec = compileMechanicImplementationSpec(semanticMap, contract, { allowedPaths: ["src/server/CollectFruit.server.luau", "src/client/CollectFruit.client.luau"], allowedPatchOperations: ["replace_text"] });
+  const context = await compiler.compile({ semanticMap, mechanicContract: contract, mechanicImplementationSpec, verificationIssues: report.report.issues, requestedChange: "Make collection reward server-owned." });
+  const repeated = await compiler.compile({ semanticMap, mechanicContract: contract, mechanicImplementationSpec, verificationIssues: report.report.issues, requestedChange: "Make collection reward server-owned." });
   deepStrictEqual(context, repeated);
   assert.ok(context.items.find((item) => item.type === "mechanic_contract")?.required);
   assert.ok(context.items.find((item) => item.type === "verification_issue")?.required);
@@ -113,7 +125,7 @@ test("VerifiedMechanicCapsule requires authoritative provenance before verified 
     id: "capsule_collectible",
     version: "1.0.0",
     taxonomy: ["acquisition", "collectible"],
-    baseContract: { kind: "MechanicContract", schemaVersion: 1, id: "contract_collect_fruit", name: "CollectFruit" },
+    baseContract: { kind: "MechanicContract", schemaVersion: 2, id: "contract_collect_fruit", name: "CollectFruit" },
     parameterSchema: { inventoryField: { type: "string", required: true } },
     implementationStrategy: { kind: "adaptation_required", description: "Adapt the contract to project-specific world and inventory capabilities." },
     requiredProjectCapabilities: ["server_authority", "remote_event"],

@@ -8,6 +8,8 @@ export type Hash = string;
 export type Risk = "low" | "medium" | "high" | "critical";
 export type Authority = "client" | "server" | "shared" | "external";
 export type VerificationStatus = "pass" | "fail" | "not_run" | "unknown";
+export type RemoteValidationCategory = "type" | "value" | "context" | "permission" | "rate_limit" | "ownership";
+export type ValidationApplicability = "required" | "not_applicable";
 
 export interface GameIntent {
   kind: "GameIntent";
@@ -22,6 +24,63 @@ export interface GameIntent {
   referencedMechanics: string[];
   unresolvedQuestions: string[];
   source: { type: "creator_prompt"; createdAt: ISO8601 };
+}
+
+/**
+ * The only shape a model may use to describe a creator request. Forge assigns
+ * all durable IDs and security-relevant semantics after locally validating it.
+ */
+export interface IntentDraft {
+  kind: "IntentDraft";
+  schemaVersion: 1;
+  normalizedGoal: string;
+  audience: "novice_creator" | "experienced_creator" | "unknown";
+  genreSignals: string[];
+  desiredOutcomes: string[];
+  unresolvedQuestions: string[];
+  selectedMechanic: "CollectFruit";
+  coreLoop: {
+    title: string;
+    nodes: Array<{ id: string; label: string; category: CoreLoop["nodes"][number]["category"] }>;
+    edges: Array<{ from: string; to: string; condition?: string }>;
+    entryNodeId: string;
+  };
+}
+
+/** A model proposal is deliberately source-only; Forge supplies every precondition. */
+export interface ModelPatchProposal {
+  kind: "ModelPatchProposal";
+  schemaVersion: 1;
+  mechanicContractId: string;
+  rationale: string;
+  operations: Array<{ type: "replace_text"; path: RelativePath; after: string }>;
+}
+
+export interface GenerationAttempt {
+  kind: "GenerationAttempt";
+  schemaVersion: 1;
+  id: ID;
+  type: "initial" | "model_repair" | "deterministic_repair";
+  model?: { provider: string; name: string; requestHash: Hash; responseHash: Hash };
+  patchSetId?: ID;
+  verificationStatus: "verified" | "rejected" | "incomplete";
+  issueCodes: string[];
+}
+
+export interface GenerationRun {
+  kind: "GenerationRun";
+  schemaVersion: 1;
+  id: ID;
+  status: "verified" | "rejected" | "incomplete";
+  classification: "FIRST_PASS_VERIFIED" | "DETERMINISTICALLY_REPAIRED_VERIFIED" | "MODEL_REPAIRED_VERIFIED" | null;
+  gameIntentId?: ID;
+  coreLoopId?: ID;
+  mechanicContractId?: ID;
+  patchSetId?: ID;
+  attempts: GenerationAttempt[];
+  traceId?: ID;
+  proofBundleId?: ID;
+  generatedAt: ISO8601;
 }
 
 export interface CoreLoop {
@@ -45,7 +104,7 @@ export interface CoreLoop {
 
 export interface MechanicContract {
   kind: "MechanicContract";
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: ID;
   coreLoopId: ID;
   name: string;
@@ -54,8 +113,8 @@ export interface MechanicContract {
   postconditions: Array<{ id: ID; statement: string; authority: Authority }>;
   authorityModel: {
     stateOwner: Authority;
-    clientInputs: Array<{ name: string; type: string; trust: "untrusted" | "informational" }>;
-    serverValidations: Array<"type" | "value" | "context" | "permission" | "rate_limit" | "ownership">;
+    clientInputs: Array<{ position: number; role: string; type: string; trust: "untrusted" | "informational" }>;
+    validationRequirements: Array<{ category: RemoteValidationCategory; subjectRole: string; applicability: ValidationApplicability; rationale: string }>;
     stateMutations: Array<{ field: string; authority: Authority; operation: string }>;
   };
   persistentState: Array<{ field: string; type: string; owner: "server"; durability: "session" | "persistent" }>;
@@ -64,6 +123,42 @@ export interface MechanicContract {
   instrumentation: Array<{ event: string; fields: string[]; privacyClass: "none" | "project" | "creator_sensitive" }>;
   studioAssertions: ID[];
   risk: Risk;
+}
+
+/**
+ * Forge-owned project interface supplied to a model. It describes the exact
+ * ABI, state representation, and safety boundary without containing source or
+ * an implementation template.
+ */
+export interface MechanicImplementationSpec {
+  kind: "MechanicImplementationSpec";
+  schemaVersion: 1;
+  id: ID;
+  mechanicContractId: ID;
+  mechanicName: string;
+  remote: {
+    stableId: ID;
+    path: string;
+    className: "RemoteEvent" | "RemoteFunction";
+    direction: "client_to_server" | "server_to_client";
+    preserveExisting: boolean;
+  };
+  clientInputs: Array<{ position: number; role: string; type: string; trust: "untrusted" | "informational" }>;
+  serverArguments: Array<{ position: number; role: string; type: string; source: "roblox_server" | "client" }>;
+  stateBindings: Array<{
+    role: string;
+    subject: "player" | "target" | "world";
+    storage: "attribute" | "property" | "table" | "instance" | "tag";
+    name: string;
+    type: string;
+    authority: Authority;
+  }>;
+  constants: Array<{ role: string; type: "number" | "string" | "boolean"; value: string | number | boolean }>;
+  validationRequirements: Array<{ category: RemoteValidationCategory; subjectRole: string; applicability: ValidationApplicability; rationale: string }>;
+  postconditions: string[];
+  authorityInvariants: string[];
+  sourceTargets: Array<{ path: RelativePath; executionContext: "server" | "client" | "shared" }>;
+  allowedPatchOperations: Array<"replace_text" | "create_script">;
 }
 
 export interface PatchSet {
@@ -138,10 +233,16 @@ export interface TrajectoryEvent {
 
 export interface ProofBundle {
   kind: "ProofBundle";
-  schemaVersion: 1;
+  schemaVersion: 3;
   id: ID;
   projectHash: Hash;
-  patchSetId?: ID;
+  projectSnapshotBeforeHash: Hash;
+  projectSnapshotAfterHash: Hash;
+  mechanicContractId: ID;
+  mechanicContractHash: Hash;
+  patchSetId: ID;
+  patchSetHash: Hash;
+  buildTraceId?: ID;
   generatedAt: ISO8601;
   toolchain: Array<{ name: string; version: string; command: string; configHash: Hash }>;
   checks: Array<{ name: string; tier: "static" | "preflight" | "studio"; status: VerificationStatus; issueIds: ID[]; resultHash?: Hash }>;
@@ -149,12 +250,21 @@ export interface ProofBundle {
   assertions: Array<{ assertionId: ID; status: VerificationStatus; observed?: Record<string, string | number | boolean>; runId?: ID }>;
   studioProof?: {
     testPlanId: ID;
+    testPlanVersion: string;
     runId: ID;
-    beforeSnapshotHash: Hash;
-    afterSnapshotHash?: Hash;
+    proofRunHash: Hash;
+    correlationId: ID;
+    sessionId: ID;
+    projectId: ID;
+    mechanicContractHash: Hash;
+    harnessId: string;
+    harnessVersion: string;
+    harnessHash: Hash;
+    projectSnapshotHash: Hash;
     pluginVersion: string;
     studioVersion: string;
     assertionResultIds: ID[];
+    status: "pass" | "fail" | "incomplete";
     authoritative: boolean;
   };
   gate: { status: "verified" | "rejected" | "incomplete"; reasons: string[] };
@@ -237,7 +347,7 @@ export interface BuildOutcome {
   deterministicRepairs: number;
   modelRepairs: number;
   assertions: { total: number; passed: number };
-  modelUsage: { calls: number; inputTokens: number; outputTokens: number; costUsd: number };
+  modelUsage: { calls: number; inputTokens: number | null; outputTokens: number | null; costUsd: number | null };
   latencyMs: { total: number; projectSnapshot?: number; luau?: number; replication?: number; studio?: number };
   issueCounts: Record<"info" | "warning" | "error" | "critical", number>;
 }
@@ -265,6 +375,9 @@ export interface BuildTrace {
     mechanicContractId?: ID;
     patchSetId?: ID;
     benchmarkCaseId?: ID;
+    generationRunId?: ID;
+    generationAttemptId?: ID;
+    modelResponseHash?: Hash;
   };
   components: {
     toolchain: ComponentVersion[];
@@ -316,16 +429,24 @@ export interface TracePersistence {
 export interface RemoteFlowDeclaration {
   name: string;
   direction: "client_to_server" | "server_to_client";
+  remote: { stableId: ID; path: string; className: "RemoteEvent" | "RemoteFunction"; preserveExisting: boolean };
   clientScript: RelativePath;
   serverScript: RelativePath;
-  clientInput: { name: string; type: string };
-  serverValidations: Array<"type" | "value" | "context" | "permission" | "rate_limit" | "ownership">;
+  clientInputs: Array<{ position: number; role: string; type: string; trust: "untrusted" | "informational" }>;
+  serverArguments: Array<{ position: number; role: string; type: string; source: "roblox_server" | "client" }>;
+  validationRequirements: Array<{ category: RemoteValidationCategory; subjectRole: string; applicability: ValidationApplicability; rationale: string }>;
   mutation: { field: string; sourceExpression: string; authority: Authority };
+  implementation?: {
+    stateBindings: MechanicImplementationSpec["stateBindings"];
+    constants: MechanicImplementationSpec["constants"];
+    postconditions: string[];
+    authorityInvariants: string[];
+  };
 }
 
 export interface ForgeFixtureManifest {
   kind: "ForgeFixture";
-  schemaVersion: 1;
+  schemaVersion: 2;
   name: string;
   luauRoots: RelativePath[];
   remoteFlows: RemoteFlowDeclaration[];
@@ -381,8 +502,8 @@ export function assertTracePersistence(value: unknown): asserts value is TracePe
 }
 
 export function assertFixtureManifest(value: unknown): asserts value is ForgeFixtureManifest {
-  if (!isRecord(value) || value.kind !== "ForgeFixture" || value.schemaVersion !== 1 || typeof value.name !== "string") {
-    throw new Error("Invalid ForgeFixture manifest: expected schemaVersion 1");
+  if (!isRecord(value) || value.kind !== "ForgeFixture" || value.schemaVersion !== 2 || typeof value.name !== "string") {
+    throw new Error("Invalid ForgeFixture manifest: expected schemaVersion 2");
   }
   if (!Array.isArray(value.luauRoots) || !value.luauRoots.every((entry) => typeof entry === "string")) {
     throw new Error("Invalid ForgeFixture manifest: luauRoots must be string[]");
@@ -409,9 +530,22 @@ export function assertCoreLoop(value: unknown): asserts value is CoreLoop {
 }
 
 export function assertMechanicContract(value: unknown): asserts value is MechanicContract {
-  if (!isRecord(value) || value.kind !== "MechanicContract" || value.schemaVersion !== 1 || !isString(value.id) || !isString(value.coreLoopId) || !isString(value.name) || !isString(value.playerGoal) || !isArrayOfRecords(value.preconditions) || !isArrayOfRecords(value.postconditions) || !isRecord(value.authorityModel) || !isString(value.authorityModel.stateOwner) || !Array.isArray(value.authorityModel.clientInputs) || !Array.isArray(value.authorityModel.serverValidations) || !Array.isArray(value.authorityModel.stateMutations) || !Array.isArray(value.persistentState) || !Array.isArray(value.uiOutputs) || !Array.isArray(value.economyEffects) || !Array.isArray(value.instrumentation) || !Array.isArray(value.studioAssertions) || !isRisk(value.risk)) {
-    throw new Error("Invalid MechanicContract: expected schemaVersion 1");
+  if (!isRecord(value) || value.kind !== "MechanicContract" || value.schemaVersion !== 2 || !isString(value.id) || !isString(value.coreLoopId) || !isString(value.name) || !isString(value.playerGoal) || !isArrayOfRecords(value.preconditions) || !isArrayOfRecords(value.postconditions) || !isRecord(value.authorityModel) || !isString(value.authorityModel.stateOwner) || !Array.isArray(value.authorityModel.clientInputs) || !Array.isArray(value.authorityModel.validationRequirements) || !Array.isArray(value.authorityModel.stateMutations) || !Array.isArray(value.persistentState) || !Array.isArray(value.uiOutputs) || !Array.isArray(value.economyEffects) || !Array.isArray(value.instrumentation) || !Array.isArray(value.studioAssertions) || !isRisk(value.risk)) {
+    throw new Error("Invalid MechanicContract: expected schemaVersion 2");
   }
+  assertPositionalInputs(value.authorityModel.clientInputs, "MechanicContract client inputs");
+  assertValidationRequirements(value.authorityModel.validationRequirements, "MechanicContract validation requirements");
+}
+
+export function assertMechanicImplementationSpec(value: unknown): asserts value is MechanicImplementationSpec {
+  if (!isRecord(value) || value.kind !== "MechanicImplementationSpec" || value.schemaVersion !== 1 || !isString(value.id) || !isString(value.mechanicContractId) || !isString(value.mechanicName) || !isRecord(value.remote) || !isString(value.remote.stableId) || !isString(value.remote.path) || !["RemoteEvent", "RemoteFunction"].includes(String(value.remote.className)) || !["client_to_server", "server_to_client"].includes(String(value.remote.direction)) || typeof value.remote.preserveExisting !== "boolean" || !Array.isArray(value.clientInputs) || !Array.isArray(value.serverArguments) || !Array.isArray(value.stateBindings) || !Array.isArray(value.constants) || !Array.isArray(value.validationRequirements) || !Array.isArray(value.postconditions) || !Array.isArray(value.authorityInvariants) || !Array.isArray(value.sourceTargets) || !Array.isArray(value.allowedPatchOperations)) {
+    throw new Error("Invalid MechanicImplementationSpec");
+  }
+  assertPositionalInputs(value.clientInputs, "MechanicImplementationSpec client inputs");
+  assertServerArguments(value.serverArguments, "MechanicImplementationSpec server arguments");
+  assertValidationRequirements(value.validationRequirements, "MechanicImplementationSpec validation requirements");
+  if (!value.sourceTargets.every((target) => isRecord(target) && isString(target.path) && ["server", "client", "shared"].includes(String(target.executionContext)))) throw new Error("Invalid MechanicImplementationSpec source targets");
+  if (!value.allowedPatchOperations.every((operation) => operation === "replace_text" || operation === "create_script")) throw new Error("Invalid MechanicImplementationSpec patch operations");
 }
 
 export function assertPatchSet(value: unknown): asserts value is PatchSet {
@@ -448,8 +582,8 @@ export function assertTrajectoryEvent(value: unknown): asserts value is Trajecto
 }
 
 export function assertProofBundle(value: unknown): asserts value is ProofBundle {
-  if (!isRecord(value) || value.kind !== "ProofBundle" || value.schemaVersion !== 1 || !isString(value.id) || !isString(value.projectHash) || !isString(value.generatedAt) || !Array.isArray(value.toolchain) || !Array.isArray(value.checks) || !Array.isArray(value.issues) || !Array.isArray(value.assertions) || !isRecord(value.gate) || !isGateStatus(value.gate.status) || !Array.isArray(value.gate.reasons) || !isRecord(value.reproducibility) || (value.studioProof !== undefined && !isStudioProof(value.studioProof))) {
-    throw new Error("Invalid ProofBundle: expected schemaVersion 1");
+  if (!isRecord(value) || value.kind !== "ProofBundle" || value.schemaVersion !== 3 || !isString(value.id) || !isString(value.projectHash) || !isString(value.projectSnapshotBeforeHash) || !isString(value.projectSnapshotAfterHash) || !isString(value.mechanicContractId) || !isString(value.mechanicContractHash) || !isString(value.patchSetId) || !isString(value.patchSetHash) || !isString(value.generatedAt) || !Array.isArray(value.toolchain) || !Array.isArray(value.checks) || !Array.isArray(value.issues) || !Array.isArray(value.assertions) || !isRecord(value.gate) || !isGateStatus(value.gate.status) || !Array.isArray(value.gate.reasons) || !isRecord(value.reproducibility) || optionalString(value.buildTraceId) === false || (value.studioProof !== undefined && !isStudioProof(value.studioProof))) {
+    throw new Error("Invalid ProofBundle: expected schemaVersion 3");
   }
 }
 
@@ -457,10 +591,32 @@ function assertRemoteFlow(value: unknown): asserts value is RemoteFlowDeclaratio
   if (!isRecord(value) || typeof value.name !== "string" || (value.direction !== "client_to_server" && value.direction !== "server_to_client")) {
     throw new Error("Invalid ForgeFixture remote flow");
   }
+  if (!isRecord(value.remote) || !isString(value.remote.stableId) || !isString(value.remote.path) || !["RemoteEvent", "RemoteFunction"].includes(String(value.remote.className)) || typeof value.remote.preserveExisting !== "boolean") throw new Error("Invalid ForgeFixture remote identity");
   if (typeof value.clientScript !== "string" || typeof value.serverScript !== "string") throw new Error("Invalid ForgeFixture remote flow paths");
-  if (!isRecord(value.clientInput) || typeof value.clientInput.name !== "string" || typeof value.clientInput.type !== "string") throw new Error("Invalid ForgeFixture client input");
-  if (!Array.isArray(value.serverValidations) || !value.serverValidations.every((entry) => typeof entry === "string")) throw new Error("Invalid ForgeFixture validations");
+  assertPositionalInputs(value.clientInputs, "ForgeFixture client inputs");
+  assertServerArguments(value.serverArguments, "ForgeFixture server arguments");
+  assertValidationRequirements(value.validationRequirements, "ForgeFixture validation requirements");
   if (!isRecord(value.mutation) || typeof value.mutation.field !== "string" || typeof value.mutation.sourceExpression !== "string" || typeof value.mutation.authority !== "string") throw new Error("Invalid ForgeFixture mutation");
+}
+
+function assertPositionalInputs(value: unknown, label: string): void {
+  if (!Array.isArray(value) || !value.every((entry) => isRecord(entry) && isNonNegativeInteger(entry.position) && entry.position >= 1 && isString(entry.role) && isString(entry.type) && (entry.trust === "untrusted" || entry.trust === "informational"))) throw new Error(`Invalid ${label}`);
+  const positions = value.map((entry) => (entry as { position: number }).position);
+  if (new Set(positions).size !== positions.length || [...positions].sort((a, b) => a - b).some((position, index) => position !== index + 1)) throw new Error(`Invalid ${label}: positions must be unique and contiguous from 1`);
+}
+
+function assertServerArguments(value: unknown, label: string): void {
+  if (!Array.isArray(value) || !value.every((entry) => isRecord(entry) && isNonNegativeInteger(entry.position) && isString(entry.role) && isString(entry.type) && (entry.source === "roblox_server" || entry.source === "client"))) throw new Error(`Invalid ${label}`);
+  const positions = value.map((entry) => (entry as { position: number }).position);
+  if (new Set(positions).size !== positions.length) throw new Error(`Invalid ${label}: duplicate positions`);
+}
+
+function assertValidationRequirements(value: unknown, label: string): void {
+  if (!Array.isArray(value) || !value.every((entry) => isRecord(entry) && isRemoteValidationCategory(entry.category) && isString(entry.subjectRole) && (entry.applicability === "required" || entry.applicability === "not_applicable") && isString(entry.rationale))) throw new Error(`Invalid ${label}`);
+}
+
+function isRemoteValidationCategory(value: unknown): value is RemoteValidationCategory {
+  return value === "type" || value === "value" || value === "context" || value === "permission" || value === "rate_limit" || value === "ownership";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -498,7 +654,7 @@ function assertTraceEvent(value: unknown): asserts value is BuildTraceEvent {
 }
 
 function isBuildOutcome(value: unknown): value is BuildOutcome {
-  return isRecord(value) && isOutcomeStatus(value.status) && typeof value.verified === "boolean" && typeof value.staticPass === "boolean" && typeof value.semanticPass === "boolean" && isVerificationStatus(value.studioPass) && typeof value.attempts === "number" && typeof value.deterministicRepairs === "number" && typeof value.modelRepairs === "number" && isRecord(value.assertions) && typeof value.assertions.total === "number" && typeof value.assertions.passed === "number" && isRecord(value.modelUsage) && typeof value.modelUsage.calls === "number" && typeof value.modelUsage.inputTokens === "number" && typeof value.modelUsage.outputTokens === "number" && typeof value.modelUsage.costUsd === "number" && isLatency(value.latencyMs) && isIssueCounts(value.issueCounts);
+  return isRecord(value) && isOutcomeStatus(value.status) && typeof value.verified === "boolean" && typeof value.staticPass === "boolean" && typeof value.semanticPass === "boolean" && isVerificationStatus(value.studioPass) && typeof value.attempts === "number" && typeof value.deterministicRepairs === "number" && typeof value.modelRepairs === "number" && isRecord(value.assertions) && typeof value.assertions.total === "number" && typeof value.assertions.passed === "number" && isRecord(value.modelUsage) && typeof value.modelUsage.calls === "number" && nullableNumber(value.modelUsage.inputTokens) && nullableNumber(value.modelUsage.outputTokens) && nullableNumber(value.modelUsage.costUsd) && isLatency(value.latencyMs) && isIssueCounts(value.issueCounts);
 }
 
 function isTraceEvidence(value: unknown): boolean {
@@ -521,6 +677,10 @@ function isString(value: unknown): value is string {
   return typeof value === "string";
 }
 
+function nullableNumber(value: unknown): value is number | null {
+  return value === null || typeof value === "number";
+}
+
 function isPrimitive(value: unknown): value is string | number | boolean {
   return typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value));
 }
@@ -530,7 +690,7 @@ function optionalRecord(value: unknown): boolean { return value === undefined ||
 function optionalStringArray(value: unknown): boolean { return value === undefined || (Array.isArray(value) && value.every(isString)); }
 
 function isStudioProof(value: unknown): boolean {
-  return isRecord(value) && isString(value.testPlanId) && isString(value.runId) && isString(value.beforeSnapshotHash) && optionalString(value.afterSnapshotHash) && isString(value.pluginVersion) && isString(value.studioVersion) && Array.isArray(value.assertionResultIds) && value.assertionResultIds.every(isString) && value.authoritative === true;
+  return isRecord(value) && isString(value.testPlanId) && isString(value.testPlanVersion) && isString(value.runId) && isString(value.proofRunHash) && isString(value.correlationId) && isString(value.sessionId) && isString(value.projectId) && isString(value.mechanicContractHash) && isString(value.harnessId) && isString(value.harnessVersion) && isString(value.harnessHash) && isString(value.projectSnapshotHash) && isString(value.pluginVersion) && isString(value.studioVersion) && Array.isArray(value.assertionResultIds) && value.assertionResultIds.every(isString) && ["pass", "fail", "incomplete"].includes(String(value.status)) && typeof value.authoritative === "boolean";
 }
 
 function isArrayOfRecords(value: unknown): value is Array<Record<string, unknown>> {
@@ -574,7 +734,7 @@ function isProjectReference(value: unknown): boolean {
 }
 
 function isTraceReferences(value: unknown): boolean {
-  return isRecord(value) && optionalString(value.gameIntentId) && optionalString(value.coreLoopId) && optionalString(value.mechanicContractId) && optionalString(value.patchSetId) && optionalString(value.benchmarkCaseId);
+  return isRecord(value) && optionalString(value.gameIntentId) && optionalString(value.coreLoopId) && optionalString(value.mechanicContractId) && optionalString(value.patchSetId) && optionalString(value.benchmarkCaseId) && optionalString(value.generationRunId) && optionalString(value.generationAttemptId) && optionalString(value.modelResponseHash);
 }
 
 function isTraceComponents(value: unknown): boolean {

@@ -1,0 +1,22 @@
+{
+  "kind": "ForgeFixture",
+  "schemaVersion": 2,
+  "name": "insecure-tycoon",
+  "luauRoots": ["src"],
+  "remoteFlows": [
+    {
+      "name": "GrantCash",
+      "direction": "client_to_server",
+      "remote": { "stableId": "remote_grant_cash", "path": "ReplicatedStorage/Remotes/GrantCash", "className": "RemoteEvent", "preserveExisting": true },
+      "clientScript": "src/client/GrantCash.client.luau",
+      "serverScript": "src/server/GrantCash.server.luau",
+      "clientInputs": [{ "position": 1, "role": "cash_amount", "type": "number", "trust": "untrusted" }],
+      "serverArguments": [
+        { "position": 0, "role": "player", "type": "Player", "source": "roblox_server" },
+        { "position": 1, "role": "cash_amount", "type": "number", "source": "client" }
+      ],
+      "validationRequirements": [],
+      "mutation": { "field": "Cash", "sourceExpression": "amount", "authority": "server" }
+    }
+  ]
+}

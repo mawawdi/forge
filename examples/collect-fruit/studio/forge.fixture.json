@@ -1,6 +1,6 @@
 {
   "kind": "ForgeFixture",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "name": "collect-fruit-studio",
   "luauRoots": ["src"],
   "instances": [
@@ -14,11 +14,42 @@
     {
       "name": "CollectFruit",
       "direction": "client_to_server",
-      "clientScript": "src/client/ForgeTestClient.client.luau",
+      "remote": { "stableId": "remote_collect_fruit", "path": "ReplicatedStorage/Remotes/CollectFruit", "className": "RemoteEvent", "preserveExisting": true },
+      "clientScript": "src/client/CollectFruitClient.client.luau",
       "serverScript": "src/server/CollectFruit.server.luau",
-      "clientInput": { "name": "fruitId", "type": "string" },
-      "serverValidations": ["type", "value", "context"],
-      "mutation": { "field": "Inventory", "sourceExpression": "server_owned_reward", "authority": "server" }
+      "clientInputs": [
+        { "position": 1, "role": "fruit_id", "type": "string", "trust": "untrusted" },
+        { "position": 2, "role": "claimed_reward", "type": "number", "trust": "untrusted" }
+      ],
+      "serverArguments": [
+        { "position": 0, "role": "player", "type": "Player", "source": "roblox_server" },
+        { "position": 1, "role": "fruit_id", "type": "string", "source": "client" },
+        { "position": 2, "role": "claimed_reward", "type": "number", "source": "client" }
+      ],
+      "validationRequirements": [
+        { "category": "type", "subjectRole": "fruit_id", "applicability": "required", "rationale": "The identifier is untrusted." },
+        { "category": "value", "subjectRole": "fruit_id", "applicability": "required", "rationale": "Only Fruit42 may be selected in the fixture." },
+        { "category": "type", "subjectRole": "claimed_reward", "applicability": "required", "rationale": "Adversarial input must be handled safely." },
+        { "category": "value", "subjectRole": "claimed_reward", "applicability": "required", "rationale": "Invalid claims are rejected." },
+        { "category": "context", "subjectRole": "interaction", "applicability": "required", "rationale": "Runtime positions determine eligibility." },
+        { "category": "permission", "subjectRole": "interaction", "applicability": "required", "rationale": "The request is bound to the server-supplied player." },
+        { "category": "ownership", "subjectRole": "target", "applicability": "not_applicable", "rationale": "Fruit is globally collectible." }
+      ],
+      "mutation": { "field": "Inventory", "sourceExpression": "server_owned_reward", "authority": "server" },
+      "implementation": {
+        "stateBindings": [
+          { "role": "inventory", "subject": "player", "storage": "attribute", "name": "Inventory", "type": "number", "authority": "server" },
+          { "role": "availability", "subject": "target", "storage": "attribute", "name": "Consumed", "type": "boolean", "authority": "server" },
+          { "role": "reward", "subject": "target", "storage": "attribute", "name": "Reward", "type": "number", "authority": "server" },
+          { "role": "collectible", "subject": "target", "storage": "tag", "name": "collectible", "type": "boolean", "authority": "server" }
+        ],
+        "constants": [
+          { "role": "canonical_target_id", "type": "string", "value": "Fruit42" },
+          { "role": "max_interaction_distance", "type": "number", "value": 20 }
+        ],
+        "postconditions": ["The selected fruit becomes consumed.", "Inventory increases exactly once by the target's Reward attribute."],
+        "authorityInvariants": ["The client cannot choose the reward.", "The client cannot mutate Inventory or Consumed state.", "The existing RemoteEvent must not be recreated or moved."]
+      }
     }
   ]
 }

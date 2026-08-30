@@ -1,0 +1,7 @@
+{
+  "name": "ForgeStudioPlugin",
+  "tree": {
+    "$path": "src/Main.server.luau",
+    "Forge": { "$path": "src/Forge" }
+  }
+}

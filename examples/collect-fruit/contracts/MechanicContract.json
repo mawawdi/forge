@@ -1,6 +1,6 @@
 {
   "kind": "MechanicContract",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "contract_collect_fruit",
   "coreLoopId": "loop_fruit_progression",
   "name": "CollectFruit",
@@ -15,14 +15,25 @@
   ],
   "authorityModel": {
     "stateOwner": "server",
-    "clientInputs": [{ "name": "amount", "type": "number", "trust": "untrusted" }],
-    "serverValidations": ["type", "value"],
+    "clientInputs": [{ "position": 1, "role": "claimed_reward", "type": "number", "trust": "untrusted" }],
+    "validationRequirements": [
+      { "category": "type", "subjectRole": "claimed_reward", "applicability": "required", "rationale": "The value crosses an untrusted RemoteEvent boundary." },
+      { "category": "value", "subjectRole": "claimed_reward", "applicability": "required", "rationale": "Only positive finite requests are accepted." }
+    ],
     "stateMutations": [{ "field": "Inventory", "authority": "server", "operation": "increment by server-owned reward" }]
   },
   "persistentState": [{ "field": "Inventory", "type": "number", "owner": "server", "durability": "session" }],
   "uiOutputs": [{ "binding": "InventoryCount", "sourceField": "Inventory", "direction": "server_to_client" }],
   "economyEffects": [{ "currency": "fruit", "delta": "+1", "computedBy": "server" }],
   "instrumentation": [{ "event": "fruit.collected", "fields": ["player_hash", "fruit_type"], "privacyClass": "project" }],
-  "studioAssertions": ["assert_collect_fruit_server_reward"],
+  "studioAssertions": [
+    "assert_collect_fruit_success",
+    "assert_inventory_increases_once",
+    "assert_fruit_consumed",
+    "assert_duplicate_collection_rejected",
+    "assert_spoofed_id_rejected",
+    "assert_impossible_distance_rejected",
+    "assert_server_authority"
+  ],
   "risk": "critical"
 }

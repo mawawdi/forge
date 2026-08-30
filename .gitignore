@@ -1,4 +1,11 @@
 node_modules/
+.env
 dist/
 .DS_Store
 .forge/
+.forge-generation-runs/
+target/
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx

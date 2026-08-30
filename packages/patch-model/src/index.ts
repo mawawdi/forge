@@ -1,5 +1,5 @@
 import { cp, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { assertFixtureManifest, assertPatchSet, contentHash, type PatchSet, type RelativePath } from "../../contracts/src/index.js";
 import { buildSemanticMap, createProjectSnapshot } from "../../semantic-map/src/index.js";
 

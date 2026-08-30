@@ -1,0 +1,43 @@
+{
+  "kind": "MechanicContract",
+  "schemaVersion": 2,
+  "id": "contract_collect_fruit_9832c77cd9f1999d",
+  "coreLoopId": "loop_9832c77cd9f1999d",
+  "name": "CollectFruit",
+  "playerGoal": "Request a collectible fruit and receive exactly its server-defined reward once.",
+  "preconditions": [
+    { "id": "fruit_exists", "statement": "The requested fruit exists and is collectible.", "authority": "server" },
+    { "id": "fruit_available", "statement": "The fruit is currently available.", "authority": "server" },
+    { "id": "player_in_range", "statement": "The player is in an authorized interaction context and distance.", "authority": "server" }
+  ],
+  "postconditions": [
+    { "id": "fruit_consumed", "statement": "The server marks the fruit unavailable after collection.", "authority": "server" },
+    { "id": "inventory_once", "statement": "Inventory increases exactly once by the server-derived reward.", "authority": "server" }
+  ],
+  "authorityModel": {
+    "stateOwner": "server",
+    "clientInputs": [
+      { "position": 1, "role": "fruit_id", "type": "string", "trust": "untrusted" },
+      { "position": 2, "role": "claimed_reward", "type": "number", "trust": "untrusted" }
+    ],
+    "validationRequirements": [
+      { "category": "type", "subjectRole": "fruit_id", "applicability": "required", "rationale": "The identifier crosses an untrusted RemoteEvent boundary." },
+      { "category": "value", "subjectRole": "fruit_id", "applicability": "required", "rationale": "The identifier must resolve to a permitted collectible." },
+      { "category": "type", "subjectRole": "claimed_reward", "applicability": "required", "rationale": "Adversarial numeric input must be safely handled even though it is not authoritative." },
+      { "category": "value", "subjectRole": "claimed_reward", "applicability": "required", "rationale": "Non-finite and negative claims must be rejected." },
+      { "category": "context", "subjectRole": "interaction", "applicability": "required", "rationale": "The server must establish real collectible and distance context." },
+      { "category": "permission", "subjectRole": "interaction", "applicability": "required", "rationale": "The request must belong to the server-supplied active player context." },
+      { "category": "ownership", "subjectRole": "target", "applicability": "not_applicable", "rationale": "Fruit is globally collectible and is not player-owned." }
+    ],
+    "stateMutations": [
+      { "field": "Inventory", "authority": "server", "operation": "increment by Fruit.Reward" },
+      { "field": "Fruit.Consumed", "authority": "server", "operation": "set true" }
+    ]
+  },
+  "persistentState": [{ "field": "Inventory", "type": "number", "owner": "server", "durability": "session" }],
+  "uiOutputs": [],
+  "economyEffects": [{ "currency": "fruit", "delta": "+ server-defined reward", "computedBy": "server" }],
+  "instrumentation": [{ "event": "fruit.collected", "fields": ["fruit_id", "reward"], "privacyClass": "project" }],
+  "studioAssertions": ["CF-001", "CF-002", "CF-003", "CF-004", "CF-005", "CF-006", "CF-007"],
+  "risk": "critical"
+}

@@ -1,7 +1,32 @@
 # Lemonade Forge Specification
 
-Status: M1, M1.5, M2, and M2.5 complete; M3 Studio Plugin + StudioProof in progress
+Status: M1, M1.5, M2, M2.5, M3, and M3.25 complete; M3.5 next
 Scope: candidate proof-of-work; deterministic verifier plus local execution evidence
+
+## M3.25 prompt-to-proof requirement
+
+`forge build <clean-seed> --prompt <text>` treats schema-constrained model
+output only as an untrusted proposal. Forge owns the server-authoritative
+contract and compiles a `MechanicImplementationSpec` for the exact existing
+remote ABI, state schema, constants, validation categories, authority
+invariants, and allowed source targets. The model remains responsible for the
+substantive two-file Luau implementation. Forge runs official syntax,
+Roblox-aware type analysis, and M2 before Studio. `--studio` may invoke the
+existing StudioProof only with that prevalidated PatchSet. BuildTrace never
+stores raw model output, source, or prompt; Studio remains the runtime authority.
+
+Preserved-candidate repair has a stricter two-command boundary. `forge
+candidate repair` performs exactly one repair call and emits a content-hashed
+private artifact; it cannot contact Studio. `forge candidate studio <artifact>`
+performs no model call and can reach StudioProof only after exact artifact,
+seed, repaired-source, contract/interface/PatchSet, and fresh local-gate
+validation succeeds.
+
+M3.25 acceptance is established by verified ProofBundle
+`proof_932e3d0abd04b04894b38e73`: the sealed model-repair PatchSet passed current
+Luau and M2 gates, then passed 7/7 correlated assertions in real Studio under
+`collect-fruit-v7` and committed. BuildTrace
+`trace_596ab00b-5087-449b-8e33-a0ae0f5aee2e` records the accepted execution.
 
 ## 1. Product thesis
 
@@ -31,7 +56,7 @@ The following are requirements for this proof-of-work because they are directly 
 
 | Requirement | Initial interpretation | Evidence of completion |
 | --- | --- | --- |
-| Real Luau parsing/analysis | Use official `luau-analyze`; do not use an approximate Lua parser | `forge verify` invokes it and exposes its diagnostics structurally |
+| Real Luau parsing/analysis | Use official Luau syntax tooling and a Roblox-host-aware official-language analyzer; do not use an approximate Lua parser or host-less Roblox fallback | `forge verify` reports separate syntax/type tiers and records pinned definitions/sourcemap provenance |
 | Roblox client/server reasoning | Analyze remote direction, authority, validation, persistence context, and mutation paths | deterministic contract diagnostics on an intentionally insecure fixture |
 | Deterministic verification | Same project and tool/rule inputs produce the same diagnostics and result | snapshot-tested JSON output with stable ordering |
 | Inspectable architecture | Contracts, proof records, rule IDs, provenance, and boundaries are documented | this specification and the proposed package layout |
@@ -110,7 +135,7 @@ For M1, the CLI is the only surface. Human-readable output is optional, but the 
 Forge uses a strict evidence hierarchy:
 
 1. Schema and IR invariants: deterministic and authoritative for data shape.
-2. Official Luau parse/type/lint: authoritative for language/tool diagnostics.
+2. Official Luau syntax plus Roblox-host-aware type analysis: authoritative for the language and host declarations actually loaded; missing host tooling is incomplete, not source blame.
 3. Forge semantic rules: authoritative only for the properties they explicitly model.
 4. Lute/Lune/pure Luau preflight: evidence for modeled code paths, not Roblox engine truth.
 5. Roblox Studio execution: authoritative for engine, replication, physics, and stateful world behavior.
@@ -156,28 +181,30 @@ The `ContextCompiler` selects only context relevant to one bounded mechanic task
 
 Forge owns Studio integration through a first-class, thin Roblox Studio Plugin. The backend remains the reasoning/compiler boundary; the plugin executes only validated, correlated operations against the current Studio project. Roblox Studio MCP is optional development/debugging infrastructure, not Forge's product interface.
 
-The authoritative path is:
+The M3 authoritative path is:
 
 ```text
-MechanicContract + PatchSet + StudioTestPlan
-  -> paired Forge Studio Plugin
-  -> live DataModel observation
-  -> ChangeHistory transaction
-  -> real Studio playtest and adversarial assertions
-  -> StudioAssertionResult evidence
+MechanicContract
+  -> StudioTestPlan
+  -> arm exact run (no Studio launch)
+  -> explicit Run StudioProof plugin action
+  -> temporary injected server/client harness
+  -> Play Solo client/server simulation / server EndTest envelope
+  -> one structured correlated StudioTestResult
   -> existing ProofBundle + BuildTrace
+
+PatchSet application and the ChangeHistory transaction precede arming and remain bound to the starting and post-patch snapshots.
 ```
 
-A connected plugin or successful HTTP request alone is never proof. The Studio tier is verified only when real assertion results are authoritative, correlated to exact contract/patch/snapshots, and all required adversarial assertions pass.
+A connected plugin, successful HTTP request, emitted Output line, or successful patch application alone is never proof. Arming does not start Studio; the creator explicitly selects **Run StudioProof** in the plugin, which injects one server harness and client driver before calling `StudioTestService:ExecutePlayModeAsync`. The sole server harness returns one atomic JSON string directly through `EndTest(JSON)`; Output is not a protocol message. The Studio tier is verified only when that envelope is authoritative, correlated to the exact contract/patch/snapshots and active run, and all required happy-path and adversarial assertions pass. Future lifecycle adapters must preserve the same server-return evidence semantics.
 
 ## 12. Open questions
 
 These questions are intentionally unresolved rather than silently guessed:
 
-- Which exact Luau distribution/version will be pinned for CI and local development?
-- Should custom semantic analysis initially be a TypeScript orchestration layer over analyzer output, a native Luau AST sidecar, or both?
+- How should the pinned Roblox definition snapshot be upgraded and reviewed when Studio APIs change?
+- Which M2 relationships should next move from conservative source evidence to a native Luau AST/type sidecar?
 - Which Roblox project interchange format is available to the eventual Studio connector: Rojo tree, place snapshot, Studio API, or another representation?
-- Which Studio assertion runner and isolation model will be used when authoritative execution begins?
 - What is the minimum semantic map needed to avoid false confidence when a remote or instance is dynamically created?
 - Should a missing source location be an error, warning, or separate tool-health issue?
 - How will Luau analyzer diagnostics be normalized across pinned tool upgrades?

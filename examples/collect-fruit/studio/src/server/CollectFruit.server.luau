@@ -17,10 +17,6 @@ local function resetFruit()
     Fruit42.CanTouch = true
 end
 
-local function reject()
-    return
-end
-
 local function initializePlayer(player: Player)
     player:SetAttribute("Inventory", 0)
 end
@@ -32,18 +28,21 @@ end
 
 CollectFruit.OnServerEvent:Connect(function(player: Player, fruitId: unknown, _claimedAmount: unknown)
     if typeof(fruitId) ~= "string" or fruitId ~= "Fruit42" then
-        return reject()
+        return
+    end
+    if typeof(_claimedAmount) ~= "number" or _claimedAmount <= 0 then
+        return
     end
     if Fruit42:GetAttribute("Consumed") == true then
-        return reject()
+        return
     end
     local character = player.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     if not root or not root:IsA("BasePart") then
-        return reject()
+        return
     end
     if (root.Position - Fruit42.Position).Magnitude > MAX_DISTANCE then
-        return reject()
+        return
     end
 
     Fruit42:SetAttribute("Consumed", true)

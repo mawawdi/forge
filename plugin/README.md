@@ -1,41 +1,108 @@
 # Forge Studio Plugin
 
-This directory contains the M3 Forge Studio Plugin artifact: [ForgeStudioPlugin.lua](ForgeStudioPlugin.lua).
+> **M3 runtime status:** pairing, complete observations, typed patches, and the
+> authoritative seven-assertion StudioProof path have completed three
+> reproducible safe runs. A real client-controlled-reward fault was detected by
+> M2, failed CF-007, rejected its ProofBundle, and restored the exact starting
+> live revision. A fresh repaired run then verified 7/7. A user-stopped run
+> persists as `PLAYTEST_INTERRUPTED` / `INCOMPLETE`. M3 is showcase complete;
+> remaining lifecycle hardening is deferred.
 
-It is intentionally a thin runtime bridge. It has no AI loop, planner, model credentials, or arbitrary command execution. It uses the local Forge bridge for typed messages, snapshots, PatchSets, transactions, playtest control, and evidence forwarding.
+`plugin/src` is the only source of truth. `npm run plugin:build` produces
+`plugin/ForgeStudioPlugin.rbxmx`, whose root is one Legacy `Script` with modular
+children—the same reliable packaging shape used by the inspected Lemonade
+plugin. There is no legacy single-file or prior-protocol installation path.
 
-## Local installation
+## Install and pair
 
-1. Build Forge with `npm test`.
-2. Start the loopback bridge:
+1. Run `npm run plugin:build`.
+2. Open `plugin/ForgeStudioPlugin.rbxmx` in Studio, select the root
+   `ForgeStudioPlugin` script, and save it as a Local Plugin.
+3. Start `node bin/forge.js studio bridge` yourself and keep it running. The
+   widget discovers and pairs with this loopback bridge automatically.
+4. In another terminal, run:
 
-   ```bash
-   node bin/forge.js studio bridge
+   ```sh
+   node bin/forge.js studio verify examples/collect-fruit/studio \
+     --timeout-ms 180000
    ```
 
-3. Copy `ForgeStudioPlugin.lua` into a new Script in Roblox Studio.
-4. Save the Script as a Local Plugin using Studio's Plugins menu.
-5. Open the Forge widget, paste the one-time token printed by the bridge, and select Pair.
-6. Approve the Studio HTTP permission prompt for `http://127.0.0.1:8787` if Studio requests it.
-7. Select Snapshot to send the live observation to the bridge.
+The verifier never starts Studio or the bridge. After it reports that the plan
+is armed, select **Verify in Studio** in the Forge widget. The plugin starts one
+Play Solo session in the current Studio window and returns to edit mode when the
+server harness calls `EndTest`. Do not press F5; it is not the armed-run trigger.
 
-The bridge terminal prints every inbound protocol message. After Snapshot, look for
-`[studio -> forge] ProjectSnapshot`; the following JSON is the live observation,
-including instance, script, and remote records.
+Selecting **Disconnect** invalidates the current bridge session and pauses
+automatic reconnection. Selecting **Connect** resumes discovery without
+restarting the bridge. Stable IDs remain intentional project metadata; no
+session token, transaction, nonce, or temporary harness is persisted.
 
-If the widget remains on `Pairing requested`, reload the Local Plugin after updating
-the script. The pairing token is one-use: restart `node bin/forge.js studio bridge`
-to print a fresh token before trying again. The plugin must consume the bridge's
-successful pairing response immediately; a repeated attempt with the consumed token
-returns `401 Unauthorized`.
+Each Studio window receives its own one-use pairing grant. Different local
+`.rbxlx` files no longer replace each other merely because their unpublished
+place and universe IDs are both zero. Keep only the intended project connected
+while verifying; Forge rejects an ambiguous multi-project bridge instead of
+mutating whichever session happened to arrive first.
 
-The current artifact is a source-installable Local Plugin script, not a published Creator Store asset. Studio must be available to perform the installation and any authoritative run.
+## Runtime boundary
 
-## Current limits
+Protocol v7 requires `forge-studio-plugin-3.9.0`, reports capabilities during
+pairing, and rejects older plugins outright. Studio transports a `ProjectObservation`; the backend alone
+maps it into the canonical semantic `ProjectSnapshot`. Live revision hashes use a deterministic, length-delimited
+canonical observation that excludes `capturedAt`; repeated unchanged snapshots
+therefore have the same revision. Full source is transported without silent
+truncation, using bounded SHA-256-checked chunks when needed.
+Property and attribute maps are encoded as sorted entry arrays so empty Luau
+tables have one unambiguous JSON representation.
 
-- The plugin sends a bounded live observation and a plugin-local FNV token. The backend must construct canonical SHA-256 `ProjectSnapshot` hashes.
-- Script source edits use `ScriptEditorService:UpdateSourceAsync()` and a guarded direct-source fallback for scripts that are not open in the editor.
-- ChangeHistory cancellation is the rollback request. Forge still verifies the post-transaction snapshot and does not claim database-style atomicity.
-- `ExecuteAssertionPlan` forwards only correlated results emitted by the real place harness. If the harness is absent or does not complete, the proof collector remains `incomplete`; a plugin connection never becomes proof by itself.
-- Studio version is currently reported as `unknown`; the protocol keeps the field mandatory for eventual evidence provenance.
-- Never pair this candidate bridge with a production place or enable production DataStore access for testing.
+Eligible mutable instances receive `_forgeStableId` in a separate visible
+ChangeHistory action. Stable IDs are live mutation handles only: Forge combines
+them with class/path/source preconditions, and excludes them from backend
+semantic hashes. Only typed `replace_text` and `create_script` operations are
+allowed. There is no generic code runner or arbitrary instance API.
+
+For StudioProof, the plugin:
+
+1. arms the exact run without launching Studio, creates a fresh nonce, and publishes only its SHA-256 commitment;
+2. waits for the creator to select **Verify in Studio**;
+3. takes a fresh pre-play observation and rejects a stale revision;
+4. injects one temporary default-context server harness in `Workspace` and one client driver in `StarterPlayerScripts`;
+5. calls `StudioTestService:ExecutePlayModeAsync` with only a non-secret run hint while an outer plugin task owns the deadline;
+6. lets the real client invoke the fixture's real `CollectFruit` remote;
+7. receives exactly one JSON string directly from the server's `EndTest(JSON)` call;
+8. validates run, plan, session, project snapshot, contract, nonce, and harness
+   bindings before sending `StudioTestResult`;
+9. destroys all temporary edit-mode objects.
+
+If an active Play Solo request is interrupted or exceeds its deadline,
+the executor becomes fail-closed and requires a plugin reload before another
+proof run. Roblox does not expose a safe edit-plugin cancellation operation for
+an already-yielding Play Solo request.
+
+If the creator presses Stop before the server returns its envelope, Forge reports
+`INCOMPLETE` / `PLAYTEST_INTERRUPTED`, rolls the transaction back, and never
+creates a verified ProofBundle.
+
+Studio Output is not a protocol message and cannot become proof. Bounded
+diagnostics live inside the atomic server result envelope. Completed proof
+events use a FIFO in-memory outbox during transient bridge failures. Unpair is
+an authenticated bridge operation, and a lost/expired session cancels local
+transaction state rather than leaving the place apparently paired.
+
+## Transaction semantics
+
+Forge serializes transaction ownership and checks the exact live revision before
+every phase. A rejected run asks ChangeHistory to cancel the recording and then
+always replays the typed inverse journal. This is deliberate: Studio can report
+a successful cancellation without restoring source changed through
+`ScriptEditorService`. Forge then captures a fresh observation and accepts the
+rollback only if its complete live revision exactly equals the transaction's
+starting revision. ChangeHistory is an undo boundary, not database atomicity.
+Any cancellation/inverse uncertainty, revision mismatch, disconnect, timeout,
+or incomplete evidence remains unverified and is shown as `ROLLBACK FAILED`.
+
+## M3 status
+
+Local TypeScript tests, plugin packaging, and fixture verification pass. Three
+repeatability runs, one valid fault rejection, one fresh 7/7 verified rerun,
+and one real interrupted incomplete run are recorded. M3 is complete for the
+showcase; stale-state and bridge-loss lifecycle hardening remain deferred.

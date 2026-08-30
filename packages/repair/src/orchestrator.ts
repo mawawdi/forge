@@ -2,10 +2,10 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { assertFixtureManifest } from "../../contracts/src/index.js";
 import { DeterministicContextCompiler, contextSummary } from "../../context-compiler/src/index.js";
-import { buildSemanticMap } from "../../semantic-map/src/index.js";
+import { buildSemanticMap, compileMechanicImplementationSpec } from "../../semantic-map/src/index.js";
 import { assembleStaticSemanticProof } from "../../proofs/src/index.js";
 import { applyPatchSet, type PatchApplicationResult } from "../../patch-model/src/index.js";
-import { assertMechanicContract, type MechanicContract, type ProofBundle, type PatchSet, type TracePersistence } from "../../contracts/src/index.js";
+import { assertMechanicContract, contentHash, stableJson, type MechanicContract, type ProofBundle, type PatchSet, type TracePersistence } from "../../contracts/src/index.js";
 import { createCollectFruitRepair } from "./index.js";
 import { verifyProject, type VerificationRun } from "../../verifier/src/index.js";
 
@@ -31,7 +31,8 @@ export async function repairProject(projectRoot: string, contract: MechanicContr
   const manifestValue: unknown = JSON.parse(await readFile(resolve(projectRoot, "forge.fixture.json"), "utf8"));
   assertFixtureManifest(manifestValue);
   const semanticMap = await buildSemanticMap(projectRoot, manifestValue);
-  const compiledContext = await new DeterministicContextCompiler().compile({ semanticMap, mechanicContract: contract, verificationIssues: before.report.issues, requestedChange: "Repair the client-controlled CollectFruit reward.", patchSet });
+  const implementationSpec = compileMechanicImplementationSpec(semanticMap, contract, { allowedPaths: semanticMap.remoteFlows.filter((flow) => flow.declaration.name === contract.name).flatMap((flow) => [flow.client.path, flow.server.path]), allowedPatchOperations: ["replace_text"] });
+  const compiledContext = await new DeterministicContextCompiler().compile({ semanticMap, mechanicContract: contract, mechanicImplementationSpec: implementationSpec, verificationIssues: before.report.issues, requestedChange: "Repair the client-controlled reward while preserving the project ABI.", patchSet });
   const after = await verifyProject(options.destinationRoot, {
     ...(options.traceDirectory ? { traceDirectory: options.traceDirectory } : {}),
     traceReferences: { mechanicContractId: contract.id, patchSetId: patchSet.id },
@@ -45,7 +46,7 @@ export async function repairProject(projectRoot: string, contract: MechanicContr
     outcomeOverrides: { attempts: 2, deterministicRepairs: 1 }
   });
   const generatedAt = (options.now ?? (() => new Date()))().toISOString();
-  const proofBundle = assembleStaticSemanticProof(after.report, contract, patchSet.id, generatedAt);
+  const proofBundle = assembleStaticSemanticProof(after.report, contract, patchSet.id, contentHash(stableJson(patchSet)), before.report.projectHash, after.report.projectHash, generatedAt);
   return { before, patchSet, application, after, proofBundle, tracePersistence: { before: before.tracePersistence, after: after.tracePersistence } };
 }
 

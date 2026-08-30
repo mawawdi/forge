@@ -1,7 +1,22 @@
 # Lemonade Forge Architecture
 
-Status: M1, M1.5, M2, and M2.5 complete; M3 Studio Plugin + StudioProof in progress
+Status: M1, M1.5, M2, M2.5, M3, and M3.25 complete; M3.5 next
 Scope: candidate proof-of-work; local verifier plus portable execution evidence
+
+## M3.25 generation boundary
+
+M3.25 adds a single model proposal boundary around—not inside—the verified M3
+runtime. A strict `IntentDraft` becomes Forge-owned `GameIntent`, `CoreLoop`,
+and `MechanicContract`. Forge then compiles a non-evictable
+`MechanicImplementationSpec` containing the existing remote identity and path,
+positional ABI, state bindings, exact constants, required validations,
+authority invariants, and allowed source targets. A strict payload-only model
+response still authors the substantive Luau implementation; Forge stamps its
+bounded replacements into a typed PatchSet with current source/hash
+preconditions. The model cannot define security requirements, assertions,
+project identity, or evidence. Candidates pass official syntax, Roblox-aware
+type analysis, and M2 in an atomic local directory before the unchanged M3
+bridge/plugin/harness/ProofBundle boundary is entered.
 
 ## 1. Architectural stance
 
@@ -48,7 +63,8 @@ forge/
 │   ├── intent/                 # intent -> CoreLoop resolution interfaces
 │   ├── semantic-map/            # project tree, scripts, remotes, services, dependencies
 │   ├── patch-model/             # bounded PatchSet operations, hashes, and atomic staging
-│   ├── luau-toolchain/          # official luau-analyze/Lute adapters and version checks
+│   ├── luau-toolchain/          # official syntax plus Roblox-host-aware type analysis
+│   ├── generation/              # strict provider boundary and bounded model-authored candidates
 │   ├── verifier/                # rule engine, issue normalization, deterministic ordering
 │   ├── flight-recorder/         # BuildTrace, spans/events, sink interface, local JSON sink
 │   ├── repair/                  # narrow deterministic repairs; no model dependency in M2
@@ -64,7 +80,7 @@ forge/
 ├── examples/
 │   ├── insecure-tycoon/         # M1 fixture: valid Luau plus intentional vulnerabilities
 │   └── collect-fruit/            # M2 contract, vulnerable/repaired projects, and patch fixtures
-│       └── studio/               # Rojo place tree and real Studio assertion harness
+│       └── studio/               # Rojo place tree; Forge injects its proof harness per run
 ├── benchmarks/
 │   └── core-loop-bench/         # ten initial fixture directories and manifest
 ├── tools/
@@ -105,9 +121,15 @@ Represents a bounded proposed change as operations with provenance and expected 
 
 ### Luau toolchain adapter
 
-The adapter invokes a pinned official Luau toolchain. The first required executable is `luau-analyze`; Lute may provide programmable rules once its version and invocation are pinned. The adapter records command, version, configuration, exit status, and raw diagnostic provenance.
+The adapter has two explicit tiers. `luau-compile --only-parse` is the official
+language syntax authority. `luau-lsp analyze --platform=roblox` is the
+Roblox-host-aware type tier and receives pinned Roblox global/type definitions,
+a deterministic Rojo sourcemap, and the project `.luaurc`. Forge records binary
+or tool versions plus hashes for the definitions, sourcemap, and configuration.
+Missing host tooling is an `incomplete` tooling result; it is never rewritten as
+a source `LUAU_TYPE_ERROR`.
 
-No JavaScript Lua parser, regex-only parser, or custom “compatible” parser may stand in for official Luau parsing. If the official tool is unavailable, Forge fails clearly with a tool-health issue; it does not silently downgrade.
+No JavaScript Lua parser, regex-only parser, or custom “compatible” parser may stand in for official Luau parsing. If either required tier is unavailable, Forge fails clearly with a tool-health issue; it does not silently downgrade. Details and pinned provenance are specified in `docs/rfcs/luau-toolchain.md`.
 
 ### Verifier
 
@@ -128,7 +150,7 @@ Runs pure Luau tests and modeled simulations in Lute/Lune or an equivalent contr
 
 ### StudioProof
 
-The Forge Studio Plugin executes `StudioAssertion` actions in an isolated place/session and reports observed state. It is the only Forge component allowed to produce authoritative claims about engine behavior. The plugin uses Roblox-native/official APIs and keeps interactive checks separate from long-running benchmark runs. MCP is optional development/debugging infrastructure, not the Forge product boundary.
+The `StudioRunController` turns a `MechanicContract` into a versioned `StudioTestPlan` and delegates execution to a replaceable adapter. M3 uses an explicit plugin-action Play Solo adapter. The backend first arms an exact run without starting Studio. When the creator selects **Run StudioProof**, the edit-mode root Script plugin confirms a fresh live revision, injects a temporary default-context server harness in `Workspace` and a client driver in `StarterPlayerScripts`, then calls `ExecutePlayModeAsync`. The sole server harness returns one structured JSON string directly through `EndTest(JSON)`; the plugin validates its complete binding and nonce before forwarding `StudioTestResult`. Protocol v7 transports a complete `ProjectObservation`; only the backend semantic adapter creates a canonical `ProjectSnapshot`. It also uses deterministic timestamp-free SHA-256 live revisions, persistent `_forgeStableId` mutation handles excluded from semantic hashes, capability-checked pairing, and a per-run nonce commitment. The raw nonce remains in ephemeral plugin memory while armed, is never sent to the backend or stored in the place, and is embedded only in the temporary server harness when the run starts. The Forge Studio Plugin is the only Forge component allowed to forward authoritative claims about engine behavior. MCP is optional development/debugging infrastructure, not the Forge product boundary.
 
 ### Proof assembler
 
@@ -136,7 +158,15 @@ Combines all tier results into an immutable `ProofBundle` identified by source/d
 
 ### Context Compiler
 
-Compiles one bounded mechanic task into ordered `ContextItem` values. P0 contains the contract, requested change, and current failures; P1 contains directly affected scripts and the M2 remote neighborhood; P2 contains canonical project metadata. Each item carries a reason, source, entity, content hash, token estimate, and required/evictable flags. M2.5 selects deterministically and evicts nothing. Retrieval, budget optimization, and provider formatting remain future work.
+Compiles one bounded mechanic task into ordered `ContextItem` values. P0 contains
+the contract, non-evictable `MechanicImplementationSpec`, requested change,
+generation policy, and current failures. P1 contains complete source for the
+allowed affected scripts plus the exact M2 remote neighborhood. Repair context
+also contains the candidate PatchSet and normalized ranged diagnostics. P2
+contains canonical project metadata. Each item carries a reason, source,
+entity, content hash, token estimate, and required/evictable flags. Correctness
+takes priority over minimizing token count; required P0/P1 items are not
+evicted. Retrieval and learned ranking remain future work.
 
 ### Verified Mechanic Capsules
 
@@ -160,8 +190,20 @@ Current command surface:
 forge verify <project-path> [--format json]
 forge repair <project-path> --contract <path> --out <directory> [--trace-dir <path>]
 forge trace show <trace-id> [--trace-dir <path>]
-forge studio bridge [--host <host>] [--port <port>]
+forge candidate reverify <regression-path> [--studio] [--timeout-ms <ms>]
+forge candidate repair <regression-path> [--model <model>] [--run-dir <path>]
+forge candidate studio <candidate-repair-artifact> [--timeout-ms <ms>]
+forge studio bridge
+forge studio verify <project-path> [--timeout-ms <ms>]
 ```
+
+Candidate repair and runtime execution are deliberately separate. `candidate
+repair` performs one model call, materializes a bounded project, verifies it,
+and seals its paths, source hashes, contract, implementation spec, PatchSet,
+and report in a content-hashed private artifact. `candidate studio` performs no
+model call: it validates that artifact against the current seed/output bytes,
+reruns local verification, and only then delegates the exact PatchSet to the
+existing StudioProof transaction.
 
 The CLI discovers the fixture, validates its manifest, invokes the official toolchain, runs deterministic Forge rules, emits one structured result, and sets exit status. `repair` composes the same verifier around one bounded deterministic repair and emits the resulting ProofBundle. Future commands (`intent`, `compile`, `commit`, `bench`) remain deferred.
 
@@ -171,8 +213,9 @@ The CLI discovers the fixture, validates its manifest, invokes the official tool
 project path
   -> canonical path + fixture manifest
   -> source inventory
-  -> luau-analyze subprocess
-  -> normalized Luau issues
+  -> luau-compile syntax tier
+  -> luau-lsp Roblox platform tier + pinned definitions/sourcemap
+  -> normalized ranged Luau issues
   -> project semantic map
   -> deterministic Forge rules
   -> stable issue ordering
@@ -224,14 +267,52 @@ ProjectSemanticMap (static adapter)
 
 The Forge Plugin is the product transport and execution boundary. Roblox Studio's built-in MCP server remains development/debugging infrastructure: it exposes generic data-model exploration, script reads/edits, Luau execution, play state, console output, and input simulation through a local stdio process. Forge will not make MCP a product dependency or clone the archived `studio-rust-mcp-server`.
 
-M3 must merge live hierarchy facts with the static map, reject identity/path mismatches, run the `CollectFruit` assertions (valid collect, duplicate, spoofed ID, impossible distance, and server-owned inventory), and mark every unavailable tier explicitly. No pure runtime, mock, or MCP-only run can substitute for Studio authority.
+The current candidate M3 adapter has `ExecuteAssertionPlan` store one ephemeral armed run and publish
+its nonce commitment. It does not launch Studio. The creator's explicit plugin
+action takes a fresh pre-play observation, rejects a stale revision, injects
+temporary scripts into the edit DataModel, and owns one yielding
+`ExecutePlayModeAsync` request on a dedicated task. Normal Play Solo supplies
+one real client and server simulation in the same Studio window. The server
+creates a play-only relay, drives real client requests through
+`Remotes.CollectFruit`, reads server-owned state and actual player/fruit
+positions, and is the only code allowed to call `EndTest`, once, with the JSON
+envelope as its direct value. There is no F5 handoff, multiplayer
+worker process, `GetTestArgs` dependency, test-mode plugin runtime, persisted
+armed record, LogService relay, or Output proof message.
+
+The temporary dependency-free API canary recorded in
+`docs/research/studio-test-service-blocker.md` proved both Run and Play server
+roundtrips on the target Studio build. It also exposed
+that Forge had supplied an undocumented `timeoutSeconds` test-argument key and
+expected Lemonade's wrapped `{ returnValue }` shape. The accepted adapter uses
+an outer plugin deadline, passes only a neutral non-secret run hint as the test
+argument, and uses Roblox's documented direct `EndTest(result)` contract. The
+next isolated gate is a real LocalScript-to-server RemoteEvent roundtrip before
+the seven-assertion CollectFruit harness is retried. Output and Studio's
+internal runner fields remain non-authoritative.
+
+The canary is a characterization scaffold, not a StudioProof producer and not
+an evaluation fixture. It cannot create a ProofBundle. Production execution is
+dispatched through an explicit mechanic-runner boundary. The CollectFruit
+runner declares the exact assertion ID set it supports and rejects unknown,
+missing, or duplicate plan/result IDs. A future second mechanic adds another
+runner behind that boundary; Forge will generalize shared behavior from two
+real runners instead of inventing an arbitrary authoritative test DSL from one.
+
+An interrupted or timed-out `ExecutePlayModeAsync` cannot be forcibly cancelled
+by the edit plugin. Forge cleans temporary edit objects, marks the run incomplete,
+and requires the creator to press Stop and reload before another proof. It never
+assumes the underlying play session ended.
+
+M3 must merge live hierarchy facts with the static map, reject stable-identity/class/path/source mismatches, run all seven `CollectFruit` assertions (valid collect, exact inventory delta, consumed state, duplicate, spoofed ID, impossible distance, and reward spoof), and mark every unavailable tier explicitly. No pure runtime, mock, Output line, or MCP-only run can substitute for Studio authority. Screenshot capture, richer captures, cross-place stable identity, and remote relay infrastructure remain future work.
 
 ## 8. Official tooling references
 
 The initial toolchain decision is based on the official Luau implementation and its maintained tooling:
 
-- [Luau](https://github.com/luau-lang/luau) provides the language implementation, AST, and `luau-analyze` command-line type checker/linter.
-- [Lute lint](https://lute.luau.org/cli/lint/index.html) is a programmable linter built on the official Luau language stack and is a candidate source for custom rules after its version is pinned.
+- [Luau](https://github.com/luau-lang/luau) provides the language implementation and the `luau-compile --only-parse` syntax tier.
+- [Luau Language Server](https://github.com/JohnnyMorganz/luau-lsp) provides Roblox-platform analysis using pinned engine declarations and a Rojo sourcemap.
+- [Lute lint](https://lute.luau.org/cli/lint/index.html) remains a possible programmable preflight rule host; it is not the current Roblox type authority.
 
 These references are implementation inputs, not a commitment to embed native C++ libraries in M1 or M2. A subprocess adapter is the smallest inspectable boundary; embedding or a long-running sidecar can be evaluated after correctness is established.
 

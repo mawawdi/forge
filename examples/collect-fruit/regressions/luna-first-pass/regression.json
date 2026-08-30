@@ -1,0 +1,26 @@
+{
+  "kind": "CandidateRegression",
+  "schemaVersion": 1,
+  "id": "core_loop_bench_luna_first_pass_2026_08_30",
+  "sourceGenerationRunId": "generation_65a285b6-1b69-4e59-8851-cabc2857e056",
+  "sourceGenerationAttemptId": "attempt_7b8466c945dfeacf",
+  "sourceBuildTraceId": "trace_18b2c1f6-8d75-46ea-a9c8-df5f7b1ea73c",
+  "sourcePatchSetId": "patch_generated_8466abed9e2eec8a2b8f3060",
+  "seedProject": "../../generated-seed",
+  "mechanicContract": "MechanicContract.json",
+  "model": {
+    "provider": "openrouter",
+    "name": "openai/gpt-5.6-luna",
+    "requestHash": "24055cf2c1a99a110bebad6a4e930c5dc30ea7a4ee88b2c755c4866dfcd3ea8f",
+    "responseHash": "837b2ce2135a38874eb553291b44b4e5a4cb4554bf6c99aabce9b111ac076f8c",
+    "promptHash": "c4371305c9a64d6f82691a587a644167443c797ffdea29f917d18fffa486201c"
+  },
+  "sourceHashes": {
+    "src/server/CollectFruit.server.luau": "c013d3bca2c1fb028c19d39a6ed9572600a4f49d823ebf59532e821017e44f4e",
+    "src/client/CollectFruitClient.client.luau": "bc6e639520ed7e59c1d53ba4336aaff632a382f5a32465a48202ab21c67d4885"
+  },
+  "historicalVerdict": "rejected",
+  "historicalReason": "The then-current host-less verifier emitted false Roblox type errors and used identifier-coupled RemoteEvent checks.",
+  "expectedCorrectedLocalVerdict": "rejected",
+  "studioVerdict": "not_run"
+}
