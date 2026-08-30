@@ -7,9 +7,15 @@ import { applyPatchSet } from "../../patch-model/src/index.js";
 import { assembleStaticSemanticProof } from "../../proofs/src/index.js";
 import { createProjectSnapshot, FilesystemProjectSourceAdapter, mergeStudioObservation, type ProjectSemanticMap, type ProjectSnapshot, type StudioSnapshotObservation } from "../../semantic-map/src/index.js";
 import { StudioBridgeClient, createBackendMessage, type StudioBridgeConnection, type StudioBridgeSession } from "../../studio-bridge/src/index.js";
-import { COLLECT_FRUIT_HARNESS_HASH, COLLECT_FRUIT_HARNESS_ID, COLLECT_FRUIT_HARNESS_VERSION, STUDIO_PLUGIN_VERSION, type PluginToBackendMessage, type StudioPatchPlan } from "../../studio-protocol/src/index.js";
-import { attachStudioProof, collectFruitTestPlan, StudioProofCapture, type StudioProofRun, type StudioTestPlan } from "./index.js";
+import { COLLECT_FRUIT_HARNESS_HASH, COLLECT_FRUIT_HARNESS_ID, COLLECT_FRUIT_HARNESS_VERSION, COLLECT_SELL_HARNESS_HASH, COLLECT_SELL_HARNESS_ID, COLLECT_SELL_HARNESS_VERSION, STUDIO_PLUGIN_VERSION, type PluginToBackendMessage, type StudioPatchPlan } from "../../studio-protocol/src/index.js";
+import { attachStudioProof, collectFruitTestPlan, collectSellTestPlan, StudioProofCapture, type StudioProofRun, type StudioTestPlan } from "./index.js";
 import { verifyProject, type VerificationRun } from "../../verifier/src/index.js";
+import type { CandidateArtifact } from "../../generation/src/index.js";
+
+export type StudioFaultMode = "client-controlled-reward" | "client-controlled-payout";
+
+/** Exact line budget for the bounded no-client-input payout fault mutation. */
+export const CLIENT_CONTROLLED_PAYOUT_FAULT_BOUNDS = { maxAddedLines: 5, maxRemovedLines: 2 } as const;
 
 export interface StudioVerifyOptions {
   projectRoot: string;
@@ -21,11 +27,14 @@ export interface StudioVerifyOptions {
   timeoutMs?: number;
   traceDirectory?: string;
   proofDirectory?: string;
-  faultClientReward?: boolean;
+  /** Explicitly runs one Forge-owned adversarial mutation. Fault runs are
+   * expected to reject and rollback; they can never produce a verified commit. */
+  fault?: StudioFaultMode;
   /** M3.25 seam: a candidate already preflighted on disk before any live Studio edit. */
   candidatePatchSet?: PatchSet;
   candidateVerification?: VerificationRun;
   candidateProjectRoot?: string;
+  candidateArtifact?: CandidateArtifact;
   onReady?: (address: { host: string; port: number }) => void;
   onMessage?: (message: PluginToBackendMessage) => void;
 }
@@ -47,7 +56,7 @@ export async function resolveStudioPatchSet(candidate: PatchSet | undefined, cre
 /** Binds each source operation to the exact class observed for its stable ID. */
 export function resolveStudioPatchTargets(patchSet: PatchSet, observation: StudioSnapshotObservation): StudioPatchPlan["targets"] {
   return patchSet.operations.map((operation, opIndex) => {
-    const matches = observation.scripts.filter((script) => basename(script.path) === basename(operation.path));
+    const matches = observation.scripts.filter((script) => sourceContainerName(script.path) === sourceContainerName(operation.path));
     if (matches.length !== 1) throw new StudioVerificationError("PATCH_TARGET_MISSING", `The live Studio observation identifies ${matches.length} targets for ${operation.path}; exactly one is required.`, "rejected");
     const sourceTarget = matches[0]!;
     const instanceTarget = observation.instances.find((instance) => instance.stableId === sourceTarget.stableId);
@@ -95,19 +104,19 @@ export async function runStudioVerification(options: StudioVerifyOptions): Promi
   const patchSet = await resolveStudioPatchSet(options.candidatePatchSet, async () => {
     // Generated seeds intentionally do not contain the fixture fallback's
     // source anchor, so this closure must stay lazy for external candidates.
-    const source = await findCollectFruitSource(staticMap);
-    const fallbackAfterSource = options.faultClientReward ? injectClientRewardFault(source.source) : addServerGuard(source.source);
-    const patchBounds = options.faultClientReward ? { maxAddedLines: 0, maxRemovedLines: 0 } : { maxAddedLines: 3, maxRemovedLines: 0 };
+    const fallback = options.fault
+      ? createFaultMutation(staticMap, options.contract, options.fault)
+      : await createSafeFallbackMutation(staticMap);
     return {
       kind: "PatchSet", schemaVersion: 1, id: `patch_studio_${randomUUID()}`, projectHash: beforeSnapshot.sourceHash, mechanicContractId: options.contract.id,
-      operations: [{ type: "replace_text", path: source.path, beforeHash: contentHash(source.source), before: source.source, after: fallbackAfterSource }],
-      expectedEffects: [{ statement: options.faultClientReward ? "Intentional fault: client-controlled reward reaches authoritative inventory mutation.": "Server rejects a mutated collectible before awarding inventory.", evidence: "static" }, { statement: "Studio executes the seven CollectFruit assertions against the patched place.", evidence: "studio" }],
-      provenance: { generatedAt: new Date().toISOString() }, bounds: { maxFiles: 1, ...patchBounds }
+      operations: [{ type: "replace_text", path: fallback.source.path, beforeHash: contentHash(fallback.source.source), before: fallback.source.source, after: fallback.after }],
+      expectedEffects: [{ statement: fallback.effect, evidence: "static" }, { statement: `Studio executes the ${options.contract.name === "SellInventory" ? "combined CollectFruit and SellInventory" : "CollectFruit"} assertions against the patched place.`, evidence: "studio" }],
+      provenance: { generatedAt: new Date().toISOString() }, bounds: { maxFiles: 1, ...fallback.bounds }
     };
   });
   assertPatchSet(patchSet);
   if (patchSet.mechanicContractId !== options.contract.id || patchSet.projectHash !== beforeSnapshot.sourceHash || patchSet.operations.some((operation) => operation.type !== "replace_text")) {
-    throw new StudioVerificationError("CANDIDATE_PATCH_REJECTED", "StudioProof requires a current CollectFruit replace_text PatchSet bound to this exact seed snapshot and contract.", "rejected");
+    throw new StudioVerificationError("CANDIDATE_PATCH_REJECTED", "StudioProof requires a current typed replace_text PatchSet bound to this exact seed snapshot and primary contract.", "rejected");
   }
   const replaceOperations = patchSet.operations as Array<Extract<PatchSet["operations"][number], { type: "replace_text" }>>;
   const afterSources = new Map(replaceOperations.map((operation) => [operation.path, operation.after]));
@@ -173,25 +182,27 @@ export async function runStudioVerification(options: StudioVerifyOptions): Promi
       await rollback(bridge, connectedSession.sessionId, transactionId, patchedRevision(messages), messages, timeoutMs);
       throw new StudioVerificationError("PATCH_EVIDENCE_MISMATCH", "Studio acknowledged a patch with mismatched hash or incomplete operation evidence.", "rejected");
     }
-    const patchedSnapshotMessage = await waitFor(messages, (message): message is Extract<PluginToBackendMessage, { type: "ProjectObservation" }> => message.type === "ProjectObservation" && [...afterSources.entries()].every(([path, after]) => message.payload.observation.scripts.some((script) => basename(script.path) === basename(path) && script.source !== undefined && script.source === after)), timeoutMs, "post-patch Studio observation");
+    const patchedSnapshotMessage = await waitFor(messages, (message): message is Extract<PluginToBackendMessage, { type: "ProjectObservation" }> => message.type === "ProjectObservation" && [...afterSources.entries()].every(([path, after]) => message.payload.observation.scripts.some((script) => sourceContainerName(script.path) === sourceContainerName(path) && script.source !== undefined && script.source === after)), timeoutMs, "post-patch Studio observation");
     if (!liveMap || !liveAfterSnapshot) throw new StudioVerificationError("POST_PATCH_SNAPSHOT_MISSING", "The live post-patch Studio observation was not available.", "incomplete");
     const afterSnapshot = liveAfterSnapshot;
 
     const temporaryDestination = options.candidateProjectRoot ? resolve(options.candidateProjectRoot) : join(await mkdtempSafe(), "patched-project");
     if (!options.candidateProjectRoot) await applyPatchSet(root, patchSet, temporaryDestination);
     const staticAfter = options.candidateVerification ?? await verifyProject(temporaryDestination, options.traceDirectory ? { traceDirectory: options.traceDirectory, traceReferences: { mechanicContractId: options.contract.id, patchSetId: patchSet.id } } : { traceReferences: { mechanicContractId: options.contract.id, patchSetId: patchSet.id } });
-    if (staticAfter.report.gate.status !== "verified" && !options.faultClientReward) {
+    if (staticAfter.report.gate.status !== "verified" && !options.fault) {
       await rollback(bridge, connectedSession.sessionId, transactionId, patchedSnapshotMessage.payload.revision.observationHash, messages, timeoutMs);
       throw new StudioVerificationError("PATCHED_STATIC_GATE_REJECTED", "The patched project failed official Luau or semantic verification; the Studio transaction was not committed.", "rejected", staticAfter.report);
     }
 
-    const testPlan = collectFruitTestPlan(options.contract, afterSnapshot);
+    const planBinding = await resolvePlanBinding(root, manifest, options.contract, afterSnapshot);
+    const testPlan = planBinding.testPlan;
+    const harness = planBinding.harness;
     const correlationId = `studio_correlation_${randomUUID()}`;
     const runId = `studio_run_${randomUUID()}`;
-    await bridge.send(createBackendMessage("ExecuteAssertionPlan", { requestId: `request_${randomUUID()}`, transactionId, projectId: connectedSession.projectId, sessionId: connectedSession.sessionId, project: connectedSession.project, runId, testPlanId: testPlan.id, correlationId, projectSnapshotHash: afterSnapshot.projectSemanticHash, mechanicContractHash, expectedRevision: patchedSnapshotMessage.payload.revision.observationHash, assertions: testPlan.assertions, adversarial: true, harnessId: COLLECT_FRUIT_HARNESS_ID, harnessVersion: COLLECT_FRUIT_HARNESS_VERSION }, connectedSession.sessionId));
+    await bridge.send(createBackendMessage("ExecuteAssertionPlan", { requestId: `request_${randomUUID()}`, transactionId, projectId: connectedSession.projectId, sessionId: connectedSession.sessionId, project: connectedSession.project, runId, testPlanId: testPlan.id, correlationId, projectSnapshotHash: afterSnapshot.projectSemanticHash, mechanicContractHash, expectedRevision: patchedSnapshotMessage.payload.revision.observationHash, assertions: testPlan.assertions, adversarial: true, harnessId: harness.id, harnessVersion: harness.version }, connectedSession.sessionId));
     const accepted = await waitFor(messages, (message): message is Extract<PluginToBackendMessage, { type: "AssertionPlanAccepted" }> => message.type === "AssertionPlanAccepted" && message.payload.runId === runId && message.payload.testPlanId === testPlan.id, timeoutMs, "Studio assertion plan acceptance");
-    if (accepted.payload.harnessId !== COLLECT_FRUIT_HARNESS_ID || accepted.payload.harnessVersion !== COLLECT_FRUIT_HARNESS_VERSION) throw new StudioVerificationError("HARNESS_VERSION_MISMATCH", `Studio accepted ${accepted.payload.harnessId}@${accepted.payload.harnessVersion}; Forge requires ${COLLECT_FRUIT_HARNESS_ID}@${COLLECT_FRUIT_HARNESS_VERSION}.`, "incomplete");
-    capture = new StudioProofCapture({ runId, testPlan, projectSnapshot: afterSnapshot, pluginVersion: connectedSession.pluginVersion, studioVersion: connectedSession.studioVersion, transactionId, authoritativeSession: true, correlationId, sessionId: connectedSession.sessionId, projectId: connectedSession.projectId, project: connectedSession.project, projectSnapshotHash: afterSnapshot.projectSemanticHash, mechanicContractHash, nonceCommitment: accepted.payload.nonceCommitment, harnessId: COLLECT_FRUIT_HARNESS_ID, harnessVersion: COLLECT_FRUIT_HARNESS_VERSION, harnessHash: COLLECT_FRUIT_HARNESS_HASH });
+    if (accepted.payload.harnessId !== harness.id || accepted.payload.harnessVersion !== harness.version) throw new StudioVerificationError("HARNESS_VERSION_MISMATCH", `Studio accepted ${accepted.payload.harnessId}@${accepted.payload.harnessVersion}; Forge requires ${harness.id}@${harness.version}.`, "incomplete");
+    capture = new StudioProofCapture({ runId, testPlan, projectSnapshot: afterSnapshot, pluginVersion: connectedSession.pluginVersion, studioVersion: connectedSession.studioVersion, transactionId, authoritativeSession: true, correlationId, sessionId: connectedSession.sessionId, projectId: connectedSession.projectId, project: connectedSession.project, projectSnapshotHash: afterSnapshot.projectSemanticHash, mechanicContractHash, nonceCommitment: accepted.payload.nonceCommitment, harnessId: harness.id, harnessVersion: harness.version, harnessHash: harness.hash });
     capture.accept(accepted);
     const acceptedIndex = messages.indexOf(accepted);
     for (const message of messages.slice(acceptedIndex + 1)) {
@@ -204,7 +215,25 @@ export async function runStudioVerification(options: StudioVerifyOptions): Promi
     const studioProof = capture.complete();
     const proofDirectory = options.proofDirectory ?? join(root, ".forge", "studio-proofs");
     const proofRunPath = await persistStudioProof(studioProof, proofDirectory);
-    let proofBundle = attachStudioProof(assembleStaticSemanticProof(staticAfter.report, options.contract, patchSet.id, patchSetHash, beforeSnapshot.projectSemanticHash, afterSnapshot.projectSemanticHash, new Date().toISOString()), studioProof);
+    const staticBundle = assembleStaticSemanticProof(staticAfter.report, options.contract, patchSet.id, patchSetHash, beforeSnapshot.projectSemanticHash, afterSnapshot.projectSemanticHash, new Date().toISOString());
+    const candidate = options.candidateArtifact;
+    const candidateClassification: "FIRST_PASS_VERIFIED" | "DETERMINISTICALLY_REPAIRED_VERIFIED" | "MODEL_REPAIRED_VERIFIED" | null = candidate ? (candidate.attempt.type === "initial" ? "FIRST_PASS_VERIFIED" : candidate.attempt.type === "model_repair" ? "MODEL_REPAIRED_VERIFIED" : "DETERMINISTICALLY_REPAIRED_VERIFIED") : null;
+    const candidateBoundBundle: ProofBundle = candidate?.lineage.gameIntent && candidate.lineage.gameIntentHash && candidate.lineage.coreLoop && candidate.lineage.coreLoopHash ? {
+      ...staticBundle,
+      candidate: {
+        artifactId: candidate.id,
+        artifactHash: candidate.artifactHash,
+        gameIntentId: candidate.lineage.gameIntent.id,
+        gameIntentHash: candidate.lineage.gameIntentHash,
+        coreLoopId: candidate.lineage.coreLoop.id,
+        coreLoopHash: candidate.lineage.coreLoopHash,
+        implementationSpecId: candidate.implementationSpec.id,
+        implementationSpecHash: candidate.implementationSpecHash,
+        contextCompositionHash: candidate.lineage.contextCompositionHash,
+        model: { provider: candidate.model.provider, name: candidate.model.name, classification: candidateClassification }
+      }
+    } : staticBundle;
+    let proofBundle = attachStudioProof(candidateBoundBundle, studioProof);
     if (proofBundle.gate.status !== "verified") {
       await rollback(bridge, connectedSession.sessionId, transactionId, patchedSnapshotMessage.payload.revision.observationHash, messages, timeoutMs);
       transactionActive = false;
@@ -243,10 +272,43 @@ function patchedRevision(messages: PluginToBackendMessage[]): string {
   return "unavailable";
 }
 
+async function resolvePlanBinding(root: string, manifest: Awaited<ReturnType<typeof readFixtureManifest>>, contract: MechanicContract, snapshot: ProjectSnapshot): Promise<{ testPlan: StudioTestPlan; harness: { id: "collect-fruit" | "collect-sell"; version: string; hash: string } }> {
+  if (contract.name !== "SellInventory") return { testPlan: collectFruitTestPlan(contract, snapshot), harness: { id: COLLECT_FRUIT_HARNESS_ID, version: COLLECT_FRUIT_HARNESS_VERSION, hash: COLLECT_FRUIT_HARNESS_HASH } };
+  const verified = manifest.generationTarget?.verifiedMechanics.find((entry) => entry.name === "CollectFruit");
+  if (!verified) throw new StudioVerificationError("REGRESSION_BINDING_MISSING", "SellInventory StudioProof requires the verified CollectFruit regression binding.", "rejected");
+  const value: unknown = JSON.parse(await readFile(join(root, verified.contractPath), "utf8"));
+  assertMechanicContract(value);
+  return { testPlan: collectSellTestPlan(contract, value, verified.proofBundleId, verified.sourceHashes, snapshot), harness: { id: COLLECT_SELL_HARNESS_ID, version: COLLECT_SELL_HARNESS_VERSION, hash: COLLECT_SELL_HARNESS_HASH } };
+}
+
+async function readFixtureManifest(root: string) {
+  const value: unknown = JSON.parse(await readFile(join(root, "forge.fixture.json"), "utf8"));
+  assertFixtureManifest(value);
+  return value;
+}
+
 async function findCollectFruitSource(map: ProjectSemanticMap): Promise<{ path: string; source: string }> {
   const source = map.files.find((file) => basename(file.path) === "CollectFruit.server.luau" && file.executionContext === "server");
   if (!source) throw new StudioVerificationError("PATCH_TARGET_MISSING", "The CollectFruit server script was not found in the fixture.", "rejected");
   return source;
+}
+
+async function createSafeFallbackMutation(map: ProjectSemanticMap): Promise<{ source: { path: string; source: string }; after: string; effect: string; bounds: { maxAddedLines: number; maxRemovedLines: number } }> {
+  const source = await findCollectFruitSource(map);
+  return { source, after: addServerGuard(source.source), effect: "Server rejects a mutated collectible before awarding inventory.", bounds: { maxAddedLines: 3, maxRemovedLines: 0 } };
+}
+
+function createFaultMutation(map: ProjectSemanticMap, contract: MechanicContract, fault: StudioFaultMode): { source: { path: string; source: string }; after: string; effect: string; bounds: { maxAddedLines: number; maxRemovedLines: number } } {
+  if (fault === "client-controlled-reward") {
+    if (contract.name !== "CollectFruit") throw new StudioVerificationError("FAULT_CONTRACT_MISMATCH", "client-controlled-reward applies only to CollectFruit.", "rejected");
+    const source = map.files.find((file) => basename(file.path) === "CollectFruit.server.luau" && file.executionContext === "server");
+    if (!source) throw new StudioVerificationError("PATCH_TARGET_MISSING", "The CollectFruit server script was not found in the fixture.", "rejected");
+    return { source, after: injectClientRewardFault(source.source), effect: "Intentional fault: client-controlled reward reaches authoritative inventory mutation.", bounds: { maxAddedLines: 0, maxRemovedLines: 0 } };
+  }
+  if (contract.name !== "SellInventory") throw new StudioVerificationError("FAULT_CONTRACT_MISMATCH", "client-controlled-payout applies only to SellInventory.", "rejected");
+  const source = map.files.find((file) => basename(file.path) === "SellInventory.server.luau" && file.executionContext === "server");
+  if (!source) throw new StudioVerificationError("PATCH_TARGET_MISSING", "The SellInventory server script was not found in the fixture.", "rejected");
+  return { source, after: injectClientPayoutFault(source.source), effect: "Intentional fault: client-controlled payout reaches authoritative Coins mutation.", bounds: CLIENT_CONTROLLED_PAYOUT_FAULT_BOUNDS };
 }
 
 function addServerGuard(source: string): string {
@@ -263,6 +325,22 @@ function injectClientRewardFault(source: string): string {
   if (source.includes(vulnerableExpression)) return source;
   if (!source.includes(safeExpression)) throw new StudioVerificationError("FAULT_ANCHOR_MISSING", "The expected server-owned reward expression was not found for fault injection.", "rejected");
   return source.replace(safeExpression, vulnerableExpression);
+}
+
+/**
+ * One real adversarial mutation for the SellInventory contract. The production
+ * client ABI remains zero-argument; only a malicious direct RemoteEvent call
+ * supplies `claimedPayout`, which the faulty server then trusts. This is a
+ * fault fixture, never model-authored implementation or repair output.
+ */
+export function injectClientPayoutFault(source: string): string {
+  const safeCallback = "sellInventory.OnServerEvent:Connect(function(player: Player)";
+  const faultCallback = "sellInventory.OnServerEvent:Connect(function(player: Player, claimedPayout: number?)";
+  const safeMutation = "player:SetAttribute(\"Coins\", coins + payout)";
+  const faultMutation = "local creditedPayout = claimedPayout or payout\n\tif not finiteNumber(creditedPayout) or creditedPayout < 0 then\n\t\treturn\n\tend\n\n\tplayer:SetAttribute(\"Coins\", coins + creditedPayout)";
+  if (source.includes(faultCallback) && source.includes("coins + creditedPayout")) return source;
+  if (!source.includes(safeCallback) || !source.includes(safeMutation)) throw new StudioVerificationError("FAULT_ANCHOR_MISSING", "The expected server-owned SellInventory payout expression was not found for fault injection.", "rejected");
+  return source.replace(safeCallback, faultCallback).replace(safeMutation, faultMutation);
 }
 
 async function rollback(bridge: StudioBridgeConnection, sessionId: string, transactionId: string, expectedRevision: string, messages: PluginToBackendMessage[], timeoutMs: number): Promise<void> {
@@ -308,6 +386,10 @@ async function persistStudioProof(run: StudioProofRun, directory: string): Promi
 async function mkdtempSafe(): Promise<string> {
   const { mkdtemp } = await import("node:fs/promises");
   return mkdtemp(join(tmpdir(), "forge-studio-"));
+}
+
+function sourceContainerName(path: string): string {
+  return basename(path).replace(/\.(?:lua|luau)$/, "");
 }
 
 async function waitFor<T extends PluginToBackendMessage>(messages: PluginToBackendMessage[], predicate: (message: PluginToBackendMessage) => message is T, timeoutMs: number, description: string): Promise<T> {

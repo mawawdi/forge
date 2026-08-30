@@ -1,0 +1,14 @@
+{
+  "kind": "GameIntent",
+  "schemaVersion": 1,
+  "id": "intent_collect_sell_seed",
+  "rawPrompt": "Make a fruit collection game on floating islands where players collect fruit to get richer.",
+  "normalizedGoal": "Players collect fruit on floating islands, then sell their inventory for coins.",
+  "audience": "novice_creator",
+  "genreSignals": ["tycoon", "collection"],
+  "desiredOutcomes": ["a secure collection and conversion loop"],
+  "constraints": [{"id": "constraint_server_authority", "statement": "Fruit availability, inventory, rewards, and conversion are server-owned.", "source": "system"}],
+  "referencedMechanics": ["CollectFruit"],
+  "unresolvedQuestions": [],
+  "source": {"type": "creator_prompt", "createdAt": "2026-08-30T00:00:00.000Z"}
+}

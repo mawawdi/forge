@@ -1,6 +1,6 @@
 {
   "kind": "ForgeFixture",
-  "schemaVersion": 2,
+  "schemaVersion": 5,
   "name": "clean-tycoon",
   "luauRoots": ["src"],
   "remoteFlows": []

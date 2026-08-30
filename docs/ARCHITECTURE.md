@@ -1,6 +1,6 @@
 # Lemonade Forge Architecture
 
-Status: M1, M1.5, M2, M2.5, M3, and M3.25 complete; M3.5 next
+Status: M1, M1.5, M2, M2.5, M3, M3.25, and M3.5 complete
 Scope: candidate proof-of-work; local verifier plus portable execution evidence
 
 ## M3.25 generation boundary
@@ -150,7 +150,41 @@ Runs pure Luau tests and modeled simulations in Lute/Lune or an equivalent contr
 
 ### StudioProof
 
-The `StudioRunController` turns a `MechanicContract` into a versioned `StudioTestPlan` and delegates execution to a replaceable adapter. M3 uses an explicit plugin-action Play Solo adapter. The backend first arms an exact run without starting Studio. When the creator selects **Run StudioProof**, the edit-mode root Script plugin confirms a fresh live revision, injects a temporary default-context server harness in `Workspace` and a client driver in `StarterPlayerScripts`, then calls `ExecutePlayModeAsync`. The sole server harness returns one structured JSON string directly through `EndTest(JSON)`; the plugin validates its complete binding and nonce before forwarding `StudioTestResult`. Protocol v7 transports a complete `ProjectObservation`; only the backend semantic adapter creates a canonical `ProjectSnapshot`. It also uses deterministic timestamp-free SHA-256 live revisions, persistent `_forgeStableId` mutation handles excluded from semantic hashes, capability-checked pairing, and a per-run nonce commitment. The raw nonce remains in ephemeral plugin memory while armed, is never sent to the backend or stored in the place, and is embedded only in the temporary server harness when the run starts. The Forge Studio Plugin is the only Forge component allowed to forward authoritative claims about engine behavior. MCP is optional development/debugging infrastructure, not the Forge product boundary.
+The `StudioRunController` turns a `MechanicContract` into a versioned `StudioTestPlan` and delegates execution to a replaceable adapter. M3 uses an explicit plugin-action Play Solo adapter. The backend first arms an exact run without starting Studio. When the creator selects **Run StudioProof**, the edit-mode root Script plugin confirms a fresh live revision, injects a temporary default-context server harness in `Workspace` and a client driver in `StarterPlayerScripts`, then calls `ExecutePlayModeAsync`. The sole server harness returns one structured JSON string directly through `EndTest(JSON)`; the plugin validates its complete binding and nonce before forwarding `StudioTestResult`. Protocol v10 transports a complete `ProjectObservation`; only the backend semantic adapter creates a canonical `ProjectSnapshot`. It also uses deterministic timestamp-free SHA-256 live revisions, persistent `_forgeStableId` mutation handles excluded from semantic hashes, capability-checked pairing, and a per-run nonce commitment. The raw nonce remains in ephemeral plugin memory while armed, is never sent to the backend or stored in the place, and is embedded only in the temporary server harness when the run starts. The Forge Studio Plugin is the only Forge component allowed to forward authoritative claims about engine behavior. MCP is optional development/debugging infrastructure, not the Forge product boundary.
+
+### M3.5 combined regression proof
+
+Protocol v10 hard-cuts the Studio harness boundary to an exact registry. The
+immutable historical `collect-fruit@collect-fruit-v7` harness remains available
+only for the original seven-assertion proof. The new
+`collect-sell@collect-sell-v4` harness is a separately hashed implementation,
+not an arbitrary assertion interpreter. It returns one server-owned EndTest
+envelope containing seven CollectFruit regression assertions, six SellInventory
+assertions, and one Collect→Sell composition assertion. A schema-v3
+`StudioTestPlan` explicitly names the prior CollectFruit contract, ProofBundle,
+and source hashes; every assertion declares either the primary contract or a
+listed regression contract.
+
+`InteractionBinding` is a narrow project-interface object, not an arbitrary
+interaction DSL. It currently represents the CollectFruit pointer click and
+SellInventory ProximityPrompt shapes. It separates production initiation from
+server authorization. Semantic-map instances include prompt properties and
+BasePart positions, and the Context Compiler emits the selected mechanic's
+resolved binding as required P1 context. When explicit action is required, the
+verifier requires the declared input event to invoke one bounded model-authored
+client action module, and verifies that the module owns the production
+RemoteEvent request. It rejects periodic initiation only for explicit-action
+contracts. It does not globally ban Heartbeat or other frame events.
+
+StudioProof preserves the same split. Roblox does not grant an injected Play
+Solo LocalScript the `LocalUser` capability needed for synthetic mouse input.
+The production LocalScript and temporary client driver therefore call the same
+model-authored action-module function. Static verification proves the real
+Button1Down/Triggered wiring; Studio executes the exact production request
+function. Direct RemoteEvent calls remain adversarial-only.
+Adversarial assertions may call the real RemoteEvent directly to attack the
+server boundary. Before any action, the server harness confirms a live Humanoid,
+HumanoidRootPart, initialized attributes, and all declared world objects.
 
 ### Proof assembler
 
@@ -192,7 +226,7 @@ forge repair <project-path> --contract <path> --out <directory> [--trace-dir <pa
 forge trace show <trace-id> [--trace-dir <path>]
 forge candidate reverify <regression-path> [--studio] [--timeout-ms <ms>]
 forge candidate repair <regression-path> [--model <model>] [--run-dir <path>]
-forge candidate studio <candidate-repair-artifact> [--timeout-ms <ms>]
+forge candidate studio <candidate-artifact> [--fault client-controlled-reward|client-controlled-payout] [--timeout-ms <ms>]
 forge studio bridge
 forge studio verify <project-path> [--timeout-ms <ms>]
 ```
@@ -203,7 +237,9 @@ and seals its paths, source hashes, contract, implementation spec, PatchSet,
 and report in a content-hashed private artifact. `candidate studio` performs no
 model call: it validates that artifact against the current seed/output bytes,
 reruns local verification, and only then delegates the exact PatchSet to the
-existing StudioProof transaction.
+existing StudioProof transaction. The Studio place must be built from the
+artifact's original `seedRoot`, not its already-patched `outputRoot`: the
+plugin validates the PatchSet's exact before-state before applying it.
 
 The CLI discovers the fixture, validates its manifest, invokes the official toolchain, runs deterministic Forge rules, emits one structured result, and sets exit status. `repair` composes the same verifier around one bounded deterministic repair and emits the resulting ProofBundle. Future commands (`intent`, `compile`, `commit`, `bench`) remain deferred.
 

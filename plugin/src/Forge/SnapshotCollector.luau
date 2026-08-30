@@ -22,7 +22,7 @@ local function pathOf(instance: Instance): string
 end
 local function primitive(instance: Instance): {{name: string, value: string | number | boolean}}
 	local result = {}
-	for _, property in ipairs({ "CanTouch", "CanCollide", "Anchored", "Enabled", "Value", "Transparency" }) do
+	for _, property in ipairs({ "CanTouch", "CanCollide", "Anchored", "Enabled", "Value", "Transparency", "ActionText", "ObjectText", "MaxActivationDistance", "HoldDuration" }) do
 		local ok, value = pcall(function() return (instance :: any)[property] end)
 		if ok and (typeof(value) == "string" or typeof(value) == "number" or typeof(value) == "boolean") then table.insert(result, { name = property, value = value }) end
 	end
@@ -43,7 +43,12 @@ local function primitiveAttributes(instance: Instance): {{name: string, value: s
 	return result
 end
 local function relevant(instance: Instance): boolean
-	return instance:IsA("BasePart") or instance:IsA("Folder") or instance:IsA("Model") or instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction") or instance:IsA("LuaSourceContainer") or instance:IsA("GuiObject")
+	return instance:IsA("BasePart") or instance:IsA("ProximityPrompt") or instance:IsA("Folder") or instance:IsA("Model") or instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction") or instance:IsA("LuaSourceContainer") or instance:IsA("GuiObject")
+end
+
+local function position(instance: Instance): {x: number, y: number, z: number}?
+	if not instance:IsA("BasePart") then return nil end
+	return { x = instance.Position.X, y = instance.Position.Y, z = instance.Position.Z }
 end
 
 function SnapshotCollector.new(registry)
@@ -72,7 +77,10 @@ function SnapshotCollector:collect()
 					local attributes = primitiveAttributes(instance)
 					local tags = CollectionService:GetTags(instance)
 					table.sort(tags)
-					table.insert(instances, { stableId = stableId, path = pathOf(instance), className = instance.ClassName, properties = primitive(instance), attributes = attributes, tags = tags })
+					local entry: any = { stableId = stableId, path = pathOf(instance), className = instance.ClassName, properties = primitive(instance), attributes = attributes, tags = tags }
+					local worldPosition = position(instance)
+					if worldPosition then entry.position = worldPosition end
+					table.insert(instances, entry)
 					if instance:IsA("LuaSourceContainer") then
 						local readable, source = pcall(function() return instance.Source end)
 						if not readable or typeof(source) ~= "string" then error("Forge requires complete readable Script.Source for " .. pathOf(instance)) end
@@ -87,7 +95,7 @@ function SnapshotCollector:collect()
 	table.sort(instances, function(a, b) return a.path < b.path or (a.path == b.path and (a.className < b.className or (a.className == b.className and a.stableId < b.stableId))) end)
 	table.sort(scripts, function(a, b) return a.path < b.path or (a.path == b.path and a.stableId < b.stableId) end)
 	table.sort(remotes, function(a, b) return a.path < b.path or (a.path == b.path and a.className < b.className) end)
-	local observation = { kind = "StudioSnapshotObservation", schemaVersion = 2, project = project(), capturedAt = iso(), instances = instances, scripts = scripts, remotes = remotes }
+	local observation = { kind = "StudioSnapshotObservation", schemaVersion = 3, project = project(), capturedAt = iso(), instances = instances, scripts = scripts, remotes = remotes }
 	local encoded = HttpService:JSONEncode(observation)
 	local observationHash = Hash.sha256(ObservationRevision.material(observation))
 	return {

@@ -103,12 +103,14 @@ function analyzeRobloxTypes(root: string, files: string[]): { status: TierStatus
   try {
     const sourcemapPath = join(temporaryRoot, "sourcemap.json");
     const projectPath = existingProjectPath(root) ?? writeSyntheticProject(temporaryRoot, root, files);
-    const sourcemap = spawnSync(rojo, ["sourcemap", projectPath, "--output", sourcemapPath], { cwd: toolExecutionRoot(), encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
+    const sourcemap = spawnSync(rojo, ["sourcemap", projectPath, "--output", sourcemapPath], { cwd: root, encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
     if (sourcemap.error || sourcemap.status !== 0 || !existsSync(sourcemapPath)) {
       const detail = `${sourcemap.stdout ?? ""}${sourcemap.stderr ?? ""}`.trim();
       return unavailable(`Rojo sourcemap generation failed${detail ? `: ${detail}` : "."}`);
     }
-    const sourcemapHash = hash(readFileSync(sourcemapPath));
+    const sourcemapSource = readFileSync(sourcemapPath, "utf8");
+    const sourcemapHash = hash(sourcemapSource);
+    writeFileSync(sourcemapPath, JSON.stringify(absolutizeSourcemapPaths(JSON.parse(sourcemapSource) as unknown, root)));
     const configPath = resolve(root, ".luaurc");
     const args = [
       "analyze", "--formatter=gnu", "--platform=roblox",
@@ -117,6 +119,10 @@ function analyzeRobloxTypes(root: string, files: string[]): { status: TierStatus
       ...(existsSync(configPath) ? [`--base-luaurc=${configPath}`] : []),
       ...files.map((file) => resolve(root, file))
     ];
+    // Rojo must resolve project-relative $path entries from the candidate root,
+    // but a Rokit-managed luau-lsp shim must launch from the Forge tool project
+    // that pins it. The generated sourcemap and absolute source paths preserve
+    // candidate resolution without making the shim depend on candidate files.
     const result = spawnSync(executable, args, { cwd: toolExecutionRoot(), encoding: "utf8", maxBuffer: 20 * 1024 * 1024 });
     const stdout = result.stdout ?? "";
     const stderr = result.stderr ?? "";
@@ -161,6 +167,21 @@ function writeSyntheticProject(temporaryRoot: string, root: string, files: strin
   const path = join(temporaryRoot, "default.project.json");
   writeFileSync(path, JSON.stringify({ name: "ForgeRobloxAnalysis", tree }));
   return path;
+}
+
+function absolutizeSourcemapPaths(value: unknown, root: string): unknown {
+  if (Array.isArray(value)) return value.map((entry) => absolutizeSourcemapPaths(entry, root));
+  if (typeof value !== "object" || value === null) return value;
+  const source = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(source)) {
+    if (key === "filePaths" && Array.isArray(entry)) {
+      result[key] = entry.map((path) => typeof path === "string" ? resolve(root, path) : path);
+    } else {
+      result[key] = absolutizeSourcemapPaths(entry, root);
+    }
+  }
+  return result;
 }
 
 function child(parent: Record<string, unknown>, name: string, className: string): Record<string, unknown> {
@@ -270,7 +291,7 @@ function repositoryAsset(name: string): string {
 }
 
 function toolExecutionRoot(): string {
-  return resolve(import.meta.dirname, "../../../..");
+  return resolve(repositoryAsset("globalTypes.d.luau"), "../../../..");
 }
 
 function relativePath(root: string, value: string): string {

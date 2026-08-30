@@ -5,7 +5,7 @@ import { assertPluginToBackendMessage, type PluginProjectIdentity, type PluginTo
 
 export interface StudioTestPlan {
   kind: "StudioTestPlan";
-  schemaVersion: 2;
+  schemaVersion: 3;
   id: string;
   mechanicContractId: string;
   mechanicContractHash: Hash;
@@ -16,6 +16,7 @@ export interface StudioTestPlan {
   assertions: StudioAssertion[];
   adversarialCases: Array<{ id: string; assertionIds: string[]; description: string }>;
   cleanup: Array<{ action: string; actor: "server" | "client_1" | "client_2" | "system"; args?: Record<string, string | number | boolean> }>;
+  regressionContracts: Array<{ mechanicContractId: string; mechanicContractHash: Hash; proofBundleId: string; sourceHashes: Record<string, string> }>;
   version: string;
 }
 
@@ -154,21 +155,40 @@ export function collectFruitTestPlan(contract: MechanicContract, snapshot: Proje
     assertion("assert_server_authority", "Server remains authoritative over reward", "collect Fruit42 with amount 999999", "rejected", true, ["adversarial", "authority"])
   ];
   return {
-    kind: "StudioTestPlan", schemaVersion: 2, id: `studio_plan_${contentHash(stableJson({ version, contractId: contract.id, contractHash: contentHash(stableJson(contract)), snapshotHash: snapshot.projectSemanticHash, assertionIds: assertions.map((item) => item.id) })).slice(0, 24)}`,
+    kind: "StudioTestPlan", schemaVersion: 3, id: `studio_plan_${contentHash(stableJson({ version, contractId: contract.id, contractHash: contentHash(stableJson(contract)), snapshotHash: snapshot.projectSemanticHash, assertionIds: assertions.map((item) => item.id) })).slice(0, 24)}`,
     mechanicContractId: contract.id, mechanicContractHash: contentHash(stableJson(contract)), projectSnapshotHash: snapshot.projectSemanticHash,
     setup: [{ action: "reset isolated test state", actor: "system" }],
     actors: [{ id: "server", role: "authority" }, { id: "client_1", role: "requester" }, { id: "system", role: "observer" }],
     actions: [], assertions,
     adversarialCases: assertions.filter((item) => item.tags.includes("adversarial")).map((item) => ({ id: item.id, assertionIds: [item.id], description: item.name })),
-    cleanup: [{ action: "end Studio Play Solo test and destroy temporary harness", actor: "system" }], version
+    cleanup: [{ action: "end Studio Play Solo test and destroy temporary harness", actor: "system" }], regressionContracts: [], version
   };
 }
 
+export function collectSellTestPlan(sellContract: MechanicContract, collectContract: MechanicContract, collectProofBundleId: string, collectSourceHashes: Record<string, string>, snapshot: ProjectSnapshot): StudioTestPlan {
+  const version = "collect-sell-v4";
+  const collect = collectFruitTestPlan(collectContract, snapshot).assertions;
+  const assertion = (id: string, name: string, action: string, relation: StudioAssertion["observations"][number]["relation"], expected: string | number | boolean, tags: string[]): StudioAssertion => ({ kind: "StudioAssertion", schemaVersion: 1, id, mechanicContractId: sellContract.id, name, setup: [], actions: [{ action, actor: "client_1" }], observations: [{ path: "runtime", relation, expected }], timeoutMs: 5000, tags });
+  const sell = [
+    assertion("assert_sell_inventory_success", "SF-001 valid sell", "sell current inventory", "equals", true, ["happy_path"]),
+    assertion("assert_sell_inventory_clears", "SF-002 inventory clears exactly", "observe Inventory", "equals", 0, ["state"]),
+    assertion("assert_sell_inventory_coins", "SF-003 exact server coin calculation", "observe Coins", "equals", 25, ["state"]),
+    assertion("assert_sell_inventory_distance", "SF-004 outside-zone sell rejected", "sell outside SellZone", "rejected", true, ["adversarial", "distance"]),
+    assertion("assert_sell_inventory_spoof", "SF-005 client payout spoof rejected", "sell with claimed payout", "rejected", true, ["adversarial", "authority"]),
+    assertion("assert_sell_inventory_duplicate", "SF-006 duplicate sell rewards once", "sell twice", "rejected", true, ["adversarial", "duplicate"]),
+    assertion("assert_collect_sell_composition", "CL-001 collect then sell composes", "collect then sell", "equals", true, ["composition"])
+  ];
+  const assertions = [...collect, ...sell];
+  const regressionContracts = [{ mechanicContractId: collectContract.id, mechanicContractHash: contentHash(stableJson(collectContract)), proofBundleId: collectProofBundleId, sourceHashes: collectSourceHashes }];
+  return { kind: "StudioTestPlan", schemaVersion: 3, id: `studio_plan_${contentHash(stableJson({ version, sell: sellContract.id, collect: collectContract.id, snapshot: snapshot.projectSemanticHash, assertionIds: assertions.map((item) => item.id) })).slice(0, 24)}`, mechanicContractId: sellContract.id, mechanicContractHash: contentHash(stableJson(sellContract)), projectSnapshotHash: snapshot.projectSemanticHash, setup: [{ action: "reset isolated combined test state", actor: "system" }], actors: [{ id: "server", role: "authority" }, { id: "client_1", role: "requester" }, { id: "system", role: "observer" }], actions: [], assertions, adversarialCases: assertions.filter((item) => item.tags.includes("adversarial")).map((item) => ({ id: item.id, assertionIds: [item.id], description: item.name })), cleanup: [{ action: "end Studio Play Solo test and destroy temporary harness", actor: "system" }], regressionContracts, version };
+}
+
 export function assertStudioTestPlan(value: unknown): asserts value is StudioTestPlan {
-  if (!isRecord(value) || value.kind !== "StudioTestPlan" || value.schemaVersion !== 2 || !isString(value.id) || !isString(value.mechanicContractId) || !isString(value.mechanicContractHash) || !isString(value.projectSnapshotHash) || !Array.isArray(value.setup) || !Array.isArray(value.actors) || !Array.isArray(value.actions) || !Array.isArray(value.assertions) || !Array.isArray(value.adversarialCases) || !Array.isArray(value.cleanup) || !isString(value.version)) throw new Error("Invalid StudioTestPlan: expected schemaVersion 2");
+  if (!isRecord(value) || value.kind !== "StudioTestPlan" || value.schemaVersion !== 3 || !isString(value.id) || !isString(value.mechanicContractId) || !isString(value.mechanicContractHash) || !isString(value.projectSnapshotHash) || !Array.isArray(value.setup) || !Array.isArray(value.actors) || !Array.isArray(value.actions) || !Array.isArray(value.assertions) || !Array.isArray(value.adversarialCases) || !Array.isArray(value.cleanup) || !Array.isArray(value.regressionContracts) || !isString(value.version)) throw new Error("Invalid StudioTestPlan: expected schemaVersion 3");
   for (const assertion of value.assertions) assertStudioAssertion(assertion);
   const ids = value.assertions.map((assertion) => assertion.id);
-  if (new Set(ids).size !== ids.length || value.assertions.some((assertion) => assertion.mechanicContractId !== value.mechanicContractId)) throw new Error("Invalid StudioTestPlan: assertion contract or IDs do not match the plan");
+  const allowedContracts = new Set([value.mechanicContractId, ...value.regressionContracts.map((contract) => contract.mechanicContractId)]);
+  if (new Set(ids).size !== ids.length || value.assertions.some((assertion) => !allowedContracts.has(assertion.mechanicContractId)) || value.regressionContracts.some((contract) => !isString(contract.mechanicContractId) || !isString(contract.mechanicContractHash) || !isString(contract.proofBundleId) || !isRecord(contract.sourceHashes))) throw new Error("Invalid StudioTestPlan: assertion contract or regression binding is invalid");
 }
 
 export function assertStudioProofRun(value: unknown): asserts value is StudioProofRun {
@@ -195,7 +215,7 @@ export function attachStudioProof(bundle: ProofBundle, run: StudioProofRun): Pro
   if (!run.authoritative && run.status !== "incomplete") throw new Error("StudioProofRun with pass/fail status must be authoritative");
   const expectedAssertions = run.testPlan.assertions.map((assertion) => {
     const result = run.assertionResults.find((candidate) => candidate.assertionId === assertion.id);
-    return result ? { assertionId: result.assertionId, status: result.status, observed: { observed: result.observed }, runId: result.runId } : { assertionId: assertion.id, status: "not_run" as const };
+    return result ? { assertionId: result.assertionId, mechanicContractId: assertion.mechanicContractId, status: result.status, observed: { observed: result.observed }, runId: result.runId } : { assertionId: assertion.id, mechanicContractId: assertion.mechanicContractId, status: "not_run" as const };
   });
   const expectedAssertionIds = new Set(run.testPlan.assertions.map((assertion) => assertion.id));
   const observedAssertionIds = new Set(run.assertionResults.map((result) => result.assertionId));
@@ -203,6 +223,7 @@ export function attachStudioProof(bundle: ProofBundle, run: StudioProofRun): Pro
   const staticPassed = bundle.checks.filter((check) => check.tier === "static").every((check) => check.status === "pass");
   const updated: ProofBundle = {
     ...bundle,
+    ...(run.testPlan.regressionContracts.length > 0 ? { regressions: run.testPlan.regressionContracts } : {}),
     assertions: expectedAssertions,
     studioProof: { testPlanId: run.testPlan.id, testPlanVersion: run.testPlan.version, runId: run.runId, proofRunHash: contentHash(stableJson(run)), correlationId: run.correlationId, sessionId: run.sessionId, projectId: run.projectId, mechanicContractHash: run.mechanicContractHash, harnessId: run.harnessId, harnessVersion: run.harnessVersion, harnessHash: run.harnessHash, projectSnapshotHash: run.projectSnapshotHash, pluginVersion: run.pluginVersion, studioVersion: run.studioVersion, assertionResultIds: run.assertionResults.map((result) => result.id), status: run.status, authoritative: run.authoritative },
     checks: [...bundle.checks.filter((check) => check.name !== "roblox_studio"), { name: "roblox_studio", tier: "studio", status: allPassed ? "pass" : run.status === "fail" ? "fail" : "unknown", issueIds: [], resultHash: contentHash(stableJson(run)) }],

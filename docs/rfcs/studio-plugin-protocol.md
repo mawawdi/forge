@@ -1,11 +1,11 @@
-# RFC: Forge Studio Plugin Protocol v7
+# RFC: Forge Studio Plugin Protocol v10
 
-Status: implemented; real-Studio M3 acceptance pending
+Status: M3 implemented; M3.5 Collect+Sell acceptance recorded
 Date: 2026-08-30
 
 ## Decision
 
-Forge has one Studio protocol and one M3 lifecycle. Protocol v7 replaces v6
+Forge has one Studio protocol and one M3 lifecycle. Protocol v10 replaces v9
 outright. An edit-mode root `Script` plugin owns inspection, typed mutation,
 transaction state, and one explicit creator-triggered Play Solo action. Arming
 never starts Studio. Manual F5 handoff, multiplayer worker processes, test-mode
@@ -97,6 +97,20 @@ class/path/property/attribute/tag/script/remote state. Large JSON observations
 are transported in ordered, bounded, SHA-256-checked chunks without source
 truncation.
 
+Observation schema v3 also carries BasePart positions and enrolls
+`ProximityPrompt` instances with bounded activation properties, including
+`MaxActivationDistance`. The backend resolves these into the selected
+mechanic's `InteractionBinding`; source text is not allowed to invent world
+structure or collapse client activation into server authorization.
+
+For the combined Collect+Sell proof, the binding also names one bounded
+model-authored client action module. The production input wrapper invokes that
+module from `Button1Down` or `Triggered`, and the Studio client driver invokes
+the same function for happy-path execution. This is a split static/runtime
+proof of one production path, not a test-only RemoteEvent shortcut. Injected
+LocalScripts cannot use privileged `LocalUser` mouse movement APIs, so protocol
+v10 contains no synthetic OS-input path.
+
 The plugin assigns `_forgeStableId` to eligible mutable instances in a separate
 visible ChangeHistory recording and repairs collisions. Stable IDs are mutation
 handles, not semantic identity: the backend derives semantic Instance IDs from
@@ -123,16 +137,26 @@ verified commit.
 ## StudioProof authority and correlation
 
 The plugin generates a fresh nonce after validating the session, project,
-transaction, revision, harness ID/version, and exact seven assertion IDs. The
+transaction, revision, harness ID/version, and the registry's exact assertion IDs. The
 raw nonce remains only in ephemeral armed memory until the creator starts the
 run, then is embedded only in the temporary server script.
 `AssertionPlanAccepted` exposes its SHA-256 commitment. Immediately before Play
 Solo, the plugin captures a fresh observation and rejects a changed revision.
 
-The client harness can invoke only `ReplicatedStorage.Remotes.CollectFruit`.
-The server positions the real player, drives client requests over a play-only
-relay, reads authoritative player/fruit state and actual runtime positions, and
-returns all seven results in one JSON string directly through `EndTest`:
+Before any action the server harness requires a live Humanoid,
+HumanoidRootPart, initialized declared player state, and every required world
+object. For happy paths, the temporary client performs the real production
+gesture and the model-authored LocalScript must initiate the request: a pointer
+click for CollectFruit and `SellPrompt` activation for SellInventory. For
+adversarial assertions only, the temporary client may invoke the real
+RemoteEvent directly to attack server validation. The temporary driver is not
+a substitute for production-client correctness.
+
+The server positions the real player, reads authoritative state and actual
+runtime positions, and returns the registered results in one JSON string
+directly through `EndTest`. The combined harness returns the seven CollectFruit
+regressions, six SellInventory assertions, and Collect→Sell composition. The
+historical Collect-only harness retains its seven results:
 
 - valid collection;
 - exact inventory `0 -> 1`;
@@ -149,7 +173,7 @@ stop ordering. A stale, copied, duplicate, late, unknown, wrong-project, or
 wrong-run result is rejected or leaves the proof incomplete.
 
 `StudioHarnessRunEnvelope.diagnostics` is the sole bounded diagnostics field.
-`StudioOutput` is not a v7 message type. A printed `CF-001 PASS` line has no
+`StudioOutput` is not a protocol-v10 message type. A printed `CF-001 PASS` line has no
 verification meaning.
 
 ## Operational cleanup
@@ -176,3 +200,12 @@ evidence semantics.
 - [StudioTestService](https://create.roblox.com/docs/reference/engine/classes/StudioTestService)
 - [Studio testing modes](https://create.roblox.com/docs/studio/testing-modes)
 - [ChangeHistoryService](https://create.roblox.com/docs/reference/engine/classes/ChangeHistoryService)
+# Protocol v10: bounded harness registry
+
+Protocol v10 accepts only two exact registered harness identities: the immutable
+historical `collect-fruit@collect-fruit-v7` and
+`collect-sell@collect-sell-v4`. The backend validates ID, version, source hash,
+and exact assertion count before arming. The plugin resolves the same registry
+before injection. There is no arbitrary assertion DSL or script-execution
+message. The combined harness returns one server-owned `EndTest(JSON)` envelope
+with fourteen correlated results; Output remains diagnostics only.

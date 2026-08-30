@@ -47,6 +47,16 @@ export interface IntentDraft {
   };
 }
 
+/** A bounded follow-up request against an already-declared CoreLoop. */
+export interface CoreLoopExtensionDraft {
+  kind: "CoreLoopExtensionDraft";
+  schemaVersion: 1;
+  normalizedGoal: string;
+  desiredOutcomes: string[];
+  unresolvedQuestions: string[];
+  selectedMechanic: "SellInventory";
+}
+
 /** A model proposal is deliberately source-only; Forge supplies every precondition. */
 export interface ModelPatchProposal {
   kind: "ModelPatchProposal";
@@ -132,7 +142,7 @@ export interface MechanicContract {
  */
 export interface MechanicImplementationSpec {
   kind: "MechanicImplementationSpec";
-  schemaVersion: 1;
+  schemaVersion: 4;
   id: ID;
   mechanicContractId: ID;
   mechanicName: string;
@@ -143,6 +153,7 @@ export interface MechanicImplementationSpec {
     direction: "client_to_server" | "server_to_client";
     preserveExisting: boolean;
   };
+  interactionBinding?: InteractionBinding;
   clientInputs: Array<{ position: number; role: string; type: string; trust: "untrusted" | "informational" }>;
   serverArguments: Array<{ position: number; role: string; type: string; source: "roblox_server" | "client" }>;
   stateBindings: Array<{
@@ -155,11 +166,28 @@ export interface MechanicImplementationSpec {
   }>;
   constants: Array<{ role: string; type: "number" | "string" | "boolean"; value: string | number | boolean }>;
   validationRequirements: Array<{ category: RemoteValidationCategory; subjectRole: string; applicability: ValidationApplicability; rationale: string }>;
+  stateMutations: Array<{ field: string; authority: Authority; operation: string }>;
   postconditions: string[];
   authorityInvariants: string[];
   sourceTargets: Array<{ path: RelativePath; executionContext: "server" | "client" | "shared" }>;
   allowedPatchOperations: Array<"replace_text" | "create_script">;
 }
+
+/** Bounded production initiation plus an independent server authorization boundary. */
+export type InteractionBinding = {
+  kind: "InteractionBinding";
+  schemaVersion: 2;
+  requirement: "explicit_user_action";
+  production:
+    | { kind: "pointer_click"; event: "Button1Down"; targetTag: string }
+    | { kind: "proximity_prompt"; path: string; className: "ProximityPrompt"; event: "Triggered"; maxActivationDistance: number };
+  clientAction:
+    | { kind: "input_event" }
+    | { kind: "module_function"; modulePath: string; sourcePath: RelativePath; functionName: string; argumentMode: "none" | "target_instance" };
+  serverAuthorization:
+    | { kind: "distance"; target: "requested_target"; maxDistance: number }
+    | { kind: "distance"; target: "bound_instance"; path: string; maxDistance: number };
+};
 
 export interface PatchSet {
   kind: "PatchSet";
@@ -233,7 +261,7 @@ export interface TrajectoryEvent {
 
 export interface ProofBundle {
   kind: "ProofBundle";
-  schemaVersion: 3;
+  schemaVersion: 4;
   id: ID;
   projectHash: Hash;
   projectSnapshotBeforeHash: Hash;
@@ -247,7 +275,20 @@ export interface ProofBundle {
   toolchain: Array<{ name: string; version: string; command: string; configHash: Hash }>;
   checks: Array<{ name: string; tier: "static" | "preflight" | "studio"; status: VerificationStatus; issueIds: ID[]; resultHash?: Hash }>;
   issues: VerificationIssue[];
-  assertions: Array<{ assertionId: ID; status: VerificationStatus; observed?: Record<string, string | number | boolean>; runId?: ID }>;
+  assertions: Array<{ assertionId: ID; mechanicContractId: ID; status: VerificationStatus; observed?: Record<string, string | number | boolean>; runId?: ID }>;
+  candidate?: {
+    artifactId: ID;
+    artifactHash: Hash;
+    gameIntentId: ID;
+    gameIntentHash: Hash;
+    coreLoopId: ID;
+    coreLoopHash: Hash;
+    implementationSpecId: ID;
+    implementationSpecHash: Hash;
+    contextCompositionHash: Hash;
+    model: { provider: string; name: string; classification: GenerationRun["classification"] };
+  };
+  regressions?: Array<{ mechanicContractId: ID; mechanicContractHash: Hash; proofBundleId: ID; sourceHashes: Record<RelativePath, Hash> }>;
   studioProof?: {
     testPlanId: ID;
     testPlanVersion: string;
@@ -431,11 +472,13 @@ export interface RemoteFlowDeclaration {
   direction: "client_to_server" | "server_to_client";
   remote: { stableId: ID; path: string; className: "RemoteEvent" | "RemoteFunction"; preserveExisting: boolean };
   clientScript: RelativePath;
+  interactionScript?: RelativePath;
   serverScript: RelativePath;
   clientInputs: Array<{ position: number; role: string; type: string; trust: "untrusted" | "informational" }>;
   serverArguments: Array<{ position: number; role: string; type: string; source: "roblox_server" | "client" }>;
+  interactionBinding?: InteractionBinding;
   validationRequirements: Array<{ category: RemoteValidationCategory; subjectRole: string; applicability: ValidationApplicability; rationale: string }>;
-  mutation: { field: string; sourceExpression: string; authority: Authority };
+  stateMutations: Array<{ field: string; sourceExpression: string; authority: Authority; operation: string }>;
   implementation?: {
     stateBindings: MechanicImplementationSpec["stateBindings"];
     constants: MechanicImplementationSpec["constants"];
@@ -446,13 +489,20 @@ export interface RemoteFlowDeclaration {
 
 export interface ForgeFixtureManifest {
   kind: "ForgeFixture";
-  schemaVersion: 2;
+  schemaVersion: 5;
   name: string;
   luauRoots: RelativePath[];
   remoteFlows: RemoteFlowDeclaration[];
-  instances?: Array<{ path: string; className: string; parentPath?: string; properties?: Record<string, string | number | boolean>; attributes?: Record<string, string | number | boolean>; tags?: string[] }>;
+  instances?: Array<{ path: string; className: string; parentPath?: string; position?: { x: number; y: number; z: number }; properties?: Record<string, string | number | boolean>; attributes?: Record<string, string | number | boolean>; tags?: string[] }>;
   persistentState?: Array<{ field: string; type: string; owner: "server"; durability: "session" | "persistent" }>;
   uiBindings?: Array<{ path: string; sourceField: string; direction: "server_to_client" | "local" }>;
+  generationTarget?: {
+    mode: "core_loop_extension";
+    gameIntentPath: RelativePath;
+    coreLoopPath: RelativePath;
+    targetNodeId: ID;
+    verifiedMechanics: Array<{ name: string; contractPath: RelativePath; proofBundleId: ID; sourceHashes: Record<RelativePath, Hash> }>;
+  };
 }
 
 export interface VerificationReport {
@@ -502,8 +552,8 @@ export function assertTracePersistence(value: unknown): asserts value is TracePe
 }
 
 export function assertFixtureManifest(value: unknown): asserts value is ForgeFixtureManifest {
-  if (!isRecord(value) || value.kind !== "ForgeFixture" || value.schemaVersion !== 2 || typeof value.name !== "string") {
-    throw new Error("Invalid ForgeFixture manifest: expected schemaVersion 2");
+  if (!isRecord(value) || value.kind !== "ForgeFixture" || value.schemaVersion !== 5 || typeof value.name !== "string") {
+    throw new Error("Invalid ForgeFixture manifest: expected schemaVersion 5");
   }
   if (!Array.isArray(value.luauRoots) || !value.luauRoots.every((entry) => typeof entry === "string")) {
     throw new Error("Invalid ForgeFixture manifest: luauRoots must be string[]");
@@ -511,9 +561,15 @@ export function assertFixtureManifest(value: unknown): asserts value is ForgeFix
   if (!Array.isArray(value.remoteFlows)) {
     throw new Error("Invalid ForgeFixture manifest: remoteFlows must be an array");
   }
-  if (value.instances !== undefined && (!Array.isArray(value.instances) || !value.instances.every((entry) => isRecord(entry) && isString(entry.path) && isString(entry.className)))) throw new Error("Invalid ForgeFixture instances");
+  if (value.instances !== undefined && (!Array.isArray(value.instances) || !value.instances.every((entry) => isRecord(entry) && isString(entry.path) && isString(entry.className) && (entry.position === undefined || isVector3(entry.position))))) throw new Error("Invalid ForgeFixture instances");
   if (value.persistentState !== undefined && !Array.isArray(value.persistentState)) throw new Error("Invalid ForgeFixture persistentState");
   if (value.uiBindings !== undefined && !Array.isArray(value.uiBindings)) throw new Error("Invalid ForgeFixture uiBindings");
+  if (value.generationTarget !== undefined) {
+    if (!isRecord(value.generationTarget) || value.generationTarget.mode !== "core_loop_extension" || !isString(value.generationTarget.gameIntentPath) || !isString(value.generationTarget.coreLoopPath) || !isString(value.generationTarget.targetNodeId) || !Array.isArray(value.generationTarget.verifiedMechanics)) throw new Error("Invalid ForgeFixture generation target");
+    for (const mechanic of value.generationTarget.verifiedMechanics) {
+      if (!isRecord(mechanic) || !isString(mechanic.name) || !isString(mechanic.contractPath) || !isString(mechanic.proofBundleId) || !isRecord(mechanic.sourceHashes) || !Object.values(mechanic.sourceHashes).every(isString)) throw new Error("Invalid ForgeFixture verified mechanic provenance");
+    }
+  }
   for (const flow of value.remoteFlows) assertRemoteFlow(flow);
 }
 
@@ -538,9 +594,10 @@ export function assertMechanicContract(value: unknown): asserts value is Mechani
 }
 
 export function assertMechanicImplementationSpec(value: unknown): asserts value is MechanicImplementationSpec {
-  if (!isRecord(value) || value.kind !== "MechanicImplementationSpec" || value.schemaVersion !== 1 || !isString(value.id) || !isString(value.mechanicContractId) || !isString(value.mechanicName) || !isRecord(value.remote) || !isString(value.remote.stableId) || !isString(value.remote.path) || !["RemoteEvent", "RemoteFunction"].includes(String(value.remote.className)) || !["client_to_server", "server_to_client"].includes(String(value.remote.direction)) || typeof value.remote.preserveExisting !== "boolean" || !Array.isArray(value.clientInputs) || !Array.isArray(value.serverArguments) || !Array.isArray(value.stateBindings) || !Array.isArray(value.constants) || !Array.isArray(value.validationRequirements) || !Array.isArray(value.postconditions) || !Array.isArray(value.authorityInvariants) || !Array.isArray(value.sourceTargets) || !Array.isArray(value.allowedPatchOperations)) {
+  if (!isRecord(value) || value.kind !== "MechanicImplementationSpec" || value.schemaVersion !== 4 || !isString(value.id) || !isString(value.mechanicContractId) || !isString(value.mechanicName) || !isRecord(value.remote) || !isString(value.remote.stableId) || !isString(value.remote.path) || !["RemoteEvent", "RemoteFunction"].includes(String(value.remote.className)) || !["client_to_server", "server_to_client"].includes(String(value.remote.direction)) || typeof value.remote.preserveExisting !== "boolean" || !Array.isArray(value.clientInputs) || !Array.isArray(value.serverArguments) || !Array.isArray(value.stateBindings) || !Array.isArray(value.constants) || !Array.isArray(value.validationRequirements) || !Array.isArray(value.stateMutations) || !Array.isArray(value.postconditions) || !Array.isArray(value.authorityInvariants) || !Array.isArray(value.sourceTargets) || !Array.isArray(value.allowedPatchOperations)) {
     throw new Error("Invalid MechanicImplementationSpec");
   }
+  if (value.interactionBinding !== undefined) assertInteractionBinding(value.interactionBinding, "MechanicImplementationSpec interaction binding");
   assertPositionalInputs(value.clientInputs, "MechanicImplementationSpec client inputs");
   assertServerArguments(value.serverArguments, "MechanicImplementationSpec server arguments");
   assertValidationRequirements(value.validationRequirements, "MechanicImplementationSpec validation requirements");
@@ -582,8 +639,8 @@ export function assertTrajectoryEvent(value: unknown): asserts value is Trajecto
 }
 
 export function assertProofBundle(value: unknown): asserts value is ProofBundle {
-  if (!isRecord(value) || value.kind !== "ProofBundle" || value.schemaVersion !== 3 || !isString(value.id) || !isString(value.projectHash) || !isString(value.projectSnapshotBeforeHash) || !isString(value.projectSnapshotAfterHash) || !isString(value.mechanicContractId) || !isString(value.mechanicContractHash) || !isString(value.patchSetId) || !isString(value.patchSetHash) || !isString(value.generatedAt) || !Array.isArray(value.toolchain) || !Array.isArray(value.checks) || !Array.isArray(value.issues) || !Array.isArray(value.assertions) || !isRecord(value.gate) || !isGateStatus(value.gate.status) || !Array.isArray(value.gate.reasons) || !isRecord(value.reproducibility) || optionalString(value.buildTraceId) === false || (value.studioProof !== undefined && !isStudioProof(value.studioProof))) {
-    throw new Error("Invalid ProofBundle: expected schemaVersion 3");
+  if (!isRecord(value) || value.kind !== "ProofBundle" || value.schemaVersion !== 4 || !isString(value.id) || !isString(value.projectHash) || !isString(value.projectSnapshotBeforeHash) || !isString(value.projectSnapshotAfterHash) || !isString(value.mechanicContractId) || !isString(value.mechanicContractHash) || !isString(value.patchSetId) || !isString(value.patchSetHash) || !isString(value.generatedAt) || !Array.isArray(value.toolchain) || !Array.isArray(value.checks) || !Array.isArray(value.issues) || !Array.isArray(value.assertions) || !isRecord(value.gate) || !isGateStatus(value.gate.status) || !Array.isArray(value.gate.reasons) || !isRecord(value.reproducibility) || optionalString(value.buildTraceId) === false || (value.studioProof !== undefined && !isStudioProof(value.studioProof))) {
+    throw new Error("Invalid ProofBundle: expected schemaVersion 4");
   }
 }
 
@@ -592,12 +649,31 @@ function assertRemoteFlow(value: unknown): asserts value is RemoteFlowDeclaratio
     throw new Error("Invalid ForgeFixture remote flow");
   }
   if (!isRecord(value.remote) || !isString(value.remote.stableId) || !isString(value.remote.path) || !["RemoteEvent", "RemoteFunction"].includes(String(value.remote.className)) || typeof value.remote.preserveExisting !== "boolean") throw new Error("Invalid ForgeFixture remote identity");
-  if (typeof value.clientScript !== "string" || typeof value.serverScript !== "string") throw new Error("Invalid ForgeFixture remote flow paths");
+  if (typeof value.clientScript !== "string" || typeof value.serverScript !== "string" || (value.interactionScript !== undefined && typeof value.interactionScript !== "string")) throw new Error("Invalid ForgeFixture remote flow paths");
   assertPositionalInputs(value.clientInputs, "ForgeFixture client inputs");
   assertServerArguments(value.serverArguments, "ForgeFixture server arguments");
+  if (value.interactionBinding !== undefined) assertInteractionBinding(value.interactionBinding, "ForgeFixture interaction binding");
   assertValidationRequirements(value.validationRequirements, "ForgeFixture validation requirements");
-  if (!isRecord(value.mutation) || typeof value.mutation.field !== "string" || typeof value.mutation.sourceExpression !== "string" || typeof value.mutation.authority !== "string") throw new Error("Invalid ForgeFixture mutation");
+  if (!Array.isArray(value.stateMutations) || !value.stateMutations.every((mutation) => isRecord(mutation) && isString(mutation.field) && isString(mutation.sourceExpression) && isString(mutation.authority) && isString(mutation.operation))) throw new Error("Invalid ForgeFixture state mutations");
 }
+
+function assertInteractionBinding(value: unknown, label: string): asserts value is InteractionBinding {
+  if (!isRecord(value) || value.kind !== "InteractionBinding" || value.schemaVersion !== 2 || value.requirement !== "explicit_user_action" || !isRecord(value.production) || !isRecord(value.clientAction) || !isRecord(value.serverAuthorization) || value.serverAuthorization.kind !== "distance" || !isFinitePositiveNumber(value.serverAuthorization.maxDistance)) throw new Error(`Invalid ${label}`);
+  if (value.clientAction.kind === "module_function") {
+    if (!isString(value.clientAction.modulePath) || !isString(value.clientAction.sourcePath) || !isString(value.clientAction.functionName) || !["none", "target_instance"].includes(String(value.clientAction.argumentMode))) throw new Error(`Invalid ${label} client action module`);
+  } else if (value.clientAction.kind !== "input_event") throw new Error(`Invalid ${label} client action`);
+  if (value.production.kind === "pointer_click") {
+    if (value.production.event !== "Button1Down" || !isString(value.production.targetTag) || value.serverAuthorization.target !== "requested_target") throw new Error(`Invalid ${label} pointer click`);
+  } else if (value.production.kind === "proximity_prompt") {
+    if (!isString(value.production.path) || value.production.className !== "ProximityPrompt" || value.production.event !== "Triggered" || !isFinitePositiveNumber(value.production.maxActivationDistance) || value.serverAuthorization.target !== "bound_instance" || !isString(value.serverAuthorization.path)) throw new Error(`Invalid ${label} ProximityPrompt`);
+  } else throw new Error(`Invalid ${label} production initiation`);
+}
+
+function isVector3(value: unknown): value is { x: number; y: number; z: number } {
+  return isRecord(value) && typeof value.x === "number" && Number.isFinite(value.x) && typeof value.y === "number" && Number.isFinite(value.y) && typeof value.z === "number" && Number.isFinite(value.z);
+}
+
+function isFinitePositiveNumber(value: unknown): value is number { return typeof value === "number" && Number.isFinite(value) && value > 0; }
 
 function assertPositionalInputs(value: unknown, label: string): void {
   if (!Array.isArray(value) || !value.every((entry) => isRecord(entry) && isNonNegativeInteger(entry.position) && entry.position >= 1 && isString(entry.role) && isString(entry.type) && (entry.trust === "untrusted" || entry.trust === "informational"))) throw new Error(`Invalid ${label}`);

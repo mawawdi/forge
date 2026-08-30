@@ -27,25 +27,26 @@ test("ProjectSemanticMap and ProjectSnapshot are canonical, deterministic, and c
   assert.ok(first.instances.find((instance) => instance.path === "Workspace/Fruit")?.id);
   assert.ok(first.instances.find((instance) => instance.path === "ReplicatedStorage/Remotes")?.tags.includes("network"));
   assert.equal(first.remotes.length, 1);
-  assert.equal(first.remoteFlows[0]?.serverEvidence?.mutationExpression, "(Inventory[player] or 0) + amount");
+  assert.equal(first.remoteFlows[0]?.serverEvidence?.mutations[0]?.expression, "(Inventory[player] or 0) + amount");
   assert.ok(first.dependencies.some((dependency) => dependency.kind === "remote"));
 
   const live = mergeStudioObservation(first, {
     kind: "StudioSnapshotObservation",
-    schemaVersion: 2,
+    schemaVersion: 3,
     project: { name: "Fruit Islands", placeId: 123, universeId: 456 },
     capturedAt: "2026-08-29T00:00:00.000Z",
-    instances: [{ stableId: "studio_fruit", path: "Workspace/Fruit", className: "Part", properties: [{ name: "CanTouch", value: false }], attributes: [{ name: "Consumed", value: true }, { name: "FruitType", value: "Apple" }], tags: ["collectible"] }],
+    instances: [{ stableId: "studio_fruit", path: "Workspace/Fruit", className: "Part", position: { x: 4, y: 3, z: 2 }, properties: [{ name: "CanTouch", value: false }], attributes: [{ name: "Consumed", value: true }, { name: "FruitType", value: "Apple" }], tags: ["collectible"] }],
     scripts: [{ stableId: "studio_collect", path: "src/server/CollectFruit.server.luau", executionContext: "server", sourceHash: "studio-source-token", source: first.files.find((file) => file.path.endsWith("CollectFruit.server.luau"))?.source ?? "" }],
     remotes: [{ path: "ReplicatedStorage/Remotes/CollectFruit", name: "CollectFruit", className: "RemoteEvent", direction: "client_to_server" }]
   });
   assert.equal(live.instances.find((instance) => instance.path === "Workspace/Fruit")?.properties.CanTouch, false);
   assert.equal(live.instances.find((instance) => instance.path === "Workspace/Fruit")?.attributes.Consumed, true);
+  assert.deepEqual(live.instances.find((instance) => instance.path === "Workspace/Fruit")?.position, { x: 4, y: 3, z: 2 });
   assert.equal(live.scripts.find((script) => script.path.endsWith("CollectFruit.server.luau"))?.sourceHash, contentHash(first.files.find((file) => file.path.endsWith("CollectFruit.server.luau"))?.source ?? ""));
   assert.notEqual(createProjectSnapshot(live).projectSemanticHash, createProjectSnapshot(first).projectSemanticHash);
   const reidentifiedLive = mergeStudioObservation(first, {
-    kind: "StudioSnapshotObservation", schemaVersion: 2, project: { name: "Fruit Islands", placeId: 123, universeId: 456 }, capturedAt: "2026-08-29T00:00:01.000Z",
-    instances: [{ stableId: "different_live_target_id", path: "Workspace/Fruit", className: "Part", properties: [{ name: "CanTouch", value: false }], attributes: [{ name: "Consumed", value: true }, { name: "FruitType", value: "Apple" }, { name: "_forgeStableId", value: "different_live_target_id" }], tags: ["collectible"] }],
+    kind: "StudioSnapshotObservation", schemaVersion: 3, project: { name: "Fruit Islands", placeId: 123, universeId: 456 }, capturedAt: "2026-08-29T00:00:01.000Z",
+    instances: [{ stableId: "different_live_target_id", path: "Workspace/Fruit", className: "Part", position: { x: 4, y: 3, z: 2 }, properties: [{ name: "CanTouch", value: false }], attributes: [{ name: "Consumed", value: true }, { name: "FruitType", value: "Apple" }, { name: "_forgeStableId", value: "different_live_target_id" }], tags: ["collectible"] }],
     scripts: [{ stableId: "different_script_target_id", path: "src/server/CollectFruit.server.luau", executionContext: "server", sourceHash: "different-live-token", source: first.files.find((file) => file.path.endsWith("CollectFruit.server.luau"))?.source ?? "" }],
     remotes: [{ path: "ReplicatedStorage/Remotes/CollectFruit", name: "CollectFruit", className: "RemoteEvent", direction: "client_to_server" }]
   });
@@ -54,9 +55,9 @@ test("ProjectSemanticMap and ProjectSnapshot are canonical, deterministic, and c
   const studioManifestValue: unknown = JSON.parse(await readFile(resolve(root, "examples/collect-fruit/studio/forge.fixture.json"), "utf8"));
   assertFixtureManifest(studioManifestValue);
   const studioMap = await buildSemanticMap(resolve(root, "examples/collect-fruit/studio"), studioManifestValue);
-  assert.match(studioMap.remoteFlows[0]?.serverEvidence?.mutationExpression ?? "", /Fruit42:GetAttribute\("Reward"\)/);
+  assert.match(studioMap.remoteFlows[0]?.serverEvidence?.mutations.find((mutation) => mutation.field === "Inventory")?.expression ?? "", /Fruit42:GetAttribute\("Reward"\)/);
   const observedStudio = mergeStudioObservation(studioMap, {
-    kind: "StudioSnapshotObservation", schemaVersion: 2, project: { name: "ForgeCollectFruit", placeId: 0, universeId: 0 }, capturedAt: "2026-08-29T00:00:00.000Z",
+    kind: "StudioSnapshotObservation", schemaVersion: 3, project: { name: "ForgeCollectFruit", placeId: 0, universeId: 0 }, capturedAt: "2026-08-29T00:00:00.000Z",
     instances: [],
     scripts: studioMap.files.map((file, index) => ({ stableId: `studio_script_${index}`, path: "ServerScriptService/" + file.path.split("/").pop(), executionContext: file.executionContext, sourceHash: "local-token", source: file.source })),
     remotes: []

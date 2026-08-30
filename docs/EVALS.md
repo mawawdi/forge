@@ -1,6 +1,6 @@
 # CoreLoopBench and Verification Evals
 
-Status: M1, M1.5, M2, M2.5, M3, and M3.25 complete; M3.5 next
+Status: M1, M1.5, M2, M2.5, M3, M3.25, and M3.5 complete
 Purpose: executable evidence for verified Roblox mechanic generation
 
 ## M3.25 acceptance addition
@@ -36,6 +36,45 @@ is `repair`; zero intent or initial-patch requests are allowed. Tests require
 the immutable source hashes to survive both a successful repair and a repair
 that retains the defect. The repaired output must be outside the seed and
 regression, and a failed repair must remain rejected before Studio.
+
+## M3.5 acceptance addition
+
+The SellInventory extension begins from the pinned M3.25 CollectFruit bytes,
+not a hand-authored replacement. Its model context includes the preserved
+intent/core-loop, Forge-owned zero-argument Sell ABI, Inventory/Coins state
+schema, SellZone UnitPrice, exact ordering invariants, the six allowed source
+targets, and the complete shared Collect server source. It excludes Studio
+harnesses, historical patch bodies, and unrelated source.
+
+The local gate must reject a private mirror of the shared Inventory attribute,
+client-controlled payout, a nonzero/incorrect Inventory clear, a missing
+server-owned UnitPrice read, a yield between clear and credit, or a PatchSet
+outside the six targets. The real evaluation is one protocol-v10
+`collect-sell@collect-sell-v4` session with exactly fourteen unique correlated
+results: seven Collect regressions, six Sell assertions, and Collect→Sell
+composition. Missing, duplicate, stale, interrupted, or uncorrelated evidence
+is a rollback, never a pass. M3.5 acceptance is recorded: the real payout-fault
+run rejected `proof_4ec631d5d8117fee86a3292e` after the sole spoof assertion
+observed `1000009`, while the fresh model-repaired candidate passed all fourteen
+assertions and committed as `proof_1fe98358c9d6262b92759b90`.
+
+The payout fault evaluation is contract-scoped: it starts from a sealed safe
+candidate and applies a bounded patch that introduces an undeclared server
+callback input into a contract whose client ABI declares no economic inputs.
+The verifier must report the ABI divergence, the undeclared input, and its flow
+to the declared currency mutation. The Studio harness exercises the production
+client path for happy assertions; only the assigned adversarial assertion sends
+the direct exaggerated payout request. A nonzero process exit is the expected
+result of a correctly rejected fault run, provided its ProofBundle is rejected
+and its transaction rollback is observed.
+
+SellInventory additionally fails local verification if an explicit
+`ProximityPrompt` interaction is implemented as an autonomous or periodic
+request. The prompt activation radius (12 studs) and server authorization radius
+(20 studs) are separate contract facts. The real input handler and Studio
+happy-path driver must invoke the same model-authored client action function;
+direct RemoteEvent invocation is allowed only for adversarial/security
+assertions.
 
 ## 1. Evaluation philosophy
 

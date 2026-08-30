@@ -6,7 +6,7 @@ local HttpService = game:GetService("HttpService")
 local StudioTestService = game:GetService("StudioTestService")
 local Workspace = game:GetService("Workspace")
 local Constants = require(script.Parent.Constants)
-local CollectFruitHarness = require(script.Parent.CollectFruitHarness)
+local HarnessRegistry = require(script.Parent.HarnessRegistry)
 local Hash = require(script.Parent.Hash)
 
 local StudioProofExecutor = {}
@@ -54,9 +54,8 @@ function StudioProofExecutor:isIncomplete(): boolean
 end
 
 function StudioProofExecutor:supportsPlan(payload: any): boolean
-	return payload.harnessId == Constants.HARNESS_ID
-		and payload.harnessVersion == Constants.HARNESS_VERSION
-		and CollectFruitHarness.supportsAssertions(payload.assertions)
+	local entry = HarnessRegistry.resolve(payload.harnessId, payload.harnessVersion)
+	return entry ~= nil and entry.harness.supportsAssertions(payload.assertions)
 end
 
 function StudioProofExecutor:cleanup(run)
@@ -90,13 +89,15 @@ function StudioProofExecutor:arm(payload, requestId)
 
 	local nonce = HttpService:GenerateGUID(false) .. HttpService:GenerateGUID(false)
 	local commitment = Hash.sha256(nonce)
+	local harness = HarnessRegistry.resolve(payload.harnessId, payload.harnessVersion)
+	if not harness then error("StudioProof harness is not allowlisted") end
 	local context = {}
 	for key, value in pairs(payload) do context[key] = value end
 	context.nonce = nonce
 	context.nonceCommitment = commitment
-	context.harnessId = Constants.HARNESS_ID
-	context.harnessVersion = Constants.HARNESS_VERSION
-	context.harnessHash = Constants.HARNESS_HASH
+	context.harnessId = harness.id
+	context.harnessVersion = harness.version
+	context.harnessHash = harness.hash
 	context.startedAt = os.date("!%Y-%m-%dT%H:%M:%SZ")
 
 	local binding = {
@@ -115,6 +116,7 @@ function StudioProofExecutor:arm(payload, requestId)
 		injected = {},
 		closed = false,
 		phase = "armed",
+		harness = harness,
 	}
 
 	self.send("AssertionPlanAccepted", {
@@ -122,7 +124,7 @@ function StudioProofExecutor:arm(payload, requestId)
 		runId = binding.runId, testPlanId = binding.testPlanId, correlationId = binding.correlationId,
 		projectSnapshotHash = binding.projectSnapshotHash, mechanicContractHash = binding.mechanicContractHash,
 		nonceCommitment = binding.nonceCommitment, assertionCount = #payload.assertions,
-		harnessId = Constants.HARNESS_ID, harnessVersion = Constants.HARNESS_VERSION,
+		harnessId = harness.id, harnessVersion = harness.version,
 		instruction = "Studio verification is armed. Click Verify in Studio in the Forge plugin.",
 	}, requestId)
 	self.state("READY TO VERIFY", "Click Verify in Studio. Forge will start one Play Solo session in this Studio window.")
@@ -150,11 +152,11 @@ function StudioProofExecutor:start()
 		local channelName = "__ForgeStudioProofChannel_" .. string.gsub(HttpService:GenerateGUID(false), "-", "")
 		local server = Instance.new("Script")
 		server.Name = SERVER_NAME
-		server.Source = CollectFruitHarness.serverSource(HttpService:JSONEncode(run.context), channelName)
+		server.Source = run.harness.harness.serverSource(HttpService:JSONEncode(run.context), channelName)
 		server.Parent = Workspace
 		local client = Instance.new("LocalScript")
 		client.Name = CLIENT_NAME
-		client.Source = CollectFruitHarness.clientSource(channelName)
+		client.Source = run.harness.harness.clientSource(channelName)
 		client.Parent = starterPlayerScripts
 		table.insert(run.injected, server)
 		table.insert(run.injected, client)
@@ -226,9 +228,11 @@ function StudioProofExecutor:start()
 			or envelope.nonce ~= run.nonce
 			or envelope.nonceCommitment ~= run.commitment
 			or Hash.sha256(envelope.nonce) ~= run.commitment
-			or envelope.harnessHash ~= Constants.HARNESS_HASH
+			or envelope.harnessId ~= run.harness.id
+			or envelope.harnessVersion ~= run.harness.version
+			or envelope.harnessHash ~= run.harness.hash
 			or typeof(envelope.assertions) ~= "table"
-			or not CollectFruitHarness.supportsResults(envelope.assertions)
+			or not run.harness.harness.supportsResults(envelope.assertions)
 		then
 			self.send("PluginError", {
 				code = "SECURITY_REJECTION",
@@ -241,8 +245,8 @@ function StudioProofExecutor:start()
 			return
 		end
 
-		self.send("StudioTestResult", envelope, requestId)
-		self.send("PlaytestStopped", {
+		local resultDelivery = self.send("StudioTestResult", envelope, requestId)
+		local stopDelivery = self.send("PlaytestStopped", {
 			projectId = binding.projectId, sessionId = binding.sessionId, project = binding.project,
 			runId = binding.runId, testPlanId = binding.testPlanId, correlationId = binding.correlationId,
 			projectSnapshotHash = binding.projectSnapshotHash, mechanicContractHash = binding.mechanicContractHash,
@@ -250,10 +254,16 @@ function StudioProofExecutor:start()
 		}, requestId)
 		self.active = nil
 		self.lastOutcome = envelope.status == "completed" and "completed" or "rejected"
-		self.state(
-			envelope.status == "completed" and "VERIFICATION RESULT RECEIVED" or "VERIFICATION REJECTED",
-			envelope.status == "completed" and "Forge is finalizing the transaction." or "The authoritative server harness did not complete."
-		)
+		if resultDelivery == nil or stopDelivery == nil then
+			self.state("VERIFICATION REJECTED", "The bridge rejected authoritative evidence; Forge reported the exact rejection and will not commit.")
+		elseif resultDelivery == false or stopDelivery == false then
+			self.state("RESULT DELIVERY PENDING", "Authoritative evidence is queued for a transient bridge retry; Forge cannot commit until delivery succeeds.")
+		else
+			self.state(
+				envelope.status == "completed" and "VERIFICATION RESULT RECEIVED" or "VERIFICATION REJECTED",
+				envelope.status == "completed" and "Forge is finalizing the transaction." or "The authoritative server harness did not complete."
+			)
+		end
 	end)
 end
 

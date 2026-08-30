@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
-import { assertMechanicImplementationSpec, contentHash, stableJson, type ForgeFixtureManifest, type MechanicContract, type MechanicImplementationSpec, type RelativePath, type RemoteFlowDeclaration } from "../../contracts/src/index.js";
+import { assertMechanicImplementationSpec, contentHash, stableJson, type ForgeFixtureManifest, type InteractionBinding, type MechanicContract, type MechanicImplementationSpec, type RelativePath, type RemoteFlowDeclaration } from "../../contracts/src/index.js";
 
 export interface SourceFile {
   path: RelativePath;
@@ -22,6 +22,7 @@ export interface SemanticInstance {
   path: string;
   className: string;
   parentId?: string;
+  position?: { x: number; y: number; z: number };
   properties: Record<string, string | number | boolean>;
   attributes: Record<string, string | number | boolean>;
   tags: string[];
@@ -34,6 +35,7 @@ export interface SemanticRemote {
   className: "RemoteEvent" | "RemoteFunction";
   direction: RemoteFlowDeclaration["direction"];
   clientScript: RelativePath;
+  interactionScript?: RelativePath;
   serverScript: RelativePath;
   mechanicContractId?: string;
 }
@@ -41,9 +43,27 @@ export interface SemanticRemote {
 export interface SemanticRemoteFlow {
   declaration: RemoteFlowDeclaration;
   client: SourceFile;
+  interactionClient: SourceFile;
   server: SourceFile;
-  clientEvidence: { remoteCall: string; arguments: Array<{ position: number; expression: string }> } | null;
-  serverEvidence: { handler: string; parameters: Array<{ position: number; name: string; annotation?: string }>; mutation: string; mutationExpression: string } | null;
+  clientEvidence: {
+    remoteCall: string;
+    arguments: Array<{ position: number; expression: string }>;
+    initiations: Array<{ kind: "explicit_event" | "autonomous_event" | "unresolved"; event?: string; statement?: string }>;
+  } | null;
+  interactionEvidence: {
+    actionCall: string;
+    arguments: string[];
+    initiations: Array<{ kind: "explicit_event" | "autonomous_event" | "unresolved"; event?: string; statement?: string }>;
+  } | null;
+  serverEvidence: { handler: string; parameters: Array<{ position: number; name: string; annotation?: string }>; mutations: Array<{ field: string; statement: string; expression: string; index: number }> } | null;
+}
+
+export interface SemanticInteractionBinding {
+  mechanicName: string;
+  remoteId: string;
+  binding: InteractionBinding;
+  productionInstance?: SemanticInstance;
+  authorizationInstance?: SemanticInstance;
 }
 
 export interface ProjectSemanticMap {
@@ -56,6 +76,7 @@ export interface ProjectSemanticMap {
   modules: Array<{ id: string; path: RelativePath; sourceHash: string; dependencies: RelativePath[] }>;
   instances: SemanticInstance[];
   remotes: SemanticRemote[];
+  interactionBindings: SemanticInteractionBinding[];
   persistentState: NonNullable<ForgeFixtureManifest["persistentState"]>;
   uiBindings: NonNullable<ForgeFixtureManifest["uiBindings"]>;
   mechanicContracts: string[];
@@ -77,10 +98,10 @@ export interface ProjectSnapshot {
 
 export interface StudioSnapshotObservation {
   kind: "StudioSnapshotObservation";
-  schemaVersion: 2;
+  schemaVersion: 3;
   project: { name: string; placeId: number; universeId: number };
   capturedAt: string;
-  instances: Array<{ stableId: string; path: string; className: string; parentPath?: string; properties: StudioPrimitiveEntry[]; attributes: StudioPrimitiveEntry[]; tags: string[] }>;
+  instances: Array<{ stableId: string; path: string; className: string; parentPath?: string; position?: { x: number; y: number; z: number }; properties: StudioPrimitiveEntry[]; attributes: StudioPrimitiveEntry[]; tags: string[] }>;
   scripts: Array<{ stableId: string; path: RelativePath; executionContext: SourceFile["executionContext"]; sourceHash: string; source?: string }>;
   remotes: Array<{ path: string; name: string; className: SemanticRemote["className"]; direction: SemanticRemote["direction"] }>;
 }
@@ -88,11 +109,11 @@ export interface StudioSnapshotObservation {
 export interface StudioPrimitiveEntry { name: string; value: string | number | boolean; }
 
 export function assertStudioSnapshotObservation(value: unknown): asserts value is StudioSnapshotObservation {
-  if (!isRecord(value) || value.kind !== "StudioSnapshotObservation" || value.schemaVersion !== 2 || !isRecord(value.project) || !isString(value.project.name) || typeof value.project.placeId !== "number" || typeof value.project.universeId !== "number" || !isString(value.capturedAt) || !Array.isArray(value.instances) || !Array.isArray(value.scripts) || !Array.isArray(value.remotes)) throw new Error("Invalid StudioSnapshotObservation: expected schemaVersion 2");
+  if (!isRecord(value) || value.kind !== "StudioSnapshotObservation" || value.schemaVersion !== 3 || !isRecord(value.project) || !isString(value.project.name) || typeof value.project.placeId !== "number" || typeof value.project.universeId !== "number" || !isString(value.capturedAt) || !Array.isArray(value.instances) || !Array.isArray(value.scripts) || !Array.isArray(value.remotes)) throw new Error("Invalid StudioSnapshotObservation: expected schemaVersion 3");
   const stableIds = new Set<string>();
   const instanceKeys = new Set<string>();
   for (const instance of value.instances) {
-    if (!isRecord(instance) || !isString(instance.stableId) || !isString(instance.path) || !isString(instance.className) || !isPrimitiveEntries(instance.properties) || !isPrimitiveEntries(instance.attributes) || !Array.isArray(instance.tags) || !instance.tags.every(isString)) throw new Error("Invalid StudioSnapshotObservation instance");
+    if (!isRecord(instance) || !isString(instance.stableId) || !isString(instance.path) || !isString(instance.className) || (instance.position !== undefined && !isVector3(instance.position)) || !isPrimitiveEntries(instance.properties) || !isPrimitiveEntries(instance.attributes) || !Array.isArray(instance.tags) || !instance.tags.every(isString)) throw new Error("Invalid StudioSnapshotObservation instance");
     if (stableIds.has(instance.stableId) || instanceKeys.has(`${instance.className}\0${instance.path}`) || (instance.attributes as StudioPrimitiveEntry[]).some((entry) => entry.name === "_forgeStableId")) throw new Error("Invalid StudioSnapshotObservation identity");
     stableIds.add(instance.stableId);
     instanceKeys.add(`${instance.className}\0${instance.path}`);
@@ -150,20 +171,23 @@ export async function buildSemanticMap(root: string, manifest: ForgeFixtureManif
   const remoteFlows: SemanticRemoteFlow[] = [];
   for (const declaration of manifest.remoteFlows) {
     assertProjectRelative(declaration.clientScript);
+    if (declaration.interactionScript) assertProjectRelative(declaration.interactionScript);
     assertProjectRelative(declaration.serverScript);
     const client = byPath.get(normalizeRelative(declaration.clientScript));
+    const interactionClient = byPath.get(normalizeRelative(declaration.interactionScript ?? declaration.clientScript));
     const server = byPath.get(normalizeRelative(declaration.serverScript));
-    if (!client || !server) remoteFlows.push({ declaration, client: client ?? missingSource(canonicalRoot, declaration.clientScript, "client"), server: server ?? missingSource(canonicalRoot, declaration.serverScript, "server"), clientEvidence: null, serverEvidence: null });
-    else remoteFlows.push({ declaration, client, server, clientEvidence: findClientEvidence(client.source, declaration), serverEvidence: findServerEvidence(server.source, declaration) });
+    if (!client || !interactionClient || !server) remoteFlows.push({ declaration, client: client ?? missingSource(canonicalRoot, declaration.clientScript, "client"), interactionClient: interactionClient ?? missingSource(canonicalRoot, declaration.interactionScript ?? declaration.clientScript, "client"), server: server ?? missingSource(canonicalRoot, declaration.serverScript, "server"), clientEvidence: null, interactionEvidence: null, serverEvidence: null });
+    else remoteFlows.push({ declaration, client, interactionClient, server, clientEvidence: findClientEvidence(client.source, declaration), interactionEvidence: findInteractionEvidence(interactionClient.source, declaration.interactionBinding), serverEvidence: findServerEvidence(server.source, declaration) });
   }
 
   const scripts = files.map((file) => ({ id: stableId("script", file.path), path: file.path, executionContext: file.executionContext, sourceHash: contentHash(file.source), dependencies: findDependencies(file.source) }));
   const modules = scripts.filter((script) => !script.path.endsWith(".client.luau") && !script.path.endsWith(".server.luau")).map((script) => ({ id: script.id, path: script.path, sourceHash: script.sourceHash, dependencies: script.dependencies }));
   const instances = buildInstances(files, manifest);
-  const remotes = remoteFlows.map((flow) => ({ id: flow.declaration.remote.stableId, path: flow.declaration.remote.path, name: flow.declaration.name, className: flow.declaration.remote.className, direction: flow.declaration.direction, clientScript: normalizeRelative(flow.declaration.clientScript), serverScript: normalizeRelative(flow.declaration.serverScript), mechanicContractId: `contract_${toSnakeCase(flow.declaration.name)}` })).sort((left, right) => left.path.localeCompare(right.path));
+  const remotes = remoteFlows.map((flow) => ({ id: flow.declaration.remote.stableId, path: flow.declaration.remote.path, name: flow.declaration.name, className: flow.declaration.remote.className, direction: flow.declaration.direction, clientScript: normalizeRelative(flow.declaration.clientScript), ...(flow.declaration.interactionScript ? { interactionScript: normalizeRelative(flow.declaration.interactionScript) } : {}), serverScript: normalizeRelative(flow.declaration.serverScript), mechanicContractId: `contract_${toSnakeCase(flow.declaration.name)}` })).sort((left, right) => left.path.localeCompare(right.path));
   const mechanicContracts = remotes.map((remote) => `contract_${toSnakeCase(remote.name)}`).sort();
+  const interactionBindings = buildInteractionBindings(remoteFlows, remotes, instances);
   const dependencies = buildDependencies(scripts, remotes, manifest, mechanicContracts);
-  const partial: Omit<ProjectSemanticMap, "hashes"> = { kind: "ProjectSemanticMap", schemaVersion: 1, projectId: stableId("project", canonicalRoot), root: canonicalRoot, files, scripts, modules, instances, remotes, persistentState: manifest.persistentState ?? [], uiBindings: manifest.uiBindings ?? [], mechanicContracts, remoteFlows, dependencies };
+  const partial: Omit<ProjectSemanticMap, "hashes"> = { kind: "ProjectSemanticMap", schemaVersion: 1, projectId: stableId("project", canonicalRoot), root: canonicalRoot, files, scripts, modules, instances, remotes, interactionBindings, persistentState: manifest.persistentState ?? [], uiBindings: manifest.uiBindings ?? [], mechanicContracts, remoteFlows, dependencies };
   return { ...partial, hashes: projectHashes(partial) };
 }
 
@@ -195,20 +219,23 @@ export function mergeStudioObservation(map: ProjectSemanticMap, observation: Stu
   });
   // Plugin stable IDs are live mutation handles, not semantic identity. Keeping
   // them out of the semantic map makes enrollment/collision repair hash-neutral.
-  const instances = observation.instances.map((instance) => ({ id: stableId("instance", `${instance.path}|${instance.className}`), path: instance.path, className: instance.className, properties: entriesToRecord(instance.properties), attributes: withoutForgeMetadata(entriesToRecord(instance.attributes)), tags: [...instance.tags].sort() })).sort((left, right) => left.path.localeCompare(right.path));
+  const instances = observation.instances.map((instance) => ({ id: stableId("instance", `${instance.path}|${instance.className}`), path: instance.path, className: instance.className, ...(instance.position ? { position: instance.position } : {}), properties: entriesToRecord(instance.properties), attributes: withoutForgeMetadata(entriesToRecord(instance.attributes)), tags: [...instance.tags].sort() })).sort((left, right) => left.path.localeCompare(right.path));
   const remotes = observation.remotes.map((observed) => {
     const existing = map.remotes.find((remote) => remote.path === observed.path || remote.name === observed.name);
     return { id: existing?.id ?? stableId("remote", observed.path), path: observed.path, name: observed.name, className: observed.className, direction: observed.direction, clientScript: existing?.clientScript ?? "", serverScript: existing?.serverScript ?? "", ...(existing?.mechanicContractId ? { mechanicContractId: existing.mechanicContractId } : {}) };
   });
-  const partial: Omit<ProjectSemanticMap, "hashes"> = { ...map, files, scripts, modules: scripts.filter((script) => !script.path.endsWith(".client.luau") && !script.path.endsWith(".server.luau")).map((script) => ({ id: script.id, path: script.path, sourceHash: script.sourceHash, dependencies: script.dependencies })), instances, remotes };
+  const interactionBindings = buildInteractionBindings(map.remoteFlows, remotes, instances);
+  const partial: Omit<ProjectSemanticMap, "hashes"> = { ...map, files, scripts, modules: scripts.filter((script) => !script.path.endsWith(".client.luau") && !script.path.endsWith(".server.luau")).map((script) => ({ id: script.id, path: script.path, sourceHash: script.sourceHash, dependencies: script.dependencies })), instances, remotes, interactionBindings };
   return { ...partial, hashes: projectHashes(partial) };
 }
 
 function uniqueObservedScript(scripts: StudioSnapshotObservation["scripts"], projectPath: string, executionContext: SourceFile["executionContext"]): StudioSnapshotObservation["scripts"][number] | undefined {
-  const fileName = basename(projectPath);
-  const matches = scripts.filter((script) => basename(normalizeRelative(script.path)) === fileName && script.executionContext === executionContext);
+  const fileName = sourceContainerName(projectPath);
+  const matches = scripts.filter((script) => sourceContainerName(normalizeRelative(script.path)) === fileName && script.executionContext === executionContext);
   return matches.length === 1 ? matches[0] : undefined;
 }
+
+function sourceContainerName(path: string): string { return basename(path).replace(/\.(?:lua|luau)$/, ""); }
 
 function withoutForgeMetadata(attributes: Record<string, string | number | boolean>): Record<string, string | number | boolean> {
   const { _forgeStableId: _ignored, ...semanticAttributes } = attributes;
@@ -231,10 +258,11 @@ export function canonicalProjectSemanticMap(map: ProjectSemanticMap): Record<str
     modules: map.modules.map((module) => ({ ...module, dependencies: [...module.dependencies].sort() })).sort((a, b) => a.path.localeCompare(b.path)),
     instances: map.instances.map((instance) => ({ ...instance, properties: sortedRecord(instance.properties), attributes: sortedRecord(instance.attributes), tags: [...instance.tags].sort() })).sort((a, b) => a.path.localeCompare(b.path) || a.className.localeCompare(b.className)),
     remotes: [...map.remotes].sort((a, b) => a.path.localeCompare(b.path)),
+    interactionBindings: map.interactionBindings.map((interaction) => ({ ...interaction, ...(interaction.productionInstance ? { productionInstance: canonicalInstance(interaction.productionInstance) } : {}), ...(interaction.authorizationInstance ? { authorizationInstance: canonicalInstance(interaction.authorizationInstance) } : {}) })).sort((a, b) => a.mechanicName.localeCompare(b.mechanicName)),
     persistentState: [...map.persistentState].sort((a, b) => a.field.localeCompare(b.field)),
     uiBindings: [...map.uiBindings].sort((a, b) => a.path.localeCompare(b.path)),
     mechanicContracts: [...map.mechanicContracts].sort(),
-    remoteFlows: map.remoteFlows.map((flow) => ({ name: flow.declaration.name, direction: flow.declaration.direction, clientScript: normalizeRelative(flow.declaration.clientScript), serverScript: normalizeRelative(flow.declaration.serverScript), clientEvidence: flow.clientEvidence, serverEvidence: flow.serverEvidence ? { handler: flow.serverEvidence.handler, mutation: flow.serverEvidence.mutation, mutationExpression: flow.serverEvidence.mutationExpression } : null })).sort((a, b) => a.name.localeCompare(b.name)),
+    remoteFlows: map.remoteFlows.map((flow) => ({ name: flow.declaration.name, direction: flow.declaration.direction, clientScript: normalizeRelative(flow.declaration.clientScript), ...(flow.declaration.interactionScript ? { interactionScript: normalizeRelative(flow.declaration.interactionScript) } : {}), serverScript: normalizeRelative(flow.declaration.serverScript), clientEvidence: flow.clientEvidence, interactionEvidence: flow.interactionEvidence, serverEvidence: flow.serverEvidence ? { handler: flow.serverEvidence.handler, mutations: flow.serverEvidence.mutations } : null })).sort((a, b) => a.name.localeCompare(b.name)),
     dependencies: [...map.dependencies].sort((a, b) => `${a.from}|${a.to}|${a.kind}`.localeCompare(`${b.from}|${b.to}|${b.kind}`)),
     hashes: map.hashes
   };
@@ -244,7 +272,7 @@ export function affectedVerificationCone(map: ProjectSemanticMap, changedPaths: 
   const normalized = [...new Set(changedPaths.map(normalizeRelative))].sort();
   const changed = new Set(normalized);
   const affectedScripts = map.scripts.filter((script) => changed.has(script.path) || script.dependencies.some((dependency) => changed.has(dependency))).map((script) => script.path);
-  const affectedRemotes = map.remotes.filter((remote) => affectedScripts.includes(remote.clientScript) || affectedScripts.includes(remote.serverScript)).map((remote) => remote.id).sort();
+  const affectedRemotes = map.remotes.filter((remote) => affectedScripts.includes(remote.clientScript) || (remote.interactionScript !== undefined && affectedScripts.includes(remote.interactionScript)) || affectedScripts.includes(remote.serverScript)).map((remote) => remote.id).sort();
   const affectedMechanicContractIds = map.remotes.filter((remote) => affectedRemotes.includes(remote.id)).map((remote) => remote.mechanicContractId ?? `contract_${toSnakeCase(remote.name)}`).sort();
   const checks: AffectedVerificationCone["checks"] = ["official_luau_syntax", "roblox_type_analysis"];
   if (affectedRemotes.length > 0) checks.push("replication_and_authority_contracts", "studio_assertions");
@@ -273,17 +301,21 @@ export function compileMechanicImplementationSpec(
     mechanicContractId: contract.id,
     mechanicName: contract.name,
     remote: { ...flow.declaration.remote, direction: flow.declaration.direction },
+    ...(flow.declaration.interactionBinding ? { interactionBinding: flow.declaration.interactionBinding } : {}),
     clientInputs: flow.declaration.clientInputs,
     serverArguments: flow.declaration.serverArguments,
     stateBindings: flow.declaration.implementation.stateBindings,
     constants: flow.declaration.implementation.constants,
     validationRequirements: flow.declaration.validationRequirements,
+    stateMutations: contract.authorityModel.stateMutations,
     postconditions: flow.declaration.implementation.postconditions,
     authorityInvariants: flow.declaration.implementation.authorityInvariants,
     sourceTargets,
     allowedPatchOperations: policy.allowedPatchOperations
   };
-  const spec: MechanicImplementationSpec = { kind: "MechanicImplementationSpec", schemaVersion: 1, id: `implementation_${contentHash(stableJson(payload)).slice(0, 24)}`, ...payload };
+  const authorizationDistance = flow.declaration.implementation.constants.find((constant) => constant.role === "max_interaction_distance");
+  if (flow.declaration.interactionBinding && (authorizationDistance?.type !== "number" || authorizationDistance.value !== flow.declaration.interactionBinding.serverAuthorization.maxDistance)) throw new Error(`Interaction binding and server authorization constant disagree for ${contract.name}`);
+  const spec: MechanicImplementationSpec = { kind: "MechanicImplementationSpec", schemaVersion: 4, id: `implementation_${contentHash(stableJson(payload)).slice(0, 24)}`, ...payload };
   assertMechanicImplementationSpec(spec);
   return spec;
 }
@@ -293,7 +325,7 @@ export function assertProjectSnapshot(value: unknown): asserts value is ProjectS
 }
 
 export function assertProjectSemanticMap(value: unknown): asserts value is ProjectSemanticMap {
-  if (!isRecord(value) || value.kind !== "ProjectSemanticMap" || value.schemaVersion !== 1 || !isString(value.projectId) || !Array.isArray(value.instances) || !Array.isArray(value.scripts) || !Array.isArray(value.remotes) || !Array.isArray(value.dependencies) || !isRecord(value.hashes)) throw new Error("Invalid ProjectSemanticMap: expected schemaVersion 1");
+  if (!isRecord(value) || value.kind !== "ProjectSemanticMap" || value.schemaVersion !== 1 || !isString(value.projectId) || !Array.isArray(value.instances) || !Array.isArray(value.scripts) || !Array.isArray(value.remotes) || !Array.isArray(value.interactionBindings) || !Array.isArray(value.dependencies) || !isRecord(value.hashes)) throw new Error("Invalid ProjectSemanticMap: expected schemaVersion 1");
 }
 
 async function collectLuauFiles(root: string, relativeRoot: string, output: SourceFile[]): Promise<void> {
@@ -316,7 +348,7 @@ async function collectLuauFiles(root: string, relativeRoot: string, output: Sour
 function buildInstances(files: SourceFile[], manifest: ForgeFixtureManifest): SemanticInstance[] {
   const declarations = manifest.instances ?? [];
   const parentPaths = new Map(declarations.map((instance) => [instance.path, instance.parentPath]));
-  const instances = declarations.map((instance) => ({ id: stableId("instance", `${instance.path}|${instance.className}`), path: instance.path, className: instance.className, properties: sortedRecord(instance.properties ?? {}), attributes: sortedRecord(instance.attributes ?? {}), tags: [...(instance.tags ?? [])].sort() }));
+  const instances = declarations.map((instance) => ({ id: stableId("instance", `${instance.path}|${instance.className}`), path: instance.path, className: instance.className, ...(instance.position ? { position: instance.position } : {}), properties: sortedRecord(instance.properties ?? {}), attributes: sortedRecord(instance.attributes ?? {}), tags: [...(instance.tags ?? [])].sort() }));
   for (const file of files) {
     const path = scriptInstancePath(file);
     if (!instances.some((instance) => instance.path === path)) instances.push({ id: stableId("instance", `${path}|${scriptClass(file)}`), path, className: scriptClass(file), properties: {}, attributes: {}, tags: [] });
@@ -327,6 +359,29 @@ function buildInstances(files: SourceFile[], manifest: ForgeFixtureManifest): Se
     const parentId = parentPath ? idsByPath.get(parentPath) : undefined;
     return parentId ? { ...instance, parentId } : instance;
   }).sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function buildInteractionBindings(remoteFlows: SemanticRemoteFlow[], remotes: SemanticRemote[], instances: SemanticInstance[]): SemanticInteractionBinding[] {
+  return remoteFlows.flatMap((flow) => {
+    const binding = flow.declaration.interactionBinding;
+    if (!binding) return [];
+    const production = binding.production;
+    const authorization = binding.serverAuthorization;
+    const remote = remotes.find((candidate) => candidate.name === flow.declaration.name);
+    if (!remote) return [];
+    if (production.kind === "proximity_prompt") {
+      const productionInstance = instances.find((instance) => instance.path === production.path);
+      const authorizationPath = authorization.target === "bound_instance" ? authorization.path : undefined;
+      const authorizationInstance = instances.find((instance) => instance.path === authorizationPath);
+      return [{ mechanicName: flow.declaration.name, remoteId: remote.id, binding, ...(productionInstance ? { productionInstance } : {}), ...(authorizationInstance ? { authorizationInstance } : {}) }];
+    }
+    const target = instances.find((instance) => instance.tags.includes(production.targetTag));
+    return [{ mechanicName: flow.declaration.name, remoteId: remote.id, binding, ...(target ? { productionInstance: target, authorizationInstance: target } : {}) }];
+  }).sort((left, right) => left.mechanicName.localeCompare(right.mechanicName));
+}
+
+function canonicalInstance(instance: SemanticInstance): SemanticInstance {
+  return { ...instance, properties: sortedRecord(instance.properties), attributes: sortedRecord(instance.attributes), tags: [...instance.tags].sort() };
 }
 
 function buildDependencies(scripts: SemanticScript[], remotes: SemanticRemote[], manifest: ForgeFixtureManifest, mechanicContracts: string[]): ProjectSemanticMap["dependencies"] {
@@ -345,36 +400,87 @@ function buildDependencies(scripts: SemanticScript[], remotes: SemanticRemote[],
 function projectHashes(map: Omit<ProjectSemanticMap, "hashes">): ProjectSemanticMap["hashes"] {
   const sourceHash = contentHash(map.files.map((file) => `${file.path}\n${file.source}`).join("\n"));
   const structureHash = contentHash(stableJson({ instances: [...map.instances].sort((left, right) => left.path.localeCompare(right.path)), scripts: map.scripts.map(({ path, executionContext, sourceHash, dependencies }) => ({ path, executionContext, sourceHash, dependencies: [...dependencies].sort() })).sort((left, right) => left.path.localeCompare(right.path)), remotes: [...map.remotes].sort((left, right) => left.path.localeCompare(right.path)), modules: map.modules.map((module) => ({ ...module, dependencies: [...module.dependencies].sort() })).sort((left, right) => left.path.localeCompare(right.path)) }));
-  const semanticHash = contentHash(stableJson({ structureHash, remoteFlows: map.remoteFlows.map((flow) => ({ declaration: flow.declaration, clientEvidence: flow.clientEvidence, serverEvidence: flow.serverEvidence })).sort((left, right) => left.declaration.name.localeCompare(right.declaration.name)), dependencies: [...map.dependencies].sort((left, right) => `${left.from}|${left.to}|${left.kind}`.localeCompare(`${right.from}|${right.to}|${right.kind}`)), persistentState: [...map.persistentState].sort((left, right) => left.field.localeCompare(right.field)), uiBindings: [...map.uiBindings].sort((left, right) => left.path.localeCompare(right.path)), mechanicContracts: [...map.mechanicContracts].sort() }));
+  const semanticHash = contentHash(stableJson({ structureHash, remoteFlows: map.remoteFlows.map((flow) => ({ declaration: flow.declaration, clientEvidence: flow.clientEvidence, interactionEvidence: flow.interactionEvidence, serverEvidence: flow.serverEvidence })).sort((left, right) => left.declaration.name.localeCompare(right.declaration.name)), interactionBindings: [...map.interactionBindings].sort((left, right) => left.mechanicName.localeCompare(right.mechanicName)), dependencies: [...map.dependencies].sort((left, right) => `${left.from}|${left.to}|${left.kind}`.localeCompare(`${right.from}|${right.to}|${right.kind}`)), persistentState: [...map.persistentState].sort((left, right) => left.field.localeCompare(right.field)), uiBindings: [...map.uiBindings].sort((left, right) => left.path.localeCompare(right.path)), mechanicContracts: [...map.mechanicContracts].sort() }));
   return { sourceHash, structureHash, semanticHash };
 }
 
+function findInteractionEvidence(source: string, binding: InteractionBinding | undefined): SemanticRemoteFlow["interactionEvidence"] {
+  if (!binding) return null;
+  const calls = binding.clientAction.kind === "module_function"
+    ? [...source.matchAll(new RegExp(`(?:\\.|:)${escapeRegExp(binding.clientAction.functionName)}\\s*\\(([^)]*)\\)`, "g"))]
+    : [...source.matchAll(/(?:FireServer|InvokeServer)\s*\(([^)]*)\)/g)];
+  const first = calls[0];
+  if (!first) return null;
+  return {
+    actionCall: first[0],
+    arguments: (first[1] ?? "").trim() === "" ? [] : splitTopLevel(first[1] ?? ""),
+    initiations: calls.map((call) => initiationAt(source, call.index ?? -1))
+  };
+}
+
 function findClientEvidence(source: string, declaration: RemoteFlowDeclaration): SemanticRemoteFlow["clientEvidence"] {
-  const remotePattern = /(?:FireServer|InvokeServer)\s*\(([^)]*)\)/m;
-  const match = source.match(remotePattern);
-  if (!match?.[1] || !source.includes(declaration.name)) return null;
-  const argumentsList = splitTopLevel(match[1]);
-  return argumentsList.length > 0 ? { remoteCall: match[0], arguments: argumentsList.map((expression, index) => ({ position: index + 1, expression })) } : null;
+  const matches = [...source.matchAll(/(?:FireServer|InvokeServer)\s*\(([^)]*)\)/gm)];
+  const match = matches[0];
+  if (!match || !source.includes(declaration.name)) return null;
+  const rawArguments = match[1] ?? "";
+  const argumentsList = rawArguments.trim() === "" ? [] : splitTopLevel(rawArguments);
+  const initiations = matches.map((remoteCall) => initiationAt(source, remoteCall.index ?? -1));
+  return { remoteCall: match[0], arguments: argumentsList.map((expression, index) => ({ position: index + 1, expression })), initiations };
+}
+
+function initiationAt(source: string, callIndex: number): NonNullable<SemanticRemoteFlow["clientEvidence"]>["initiations"][number] {
+  const direct = enclosingEventInitiation(source, callIndex);
+  if (direct.kind !== "unresolved") return direct;
+  const functions = [...source.matchAll(/local\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g)]
+    .filter((match) => (match.index ?? -1) < callIndex)
+    .sort((left, right) => (right.index ?? 0) - (left.index ?? 0));
+  const enclosingFunction = functions[0]?.[1];
+  if (enclosingFunction) {
+    for (const invocation of source.matchAll(new RegExp(`\\b${escapeRegExp(enclosingFunction)}\\s*\\(`, "g"))) {
+      if ((invocation.index ?? -1) <= (functions[0]?.index ?? -1)) continue;
+      const caller = enclosingEventInitiation(source, invocation.index ?? -1);
+      if (caller.kind !== "unresolved") return caller;
+    }
+  }
+  return direct;
+}
+
+function enclosingEventInitiation(source: string, callIndex: number): NonNullable<SemanticRemoteFlow["clientEvidence"]>["initiations"][number] {
+  const callbacks = [...source.matchAll(/\.([A-Za-z_][A-Za-z0-9_]*):Connect\s*\(\s*function\b/g)]
+    .filter((match) => (match.index ?? -1) < callIndex)
+    .map((match) => {
+      const start = match.index ?? 0;
+      const relativeClose = source.slice(start).search(/\bend\s*\)/);
+      return { event: match[1]!, start, close: relativeClose < 0 ? -1 : start + relativeClose };
+    })
+    .filter((candidate) => candidate.close > callIndex)
+    .sort((left, right) => right.start - left.start);
+  const callback = callbacks[0];
+  if (!callback) return { kind: "unresolved" };
+  if (["Heartbeat", "RenderStepped", "Stepped"].includes(callback.event)) return { kind: "autonomous_event", event: callback.event, statement: `.${callback.event}:Connect(function)` };
+  if (["Triggered", "Button1Down"].includes(callback.event)) return { kind: "explicit_event", event: callback.event, statement: `.${callback.event}:Connect(function)` };
+  return { kind: "unresolved", event: callback.event, statement: `.${callback.event}:Connect(function)` };
 }
 
 function findServerEvidence(source: string, declaration: RemoteFlowDeclaration): SemanticRemoteFlow["serverEvidence"] {
   const handlerPattern = /OnServerEvent:Connect\s*\(\s*function\s*\(([^)]*)\)/m;
-  const mutationPattern = new RegExp(`^[ \\t]*(?:[A-Za-z0-9_.]+\\.)?${escapeRegExp(declaration.mutation.field)}(?:\\[[^\\n]+\\])?[ \\t]*=[ \\t]*([^\\n;]+)$`, "m");
   const handler = source.match(handlerPattern);
   if (!handler || handler.index === undefined) return null;
   // Only mutations after the declared remote handler begins can establish the
   // client-to-server authority flow. Initializers elsewhere in the script are
   // not evidence for what the remote mutates.
   const handlerSource = source.slice(handler.index + handler[0].length);
-  const assignment = handlerSource.match(mutationPattern);
-  const attributeMutation = handlerSource.match(new RegExp(`SetAttribute\\s*\\(\\s*["']${escapeRegExp(declaration.mutation.field)}["']\\s*,\\s*([^\\n]+)\\)\\s*$`, "m"));
-  if (!handler || (!assignment?.[0] && !attributeMutation?.[0])) return null;
   const parameters = splitTopLevel(handler[1] ?? "").map((parameter, position) => {
     const match = parameter.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*(.+))?$/);
     return { position, name: match?.[1] ?? parameter.trim(), ...(match?.[2] ? { annotation: match[2].trim() } : {}) };
   });
-  if (assignment?.[0] && (!attributeMutation?.[0] || (assignment.index ?? Number.MAX_SAFE_INTEGER) < (attributeMutation.index ?? Number.MAX_SAFE_INTEGER))) return { handler: handler[0], parameters, mutation: assignment[0], mutationExpression: assignment[1]?.trim() ?? "" };
-  return { handler: handler[0], parameters, mutation: attributeMutation?.[0] ?? "", mutationExpression: attributeMutation?.[1]?.trim() ?? "" };
+  const mutations = declaration.stateMutations.flatMap((mutation) => {
+    const attributeMatches = [...handlerSource.matchAll(new RegExp(`SetAttribute\\s*\\(\\s*["']${escapeRegExp(mutation.field)}["']\\s*,\\s*([^\\n]+)\\)`, "g"))];
+    const tableMatches = [...handlerSource.matchAll(new RegExp(`${escapeRegExp(mutation.field)}\\s*\\[[^\\]]+\\]\\s*=\\s*([^\\n]+)`, "g"))];
+    return [...attributeMatches, ...tableMatches].map((match) => ({ field: mutation.field, statement: match[0], expression: match[1]?.trim() ?? "", index: (match.index ?? 0) + (handler.index ?? 0) + handler[0].length }));
+  });
+  if (mutations.length === 0) return null;
+  return { handler: handler[0], parameters, mutations: mutations.sort((left, right) => left.index - right.index || left.field.localeCompare(right.field)) };
 }
 
 function splitTopLevel(value: string): string[] {
@@ -443,4 +549,8 @@ function isPrimitiveEntries(value: unknown): value is StudioPrimitiveEntry[] {
     names.add(entry.name);
   }
   return true;
+}
+
+function isVector3(value: unknown): value is { x: number; y: number; z: number } {
+  return isRecord(value) && typeof value.x === "number" && Number.isFinite(value.x) && typeof value.y === "number" && Number.isFinite(value.y) && typeof value.z === "number" && Number.isFinite(value.z);
 }

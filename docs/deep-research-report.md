@@ -1,1283 +1,1410 @@
-# Lemonade Forge: The Verified Game Compiler That Could Make You an Obvious Founding AI Engineer Hire
+# How Forge Can Signal the Strongest Possible Hire for Lemonade
 
-## Executive summary
+## Executive finding
 
-The strongest product you can build for Nicolas Vizioli is **not another Roblox coding agent, another multi-agent wrapper, or even a better Luau linter**.
+Your instinct about the semantics layer is correct.
 
-It is **Lemonade Forge** — a working-name for a **verified, model-agnostic game compiler that takes an inexperienced creator from vague intent → coherent core loop → tested Roblox mechanic → safe progression/monetization → publish-ready game**.
+After comparing the role description, Lemonade's public product, the Lemonade Studio plugin you inspected, current agent-evaluation practice, Anthropic's latest long-horizon harness work, Harbor, Fly's current agent infrastructure, and Roblox's own 2026 agentic tooling, I would **change Forge's architectural direction now**.
 
-Your existing **LoopEngine + Luau-Shield** concept is the right technical seed: guided core-loop generation plus static AST checks, replication-contract analysis, and dynamic verification. fileciteturn0file0 The key research conclusion is that it should be expanded in two important ways:
+The strongest version of Forge is **not**:
 
-1. **LoopEngine becomes a typed intermediate representation for game design**, not merely a workflow DAG. Every generated mechanic gets explicit preconditions, postconditions, authority boundaries, persistence semantics, UI dependencies, economy effects, instrumentation, and executable tests.
-2. **Luau-Shield should stop treating a Lune-style mock sandbox as authoritative Roblox physics.** Keep that layer as a cheap preflight, but make actual Roblox Studio execution the final truth. Roblox created OpenGameEval precisely because credible game-agent evaluation needs the real Studio environment, including hierarchy, multiplayer client/server behavior, and stateful world changes. Roblox's own public evaluation tooling now provides a foundation for this. citeturn21view4turn21view5turn22search10
+> prompt → Forge recognizes a mechanic → Forge deterministically writes a detailed mechanic contract/ABI/constants → model fills in Luau → Forge proves it matches the handcrafted contract.
 
-That distinction matters enormously. A candidate who arrives with “I made a linter” is interesting. A candidate who arrives with **“I built the missing reliability and product-control layer between an LLM and a teenager publishing a Roblox game”** is presenting a plausible piece of Lemonade's core architecture.
+That was an excellent way to prove the vertical slice. It was also useful for building trustworthy verifier infrastructure.
 
-This direction aligns unusually closely with what Nicolas has said publicly. In his April 21, 2026 Naavik interview, he identified **deconstructing poorly articulated user intent as one of Lemonade's hardest problems**, described guiding first-time developers through sequentially connected mechanics and core loops instead of one-shot generation, said Lemonade is **100% model-agnostic**, emphasized proprietary Roblox evals, argued that coding-agent intelligence is becoming commoditized, and said raw agent trajectories are especially valuable future post-training data. He also said Lemonade's mission is to help teenagers make their **first dollar online**. citeturn21view0
+But if it becomes the production architecture, Forge risks becoming a **hand-authored game-mechanics compiler**. Every new concept eventually needs someone to define `CollectFruit`, `SellInventory`, `UpgradeBasket`, `ZombieCombat`, `RoundManager`, `Fishing`, `Vehicle`, and so on. That does not fit Lemonade's apparent product breadth, and I do not think it is what this job is asking you to build. Lemonade's public product currently advertises generation across tactical shooters, zombie survival, racing, Bedwars, farming, pet games, escape games, PvP, tycoons, and many other game types. citeturn9search3
 
-There is an additional 2026 strategic shift that makes this proposal stronger: Roblox itself now has a built-in Studio MCP server and agentic Assistant, allowing products such as Claude Code, Cursor, Codex, Gemini CLI, and other MCP clients to inspect and manipulate Studio. Roblox says 44% of its top 1,000 creators were already using Assistant or third-party AI through MCP as of April 2026. Therefore, **“we can connect an LLM to Studio” is no longer much of a moat**. citeturn21view3
-
-The moat should instead be:
-
-> **Lemonade knows what a first-time Roblox creator is trying to make, knows what mechanic should come next, knows whether the generated game actually works, knows whether it is secure and economically coherent, and can prove all of that before committing the change.**
-
-That is what Forge should demonstrate.
-
-My recommended product hierarchy is:
-
-**Lemonade Forge**  
-→ **LoopEngine**: intent and core-loop compiler  
-→ **Luau-Shield**: deterministic semantic verifier  
-→ **StudioProof**: authoritative in-engine playtest system  
-→ **ModelArena**: continuous model routing/evaluation layer  
-→ **FirstDollar**: safe monetization-readiness compiler  
-→ **Trajectory Lake**: proprietary verified creation data
-
-The result would directly attack Nicolas's stated problems rather than merely showing skills adjacent to them. citeturn21view0
-
-The north-star engineering metric should be **Verified Core Loop Completion Rate**:
-
-\[
-\text{VCLR} =
-\frac{\text{new creators who complete a Studio-verified playable core loop}}
-{\text{new creators who begin creating}}
-\]
-
-Secondary metrics should include time-to-first-playable mechanic, first-pass verified-generation rate, repair rate, pre-commit defect containment, publish conversion, creator return rate, variable cost per verified mechanic, and eventually post-publish D1/D7 retention, session time, payer conversion, and revenue. Those downstream game KPIs match Roblox's own creator analytics framework. citeturn14search0turn14search13
-
-**The candidate-grade goal is not to implement the whole company.** Build enough of this system that Nicolas can see the architecture running rather than read about it:
-
-> vague prompt → LoopEngine contract → generated delta → intentional exploit/fault appears → Luau-Shield catches it → automatic repair → real Studio agent plays the mechanic → executable assertions pass → proof artifact appears → next mechanic is recommended → alternate model is benchmarked on the same task.
-
-A polished six-minute live version of that demonstration would showcase virtually every capability Lemonade could reasonably want from a Founding AI Engineer: Roblox internals, Luau analysis, agent-tool design, evaluation science, model routing, infrastructure, security, product judgment, economics, and founder-level systems thinking.
-
-## Strategic product thesis and value proposition
-
-**Lemonade's public product positioning makes the target unusually clear.** Its current homepage says “Your First Business Starts Here” and “Join +500K Creators,” while Nicolas describes Lemonade as a Roblox Studio-connected coding agent primarily aimed at people making their first games. The +500K homepage figure should not be confused with the “almost 100,000 monthly active creators” figure Nicolas gave in April 2026; those are different measures and the latter is four months old. citeturn21view2turn21view0 Nicolas's own site describes his current work as building tools to make game creation accessible to millions of teenagers. citeturn21view1
-
-The research therefore points to a product that optimizes **completion rather than generation**.
-
-A first-time creator does not fundamentally need 5,000 lines of Luau. They need to cross a sequence of states:
-
-> “I have an idea” → “I understand my game's loop” → “one mechanic works” → “the mechanics connect” → “other players can play it” → “I published it” → “someone chose to spend Robux in it.”
-
-Nicolas explicitly describes this distinction. He says Lemonade does not want a user to ask for an entire game such as “Steal a Brainrot” and receive a one-shot result; the intended experience is to expose possible mechanics, build one, let the creator inspect it, then progress through mechanics connected to a coherent core loop. citeturn21view0
-
-**Forge makes that philosophy executable.**
-
-Instead of:
+The job is much more consistent with this architecture:
 
 ```text
-prompt → agent → arbitrary code → hope
+                       ONE GENERAL AGENT HARNESS
+                                  │
+                                  ▼
+                    frontier / open-source model
+                                  │
+                 ┌────────────────┴────────────────┐
+                 │                                 │
+                 ▼                                 ▼
+        understand / plan game             inspect + modify game
+                                              through tools
+                 │                                 │
+                 └────────────────┬────────────────┘
+                                  ▼
+                          candidate game state
+                                  │
+                    ┌─────────────┼───────────────┐
+                    ▼             ▼               ▼
+               deterministic   runtime         qualitative
+               validators      gameplay        evaluator
+               / security      verification    / game taste
+                    │             │               │
+                    └─────────────┼───────────────┘
+                                  ▼
+                             outcome / trace
+                                  │
+                          pass or iterate
+                                  │
+                                  ▼
+                        production failure data
+                                  │
+                                  ▼
+                     regression / Harbor eval
+                                  │
+                                  ▼
+                     harness/model experiment
 ```
 
-the product becomes:
+That distinction is not semantic hair-splitting. Anthropic defines an **agent harness** as the scaffold through which a model receives inputs, calls tools, acts, and returns results; importantly, evaluating the “agent” means evaluating the **model and harness together**. Its eval guidance recommends deterministic graders where possible, model or human graders where necessary, and specifically warns against overly rigid grading of the exact path an agent took rather than the outcome it produced. citeturn9search1
+
+That wording is almost a direct match for the Lemonade role.
+
+The most important architectural correction is therefore:
+
+> **Do not eliminate semantics. Move semantic authority to the right places.**
+
+I would split semantics into four categories:
 
 ```text
-dream
-  ↓
-intent reconstruction
-  ↓
-typed CoreLoop IR
-  ↓
-one bounded mechanic contract
-  ↓
-candidate game delta
-  ↓
-deterministic verification
-  ↓
-real Studio playtest
-  ↓
-atomic verified commit
-  ↓
-next mechanic
-  ↓
-publish / iterate / monetize
+Creator semantics
+"What game does the user want?"
+
+        Model-derived, user-grounded.
+
+
+Project semantics
+"What actually exists in this Roblox project?"
+
+        Tool-derived, factual.
+
+
+Platform / trust semantics
+"What must always be true for Roblox correctness/security?"
+
+        Forge-owned, deterministic where possible.
+
+
+Evaluation semantics
+"What observable outcome would demonstrate this task succeeded?"
+
+        Generated from requirements + independent evaluation,
+        with hidden benchmark oracles only inside eval fixtures.
 ```
 
-The central object is therefore not the chat message or source file. It is a **Mechanic Contract**.
+Your current architecture partially collapses all four into `MechanicContract` + `MechanicImplementationSpec`. That is what I would fix.
 
-For a fruit-selling mechanic, for example, the internal representation might conceptually say:
+And this pivot would **increase**, not decrease, the strength of your application.
 
-```json
-{
-  "mechanic": "sell_inventory",
-  "player_goal": "convert collected fruit into progression currency",
-  "preconditions": [
-    "player is inside sell zone",
-    "inventory.fruit > 0"
-  ],
-  "postconditions": [
-    "inventory.fruit == 0",
-    "coins increases by authoritative server-calculated sale value"
-  ],
-  "authority": "server",
-  "client_inputs": ["interaction_request"],
-  "persistent_state": ["coins", "upgrades"],
-  "ui_outputs": ["inventory_count", "coin_balance"],
-  "abuse_invariants": [
-    "client never specifies reward amount",
-    "duplicate requests cannot duplicate value"
-  ],
-  "tests": [
-    "collect 10 fruit",
-    "enter sell region",
-    "verify fruit becomes 0",
-    "verify coins increase by expected amount"
-  ]
+The outstanding hiring story becomes:
+
+> “I built a deterministic verifier and real-Studio evaluation loop, then my own model eval exposed that I'd over-specified the agent's solution space. Rather than optimizing the benchmark, I separated user intent, discovered project facts, universal safety policies, and task-level evaluation. Then I measured the new harness across models and representative tasks.”
+
+That is almost absurdly aligned with the role's stated three-month success criterion.
+
+## What Lemonade appears to be hiring you to own
+
+There is an important distinction between what we **know** about Lemonade and what we can **infer**.
+
+We do not have Lemonade's private agent-backend source. So I would not tell Nicolas, “I know Lemonade uses architecture X.”
+
+What we do have is unusually strong circumstantial evidence from three directions: the job description, Lemonade's public product, and the Studio plugin source you examined.
+
+### The job is about harness science, not a mechanics ontology
+
+Read the verbs in the job description carefully:
+
+> own the agent harness  
+> evaluate new models  
+> understand which harness changes unlock performance  
+> connect user failures back into evals  
+> deterministic tests wherever possible  
+> regression suites  
+> long-horizon execution  
+> multiple models  
+> production traces
+
+There is conspicuously no:
+
+> define an exhaustive formal game-mechanics language.
+
+Current best practice in agent engineering points the same direction. Anthropic's January 2026 eval guidance treats the model+harness pair as the unit being evaluated and advocates representative tasks, stable isolated environments, outcome-based grading, transcript inspection, production-failure-derived regressions, and a mixture of deterministic and model/human graders. citeturn9search1
+
+The warning about task specification is particularly relevant to Forge. Anthropic describes cases where evals dramatically understated model ability because the grader or task was over-constrained; one cited CORE-Bench investigation moved an Opus 4.5 result from 42% to 95% after fixing grading/specification/scaffold problems. Their explicit lesson is that very low performance can signal **a broken task or grader**, not merely a weak model. citeturn9search1
+
+You have already lived exactly that story.
+
+The original Luna candidate was historically false-rejected for Roblox type errors because Forge used an analyzer without a real Roblox host environment. Once corrected, those false errors disappeared; the unchanged source retained only an actual contract discrepancy. fileciteturn0file14
+
+That incident is not embarrassing.
+
+**That is your strongest evidence that you actually understand eval engineering.**
+
+You didn't say:
+
+```text
+MODEL FAILED
+→ tune prompt until green
+```
+
+You did:
+
+```text
+MODEL FAILED
+       ↓
+inspect trace
+       ↓
+separate candidate failure from grader failure
+       ↓
+fix Roblox-aware tool boundary
+       ↓
+fix ABI matching
+       ↓
+preserve historical result
+       ↓
+re-run exact same candidate
+       ↓
+retain real remaining failure
+```
+
+That is precisely the mindset Lemonade is advertising.
+
+### Long-horizon generation probably looks more like planning + tools + evaluation
+
+Anthropic's March 2026 work on long-running application generation is especially relevant to Lemonade's “multiple hours per user” initiative.
+
+Their newer harness starts with a short user request and has a **planner model expand it into a high-level product specification**. Crucially, Anthropic says it intentionally avoided having the planner over-specify detailed technical implementation because an incorrect low-level plan can cascade downstream. A generator then implements incrementally, while a separate evaluator exercises the application and sends failures back for another iteration. citeturn9search0
+
+They even introduced a per-sprint agreement about **what “done” means** before implementation, with generator and evaluator negotiating an acceptance contract. The contract constrained deliverables and testability rather than dictating source structure or an exact implementation. citeturn9search0
+
+That maps much better to Lemonade's wording:
+
+```text
+"high-quality game scaffold"
+"not zero-shot"
+"agent executes over multiple hours"
+```
+
+than a one-mechanic-at-a-time deterministic semantic compiler.
+
+Their reported long-horizon experiment ran for nearly four hours, with planning, long build phases and iterative QA. It also found that evaluator usefulness changes as model capabilities change—a reminder that harness assumptions themselves must be reevaluated as frontier models improve. citeturn9search0
+
+That last point is particularly important for a founding AI engineer:
+
+> **A great harness does not freeze today's model limitations into permanent architecture.**
+
+### Lemonade's Studio integration looks agent-tool oriented
+
+Your direct review of Lemonade's packaged Studio plugin found a broad action/runtime interface: project inspection, mutation, stable instance identity, playtesting, capture, imports, generic actions and even arbitrary code execution in places where Lemonade accepts that capability. It looks like a general agent-to-Studio substrate, not a plugin containing a taxonomy of handcrafted mechanics. fileciteturn0file12
+
+That does **not** prove their backend contains no semantic representations.
+
+But combined with the product breadth and job wording, the reasonable inference is:
+
+> Lemonade likely expects frontier models to carry much of the game/program semantics, while the harness provides tools, context, execution, evaluation, recovery, safety, and feedback.
+
+I would state that as an inference in an interview, not as fact.
+
+Roblox itself is moving in essentially that direction. Its current Studio MCP exposes general project search, script editing, Luau execution, playtesting, screenshots, character navigation, keyboard/mouse input and specialized `explore` and `playtest` subagents. Roblox describes the playtest subagent as capable of running gameplay scenarios and verifying results rather than requiring a handwritten mechanic-specific compiler. citeturn13search0 Roblox also stresses real client/server testing because its engine's client-server architecture makes runtime behavior something that must actually be exercised. citeturn13search9
+
+That is a powerful reference architecture for where Forge should head.
+
+## How strong a hire Forge signals today
+
+Forge already signals **a much stronger fit than a normal AI wrapper project**.
+
+Your strongest parts map almost one-to-one onto the job.
+
+| Lemonade criterion | Forge today | Signal |
+|---|---|---|
+| Harness is a core product | Models sit behind explicit boundaries; model output cannot certify itself | **Very strong** |
+| Deterministic verifier loops | Luau, Roblox-aware typing, remote trust analysis, PatchSet gates, ProofBundle | **Exceptional** |
+| Representative execution | Real Roblox Studio Play Solo, correlated server evidence | **Very strong** |
+| Regression discipline | Historical candidates/proofs retained; false-positive fixes become regressions | **Exceptional** |
+| Failure diagnosis | You separated model defects, verifier defects and harness defects repeatedly | **Exceptional** |
+| Security / adversarial eval | Real client reward and payout faults were exploited in Studio and rejected | **Very strong** |
+| Observability | BuildTrace / ProofBundle separation, hashes, provenance, outcomes | **Very strong** |
+| Rollback / fail-closed behavior | Rejected runtime fault restored exact prior revision | **Very strong** |
+| Model comparison | One primary model path; no meaningful model/harness matrix yet | **Weak** |
+| Production failure → eval | Forge's own failures become regressions, but not real user-failure mining | **Medium** |
+| Long-horizon agent | Not implemented | **Weak** |
+| Multiple-model coherent harness | Boundary exists, empirical proof does not | **Weak** |
+| Game taste / subjective evaluation | Almost entirely absent | **Weak** |
+| Fly/Docker agent infrastructure | Designed conceptually, not central to current artifact | **Weak** |
+| Broad game-generation generalization | Current acceptance is Collect + Sell | **Weak-to-medium** |
+
+Forge's current evidence chain is genuinely impressive. M3 established real safe runs, a real runtime reward exploit, deterministic rejection and rollback rather than merely unit-test mocks. fileciteturn0file2 The M3.5 acceptance then starts from the sealed AI-authored Collect implementation, extends it with AI-authored Sell, and passes fourteen correlated Collect, Sell and composition assertions; a payout fault was separately rejected. fileciteturn0file1 fileciteturn0file3
+
+That already says:
+
+> **“I naturally think like your verifier/evals engineer.”**
+
+What does *not* yet say “strongest possible hire” is breadth and experimentation.
+
+Right now a skeptical interviewer can still ask:
+
+> “Very cool, but how much of this succeeded because you designed the exact Collect/Sell contracts and exact test harnesses yourself?”
+
+And unfortunately, the honest answer is:
+
+> A meaningful amount.
+
+The current M3.5 architecture explicitly owns a zero-argument Sell ABI, `Inventory`/`Coins` state schema, `UnitPrice`, exact state ordering, prompt identity and activation radius, server authorization radius, six allowed source targets and a fourteen-assertion exact harness. fileciteturn0file0 fileciteturn0file4
+
+That is **fine for a benchmark fixture**.
+
+It is not the architecture I would scale into Lemonade.
+
+## The semantic architecture should change
+
+The fundamental error would be concluding:
+
+> “Forge must understand every mechanic better than the LLM.”
+
+I don't think that's necessary, and current frontier-agent work strongly suggests the opposite architecture is more scalable.
+
+### Keep semantic authority, but give every fact provenance
+
+I would replace the conceptual monolith:
+
+```text
+MechanicContract
++
+MechanicImplementationSpec
+```
+
+with a provenance-aware requirement system.
+
+Something approximately like:
+
+```ts
+type RequirementSource =
+  | "creator"
+  | "project_observation"
+  | "platform_policy"
+  | "agent_plan"
+  | "evaluator"
+  | "benchmark_oracle";
+
+interface Requirement {
+  id: string;
+  statement: string;
+
+  source: RequirementSource;
+
+  // Is this a hard fact, interpretation, or test-only oracle?
+  authority:
+    | "fact"
+    | "policy"
+    | "hypothesis"
+    | "evaluation_only";
+
+  confidence?: number;
+
+  evidence?: {
+    projectPath?: string;
+    promptSpan?: string;
+    observationId?: string;
+  };
+
+  verification:
+    | "schema"
+    | "static"
+    | "studio"
+    | "evaluator"
+    | "human";
+
+  blocking: boolean;
 }
 ```
 
-This becomes **Game IR**, analogous to an intermediate representation in a compiler. Natural-language intent can change. Models can change. Generated implementation can change. The contract remains the stable semantic truth.
+This solves an enormous conceptual problem.
 
-That gives Lemonade a product moat much harder to reproduce through a generic coding assistant.
-
-| Product direction | Immediate wow factor | Nicolas alignment | Durability as models improve | Reliability moat | Hiring signal |
-|---|---:|---:|---:|---:|---:|
-| Better generic Roblox coding agent | 4/5 | 2/5 | 1/5 | 1/5 | 3/5 |
-| One-prompt whole-game generator | 5/5 | 1/5 | 1/5 | 1/5 | 3/5 |
-| Luau verification SDK alone | 3/5 | 4/5 | 5/5 | 5/5 | 5/5 |
-| Multi-agent planner/executor framework | 3/5 | 2/5 | 2/5 | 2/5 | 3/5 |
-| **Forge: intent → verified core loop → publish** | **5/5** | **5/5** | **5/5** | **5/5** | **5/5** |
-
-The scoring is my product assessment, but its rationale follows Nicolas's public views: coding-agent loops are increasingly commoditized; user-intent reconstruction, first-time-developer UX, connected core loops, product-specific functionality, evaluation, and model agnosticism are where Lemonade is concentrating. He also said Lemonade had rebuilt its agent architecture more than five times and expects increasingly capable models to reduce the usefulness of rigid planner/executor separation. citeturn21view0
-
-That last point should materially change how you present your autonomous-agent background. **Do not pitch “I know multi-agent systems, therefore Lemonade needs eight agents.”** Your eight-agent work proves that you understand autonomous systems. The architectural conclusion for Lemonade should instead be:
-
-> “I know enough about multi-agent orchestration to know where not to use it.”
-
-Use one high-capability, context-rich execution agent by default, with deterministic services surrounding it. Parallel candidate agents are an optimization for particularly difficult tasks, not the product's ontology. This fits Nicolas's observation that planning and execution are converging back into a single context as frontier models improve. citeturn21view0 Research likewise suggests that agent performance depends heavily on the environment and agent-computer interface rather than merely decomposing work among agents; SWE-agent found large performance gains from a purpose-built software interface, while ReAct established the utility of interleaving reasoning with environment actions. citeturn16academia3turn16academia2
-
-**The most defensible long-term asset is the verified trajectory.** Nicolas specifically highlighted full trajectories as extremely valuable raw data for eventual post-training. Forge should collect the entire causal chain—subject to privacy controls—from user intent through game state, model calls, tool use, generated patch, verifier failures, repair steps, Studio outcomes, creator acceptance/rejection, and eventually game outcomes. citeturn21view0
-
-That data is much more valuable than a pile of generated Luau because it answers questions such as:
-
-- Which interpretation of an ambiguous teen prompt eventually produced a finished game?
-- Which candidate patch passed deterministic checks but failed in Studio?
-- Which repair fixed a replication race?
-- Which model is best specifically at UI, physics, persistence, or debugging?
-- Which mechanic sequence gets novice creators through a coherent core loop?
-- Which verification failures predict future regressions?
-- Which generated changes users immediately undo?
-
-This creates the flywheel:
+Suppose Forge sees:
 
 ```text
-more creators
-   ↓
-more real game-building trajectories
-   ↓
-more verified success/failure examples
-   ↓
-better evals + routing + repair rules
-   ↓
-higher core-loop completion
-   ↓
-more published games
-   ↓
-more creators
+MAX_DISTANCE = 20
 ```
 
-It is also significantly more defensible than “we prompted Claude better.”
+Today it can end up looking like:
 
-**FirstDollar should be the final compiler pass rather than an early gimmick.** Roblox currently supports several monetization mechanisms, including one-time passes, repeatable developer products, subscriptions, and other methods; Roblox distinguishes passes from repeatable developer products explicitly. citeturn14search3turn14search8 Nicolas has publicly said Lemonade wants to help teenagers make their first dollar and is interested in helping creators add purchases, perks, subscriptions, and related monetization. citeturn21view0
+> Forge knows CollectFruit should have distance 20.
 
-Forge could therefore tell a creator:
+That's dangerous.
 
-> “Your core loop now works: collect → sell → upgrade. You have enough progression for monetization to make sense. Would you like to add a permanent +1 inventory-slot pass or a repeatable cosmetic effect?”
-
-The critical distinction is that the system should **verify and explain**, not aggressively maximize spending. Monetization is attached only after the free gameplay loop is coherent, transactions remain server-authoritative, and the creator explicitly approves the feature.
-
-The product outcome is not “AI wrote Roblox code.”
-
-It is:
-
-> **“Lemonade reliably converts unstructured teenage imagination into tested, publishable game businesses.”**
-
-## Technical architecture, data flows, APIs, security, and scale
-
-Your handoff describes a Lemonade-oriented TypeScript/Next.js/Convex/Fly-style stack and a current LoopEngine/Luau-Shield implementation direction. Treat those internal-stack assumptions as provisional until Nicolas confirms them, but they are reasonable integration targets for the proof-of-work. fileciteturn0file0
-
-The system should be designed as a **control plane around models**, not a model-centric application.
-
-```mermaid
-flowchart TD
-    U[Creator<br/>Lemonade Web UX] --> IC[Intent Compiler]
-    S[Current Roblox Studio<br/>Project Snapshot] --> PM[Project Semantic Map]
-    PM --> IC
-
-    IC --> IR[CoreLoop IR<br/>Mechanic Contracts]
-    IR --> EX[Single Context-Rich<br/>Execution Agent]
-    PM --> EX
-
-    EX --> MR[Model Router]
-    MR --> C1[Cheap Model]
-    MR --> C2[Balanced Model]
-    MR --> C3[Frontier Model]
-
-    C1 --> PC[Patch Compiler]
-    C2 --> PC
-    C3 --> PC
-
-    PC --> V0[Schema + IR Invariants]
-    V0 --> V1[Luau AST / Types / Lint]
-    V1 --> V2[Replication + Security<br/>Contract Analysis]
-    V2 --> VP[Fast Lune/Lute<br/>Preflight]
-    VP --> VS[Real Roblox Studio<br/>Playtest / OpenGameEval]
-
-    VS -->|Fail| RP[Repair Controller]
-    RP -->|Deterministic fix| V1
-    RP -->|Needs reasoning| EX
-
-    VS -->|Pass| CP[Atomic Verified Commit]
-    CP --> TG[Trajectory + Proof Store]
-    TG --> NX[Next Mechanic Recommender]
-    NX --> U
-
-    TG --> EA[Eval Arena]
-    EA --> MR
-
-    CP --> FD[FirstDollar<br/>Monetization Readiness]
-    FD --> U
-```
-
-The architectural insight worth emphasizing to Nicolas is that **the model is deliberately almost boring**. It is one replaceable component. The valuable machinery lives before and after it.
-
-**The Intent Compiler** consumes the user's words, existing game state, project memory, and—where legitimately available and consented—the external signals Lemonade already uses to understand creator preferences. Nicolas specifically described using Roblox integration data such as a creator's favorite games to help interpret underspecified prompts. citeturn21view0 The output is not prose. It is validated CoreLoop IR.
-
-The compiler should classify proposed mechanics into a compact Roblox taxonomy such as:
+Under the new architecture, we ask:
 
 ```text
-Acquisition:
-collect / harvest / kill / craft / race / discover
-
-Conversion:
-sell / deposit / complete / exchange
-
-Progression:
-upgrade / unlock / prestige / level / expand
-
-Social:
-trade / battle / cooperate / spectate / leaderboard
-
-Retention:
-quest / daily objective / collection / event
-
-Monetization:
-pass / repeatable product / subscription / cosmetic
+Why 20?
 ```
 
-That taxonomy should be **descriptive rather than genre-copying**. “Grow a Garden” may help infer that “farm” implies planting/harvesting/progression, but Forge should not turn that into cloned assets, layouts, names, or proprietary game implementation.
-
-**The Project Semantic Map** is the compact representation of the existing Roblox project: relevant instances, scripts, modules, remote objects, services, data schemas, UI graph, tags, dependencies, and current mechanic contracts. Nicolas already described Lemonade maintaining a project memory bank and selectively retrieving project information. citeturn21view0 Forge extends the idea by making much of the memory machine-checkable.
-
-**The Patch Compiler** should not let an LLM casually rewrite whole files whenever possible. Give it typed operations:
+Possible answers:
 
 ```text
-create_script(...)
-replace_function(...)
-insert_statement(...)
-create_remote(...)
-create_instance(...)
-bind_ui(...)
-declare_persistent_field(...)
-add_assertion(...)
+source = project_observation
+
+SellZone already has an existing 20-stud server policy.
+→ hard project integration fact.
 ```
 
-Each operation carries a source-model identifier and expected semantic effect. That enables rollback, provenance, smaller context, deterministic diffing, and targeted re-verification.
-
-**Luau-Shield Tier One should use actual Luau tooling, not an approximate Lua parser in production.** Roblox's open-source Luau repository contains its AST and analysis stack and ships `luau-analyze` as a type checker/linter. Lute's programmable linter is built on the official Luau language stack and explicitly uses the same parser rather than a separate approximation. citeturn22search0turn22search7
-
-For a fast candidate MVP, invoke `luau-analyze` and Lute rules as child processes. For production, embed the official AST/analysis libraries or create a long-running native sidecar to eliminate process startup overhead. That is a better demonstration of engineering rigor than a JavaScript Lua parser pretending to understand all Luau syntax.
-
-Static rules should include:
-
-| Rule family | Example failures |
-|---|---|
-| Language | syntax/type errors, unknown globals, invalid requires |
-| Runtime boundary | LocalScript accessing server-only resources; wrong execution context |
-| Scheduler/lifecycle | unsafe/deprecated scheduling patterns, runaway loops, leaked connections |
-| Persistence | client DataStore access, unsafe production-store use during tests |
-| Remote use | missing handlers, impossible direction, suspicious synchronous client callbacks |
-| Economy | client-supplied reward/price amounts, negative-value paths |
-| Structure | orphan scripts, missing referenced instances, duplicate remote names |
-| Performance | pathological per-frame allocations/loops, obvious unbounded work |
-
-Roblox's documentation states that DataStore access belongs on the server and that client-side attempts fail; it also specifically warns against enabling Studio access to a live game's stores because Studio can touch the same production data, recommending a separate test version instead. citeturn15search2
-
-**Tier Two is the genuinely differentiated part: semantic replication-contract analysis.** Roblox is multiplayer by default, RemoteEvents and RemoteFunctions cross the client/server boundary, and Roblox explicitly says the server should be the source of truth and should validate every piece of client-supplied data before acting on it. citeturn14search5turn14search6
-
-Build a cross-script graph such as:
+or:
 
 ```text
-StarterPlayerScripts/Harvest.client.luau
-    FireServer(HarvestRequest, plotId)
+source = creator
 
-                   ↓
-
-ReplicatedStorage/Remotes/HarvestRequest
-
-                   ↓
-
-ServerScriptService/Harvest.server.luau
-    OnServerEvent(player, plotId)
-       ├─ validates plotId type
-       ├─ checks player owns plot
-       ├─ checks distance
-       ├─ rate-limits interaction
-       ├─ calculates reward server-side
-       └─ updates inventory
+User explicitly said attacks should work within 20 studs.
+→ hard creator requirement.
 ```
 
-The verifier can then prove not just that a handler exists, but that the contract is sensible.
-
-For every client→server state-changing remote, require:
-
-\[
-\text{safe remote} =
-T \land C \land P \land R \land A
-\]
-
-where:
-
-- \(T\): type/value validation,
-- \(C\): context validation,
-- \(P\): permission/ownership validation,
-- \(R\): rate control where appropriate,
-- \(A\): authoritative state mutation remains on the server.
-
-This is especially valuable because network ownership in Roblox creates non-obvious security implications: clients can have authoritative physics control over nearby unanchored assemblies, so gameplay-critical physics requires explicit server-side validation or appropriate ownership handling. citeturn15search0
-
-**Tier Two-and-a-half is where I would modify your current Luau-Shield proposal.** Keep Lune if you already have useful test infrastructure around it, or migrate pieces to the official Lute runtime, but treat that environment as:
-
-- compilation preflight,
-- deterministic pure-Luau unit tests,
-- mocked service tests,
-- economy simulation,
-- property/state-machine checks,
-- fuzzing,
-- fault injection.
-
-Do **not** claim it proves Roblox physics or replication. A standalone Luau runtime is not Roblox Studio. Roblox's own decision to build OpenGameEval around reproducible Studio-native execution is strong evidence that authentic environment behavior matters. citeturn21view4turn22search10
-
-That correction alone could impress a technically serious founder because it demonstrates that you are willing to invalidate a convenient part of your own architecture.
-
-**Tier Three is StudioProof.** Roblox's OpenGameEval was specifically built to evaluate agents in Studio, including tasks requiring reasoning over 3D object hierarchies, multiplayer client/server interactions, stateful world changes, tool use, and long-horizon behavior. citeturn21view4 Its public release history included 47 code-generation evaluations in October 2025, 30 debugging evaluations in March 2026, and another 40 coding evaluations in April 2026—117 released evaluations across those batches. citeturn21view5
-
-Forge should use two Studio execution modes:
-
-**Interactive mode:** in the creator's currently open Studio session, run changed-mechanic assertions immediately through Lemonade's Studio connection/MCP-style tooling.
-
-**Benchmark mode:** use OpenGameEval-compatible isolated places and the Studio Evaluation Service for reproducible offline model comparisons.
-
-The public OpenGameEval workflow is not a sub-500-millisecond operation; public documentation describes multi-minute end-to-end evaluations. That means Forge should offer immediate static/preflight feedback while deeper authoritative playtests run asynchronously rather than pretending all test levels share the same latency envelope. citeturn5search0
-
-**Tier Four should monitor real performance rather than merely correctness.** Roblox's MicroProfiler exposes frame-level engine timing, and Roblox now notes that MicroProfiler data can be accessed through Studio MCP for automated agent feedback loops. citeturn15search4 Therefore a high-end verifier can compare a before/after MicroProfiler trace and reject or warn on a patch that creates severe frame-time regressions.
-
-The key APIs could remain deliberately small:
-
-| API | Responsibility |
-|---|---|
-| `POST /intent/resolve` | Vague creator language → candidate CoreLoop IR |
-| `POST /mechanics/compile` | One mechanic contract → proposed transactional patch |
-| `POST /verify/static` | AST/type/policy diagnostics |
-| `POST /verify/contracts` | replication, persistence, economy, security checks |
-| `POST /verify/preflight` | deterministic pure-Luau/mock tests |
-| `POST /eval/studio` | enqueue authoritative Studio playtest |
-| `GET /proofs/:buildId` | aggregated machine-readable verification certificate |
-| `POST /commits/:id/accept` | atomically accept verified delta |
-| `POST /commits/:id/rollback` | revert transactional change |
-| `GET /models/scorecard` | current per-domain model routing evidence |
-
-Every build gets a **Proof Bundle**:
+or:
 
 ```text
-Build 7fe0a4
-─────────────────────────────────────
-Intent contract             PASS
-Luau syntax/type            PASS
-Client/server policy        PASS
-Remote security             PASS
-Persistence contract        PASS
-Pure Luau tests             12 / 12
-Studio playtest             8 / 8
-Exploit probes              14 / 14 rejected
-Physics assertions          PASS
-Frame regression            +0.3 ms
-Economic invariants         PASS
-Model                       claude-sonnet-5
-Generation cost             $0.14 nominal
-Repair attempts             1 deterministic
-─────────────────────────────────────
-VERIFIED
+source = benchmark_oracle
+
+Hidden eval fixture deliberately expects exactly 20.
+→ valid benchmark condition,
+  NEVER sent into production as universal game semantics.
 ```
 
-That certificate itself is a compelling UI artifact.
-
-**Security should follow capability-based boundaries.** The generation model should never receive unrestricted infrastructure credentials. Project tools get only project-scoped capabilities; secrets stay in the orchestration layer; dynamic workers are ephemeral; filesystem and network access are denied unless explicitly required; test DataStores live in non-production universes; each generated patch has a bounded diff; destructive operations require an explicit capability; and every tool operation is logged into the trajectory. These controls are consistent with Roblox's own warning that external MCP clients can read and modify Studio projects and should therefore only be trusted deliberately. citeturn21view3
-
-Scalability follows naturally because only Tier Three is intrinsically expensive. Cache everything else by:
-
-\[
-H(\text{source hash},\ \text{dependency hash},\ \text{rule version})
-\]
-
-When one mechanic changes, verify its dependency cone rather than the entire game. Static verification scales horizontally. Pure-Luau tests scale horizontally. Studio workers are queued and prioritized by risk. A CSS tweak does not receive the same dynamic budget as a new currency RemoteEvent.
-
-That gives Forge **risk-based verification depth**:
+or:
 
 ```text
-UI text diff               → static only
-local visual UI change     → static + local preview
-new server mechanic        → static + contracts + Studio
-currency/purchase mechanic → all tiers + exploit tests
-physics/network change     → all tiers + multiplayer + profiler
+source = agent_plan
+
+The agent chose 20 while designing a new mechanic.
+→ implementation/design decision;
+  verify internal coherence, don't reject because Forge prefers 18.
 ```
 
-This is how you make correctness economically viable rather than turning every generation into a five-minute integration test.
+That distinction is huge.
 
-## Verification, evaluation, and model strategy
+Your first Luna candidate demonstrates why it matters. Forge's corrected verifier now rejects its 12-vs-20 mismatch as a genuine interface discrepancy because the current benchmark's Forge-owned spec says 20. fileciteturn0file14 That is perfectly legitimate **inside a benchmark whose task defines that requirement**.
 
-Nicolas's strongest public technical signal is arguably his evaluation philosophy. He says Lemonade maintains Roblox-specific tasks, automatically runs them when new models arrive, and can measure whether a model is stronger at areas such as physics or UI; his example is an agent entering Roblox Studio and actually trying a generated punch mechanic. citeturn21view0
+It would not be legitimate to conclude:
 
-Forge should turn this into a first-class **ModelArena** rather than a hidden collection of tests.
+> every future collectible mechanic ought to have a 20-stud radius.
 
-I would build **Lemonade CoreLoopBench**, initially around 150 private tasks:
+### ProjectSemanticMap should describe reality, not prescribe design
 
-| Category | Tasks | Representative test |
-|---|---:|---|
-| Core mechanic generation | 40 | collect object → inventory state increments correctly |
-| Networking/security | 25 | malicious client cannot award itself currency |
-| Persistence | 20 | progression survives reconnect and duplicate writes |
-| UI/state binding | 20 | upgrade purchase updates UI and replicated state |
-| Physics/spatial | 15 | moving platform remains physically/playably correct |
-| Monetization | 10 | repeat purchases do not double-grant from duplicate processing |
-| Repair/live-ops | 20 | fix a broken existing feature without regressions |
-| **Total** | **150** | |
+Your `ProjectSemanticMap` is actually one of the architectural pieces I would preserve almost intact.
 
-These task allocations are a recommended benchmark design, not current Lemonade data. The public benchmark foundation can come from Roblox's OpenGameEval, while Lemonade-specific private tasks should concentrate on novice creator workflows and exactly the classes of failure seen in production. Roblox itself positions OpenGameEval as reproducible Studio-native evaluation for agentic assistants. citeturn21view4turn21view5
+It captures Instances, scripts, remotes, state, tags, attributes and dependencies and distinguishes missing knowledge from safe knowledge. fileciteturn0file9
 
-Each fixture should contain:
+The shift is philosophical:
 
 ```text
-initial place
+Current temptation:
+
+ProjectSemanticMap
+     ↓
+Forge decides what mechanic should be
+
+
+Better:
+
+Project/world observation
+     ↓
+Agent learns what is already there
+     ↓
+Agent decides how to extend it
+     ↓
+Forge verifies consistency
+```
+
+For an existing project, Forge absolutely should say:
+
+```text
+There is already:
+ReplicatedStorage.Remotes.SellInventory
+
+There is already:
+Workspace.SellZone.SellPrompt
+
+There is already:
+player attribute "Coins"
+```
+
+Those are facts.
+
+But in a blank zombie game, Forge should not decide:
+
+```text
+RoundManager must be ServerScriptService.RoundManager
+Remote must be named AttackZombie
+damage must be 10
+range must be 20
+zombies must use tag "Enemy"
+```
+
+The agent can make those decisions.
+
+Forge's job is to discover them afterward and ensure that the project is coherent and safe.
+
+### Make universal semantics genuinely universal
+
+There **is** a class of semantics that should remain handwritten.
+
+For example:
+
+```text
+client-originated values are untrusted
+authoritative currency mutation belongs server-side
+DataStore access cannot be client-owned
+RemoteEvent direction/arity must be coherent
+referenced Instances should exist
+Luau must be valid
+a state-changing endpoint needs appropriate validation
+unknown runtime fact ≠ safe
+```
+
+That's not a game-mechanic ontology.
+
+That's a **Roblox policy/verifier layer**.
+
+Your existing remote-authority work belongs here.
+
+The best future M2 rule should know:
+
+```text
+untrusted client value
+       ↓
+authoritative server-owned state
+```
+
+rather than know:
+
+```text
+SellInventory claimedPayout
+```
+
+The M3.25 fix that moved RemoteEvent reasoning from local variable names to positional/semantic dataflow was exactly the right move in this direction. fileciteturn0file14
+
+### Let the model carry much more semantic synthesis
+
+For:
+
+> “Create me a round-based zombie survival game.”
+
+I now think the model should produce a **high-level BuildPlan**, not Forge compile a handwritten zombie ontology.
+
+For example:
+
+```text
+BuildPlan
+
+Goal:
+Create a playable round-based zombie survival scaffold.
+
+Core behaviors:
+- a waiting/intermission phase
+- waves start automatically
+- each wave spawns server-owned zombie NPCs
+- zombies pursue living players
+- players can damage zombies
+- dead zombies stop acting
+- kills grant server-owned currency
+- wave completes only when all spawned zombies are dead
+- subsequent waves increase pressure
+- HUD exposes wave state / enemies remaining
+```
+
+Then the agent works out:
+
+```text
+Instances
+modules
+events
+state machines
+paths
+names
+damage values
+AI implementation
+UI implementation
+```
+
+within project constraints.
+
+This closely resembles Anthropic's current long-running harness: a planner expands a short request into product-level requirements while intentionally avoiding premature detailed implementation decisions, and the coding agent works incrementally against those outcomes. citeturn9search0
+
+Now Forge has something sensible to verify without knowing “zombies” intrinsically.
+
+### Replace handcrafted mechanic harnesses with test capabilities
+
+This is the other big structural change.
+
+Current StudioProof intentionally allows exactly two registered harnesses: Collect-only and Collect+Sell. That's excellent anti-cheating and reproducibility for your current eval artifact, but it obviously does not scale to arbitrary games. fileciteturn0file10
+
+Do **not delete those harnesses**.
+
+They are valuable historical regression tests.
+
+But add a new layer:
+
+```text
+Studio Runtime Capabilities
+```
+
+These are engine actions/observations rather than mechanic definitions:
+
+```text
+spawn/start player
+wait for character ready
+navigate player
+position player
+trigger production interaction
+press key
+click UI
+activate tool
+observe Instance
+observe attribute
+observe Humanoid health
+count tagged/classed entities
+observe position
+measure distance
+wait for state predicate
+capture screenshot
+attack RemoteEvent directly for adversarial tests
+restart/reset
+```
+
+Then:
+
+```text
+high-level acceptance requirement
+              ↓
+       Runtime Test Planner
+              ↓
+     bounded StudioTestPlan
+              ↓
+     validate plan capabilities
+              ↓
+         execute in Studio
+              ↓
+       outcome observations
+```
+
+Roblox's own current Studio MCP is already converging on this general shape: it exposes game-tree search, instance inspection, script editing, Luau execution, play start/stop, screenshots, character navigation and user input, plus dedicated explore/playtest subagents that can execute gameplay scenarios and verify results. citeturn13search0
+
+That is much more compelling evidence than trying to hand-invent a `ZombieRoundContract`.
+
+### Deterministic where possible does not mean deterministic everywhere
+
+This is perhaps the single most important interpretation of the job description.
+
+“Wherever possible, replace subjective judgment with deterministic tests” does **not** mean:
+
+> convert the game into a fully deterministic ontology.
+
+It means:
+
+```text
+Question:
+"Did killing the last zombie advance the wave?"
+
+→ deterministic Studio state test
+
+
+Question:
+"Can the client grant itself 99,999 coins?"
+
+→ deterministic security/dataflow + adversarial test
+
+
+Question:
+"Does this map feel fun, readable and appropriately paced?"
+
+→ not honestly deterministic
+→ evaluator model + screenshots/playtest + human calibration
+```
+
+Anthropic explicitly recommends deterministic graders when possible, LLM graders when flexibility or subjectivity requires them, and human calibration for model graders. It also says outcome grading is often preferable to forcing a specific implementation path. citeturn9search1
+
+Their recent long-horizon harness similarly uses a dedicated evaluator for visual design and subjective quality because the generating agent tends to overrate its own work; the evaluator interacts with the actual application rather than merely reading the source. citeturn9search0
+
+For games, Forge should eventually have:
+
+```text
+Correctness
+        deterministic
+
+Security / trust
+        deterministic + adversarial
+
+Runtime gameplay
+        deterministic observations + gameplay agent
+
+Game taste
+        skeptical evaluator model
+
+Creator satisfaction
+        human/product signal
+```
+
+That is far more sophisticated than pretending game quality can all be statically proven.
+
+## The Forge architecture I would build toward
+
+I would stop presenting the system primarily as:
+
+> **“a model-agnostic compiler for Roblox mechanics.”**
+
+Internally that metaphor helped.
+
+For Lemonade, I would present Forge as:
+
+> **“a Roblox-specific agent harness and evaluation system that turns vague game requests into iterative builds, verifies what can be verified deterministically, exercises the result in the actual engine, and turns failures into regressions.”**
+
+That is closer to the role and, honestly, to what your best engineering already is.
+
+The revised architecture would look like this:
+
+```text
+                     CREATOR
+                        │
+    "Make me a round-based zombie survival game"
+                        │
+                        ▼
+               ┌─────────────────┐
+               │ PLANNER / AGENT │
+               └─────────────────┘
+                        │
+                        ▼
+                    BuildPlan
+           goals / features / constraints
+             NOT exact implementation
+                        │
+                        ▼
+        ┌──────────────────────────────┐
+        │      LONG-HORIZON HARNESS    │
+        │                              │
+        │ project tools                │
+        │ source tools                 │
+        │ Roblox Studio tools          │
+        │ asset tools                  │
+        │ git/checkpoints              │
+        │ budgets / stop conditions    │
+        └───────────────┬──────────────┘
+                        │
+             repeated incremental work
+                        │
+             ┌──────────┴──────────┐
+             ▼                     ▼
+       Project Facts          Agent trajectory
+       / live state                 │
+             │                      │
+             └──────────┬───────────┘
+                        ▼
+               VERIFICATION BUS
+
+        ┌───────────────────────────────────┐
+        │ Luau syntax/type                  │
+        │ Roblox API validation             │
+        │ universal authority/dataflow      │
+        │ structural integrity              │
+        │ task acceptance predicates        │
+        │ Studio gameplay tests             │
+        │ adversarial tests                 │
+        │ visual/gameplay evaluator         │
+        └────────────────┬──────────────────┘
+                         │
+                    pass / feedback
+                         │
+                  ┌──────┴──────┐
+                  ▼             ▼
+                commit       agent repair
+                                │
+                                └──────┐
+                                       │
+                                       ▼
+
+                         Flight Recorder
+                               │
+                    production / eval failure
+                               │
+                               ▼
+                         Failure Miner
+                               │
+                               ▼
+                      reviewed regression
+                               │
+                               ▼
+                             Harbor
+                               │
+          ┌────────────────────┼──────────────────┐
+          ▼                    ▼                  ▼
+       Model A             Model B            Model C
+      Harness X           Harness X          Harness X
+
+          or
+
+       Model A             Model A
+      Harness X           Harness Y
+
+                               │
+                               ▼
+                   verified outcome comparison
+```
+
+### The semantic boundary in concrete terms
+
+I would keep or introduce these objects:
+
+```text
+GameIntent
+    model interpretation of creator request
+
+BuildPlan
+    editable / revisable high-level decomposition
+
+ProjectFacts
+    discovered from files + live Studio
+
+PolicySet
+    universal Forge/Roblox trust invariants
+
+AcceptanceSpec
+    observable outcomes expected from the current task
+
+Patch / working tree
+    what the agent actually changed
+
+EvaluationPlan
+    how this particular acceptance spec will be tested
+
+Evidence
+    static + runtime + evaluator observations
+
+BuildTrace
+    what happened
+
+ProofBundle
+    only claims for which evidence exists
+```
+
+Then I would **demote** `MechanicImplementationSpec`.
+
+It should survive in two narrow roles.
+
+For a benchmark fixture:
+
+```text
+hidden benchmark oracle
+```
+
+where you intentionally want a known exact interface.
+
+For extending an existing project:
+
+```text
+IntegrationConstraints
+```
+
+derived from real project facts:
+
+```text
+existing RemoteEvent
+existing datastore schema
+existing state representation
+existing public Module API
+existing UI binding
+```
+
+But it should no longer mean:
+
+> Forge writes the correct design of every new mechanic before the model gets to work.
+
+Likewise `InteractionBinding` should become mostly **derived project evidence**:
+
+```text
+ProximityPrompt.Triggered
+     ↓
+client action module
+     ↓
+RemoteEvent
+```
+
+rather than requiring someone to manually define the interaction mode for every novel mechanic.
+
+This is a crucial difference:
+
+```text
+FOR EXISTING GAME:
+
+Forge:
+"I discovered this exact interface.
+Don't break it."
+
+GOOD.
+
+
+FOR BRAND-NEW GAME:
+
+Forge:
+"I have decided the exact interface
+you must invent."
+
+BAD.
+```
+
+### Context should increasingly become tool-driven
+
+Your current Context Compiler is deterministic P0/P1/P2 selection with no retrieval or learned ranking. That was the right bounded design for a two-source generation experiment. fileciteturn0file5
+
+For a multi-hour agent, I would evolve from:
+
+```text
+Forge precomputes perfect context
+→ sends giant package
+```
+
+toward:
+
+```text
+agent starts with high-level task
+      │
+      ├─ search game tree
+      ├─ grep/read source
+      ├─ inspect remote
+      ├─ inspect instance
+      ├─ inspect runtime state
+      └─ ask specialized project-search tool
+```
+
+with context compiler remaining underneath as an optimization/cache/provenance layer.
+
+Roblox's current MCP explicitly offers `search_game_tree`, `inspect_instance`, script search/grep and an `explore` subagent for this kind of targeted project investigation. citeturn13search0 Anthropic's long-horizon work similarly emphasizes maintaining coherent task state and carefully controlling context over long builds rather than assuming the initial prompt can contain everything the agent will need. citeturn9search0
+
+That is much closer to Lemonade's likely world.
+
+## How to turn Forge from “strong hire” into “strongest hire”
+
+I would radically change the roadmap.
+
+**Do not do UpgradeBasket next just because CLB-003 exists.**
+
+**Do not build capsules.**
+
+**Do not build 3D generation.**
+
+**Do not build a product dashboard.**
+
+The strongest hiring artifact now is an **empirical harness/eval project**.
+
+### Make the first milestone a semantic de-hardcoding audit
+
+Take Forge as it exists and classify every authoritative field.
+
+For every value currently owned by Forge:
+
+```text
+Remote path
+ABI
+state name
+distance
+interaction mode
+unit price
+mutation order
+validation rule
+assertion
+source allowlist
+```
+
+label it:
+
+```text
+PROJECT FACT
+CREATOR REQUIREMENT
+UNIVERSAL PLATFORM POLICY
+MODEL/AGENT DESIGN DECISION
+EVALUATION ORACLE
+```
+
+Then enforce a rule:
+
+> Production Forge may deterministically reject an agent for violating a project fact, creator requirement or universal policy. It may not reject an otherwise valid design merely because it differs from a hidden Forge design preference.
+
+That alone is a legitimately interesting AI-engineering contribution.
+
+I would name this something like:
+
+> **Provenance-Typed Requirements**
+
+And I would make the Luna 12/20 case one of its motivating examples.
+
+### Turn CoreLoopBench into a real agent eval suite
+
+You already have ten case definitions spanning acquisition, conversion, upgrades, persistence, UI, moving platforms, combat, repair and composition. fileciteturn0file1
+
+That's a strong starting dataset.
+
+But instead of writing the correct implementation contract for all ten, build each case as:
+
+```text
+starting project
 creator request
-CoreLoop/Mechanic contract
-allowed tool surface
-deterministic assertions
-adversarial assertions
-performance budget
-maximum model/tool cost
-maximum wall-clock budget
-expected observable behavior
-hidden assertions
+visible project facts
+universal policies
+allowed environment/tools
+
+HIDDEN:
+outcome assertions
+adversarial cases
+grader implementation
 ```
 
-Do not score models primarily using an LLM judge.
+Then let the same general harness solve them.
 
-The evaluation hierarchy should be:
+This is precisely what Harbor is designed to support. Harbor currently runs arbitrary agents such as Claude Code and Codex, packages tasks/environments, supports Docker execution and multiple verifier configurations, and can execute large numbers of trials in parallel. citeturn10search1 Harbor's task system also explicitly supports separating the agent environment from a hidden verifier environment—extremely useful for preserving hidden assertions—and supports multi-step tasks whose state persists between phases. citeturn10search7turn10search8
 
-| Verification method | Strength | Main weakness | Role in Forge |
-|---|---|---|---|
-| LLM critic | Understands fuzzy intent | nondeterministic; can share generator blind spots | supplemental only |
-| Static AST/type checks | extremely fast, reproducible | cannot prove runtime behavior | mandatory |
-| Replication-contract analysis | Roblox-specific semantic security | requires good whole-project graph | mandatory |
-| Pure-Luau/mock runtime | fast deterministic execution | not authentic Roblox engine behavior | mandatory preflight |
-| Studio-native playtest | real engine/network/world behavior | slower and costlier | authoritative |
-| Human creator acceptance | captures taste/fun | expensive and subjective | product feedback |
-| **Hybrid pipeline** | strongest coverage | engineering complexity | **recommended** |
-
-Roblox security documentation makes this hybrid approach particularly important. Merely seeing an `OnServerEvent` handler does not establish security: all client data still needs server-side validation, and non-Remote instances such as proximity prompts can also be abused from the client. citeturn14search5
-
-A meaningful benchmark should deliberately run adversarial clients:
+You could therefore make:
 
 ```text
-FireServer(-math.huge)
-FireServer(10^12)
-FireServer(wrong_type)
-FireServer(other_players_plot)
-FireServer(valid_request × 1,000)
-FireServer(outside_interaction_range)
+CoreLoopBench
+      ↓
+Harbor adapter
+      ↓
+same task
+
+Claude / harness A
+Claude / harness B
+Gemini / harness A
+Luna / harness A
+...
 ```
 
-A mechanic is only secure when these requests cannot corrupt authoritative state.
+with Forge's StudioProof becoming the Roblox-specific runtime grader rather than the entire benchmark system.
 
-The primary engineering metrics should therefore be multidimensional:
+That directly signals:
 
-\[
-\text{Verified Success Rate}
-=
-\frac{\text{tasks satisfying every required deterministic assertion}}
-{\text{attempted tasks}}
-\]
+> “You said likely Harbor. I didn't merely import it. I understood where it belongs in a Roblox eval architecture.”
 
-\[
-\text{First-Pass Rate}
-=
-\frac{\text{verified mechanics with zero repair iterations}}
-{\text{attempted mechanics}}
-\]
+### Run actual harness experiments, not model demos
 
-\[
-\text{Repair Efficiency}
-=
-\frac{\text{initial failures repaired within one retry}}
-{\text{initial failures}}
-\]
+This is probably the single highest-value hiring signal you are currently missing.
 
-\[
-\text{Exploit Rejection}
-=
-\frac{\text{malicious test cases safely rejected}}
-{\text{malicious test cases attempted}}
-\]
+Take a fixed set of tasks.
 
-\[
-\text{Verified Success / \$}
-=
-\frac{\text{verified task completions}}
-{\text{model + dynamic-eval variable cost}}
-\]
-
-And track:
-
-| Dimension | Metric |
-|---|---|
-| Correctness | Studio pass rate, invariant pass rate, first-pass rate |
-| Safety | adversarial remote rejection, unauthorized mutation rate |
-| Regression | pre-commit defect catch rate, rollback frequency |
-| Performance | frame-time delta, memory delta, network/event rate |
-| Product | creator accepts patch without manual rewrite |
-| Latency | p50/p95 first preview; p50/p95 authoritative verification |
-| Agent efficiency | tool calls, tokens, repair attempts |
-| Economics | cost/attempt, cost/verified mechanic, frontier escalation rate |
-| Model quality | performance by domain rather than one aggregate leaderboard |
-
-A hidden test set is essential. Otherwise model prompts and repair rules will quietly overfit the benchmark. Production failures should be anonymized and transformed into new regression fixtures, creating a continuously moving benchmark rather than a frozen leaderboard.
-
-**The model router should optimize verified outcomes, not model prestige.**
-
-As of August 29, 2026, OpenAI lists GPT-5.6 Luna at $0.20/$1.20 per million input/output tokens, Terra at $2/$12, and Sol at $4/$20; the current Sol price is promotional through at least November 21, 2026. citeturn18search0turn18search1 Anthropic lists Claude Sonnet 5 at $2/$10 and Claude Opus 5 at $5/$25 per million tokens. citeturn19search0turn19search4 Google lists Gemini 3.1 Flash-Lite at $0.25/$1.50 and Gemini 3.1 Pro Preview at $2/$12 below 200,000 input tokens, with higher long-context pricing; Google currently labels the Gemini 3 family as preview. citeturn19search1
-
-Using an illustrative 40,000-input/6,000-output-token mechanic attempt, before cache discounts or additional tool calls:
-
-| Model | Current published input/output $/MTok | Nominal 40k/6k cost | Best Forge role |
-|---|---:|---:|---|
-| GPT-5.6 Luna | $0.20 / $1.20 | **$0.015** | classification, extraction, summarization, trivial transforms |
-| Gemini 3.1 Flash-Lite | $0.25 / $1.50 | **$0.019** | cheap high-volume secondary route |
-| Claude Sonnet 5 | $2 / $10 | **$0.140** | default coding candidate if evals justify it |
-| GPT-5.6 Terra | $2 / $12 | **$0.152** | balanced coding/reasoning candidate |
-| Gemini 3.1 Pro Preview | $2 / $12* | **$0.152** | alternate reasoning route; evaluate preview stability |
-| GPT-5.6 Sol | $4 / $20 | **$0.280** | difficult cross-system reasoning/debugging |
-| Claude Opus 5 | $5 / $25 | **$0.350** | hardest repairs/architecture/physics candidates |
-
-\*Below Google's 200k threshold. These arithmetic examples hold tokens constant and therefore are **not empirical cost-per-task comparisons**; different models tokenize and reason differently. Current prices are from the providers and can change. citeturn18search0turn19search0turn19search1turn19search4
-
-The routing policy should look approximately like:
+Then hold the model constant and vary:
 
 ```text
-Can a deterministic compiler/rule solve it?
-        ├── yes → $0 model cost
-        └── no
-             ↓
-Is it classification / extraction / boilerplate?
-        ├── yes → cheap model
-        └── no
-             ↓
-Normal bounded mechanic?
-        ├── yes → benchmark-best balanced model
-        └── no
-             ↓
-Cross-system / physics / repeated verifier failure?
-        └── frontier model
+Harness A
+current bounded context + two-call proposal
+
+vs
+
+Harness B
+tool-using project exploration + planning
+
+vs
+
+Harness C
+planning + independent evaluator
 ```
 
-More importantly, escalation should be **evidence driven**:
-
-```python
-if confidence_high and risk_low:
-    cheap_model()
-elif normal_mechanic:
-    best_cost_adjusted_model(domain)
-elif previous_attempt_failed or risk == "critical":
-    frontier_model()
-```
-
-The router should maintain per-domain posterior estimates such as:
+Measure:
 
 ```text
-Claude Sonnet 5:
-    UI              93%
-    ordinary Luau   91%
-    replication     86%
-    complex physics 74%
-
-GPT-5.6 Sol:
-    UI              91%
-    ordinary Luau   94%
-    replication     92%
-    complex physics 88%
-```
-
-Those numbers are illustrative, not measured results. The point is that **no permanent “best model” exists**. Nicolas already operates according to this philosophy. citeturn21view0
-
-The router's optimization target can be:
-
-\[
-\arg\max_m
-\left[
-P(\text{verified success}\mid m,d)
--
-\lambda_c C_m
--
-\lambda_l L_m
-\right]
-\]
-
-where \(d\) is task domain, \(C_m\) expected variable cost and \(L_m\) latency.
-
-**Fine-tuning should explicitly not be phase one.** This is another place where demonstrating restraint is more impressive than claiming an elaborate ML program. Nicolas says Lemonade has substantial labeled trajectory data but deliberately has not focused on post-training yet because frontier labs continue moving rapidly and strong eval infrastructure lets Lemonade swap in better models. citeturn21view0
-
-Forge should make that future decision better by collecting clean training material now.
-
-Every trajectory should record:
-
-```text
-anonymized creator / project cohort
-initial project state hash
-user intent
-resolved CoreLoop IR
-retrieved context
-model + model configuration
-tool calls
-candidate diff
-static diagnostics
-contract diagnostics
-Studio execution events
-repair feedback
-final verified diff
-creator accept / reject / modify
-latency
+verified success
+first-pass verified success
+security defects
+Studio failures
+retries
 cost
+latency
+tool calls
+context tokens
 ```
 
-Only after this dataset is large and clean should Lemonade consider:
+Then hold the harness constant and vary models.
 
-**Supervised fine-tuning** for high-volume stable transforms such as intent→IR translation, test synthesis, diagnostic classification, and common Roblox repair patterns.
+This matters because Lemonade explicitly wants someone who can answer:
 
-**Imitation learning** for successful tool trajectories. DAgger-style dataset aggregation is conceptually valuable because deployed agents encounter states not represented in clean demonstrations; subsequent recovery examples can explicitly cover those states. Recent DAgger-family research continues to focus on precisely this compounding-error/OOD-state problem. citeturn16academia0
+> Which model is actually better **inside our harness**, and which harness changes unlock a particular model?
 
-**Reinforcement learning** only where rewards are strongly grounded:
+Anthropic's eval guidance likewise says “the agent” being measured is the model+harness combination, not the model in isolation. citeturn9search1
 
-\[
-R =
-w_1(\text{tests passed})
--
-w_2(\text{security violations})
--
-w_3(\text{regressions})
--
-w_4(\text{cost})
--
-w_5(\text{latency})
-\]
-
-The beautiful thing about Luau-Shield is that it supplies much better rewards than “another LLM thought this code looked good.”
-
-Execution feedback has repeatedly improved code agents in research. Self-Debugging showed that generated programs can be improved through execution/error feedback; Reflexion uses environmental feedback and episodic memory to improve subsequent attempts; Voyager similarly built a game-environment agent around executable skills, environment feedback, errors, and self-verification. citeturn17academia3turn17academia0turn17academia2
-
-The architecture I would therefore recommend is:
-
-> **one primary agent + excellent tools + machine-verifiable environment feedback + selective memory + occasional parallel candidates**
-
-—not a fashionable forest of agents talking to one another.
-
-## Demo, MVP roadmap, and required artifacts
-
-A hiring artifact has a different objective from a startup's complete production rollout. You need the smallest system that proves the **entire thesis vertically**.
-
-The best candidate MVP is a six-week build beginning Monday, August 31, 2026, although a compelling rough version should exist by the end of the third week.
-
-```mermaid
-gantt
-    title Lemonade Forge Candidate Build
-    dateFormat YYYY-MM-DD
-    axisFormat %b %d
-
-    section Foundation
-    CoreLoop IR + benchmark fixtures          :a1, 2026-08-31, 5d
-    Official Luau static pipeline             :a2, 2026-09-02, 7d
-
-    section Verification
-    Replication contract graph                :b1, 2026-09-07, 7d
-    Lune/Lute deterministic preflight         :b2, 2026-09-10, 5d
-    StudioProof integration                   :b3, 2026-09-14, 10d
-
-    section Agent Product
-    Intent compiler + mechanic executor       :c1, 2026-09-14, 8d
-    Atomic patch / repair loop                :c2, 2026-09-19, 7d
-    Guided next-mechanic UX                   :c3, 2026-09-23, 6d
-
-    section Intelligence
-    Multi-model adapter                       :d1, 2026-09-21, 6d
-    ModelArena benchmark dashboard            :d2, 2026-09-25, 7d
-
-    section Showcase
-    FirstDollar proof                         :e1, 2026-09-28, 5d
-    Demo worlds + fault injection             :e2, 2026-09-30, 6d
-    Video / RFC / polish                      :e3, 2026-10-05, 7d
-```
-
-**The first week** should create the semantic foundation. Define `GameIntent`, `CoreLoop`, `MechanicContract`, `PatchSet`, `VerificationIssue`, `StudioAssertion`, `ProofBundle`, and `TrajectoryEvent`. Build 10 carefully chosen benchmark tasks before optimizing the generator. That demonstrates the critical eval-first mentality Nicolas has publicly described. citeturn21view0turn21view4
-
-Ship official Luau parsing/type/lint support and 10–15 high-value policies.
-
-By the end of week one, this command should work:
-
-```bash
-forge verify ./examples/insecure-tycoon
-```
-
-and produce structured diagnostics.
-
-**The second week** should make replication-contract analysis the standout technical artifact. Construct whole-project remote graphs and intentionally vulnerable games. Demonstrate detection of client-controlled currency, missing permission checks, impossible remote bindings, DataStore context mistakes, unsafe physics ownership patterns, and duplicate event bindings. These classes are grounded directly in Roblox's documented client/server security model. citeturn14search5turn14search6turn15search0turn15search2
-
-**The third week is the hiring inflection point:** integrate real Studio execution. Create three tiny benchmark worlds:
+A compelling README graph would be much stronger than another 5,000 lines of architecture:
 
 ```text
-Fruit Islands
-collect → sell → upgrade
+                     Verified pass@1
 
-Punch Arena
-attack → damage → cooldown → knockout
+Claude + baseline         40%
+Claude + project tools    65%
+Claude + evaluator        75%
 
-Mini Tycoon
-dropper → collection → upgrade → faster generator
+Gemini + baseline         45%
+Gemini + project tools    52%
+Gemini + evaluator        54%
 ```
 
-At this point you have a credible artifact worth showing Nicolas even if every later feature remains incomplete.
+Those numbers are illustrative—**do not invent them**. The artifact should contain your real results.
 
-**Weeks four and five** turn the verifier into the product. Add Intent Compiler, CoreLoop IR, transactional commits, automatic repair, and multi-model evaluation. The UI should present friendly mechanic cards, while an engineering drawer exposes the underlying contract and proofs.
+Then inspect the traces and explain **why**.
 
-**Week six** is showcase quality: FirstDollar, performance checks, benchmark dashboard, threat model, polished documentation, fault injection, demo recording.
+That's founding-AI-engineer work.
 
-The minimum artifact set should be:
+### Demonstrate the failure → regression loop you already naturally do
 
-| Artifact | Why it matters |
-|---|---|
-| Public GitHub repository | shows actual engineering rather than a concept deck |
-| 3-minute product video | founder can understand thesis asynchronously |
-| Hosted web control plane | proves full-stack/product ability |
-| Roblox Studio plugin/connection | proves actual ecosystem integration |
-| Three example places | repeatable end-to-end demos |
-| 25+ deterministic evals | demonstrates evaluation discipline |
-| Model scorecard | proves model-agnostic architecture |
-| Security threat model | distinguishes you from ordinary AI-app candidates |
-| Engineering RFC | demonstrates founding-level architecture communication |
-| Benchmark results JSON | makes claims reproducible |
-| Fault-injection mode | turns correctness into something visually compelling |
-| Cost dashboard | demonstrates production economics |
-| `ARCHITECTURE.md` | lets Nicolas inspect reasoning quickly |
+You already have outstanding raw material.
 
-The killer live demo should take **approximately six minutes**.
-
-**Opening — vague intent.**
-
-Type:
-
-> “make a fruit game on floating islands where you can get richer”
-
-Forge should not begin writing an entire game.
-
-It replies:
+For example:
 
 ```text
-I think your core loop could be:
+Failure:
+host-less Luau environment falsely rejects valid Roblox source
 
-[Collect rare fruit]
-       ↓
-[Sell fruit]
-       ↓
-[Upgrade basket / island]
-       ↓
-[Reach rarer islands]
+Fix:
+Roblox-aware analyzer
 
-Start with Collect?
+Regression:
+preserved Luna candidate
 ```
 
-That directly demonstrates the intent/core-loop philosophy Nicolas describes. citeturn21view0
-
-**Generate the first mechanic.**
-
-Click Collect.
-
-Show the internal contract briefly:
+Then:
 
 ```text
-Goal: CollectFruit
-Authority: Server
-Client may request interaction
-Server validates fruit identity + distance + ownership
-Postcondition: inventory.fruit += 1
+Failure:
+M2 matched local parameter name rather than positional ABI
+
+Fix:
+position/dataflow semantics
+
+Regression:
+renaming parameter cannot change verdict
 ```
 
-Then the agent edits Studio.
-
-**Inject a failure.**
-
-Use a visible `Inject Vulnerability` development toggle—not a staged fake model failure—to mutate the implementation into:
-
-```lua
-CollectFruit:FireServer(fruitId, 999999)
-```
-
-with an unsafe server handler trusting the amount.
-
-Luau-Shield should show:
+Then:
 
 ```text
-CRITICAL REMOTE_AUTHORITY_VIOLATION
+Failure:
+Sell client used Heartbeat to repeatedly FireServer
 
-Client-controlled field `amount` reaches authoritative
-Inventory mutation without server recomputation.
+Root cause:
+harness never specified/tested production interaction
+and Studio happy path bypassed actual client initiation
 
-Exploit proof:
-  requested amount: 999,999
-  allowed state delta: 1
+Fix:
+production-path test + explicit project interaction evidence
 
-Suggested repair:
-  remove `amount` from client contract
-  calculate reward from server-owned FruitDefinition
+Regression:
+secure server + wrong client initiation must fail
 ```
 
-Roblox's security guidance explicitly requires the server to validate client data and remain authoritative, so this is not invented lint theater. citeturn14search5turn14search6
+These are **exactly** the stories Lemonade's three-month success statement is asking for.
 
-Click **Repair**.
+Your Flight Recorder already has the right conceptual separation: `BuildTrace` records what happened, `ProofBundle` records decision evidence, a benchmark fixture is a promoted reproducible failure, and an experiment varies configurations against fixed tasks. fileciteturn0file6
 
-No frontier call should be required if the patch is deterministic.
-
-That one detail is powerful: you have demonstrated correctness **and zero-token repair**.
-
-**Run StudioProof.**
-
-A test player spawns, walks to a fruit, interacts, and the assertion pane changes:
+What is missing is simply completing the loop:
 
 ```text
-✓ fruit disappears
-✓ inventory moves 0 → 1
-✓ second player cannot collect destroyed fruit
-✓ spoofed fruit ID rejected
-✓ impossible-distance request rejected
-✓ server remains authoritative
+real failure
+→ minimized fixture
+→ Harbor case
+→ before/after experiment
+→ measured disappearance of failure class
 ```
 
-Now you have shown something an AST linter cannot prove.
+Build that.
 
-**Build Sell and Upgrade.**
+### Then do one genuinely unseen game request
 
-The next mechanic is automatically recommended from the CoreLoop IR. Build both. The system runs only affected verification cones.
+Only after de-hardcoding the semantics.
 
-Then deliberately compare models.
+And **this is where your zombie prompt becomes extremely valuable**.
+
+Use:
+
+> **“Create me a round-based game where the player fights zombies and earns coins for kills.”**
+
+Do **not** create `ZombieMechanicContract.json` manually beforehand.
+
+Let the planner produce something like:
 
 ```text
-Task: implement basket upgrade
-
-Model             Verified?   Attempts   Variable LLM cost
-Luna              no          2          $...
-Sonnet 5          yes         1          $...
-Sol               yes         1          $...
-
-Router choice: Sonnet 5
-Reason: same verification outcome at lower expected cost
+Round lifecycle
+Zombie spawning
+Zombie lifecycle
+Player combat
+Kill rewards
+Wave progression
+HUD
 ```
 
-Do not hard-code expected winners. Run the actual benchmark and let whatever happens be the result.
+Let the agent inspect/build the project.
 
-**Finish with FirstDollar.**
+Then have an evaluator derive a gameplay test plan from the requested outcomes.
 
-After collect→sell→upgrade is proven:
+The deterministic portion might test things such as:
 
 ```text
-Your free core loop is complete.
-
-Optional business mechanic:
-Permanent +1 basket slot
-
-[Preview] [Add] [Not yet]
+✓ Wave actually transitions into running state
+✓ enemies actually spawn
+✓ living enemy count matches observed world
+✓ valid attack reduces server-owned health
+✓ client cannot choose damage
+✓ out-of-range attack does nothing
+✓ dead zombie cannot reward twice
+✓ all zombies dead causes wave transition
+✓ next wave actually starts
 ```
 
-The monetization implementation should then receive the strictest verification tier. Roblox's product taxonomy supports passes for one-time permanent benefits and developer products for repeatable purchases. citeturn14search3turn14search8
-
-**Final frame:**
+The qualitative evaluator might inspect:
 
 ```text
-GAME READINESS
-────────────────────────
-Core loop                 VERIFIED
-Client/server security    VERIFIED
-Persistence               VERIFIED
-Physics                    VERIFIED
-Performance               VERIFIED
-Exploit suite             VERIFIED
-Monetization              VERIFIED
-
-4 mechanics
-37 assertions passed
-1 vulnerability prevented
-1 deterministic repair
-0 unresolved regressions
+Does the player understand what to do?
+Is the wave state visible?
+Are zombies obviously distinguishable?
+Does combat respond in a usable way?
+Does the generated map look like an intentional scaffold
+rather than random parts?
 ```
 
-Then say, verbally:
+If Forge handles this without you handwriting the semantic solution beforehand, the “fruit-game compiler” objection disappears almost instantly.
 
-> “The interesting part isn't that the model wrote the game. The interesting part is that the model is disposable and the game contract isn't.”
+And it does not need gorgeous zombies.
 
-That is the thesis.
+Lemonade's job explicitly says **game scaffold, not zero-shot finished product**. The artifact should optimize for coherent gameplay and an eval loop, not final asset polish.
 
-A production roadmap after the candidate MVP would look like:
+### Add a small long-horizon run
 
-| Horizon | Product outcome |
-|---|---|
-| First month | verified code/replication pipeline running in shadow mode |
-| Second month | real Studio regression suite + private CoreLoopBench |
-| Third month | guided CoreLoop IR integrated into generation flow |
-| Months four to six | model routing, FirstDollar, production telemetry, automated regression mining |
-| Months six to twelve | creator-outcome learning, selective post-training experiments, deeper UI/game-design compiler passes |
+After the unseen game works at all, let the same harness run for an hour or several hours.
 
-The early rollout should initially run verifiers in **shadow mode** rather than blocking users. Compare verifier warnings against actual failures, tune false positives, then graduate rules to warnings, auto-fixes, and eventually hard pre-commit gates.
+Not because hours are magically impressive.
 
-## Resource plan, economics, scalability, and hiring
-
-For the **candidate proof-of-work**, the correct team size is one: you.
-
-That is strategically important. Your value proposition is precisely that your Roblox/Luau background and autonomous-agent engineering allow you to span the product without needing separate people for engine semantics and LLM orchestration. The handoff already frames those two domains as the unusual intersection in your candidacy. fileciteturn0file0
-
-A realistic six-week personal prototype budget is roughly:
-
-| Item | Planning range |
-|---|---:|
-| Frontier/medium/cheap model APIs | $300–$2,000 |
-| Web/backend/DB | $50–$500 |
-| Test runners/CI/log storage | $100–$500 |
-| Domains/misc tooling | <$200 |
-| Deliberately wasteful benchmark sweeps | $100–$1,500 |
-| **Total** | **~$550–$4,700** |
-
-These are planning estimates, not vendor quotes. The model portion can be controlled aggressively using the published per-token pricing described above. citeturn18search0turn19search0turn19search1turn19search4
-
-At production scale, the important insight is that deterministic computation is cheap relative to repeated frontier inference. A plausible routing distribution for one million mechanic attempts might be:
+Because you can demonstrate:
 
 ```text
-30% solved / transformed without an LLM
-45% cheap-model work
-20% balanced-model work
- 5% frontier escalation
+short user prompt
+     ↓
+planner
+     ↓
+persistent plan/checkpoint
+     ↓
+feature
+     ↓
+evaluation
+     ↓
+repair
+     ↓
+next feature
+     ↓
+evaluation
+     ↓
+...
 ```
 
-Using illustrative per-call costs of about $0.02, $0.15 and $0.35 for the three model tiers yields roughly:
+Anthropic's current long-running harness work specifically found value in decomposition, structured handoffs/context state and a separate evaluator for multi-hour application builds. citeturn9search0
 
-\[
-450{,}000(0.02)+200{,}000(0.15)+50{,}000(0.35)
-\approx \$56{,}500
-\]
+That maps directly onto Lemonade's incubation project.
 
-per million attempts before retries, dynamic test infrastructure, cache effects, provider discounts, multimodal/tool costs, and long-context surcharges. This is a **scenario calculation**, not a Lemonade forecast. The approximate per-call assumptions are directionally consistent with current provider list prices at the sample token volume used earlier. citeturn18search0turn19search0turn19search1turn19search4
+### Fly comes in here, not before
 
-The model router therefore has real economic leverage. Moving an ordinary job from a $0.35 frontier route to a $0.02 cheap route saves roughly 94% of model cost for that job. More importantly, a deterministic repair costs effectively zero inference tokens.
+Now Fly suddenly has a real reason to exist.
 
-The economic KPI I would obsess over is:
+The job explicitly names Fly and Docker. Fly's current agent architecture centers around hardware-isolated Firecracker environments: Sprites provide persistent isolated Linux execution with checkpoint/restore, while Fly Machines can host long-lived agent services. Fly specifically recommends separating the agent host from the untrusted code execution environment. citeturn11search2
 
-\[
-\textbf{Cost Per Verified Mechanic}
-=
-\frac{
-C_\text{inference}+
-C_\text{Studio}+
-C_\text{infra}
-}{
-N_\text{mechanics passing authoritative verification}
-}
-\]
+Fly's public site also currently lists **Lemonade** among the teams building on Fly. That confirms a real relationship with Fly infrastructure, although it does **not** reveal Lemonade's private deployment topology. citeturn12search0
 
-Not cost per message.
-
-Not tokens per user.
-
-Not raw generations.
-
-**Verified output per dollar.**
-
-Production infrastructure should separate three pools:
+For Forge, the natural eventual split is:
 
 ```text
-Control Plane
-Next.js / TypeScript / state DB / queues
-             │
-             ├── Static Worker Pool
-             │   Luau analyzer + semantic graph
-             │   cheap Linux containers
-             │
-             ├── Pure-Luau Worker Pool
-             │   Lute/Lune + fuzzing/economy simulation
-             │
-             └── Studio Evaluation Pool
-                 expensive / scarce
-                 isolated real-engine execution
+Fly Machine
+    long-running harness/controller
+
+        ↓
+
+isolated Sprite / Docker environment
+    repo
+    coding agent
+    Luau tools
+    tests
+    checkpoints
+
+        ↓ artifact
+
+StudioProof worker
+    real Roblox Studio
+    runtime/gameplay evaluation
 ```
 
-For the first two pools, ordinary container infrastructure is inexpensive and horizontally scalable. Fly.io, for example, bills Machines by resources/time and supports small shared instances at single-digit monthly-dollar list prices when continuously running; AWS Fargate similarly bills CPU and memory by usage. Actual Lemonade deployment should be selected based on operational simplicity and existing stack rather than saving tiny amounts on a verifier worker. citeturn12search0turn13search6
+You don't need to force Roblox Studio into a Linux Fly Machine. Roblox runtime proof remains its own execution environment.
 
-The Studio pool is where capacity engineering matters. Therefore:
+Fly also exposes fast-lifecycle Machines through an API, which is useful once you need independent agent/eval workers rather than one local process. citeturn11search0turn11search1
 
-- deduplicate identical tests,
-- only run tests affected by a patch,
-- cache immutable results,
-- prioritize security/economy/physics changes,
-- batch offline model benchmarks,
-- keep interactive checks small,
-- separate product playtests from exhaustive nightly evals.
+If time is limited, Docker + Harbor matters more for your immediate proof.
 
-A production Forge team should begin at **six people**, including you:
+Fly becomes a great **second** infrastructure signal once you have a real long-horizon workload to place there.
 
-| Role | Core ownership |
-|---|---|
-| **Founding AI / Roblox Systems Lead — you** | architecture, agent loop, model routing, Roblox semantics, evaluation |
-| Roblox Runtime/Security Engineer | replication, engine behavior, performance, exploit corpus |
-| AI/Evals Engineer | benchmarks, experiment infrastructure, trajectory analytics |
-| Product/Full-stack Engineer | creator UX, Studio/web integration, observability |
-| Infrastructure Engineer | Studio runner fleet, queues, isolation, SRE |
-| Product Designer / Creator Systems | first-time creator UX, game-design ontology, usability |
+### Do not build your own 2D/3D foundation model
 
-The next hires should be a data/ML engineer for post-training and trajectory infrastructure, another product engineer, and someone with explicit privacy/trust-and-safety ownership as the data and creator surface expands.
+For this role, that would actually dilute the signal.
 
-A realistic fully loaded planning range for that initial technical team is approximately **$1.5M–$2.8M per year**, depending heavily on geography, equity/cash mix, and seniority. That is an internal planning estimate rather than a claim about Lemonade compensation.
+Roblox's current AI tooling already exposes image/asset workflows and procedural-model integrations through its broader AI/MCP surface. citeturn13search0
 
-A serious 12-month Forge program could reasonably budget:
-
-| Category | Planning range |
-|---|---:|
-| 6–10 person engineering/product team | $2.0M–$4.5M |
-| Model inference / benchmark experimentation | $300k–$2.0M |
-| Studio/compute/data infrastructure | $100k–$500k |
-| Observability/security/tooling | $50k–$250k |
-| External testing/research/creator programs | $50k–$300k |
-| **Total planning envelope** | **~$2.5M–$7.6M/year** |
-
-“No budget limit” should not mean indiscriminate frontier-model use. An excellent Founding AI Engineer demonstrates that **more money buys experiment breadth, not architectural laziness**.
-
-## Go-to-market, Lemonade metrics, risks, IP, and ethics
-
-Forge should **not** launch as a separate enterprise “code quality” product. Its value is highest when invisible inside Lemonade's existing first-time-creator funnel.
-
-That follows directly from Lemonade's positioning. Nicolas says the company's differentiation comes from being extremely intentional about first-time creators and Roblox-specific product experiences rather than merely building the most intelligent coding loop. citeturn21view0 Lemonade's current homepage likewise centers starting a first business and building a game rather than professional software-engineering tooling. citeturn21view2
-
-The rollout should be:
+Your problem is:
 
 ```text
-Stage A — Shadow
-Generate exactly as today.
-Forge observes and scores every delta.
+Can the AGENT decide:
+"I need a zombie model"
 
-Stage B — Explain
-Show warnings and proof cards.
-No hard blocking except severe security failures.
+Can it:
+find / generate / insert one
 
-Stage C — Repair
-Auto-fix deterministic problems before model retries.
-
-Stage D — Verified Commit
-Mechanics commit transactionally only after required gates.
-
-Stage E — CoreLoop Guidance
-Next-mechanic recommendations become part of creator UX.
-
-Stage F — FirstDollar
-Monetization is offered after a functional core loop exists.
-
-Stage G — Learning Flywheel
-Production failures become eval fixtures;
-verified trajectories improve routing and future training.
+Can Forge evaluate:
+correct hierarchy?
+Humanoid?
+PrimaryPart?
+animations load?
+collision usable?
+scale sane?
+NPC actually moves?
+visual result acceptable?
 ```
 
-The go-to-market metric hierarchy should mirror that funnel.
+not:
 
-**Creator activation metrics**
+> Can you train a mesh diffusion model?
 
-\[
-\text{Time to First Verified Mechanic}
-\]
+The first is directly relevant to Lemonade.
 
-\[
-\text{Verified Core Loop Completion Rate}
-\]
+The second is a separate ML company/research problem.
 
-\[
-\text{First-Session Publish Readiness Rate}
-\]
+## The strongest possible candidate story
 
-**Quality metrics**
+If you stopped today, I think Forge already signals:
 
-\[
-\text{Generation Retry Rate}
-\]
+> **“This person understands deterministic verification and real-engine evaluation unusually deeply.”**
 
-\[
-\text{Post-Commit Regression Rate}
-\]
+That's strong.
 
-\[
-\text{Deterministic Repair Share}
-\]
-
-**Creator retention**
-
-Measure creator return after first build, continued project iteration, and percentage of creators who progress from one mechanic to a complete loop.
-
-**Business formation**
-
-Measure the share of completed games whose creators voluntarily configure an appropriate monetization mechanic, then—subject to privacy and product-policy constraints—the path to first legitimate platform earnings. This matches Nicolas's stated first-dollar mission without promising users that they will earn money. citeturn21view0
-
-**Game quality**
-
-Roblox recommends monitoring D1/D7 retention, average session time, payer conversion, ARPPU/revenue, acquisition, and related metrics following game updates. Roblox's analytics dashboard also supports similar-game benchmarks for several metrics. citeturn14search0turn14search13
-
-Over time this creates an extraordinary research question:
-
-> Which creation sequences help a novice both **finish** a game and build something players actually enjoy?
-
-That is a much more valuable product-learning problem than “which LLM gets the highest generic code benchmark?”
-
-Several major risks need explicit treatment.
-
-| Risk | Why it matters | Mitigation |
-|---|---|---|
-| Frontier models obsolete orchestration | Nicolas already sees model capability changing agent architecture rapidly | very thin execution harness; model adapters; permanent eval suite citeturn21view0 |
-| Roblox MCP commoditizes Studio access | generalist agents can now operate inside Studio | compete on intent, game IR, verification, trajectories, creator UX—not connectivity citeturn21view3 |
-| False confidence from mocks | mocked Luau runtime cannot prove actual engine semantics | make real Studio execution authoritative citeturn21view4turn22search10 |
-| Client/server exploits | generated code may look correct but trust hostile input | semantic remote contracts + adversarial client tests + server authority citeturn14search5turn15search0 |
-| Production-data corruption | autonomous tests can touch real persistence | separate test universes; scoped credentials; never test against production stores citeturn15search2 |
-| Benchmark overfitting | models/rules can improve on fixed tests without improving creators | hidden cases, rotating production regressions, held-out projects |
-| Model/vendor concentration | capability/pricing/access can shift | model-agnostic interface and continuous routing, already consistent with Lemonade's philosophy citeturn21view0 |
-| Cost explosion | autonomous repair loops can recursively spend tokens | attempt budgets, deterministic-first repair, per-task cost ceilings |
-| IP imitation | vague requests often reference popular games | infer mechanics, not protected assets/code/branding; provenance and similarity review |
-| Monetization ethics | teenagers are both creators and often players | gameplay-first monetization, explicit creator approval, avoid manipulative optimization |
-| Minor privacy | trajectories can contain persistent identifiers and behavioral data | strict minimization, pseudonymization, retention limits, legal/privacy review |
-| Provider leakage | project source may be commercially sensitive | provider controls, minimization/redaction, project-scoped retention policy |
-
-Minor privacy is particularly important because the FTC's COPPA framework can impose notice, parental-consent, security, minimization, retention, and deletion obligations on covered services that collect personal information from children under 13; the FTC strengthened aspects of the rule in 2025. Whether and how those requirements apply to Lemonade's exact product should be determined by qualified counsel rather than inferred by an engineer. citeturn23search0turn23search1turn23search2
-
-For trajectory data, therefore, “collect everything” is the wrong interpretation of Nicolas's point about valuable trajectories. The correct approach is:
-
-> **retain everything necessary to reproduce model behavior; retain as little creator-identifying information as possible.**
-
-Project code and tool traces can often be detached from direct identity. Raw chat should have an explicit retention policy. Creator-preference signals should be purpose-limited. Training exports should undergo a separate privacy transformation.
-
-On IP, the safest proof-of-work strategy is clean-room development from public Roblox/Luau documentation and your own examples. Luau itself is open source under the MIT license and asks downstream users to honor its attribution requirements. citeturn22search0 Public benchmark fixtures can use Roblox's published eval infrastructure consistent with its repository terms, while any eventual Lemonade production trajectories should remain completely outside your candidate project unless Lemonade gives explicit authorization.
-
-I would open-source **the technical core of Luau-Shield and 20–30 public CoreLoopBench tasks** because that maximizes hiring signal. Keep nothing that pretends to be Lemonade proprietary. The architectural moat is not secrecy around a rule saying “don't trust currency from a RemoteEvent”; it is the scale of production contracts, trajectories, product integration, and outcome data that Lemonade could accumulate after deployment.
-
-The candidate repo should therefore have a conspicuous notice:
+To signal **STRONGEST**, I'd want the repository to tell a slightly different story:
 
 ```text
-Independent proof-of-work.
-Not affiliated with Lemonade Labs or Roblox Corporation.
-Built from public documentation and candidate-owned code.
-No Lemonade user data or proprietary systems are included.
+I started with a model-generated mechanic.
+
+I built:
+- deterministic Luau/Roblox analysis
+- authority/dataflow validation
+- exact transaction/rollback
+- real Studio runtime evaluation
+- reproducible traces and proof artifacts.
+
+Then I actually evaluated it.
+
+The eval caught model bugs.
+
+It also caught MY bugs:
+- invalid host typing
+- brittle ABI matching
+- a harness readiness race
+- happy-path tests bypassing production behavior
+- overly prescriptive mechanic semantics.
+
+I didn't tune around them.
+
+I promoted them into regressions.
+
+Then I redesigned the harness so:
+- models own implementation/game design;
+- project facts are discovered;
+- universal safety policy remains deterministic;
+- task success is outcome-based;
+- Studio executes real gameplay;
+- subjective game quality gets an independent evaluator;
+- production/eval failures become Harbor tasks.
+
+Then I ran multiple models and harness variants
+against the exact same tasks and measured what actually improved.
+
+Finally I gave the system a game it had never seen:
+"build me a round-based zombie survival game"
+
+and let the general harness build/evaluate it incrementally
+without a handwritten zombie contract.
 ```
 
-That makes you look more, not less, senior.
+**That** signals the person in the Lemonade job posting.
 
-## Tactical package for Nicolas and primary-source map
+Not because Forge looks exactly like Lemonade.
 
-Your current outreach state matters. According to your handoff, Nicolas asked which project you were most proud of, you answered substantively, and he has not yet replied. The handoff's “do not anxiously double-text” rule remains sound. fileciteturn0file0
+Because it demonstrates that you can walk into Lemonade and do the work they describe:
 
-Therefore **do not send Nicolas the architecture above as an unsolicited essay**.
+```text
+observe agent failures
+        ↓
+understand whether failure came from:
+model / context / tool / harness / grader / runtime
+        ↓
+design a representative eval
+        ↓
+replace subjective checks with deterministic ones where honest
+        ↓
+keep model-dependent flexibility where necessary
+        ↓
+run controlled experiments
+        ↓
+change the harness
+        ↓
+prove the failure class went away
+        ↓
+do it again
+```
 
-The product's power comes from being executable.
+And this is where I would make one non-obvious recommendation:
 
-The best next message is the one you can send **after a meaningful vertical slice actually works**:
+> **Do not hide Forge's architectural mistakes from Nicolas. Feature them.**
 
-> **Built something after thinking about your point on core loops + evals: a verified Roblox game compiler. Vague prompt → typed mechanic contract → Luau patch → static/replication security checks → real Studio playtest → atomic commit. The model is intentionally swappable. I can show the failure/repair loop live in ~5 min. [demo] [repo]**
+The Luna false rejection is excellent.
 
-That message uses his language without pretending you invented his thesis. It says what is technically new in one breath.
+The Sell Heartbeat/harness blind spot is excellent.
 
-A more provocative version, suitable once you have the real Studio proof:
+The rollback bug from M3 is excellent.
 
-> **The interesting result from the prototype: I think Roblox MCP makes “agent connected to Studio” increasingly commodity. The harder moat looks like intent → core-loop IR → deterministic proof → verified commit. I built that path end-to-end, including adversarial RemoteEvent tests and model benchmarking. [demo]**
+Those stories prove you don't treat eval output as gospel. You inspect trajectories, question your verifier, distinguish infrastructure noise from model behavior, preserve history and make your measurement system better. Your real Studio ledger already documents that one early runtime exploit run exposed both a semantic-analyzer defect and a rollback defect; Forge fixed both and then reproduced a correct fail-closed run. fileciteturn0file13
 
-That conclusion is well grounded: Roblox's April 2026 agentic Studio release explicitly expands MCP access for external AI tools, while Nicolas separately argues that Lemonade's differentiation should be product-specific rather than raw coding-agent intelligence. citeturn21view3turn21view0
+That is much more compelling to someone hiring a Founding AI Engineer than:
 
-If he asks what you would do at Lemonade, the strongest 20-second answer is:
+> “My demo passed every time.”
 
-> **“I'd own the layer between model intelligence and creator success. Models are getting better for free; I wouldn't spend our moat fighting that. I'd turn every Lemonade generation into a typed Roblox mechanic with deterministic security/replication checks, real Studio playtests, and a persistent eval. Then I'd use those verified trajectories to route whatever model works best and eventually train cheaper specialist models. The north star is creators finishing a working core loop, not tokens generated.”**
+The job does not ask for a demo engineer.
 
-If he challenges why this is not simply OpenGameEval:
+It asks for someone who can make an AI creation system **reliably better over time**.
 
-> **“OpenGameEval proves whether an agent can perform benchmark tasks in Studio. Forge makes verification part of the product transaction: it reconstructs creator intent, defines the mechanic contract, verifies the delta before commit, repairs failures, recommends the next core-loop node, and records the trajectory. I'd use OpenGameEval as part of the authoritative evaluation substrate, not reinvent it.”**
+My concrete priority order from here would be:
 
-That is technically accurate to Roblox's published purpose for OpenGameEval. citeturn21view4turn21view5
+```text
+NOW
+│
+├── Semantic authority / provenance refactor
+│
+├── General agent harness
+│      planner → tool-using builder → evaluator
+│
+├── CoreLoopBench → Harbor
+│
+├── Real model × harness experiments
+│
+├── Generic Studio gameplay test capabilities
+│
+├── Failure promotion pipeline
+│
+├── unseen zombie-game capability eval
+│
+├── one long-horizon run
+│
+└── Fly/Docker execution once the workload justifies it
 
-If he challenges the Lune sandbox:
+LATER
+│
+├── asset-provider sophistication
+├── capsules
+├── routing
+├── product UI
+└── 2D/3D model research
+```
 
-> **“I changed my mind on that part. Lune/Lute is useful as a fast deterministic preflight, but I wouldn't call it Roblox physics verification. Real Studio needs to be authoritative. The public OpenGameEval architecture makes that pretty clear.”**
+The deepest change is this:
 
-That may be the highest-signal sentence in the entire proposal. It shows technical honesty, fast updating, and ability to distinguish a demo shortcut from a production invariant. citeturn21view4turn22search10
+> **Forge should not be the thing that knows how every game works. Forge should be the thing that makes an increasingly capable game-building agent observable, testable, falsifiable, recoverable, and empirically improvable.**
 
-If he asks about your eight-agent background and his preference for consolidated agents:
+That is a far more scalable architecture.
 
-> **“I don't think Lemonade needs an eight-agent graph. My multi-agent system taught me where orchestration adds coordination tax. Here I'd keep one context-rich executor, make tools typed, push criticism into deterministic verifiers, and parallelize only when the eval says multiple candidates are worth the cost.”**
-
-That directly reconciles your experience with his stated architectural direction. citeturn21view0turn16academia3
-
-And if you get only five minutes with him, the demo sequence should be:
-
-**vague prompt → guided core loop → insecure generated remote → deterministic detection → auto-repair → real Studio test → green proof bundle → model scorecard.**
-
-Everything else is supporting material.
-
-The most valuable primary and direct sources behind this recommendation are:
-
-| Source | Why it matters | Link |
-|---|---|---|
-| Lemonade homepage | Current public mission/positioning and +500K creator claim | [lemonade.gg](https://lemonade.gg/) citeturn21view2 |
-| Nicolas Vizioli's site | His explicit focus on making game creation accessible to millions of teenagers | [nicolas.vc](https://nicolas.vc/) citeturn21view1 |
-| Nicolas's Naavik interview, Apr. 21 2026 | The core source for intent, core loops, model agnosticism, evals, trajectories, architecture, monetization and first-dollar mission | [Naavik — Building AI Tools for Roblox Creators](https://naavik.co/podcast/building-ai-tools-for-roblox-creators/) citeturn21view0 |
-| Roblox agentic Studio announcement | Shows Studio MCP/general-agent connectivity is becoming commodity | [Roblox — Studio Is Going Agentic](https://about.roblox.com/newsroom/2026/04/roblox-studio-going-agentic) citeturn21view3 |
-| OpenGameEval announcement | Studio-native deterministic agent-evaluation foundation | [Roblox — Using OpenGameEval](https://about.roblox.com/newsroom/2025/12/opengameeval-benchmark-agentic-ai-assistants-roblox-studio) citeturn21view4 |
-| OpenGameEval repository/release log | Actual public evaluation releases and implementation surface | [Roblox/open-game-eval](https://github.com/Roblox/open-game-eval) citeturn21view5 |
-| Roblox client/server security | Canonical basis for replication-contract verifier | [Securing the client-server boundary](https://create.roblox.com/docs/scripting/security/client-server-boundary) citeturn14search5 |
-| Roblox remote-event documentation | Canonical client/server event semantics | [Remote events and callbacks](https://create.roblox.com/docs/scripting/events/remote) citeturn14search6 |
-| Roblox network ownership | Basis for generated physics/exploit verification | [Network ownership, movement validation, and physics](https://create.roblox.com/docs/scripting/security/network-ownership) citeturn15search0 |
-| Roblox DataStore documentation | Persistence and test-environment boundaries | [Data stores](https://create.roblox.com/docs/cloud-services/data-stores) citeturn15search2 |
-| Roblox Analytics | Downstream creator-game KPIs | [Analytics dashboard](https://create.roblox.com/docs/production/analytics/analytics-dashboard) citeturn14search0 |
-| Roblox monetization | FirstDollar mechanism taxonomy | [Monetize your games](https://create.roblox.com/docs/monetize-experiences) citeturn14search3 |
-| Official Luau implementation | AST, analyzer, type checker/linter foundation | [luau-lang/luau](https://github.com/luau-lang/luau) citeturn22search0 |
-| Lute programmable linter | Official-stack programmable Luau analysis | [Lute lint](https://lute.luau.org/cli/lint/index.html) citeturn22search7 |
-| ReAct | Reasoning + environment action architecture | [ReAct paper](https://arxiv.org/abs/2210.03629) citeturn16academia2 |
-| SWE-agent | Evidence that purpose-built agent-computer interfaces materially matter | [SWE-agent paper](https://arxiv.org/abs/2405.15793) citeturn16academia3 |
-| Self-Debugging | Execution feedback for program repair | [Self-Debugging paper](https://arxiv.org/abs/2304.05128) citeturn17academia3 |
-| Reflexion | Environmental feedback and episodic repair | [Reflexion paper](https://arxiv.org/abs/2303.11366) citeturn17academia0 |
-| Voyager | Game-environment execution, feedback and reusable executable skills | [Voyager paper](https://arxiv.org/abs/2305.16291) citeturn17academia2 |
-| OpenAI current model/API pricing | ModelArena economic baseline | [OpenAI API](https://openai.com/api/) citeturn18search0 |
-| Anthropic Sonnet 5 | Current balanced-agent candidate and pricing | [Claude Sonnet 5](https://www.anthropic.com/news/claude-sonnet-5) citeturn19search0 |
-| Anthropic Opus | Current frontier-agent candidate and pricing | [Claude Opus](https://www.anthropic.com/claude/opus) citeturn19search4 |
-| Google Gemini 3 | Current Pro/Flash-Lite candidates and pricing | [Gemini 3 developer guide](https://ai.google.dev/gemini-api/docs/gemini-3) citeturn19search1 |
-| FTC COPPA guidance | Privacy constraints relevant to products involving young users | [FTC COPPA guidance](https://www.ftc.gov/business-guidance/resources/complying-coppa-frequently-asked-questions) citeturn23search1 |
-
-The deepest conclusion from these sources is that your best proof-of-work should **not compete with Nicolas's team on an idea he has already rejected—better generic agent intelligence**. It should take several things he has already said are important and fuse them into a system that is difficult to build without exactly your background.
-
-Your Roblox experience gives you the ability to understand why a generated game can compile yet still be wrong: authority boundaries, replication, physics, persistence, event lifecycles, performance, and in-engine state.
-
-Your autonomous-agent experience gives you the ability to build the closed-loop machine around those semantics: tools, state, rollback, repair, model routing, trajectory collection, and evaluation.
-
-**Forge is the product where those two histories multiply rather than merely coexist.**
-
-The final hiring pitch is therefore not:
-
-> “I'm an AI engineer who also knows Roblox.”
-
-It is:
-
-> **“The foundation models will keep changing. I know how to build the Roblox-specific system around them that turns their probabilistic output into a teenager's reliably working, publishable first game—and eventually their first dollar.”**
-
-That is much closer to a **Founding AI Engineer thesis** than a portfolio project.
+And based on the job description, it is also a much more direct signal that you are not merely a good hire for Lemonade's Founding AI Engineer role—you understand the actual problem they are hiring someone to own.

@@ -1,6 +1,6 @@
 {
   "kind": "ForgeFixture",
-  "schemaVersion": 2,
+  "schemaVersion": 5,
   "name": "collect-fruit-generated-seed",
   "luauRoots": ["src"],
   "instances": [
@@ -26,6 +26,14 @@
         { "position": 1, "role": "fruit_id", "type": "string", "source": "client" },
         { "position": 2, "role": "claimed_reward", "type": "number", "source": "client" }
       ],
+      "interactionBinding": {
+        "kind": "InteractionBinding",
+        "schemaVersion": 2,
+        "requirement": "explicit_user_action",
+        "production": { "kind": "pointer_click", "event": "Button1Down", "targetTag": "collectible" },
+        "clientAction": { "kind": "input_event" },
+        "serverAuthorization": { "kind": "distance", "target": "requested_target", "maxDistance": 20 }
+      },
       "validationRequirements": [
         { "category": "type", "subjectRole": "fruit_id", "applicability": "required", "rationale": "The identifier is untrusted." },
         { "category": "value", "subjectRole": "fruit_id", "applicability": "required", "rationale": "Only an existing collectible may be selected." },
@@ -35,7 +43,7 @@
         { "category": "permission", "subjectRole": "interaction", "applicability": "required", "rationale": "The active player context is supplied and checked server-side." },
         { "category": "ownership", "subjectRole": "target", "applicability": "not_applicable", "rationale": "Fruit is globally collectible." }
       ],
-      "mutation": { "field": "Inventory", "sourceExpression": "server_owned_reward", "authority": "server" },
+      "stateMutations": [{ "field": "Inventory", "sourceExpression": "server_owned_reward", "authority": "server", "operation": "increment" }, { "field": "Consumed", "sourceExpression": "server_owned_availability", "authority": "server", "operation": "set_true" }],
       "implementation": {
         "stateBindings": [
           { "role": "inventory", "subject": "player", "storage": "attribute", "name": "Inventory", "type": "number", "authority": "server" },

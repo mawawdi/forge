@@ -1,13 +1,21 @@
 import { assertPatchSet, assertStudioAssertion, type PatchSet, type StudioAssertion } from "../../contracts/src/index.js";
 import { assertStudioSnapshotObservation, type StudioSnapshotObservation } from "../../semantic-map/src/index.js";
 
-export const STUDIO_PROTOCOL_VERSION = 7 as const;
-export const STUDIO_PLUGIN_VERSION = "forge-studio-plugin-3.9.0" as const;
+export const STUDIO_PROTOCOL_VERSION = 10 as const;
+export const STUDIO_PLUGIN_VERSION = "forge-studio-plugin-6.0.0" as const;
 export const MAX_PROTOCOL_MESSAGE_BYTES = 1024 * 1024;
 export const MAX_SNAPSHOT_CHUNKS = 64;
 export const COLLECT_FRUIT_HARNESS_ID = "collect-fruit" as const;
 export const COLLECT_FRUIT_HARNESS_VERSION = "collect-fruit-v7" as const;
 export const COLLECT_FRUIT_HARNESS_HASH = "984a4ad2ff160f15148cf194dee9c859f12f58f6a7b84dc8b3a7fb6c0c1a5e52" as const;
+export const COLLECT_SELL_HARNESS_ID = "collect-sell" as const;
+export const COLLECT_SELL_HARNESS_VERSION = "collect-sell-v4" as const;
+export const COLLECT_SELL_HARNESS_HASH = "0bd9310b99afb44f2d4be258fcb1dfc8885434256c213eede9172b07741cc8aa" as const;
+export type StudioHarnessId = typeof COLLECT_FRUIT_HARNESS_ID | typeof COLLECT_SELL_HARNESS_ID;
+export const STUDIO_HARNESS_REGISTRY: Readonly<Record<StudioHarnessId, { version: string; hash: string; assertionCount: number }>> = {
+  [COLLECT_FRUIT_HARNESS_ID]: { version: COLLECT_FRUIT_HARNESS_VERSION, hash: COLLECT_FRUIT_HARNESS_HASH, assertionCount: 7 },
+  [COLLECT_SELL_HARNESS_ID]: { version: COLLECT_SELL_HARNESS_VERSION, hash: COLLECT_SELL_HARNESS_HASH, assertionCount: 14 }
+};
 
 export type StudioDirection = "plugin_to_backend" | "backend_to_plugin";
 export type PluginMessageType = "PairProject" | "UnpairProject" | "ProjectObservation" | "SnapshotChunk" | "PatchApplied" | "PatchRejected" | "TransactionStarted" | "TransactionCommitted" | "TransactionRolledBack" | "AssertionPlanAccepted" | "PlaytestStarted" | "PlaytestStopped" | "StudioTestResult" | "PluginError" | "Heartbeat";
@@ -15,7 +23,7 @@ export type BackendMessageType = "RequestObservation" | "ApplyPatchSet" | "Begin
 
 export interface PluginProjectIdentity { name: string; placeId: number; universeId: number; }
 export type StudioCapability = "snapshot" | "snapshot_chunks" | "sha256" | "stable_identity" | "typed_patch" | "transaction" | "studio_play_mode" | "http_polling" | "bounded_diagnostics";
-export interface PairProjectPayload { pairingToken: string; project: PluginProjectIdentity; pluginVersion: string; studioVersion: string; protocolVersion: 7; capabilities: StudioCapability[]; }
+export interface PairProjectPayload { pairingToken: string; project: PluginProjectIdentity; pluginVersion: string; studioVersion: string; protocolVersion: 10; capabilities: StudioCapability[]; }
 export interface UnpairProjectPayload { reason: "user" | "plugin_unload" | "session_replaced"; }
 export type ProjectObservationReason = "pairing" | "pre_patch" | "post_patch" | "pre_play" | "manual" | "rollback";
 export interface StudioRevision { kind: "StudioRevision"; schemaVersion: 1; observationHash: string; identityHash: string; capturedAt: string; }
@@ -73,9 +81,9 @@ export interface PairingResponse { sessionId: string; sessionToken: string; proj
 export interface RequestObservationPayload { requestId: string; reason: ProjectObservationReason; }
 export interface ApplyPatchSetPayload { requestId: string; transactionId: string; expectedRevision: string; patchSetHash: string; patchPlan: StudioPatchPlan; }
 export interface TransactionPayload { requestId: string; transactionId: string; expectedRevision: string; }
-export interface ExecuteAssertionPlanPayload extends Omit<StudioRunBinding, "nonceCommitment"> { requestId: string; transactionId: string; expectedRevision: string; assertions: StudioAssertion[]; adversarial: boolean; harnessId: "collect-fruit"; harnessVersion: "collect-fruit-v7"; }
+export interface ExecuteAssertionPlanPayload extends Omit<StudioRunBinding, "nonceCommitment"> { requestId: string; transactionId: string; expectedRevision: string; assertions: StudioAssertion[]; adversarial: boolean; harnessId: StudioHarnessId; harnessVersion: string; }
 
-interface StudioMessageBase<TDirection extends StudioDirection, TType extends string, TPayload> { kind: "StudioProtocolMessage"; schemaVersion: 7; direction: TDirection; type: TType; messageId: string; requestId?: string; correlationId?: string; sessionId?: string; sentAt: string; payload: TPayload; }
+interface StudioMessageBase<TDirection extends StudioDirection, TType extends string, TPayload> { kind: "StudioProtocolMessage"; schemaVersion: 10; direction: TDirection; type: TType; messageId: string; requestId?: string; correlationId?: string; sessionId?: string; sentAt: string; payload: TPayload; }
 export type PluginToBackendMessage =
   | StudioMessageBase<"plugin_to_backend", "PairProject", PairProjectPayload>
   | StudioMessageBase<"plugin_to_backend", "UnpairProject", UnpairProjectPayload>
@@ -132,12 +140,15 @@ function validatePayload(type: string, payload: Record<string, unknown>): void {
   if (type === "TransactionRolledBack" && (!isString(payload.transactionId) || !isString(payload.projectSnapshotHash) || payload.status !== "rolled_back" || typeof payload.success !== "boolean" || !isString(payload.rollback))) throw new Error("Invalid TransactionRolledBack payload");
   if (type === "AssertionPlanAccepted" && (!isRunBinding(payload) || !isPositiveInteger(payload.assertionCount) || !isString(payload.harnessId) || !isString(payload.harnessVersion) || !isString(payload.instruction))) throw new Error("Invalid AssertionPlanAccepted payload");
   if (["PlaytestStarted", "PlaytestStopped"].includes(type) && (!isRunBinding(payload) || payload.mode !== "play_solo" || payload.control !== "plugin_action" || !isNonNegativeInteger(payload.playerCount))) throw new Error(`Invalid ${type} payload`);
-  if (type === "StudioTestResult" && !isHarnessRunEnvelope(payload)) throw new Error("Invalid StudioTestResult payload");
+  if (type === "StudioTestResult") {
+    const failure = harnessRunEnvelopeFailure(payload);
+    if (failure) throw new Error(`Invalid StudioTestResult payload: ${failure}`);
+  }
   if (type === "PluginError" && (!isString(payload.code) || !isString(payload.message) || typeof payload.retryable !== "boolean")) throw new Error("Invalid PluginError payload");
   if (type === "RequestObservation" && (!isString(payload.requestId) || !isObservationReason(payload.reason))) throw new Error("Invalid RequestObservation payload");
   if (type === "ApplyPatchSet" && (!isString(payload.requestId) || !isString(payload.transactionId) || !isString(payload.expectedRevision) || !isString(payload.patchSetHash) || !isStudioPatchPlan(payload.patchPlan))) throw new Error("Invalid ApplyPatchSet payload");
   if (["BeginTransaction", "CommitTransaction", "RollbackTransaction"].includes(type) && (!isString(payload.requestId) || !isString(payload.transactionId) || !isString(payload.expectedRevision))) throw new Error(`Invalid ${type} payload`);
-  if (type === "ExecuteAssertionPlan" && (!isString(payload.requestId) || !isString(payload.transactionId) || !isRunBindingWithoutNonce(payload) || !isString(payload.expectedRevision) || !Array.isArray(payload.assertions) || payload.assertions.length < 1 || payload.harnessId !== COLLECT_FRUIT_HARNESS_ID || payload.harnessVersion !== COLLECT_FRUIT_HARNESS_VERSION || typeof payload.adversarial !== "boolean")) throw new Error("Invalid ExecuteAssertionPlan payload");
+  if (type === "ExecuteAssertionPlan" && (!isString(payload.requestId) || !isString(payload.transactionId) || !isRunBindingWithoutNonce(payload) || !isString(payload.expectedRevision) || !Array.isArray(payload.assertions) || typeof payload.adversarial !== "boolean" || !isRegisteredHarness(payload.harnessId, payload.harnessVersion, payload.assertions.length))) throw new Error("Invalid ExecuteAssertionPlan payload");
   if (type === "ExecuteAssertionPlan") for (const assertion of payload.assertions as unknown[]) assertStudioAssertion(assertion);
 }
 
@@ -154,13 +165,63 @@ function isStudioPatchPlan(value: unknown): boolean { if (!isRecord(value) || va
 function isRunBinding(value: Record<string, unknown>): boolean { return isRunBindingWithoutNonce(value) && isString(value.nonceCommitment) && value.nonceCommitment.length >= 32; }
 function isRunBindingWithoutNonce(value: Record<string, unknown>): boolean { return isString(value.projectId) && isString(value.sessionId) && isProjectIdentity(value.project) && isString(value.runId) && isString(value.testPlanId) && isString(value.correlationId) && isString(value.projectSnapshotHash) && isString(value.mechanicContractHash); }
 function isAssertionEvidence(value: unknown): boolean { return isRecord(value) && ["state", "remote", "log", "error", "instance"].includes(String(value.type)) && isString(value.statement) && (value.data === undefined || (isRecord(value.data) && Object.values(value.data).every(isPrimitive))); }
-function isHarnessEvidence(value: unknown): value is StudioHarnessEvidence { return isRecord(value) && value.kind === "StudioHarnessEvidence" && value.schemaVersion === 1 && isRunBinding(value) && isString(value.nonce) && value.nonce.length >= 16 && isString(value.id) && isString(value.assertionId) && ["pass", "fail", "not_run", "unknown"].includes(String(value.status)) && isPrimitive(value.expected) && isPrimitive(value.observed) && Array.isArray(value.evidence) && value.evidence.every(isAssertionEvidence) && value.authoritative === true && isNonNegativeNumber(value.durationMs) && isString(value.emittedAt); }
-function isHarnessRunEnvelope(value: unknown): value is StudioHarnessRunEnvelope { return isRecord(value) && value.kind === "StudioHarnessRunEnvelope" && value.schemaVersion === 1 && isRunBinding(value) && isString(value.nonce) && value.nonce.length >= 16 && isString(value.harnessId) && isString(value.harnessVersion) && isString(value.harnessHash) && ["completed", "failed", "incomplete"].includes(String(value.status)) && value.authoritative === true && isString(value.startedAt) && isString(value.endedAt) && isNonNegativeNumber(value.durationMs) && Array.isArray(value.assertions) && value.assertions.length > 0 && value.assertions.length <= 64 && value.assertions.every(isHarnessEvidence) && value.assertions.every((assertion) => assertion.nonce === value.nonce) && Array.isArray(value.diagnostics) && value.diagnostics.length <= 128 && value.diagnostics.every(isDiagnostic); }
+function runBindingFailure(value: Record<string, unknown>): string | undefined {
+  if (!isString(value.projectId)) return "projectId must be a string";
+  if (!isString(value.sessionId)) return "sessionId must be a string";
+  if (!isProjectIdentity(value.project)) return "project must contain name, placeId, and universeId";
+  if (!isString(value.runId)) return "runId must be a string";
+  if (!isString(value.testPlanId)) return "testPlanId must be a string";
+  if (!isString(value.correlationId)) return "correlationId must be a string";
+  if (!isString(value.projectSnapshotHash)) return "projectSnapshotHash must be a string";
+  if (!isString(value.mechanicContractHash)) return "mechanicContractHash must be a string";
+  if (!isString(value.nonceCommitment) || value.nonceCommitment.length < 32) return "nonceCommitment must be a string of at least 32 characters";
+  return undefined;
+}
+function harnessEvidenceFailure(value: unknown): string | undefined {
+  if (!isRecord(value)) return "must be an object";
+  if (value.kind !== "StudioHarnessEvidence") return "kind must be StudioHarnessEvidence";
+  if (value.schemaVersion !== 1) return "schemaVersion must be 1";
+  const bindingFailure = runBindingFailure(value); if (bindingFailure) return bindingFailure;
+  if (!isString(value.nonce) || value.nonce.length < 16) return "nonce must be a string of at least 16 characters";
+  if (!isString(value.id)) return "id must be a string";
+  if (!isString(value.assertionId)) return "assertionId must be a string";
+  if (!["pass", "fail", "not_run", "unknown"].includes(String(value.status))) return "status is invalid";
+  if (!isPrimitive(value.expected)) return "expected must be a primitive";
+  if (!isPrimitive(value.observed)) return "observed must be a primitive";
+  if (!Array.isArray(value.evidence) || !value.evidence.every(isAssertionEvidence)) return "evidence must contain bounded assertion evidence";
+  if (value.authoritative !== true) return "authoritative must be true";
+  if (!isNonNegativeNumber(value.durationMs)) return "durationMs must be a non-negative finite number";
+  if (!isString(value.emittedAt)) return "emittedAt must be a string";
+  return undefined;
+}
+function harnessRunEnvelopeFailure(value: unknown): string | undefined {
+  if (!isRecord(value)) return "envelope must be an object";
+  if (value.kind !== "StudioHarnessRunEnvelope") return "kind must be StudioHarnessRunEnvelope";
+  if (value.schemaVersion !== 1) return "schemaVersion must be 1";
+  const bindingFailure = runBindingFailure(value); if (bindingFailure) return bindingFailure;
+  if (!isString(value.nonce) || value.nonce.length < 16) return "nonce must be a string of at least 16 characters";
+  if (!isString(value.harnessId)) return "harnessId must be a string";
+  if (!isString(value.harnessVersion)) return "harnessVersion must be a string";
+  if (!isString(value.harnessHash)) return "harnessHash must be a string";
+  if (!["completed", "failed", "incomplete"].includes(String(value.status))) return "status is invalid";
+  if (value.authoritative !== true) return "authoritative must be true";
+  if (!isString(value.startedAt) || !isString(value.endedAt)) return "startedAt and endedAt must be strings";
+  if (!isNonNegativeNumber(value.durationMs)) return "durationMs must be a non-negative finite number";
+  if (!Array.isArray(value.assertions) || value.assertions.length === 0 || value.assertions.length > 64) return "assertions must contain 1–64 entries";
+  for (const [index, assertion] of value.assertions.entries()) {
+    const assertionFailure = harnessEvidenceFailure(assertion);
+    if (assertionFailure) return `assertions[${index}] ${assertionFailure}`;
+    if ((assertion as StudioHarnessEvidence).nonce !== value.nonce) return `assertions[${index}] nonce does not match envelope nonce`;
+  }
+  if (!Array.isArray(value.diagnostics) || value.diagnostics.length > 128 || !value.diagnostics.every(isDiagnostic)) return "diagnostics must contain at most 128 bounded diagnostics";
+  return undefined;
+}
 function isDiagnostic(value: unknown): boolean { return isRecord(value) && ["server", "client"].includes(String(value.context)) && ["info", "warning", "error"].includes(String(value.level)) && isString(value.message) && value.message.length <= 4000; }
 function isNonNegativeNumber(value: unknown): value is number { return typeof value === "number" && Number.isFinite(value) && value >= 0; }
 function isSha256(value: unknown): value is string { return isString(value) && /^[0-9a-f]{64}$/.test(value); }
 function isObservationReason(value: unknown): value is ProjectObservationReason { return ["pairing", "pre_patch", "post_patch", "pre_play", "manual", "rollback"].includes(String(value)); }
 function isPatchOperationResult(value: unknown): boolean { return isRecord(value) && isString(value.opId) && isString(value.type) && (value.status === "applied" || value.status === "rejected") && (isStudioTargetRef(value.target) || (isRecord(value.target) && isString(value.target.path) && isString(value.target.className))) && (value.expectedBefore === undefined || isPrimitive(value.expectedBefore)) && (value.observedBefore === undefined || isPrimitive(value.observedBefore)) && (value.observedAfter === undefined || isPrimitive(value.observedAfter)) && (value.beforeHash === undefined || isString(value.beforeHash)) && (value.afterHash === undefined || isString(value.afterHash)) && (value.error === undefined || isString(value.error)); }
+function isRegisteredHarness(id: unknown, version: unknown, assertionCount: number): id is StudioHarnessId { return typeof id === "string" && id in STUDIO_HARNESS_REGISTRY && isString(version) && STUDIO_HARNESS_REGISTRY[id as StudioHarnessId].version === version && STUDIO_HARNESS_REGISTRY[id as StudioHarnessId].assertionCount === assertionCount; }
 
 const PLUGIN_MESSAGE_TYPES = new Set<string>(["PairProject", "UnpairProject", "ProjectObservation", "SnapshotChunk", "PatchApplied", "PatchRejected", "TransactionStarted", "TransactionCommitted", "TransactionRolledBack", "AssertionPlanAccepted", "PlaytestStarted", "PlaytestStopped", "StudioTestResult", "PluginError", "Heartbeat"]);
 const BACKEND_MESSAGE_TYPES = new Set<string>(["RequestObservation", "ApplyPatchSet", "BeginTransaction", "CommitTransaction", "RollbackTransaction", "ExecuteAssertionPlan"]);

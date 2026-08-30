@@ -1,6 +1,6 @@
 # Lemonade Forge Roadmap
 
-Status: M1, M1.5, M2, M2.5, M3, and M3.25 complete; M3.5 next
+Status: M1, M1.5, M2, M2.5, M3, M3.25, and M3.5 complete
 Principle: prove the semantic thesis before adding product surface or scale
 
 ## Milestone map
@@ -14,7 +14,7 @@ Principle: prove the semantic thesis before adding product surface or scale
 | M2.5 — Semantic state foundations ✅ | The verifier has a canonical, hashed project representation and a model-neutral context boundary | ProjectSemanticMap, ProjectSnapshot, affected cones, context provenance, and capsule schema tests pass |
 | M3 — Forge Studio Plugin + StudioProof vertical slice ✅ | CollectFruit runs through the first-class plugin in real Studio with authoritative assertions; sell/upgrade remain contract-level follow-ons | Showcase evidence includes safe pass, fault rejection, exact rollback, repaired rerun, and interrupted incomplete run |
 | M3.25 — Prompt-to-proof generation ✅ | One OpenRouter proposal path produces a bounded CollectFruit candidate that must pass M1/M2 then the unchanged M3 StudioProof | model-authored repair -> sealed artifact -> typed PatchSet -> 7/7 real Studio assertions -> verified ProofBundle |
-| M3.5 — Context and capsule promotion | Context composition and reusable capability promotion are backed by real Studio evidence | context metrics are tied to verified outcomes; first capsule has authoritative provenance |
+| M3.5 — SellInventory generalization ✅ | A second model-authored mechanic extends the sealed CollectFruit loop through bounded PatchSet and combined StudioProof | fresh model-repaired candidate passed 14/14; payout fault rejected and rolled back |
 | M4 — CoreLoopBench and model comparison | Ten executable cases compare candidate implementations by verified outcome | benchmark results are reproducible, hidden assertions are supported, no LLM judge is primary |
 | M4.5 — Capability adaptation research | Compare fresh generation with re-verified capsule adaptation | adaptation never bypasses verification; evidence supports or rejects reuse |
 | M5 — Productization research | Decide whether Studio connector, creator UX, routing, and trajectory retention merit further work | evidence-based product decision; no automatic commitment to production scale |
@@ -156,7 +156,7 @@ Concrete M3 acceptance criteria:
 - A `ProofBundle` is verified only when every required assertion result is present, authoritative, correlated to the plan/run/snapshots, and passing; incomplete or failed Studio runs remain explicit and preservable.
 - A faulted or stale transaction is rejected or canceled, and no mock bridge, MCP-only run, pure Luau run, or successful HTTP response can satisfy the Studio gate.
 
-Current M3 status: protocol v7, authenticated pair/unpair and loopback control,
+Current M3 status: protocol v10, authenticated pair/unpair and loopback control,
 complete observations, typed patching, explicit arm/run separation, proof
 assembly, and local tests are implemented. M3-P0 is empirically green for both
 Run and Play server return values. Forge now uses the canary-proven direct
@@ -188,9 +188,11 @@ and rejects unsupported paths, source capabilities, and policy violations. A
 candidate is materialized under private local run state and must pass official
 Luau plus M2 before it can attach to Studio.
 
-`forge build ... --studio` sends that prevalidated typed PatchSet through the
-existing M3 transaction and correlated evidence path. It does not alter plugin,
-harness, evidence, or ProofBundle semantics. M3.25 requires an
+`forge build` performs model work and local gates only. A separate
+`forge candidate studio <artifact>` command sends that prevalidated typed
+PatchSet through the existing M3 transaction and correlated evidence path with
+zero model calls. It does not alter plugin, evidence, or ProofBundle semantics.
+M3.25 requires an
 OpenRouter-authored candidate to pass all seven real Studio assertions without
 manual source edits, followed by a fresh repeat run.
 
@@ -206,7 +208,8 @@ Forge-owned implementation interface requires exactly `20`. It is therefore
 not eligible for StudioProof. No replacement model candidate or deterministic
 complete mechanic implementation was generated.
 
-The next experiment is implemented as `forge candidate repair`. It performs
+The historical repair experiment remains recorded as `forge candidate repair`.
+It performs
 one schema-constrained repair call against the immutable regression, with no
 intent call and no fresh initial proposal. The command records source
 generation/attempt/trace/response/PatchSet identities, compiles complete repair
@@ -228,16 +231,132 @@ committed. The final content-identified evidence is ProofBundle
 `trace_596ab00b-5087-449b-8e33-a0ae0f5aee2e`. No manual candidate source edit
 or second model call occurred between repair and StudioProof.
 
-## M3.5 — Context and capsule promotion
+## M3.5 — SellInventory generalization
 
-Implementation plan:
+Forge is implementing the second bounded core-loop mechanic without replacing
+model-authored code with a known-good compiler. The tracked
+`examples/core-loop/sell-inventory-seed` starts from the byte-identical sealed
+M3.25 CollectFruit candidate and records its source hashes, prior ProofBundle,
+and BuildTrace provenance. It adds only the structural SellInventory ABI,
+SellZone, UnitPrice, and empty model targets.
 
-- attach context composition metadata to Studio-backed runs and compare selected evidence with verification outcomes;
-- review the first `CollectFruit` result as a candidate capsule rather than auto-promoting it;
-- promote only when the ProofBundle contains the required authoritative assertion evidence and runtime provenance;
-- keep capsule reuse behind the same contract, adapter, and complete applicable verification path.
+The follow-up model request produces a `CoreLoopExtensionDraft`; Forge keeps
+GameIntent/CoreLoop identity, contract semantics, remote ABI, state bindings,
+PatchSet policy, and security invariants deterministic. The model may replace
+Sell and Collect server sources, production input wrappers, and their two
+bounded client action modules. Collect's server change removes the private
+Inventory mirror so both mechanics share the server-owned player attribute.
+The bounded six-file PatchSet permits no unrelated paths.
 
-Exit criteria: one capsule has authoritative provenance, its context/evidence relationship is inspectable, and no reuse path can bypass verification.
+The Studio path is protocol v10. `collect-fruit-v7` remains unchanged for
+historical M3.25 evidence. The exact-hash `collect-sell-v4` harness is a
+separate allow-listed server-return harness; it executes seven CollectFruit
+regressions, six SellInventory assertions, and the Collect→Sell composition
+assertion in one Play Solo session. A v3 StudioTestPlan explicitly binds the
+prior verified CollectFruit contract and ProofBundle. A v4 ProofBundle records
+the candidate artifact, intent/core-loop/spec/context references, all assertion
+contract IDs, and regression provenance.
+
+M3.5 now has an explicit `InteractionBinding` boundary. SellInventory production
+initiation is `Workspace/SellZone/SellPrompt.Triggered`, with
+`MaxActivationDistance = 12` and one request per explicit player action. Server
+authorization remains a separate 20-stud distance check against `SellZone`.
+`ProjectSemanticMap` carries the prompt, prompt properties, relevant world
+positions, and both distances into required generation context. The semantic
+gate rejects periodic/autonomous initiation only when the declared interaction
+requires an explicit action. Production input wrappers and Studio happy paths
+invoke the same model-authored client action modules; direct RemoteEvent calls
+are reserved for adversarial server-boundary assertions. This avoids privileged
+synthetic input while retaining runtime coverage of the production request path.
+
+Canonical flow:
+
+```bash
+npm run plugin:build
+rojo build examples/core-loop/sell-inventory-seed/default.project.json --output /tmp/ForgeFruitLoop.rbxlx
+open /tmp/ForgeFruitLoop.rbxlx
+node bin/forge.js studio bridge
+node bin/forge.js build examples/core-loop/sell-inventory-seed --prompt "Now let players sell the fruit they collected to get coins." --format json > /tmp/forge-sell-candidate.json
+node bin/forge.js candidate studio "$(jq -r '.artifactPath' /tmp/forge-sell-candidate.json)" --timeout-ms 180000
+```
+
+The Studio place in that flow is deliberately built from
+`sell-inventory-seed`, not the candidate artifact's `outputRoot`. `candidate
+studio` applies the sealed PatchSet itself and therefore requires the exact
+seed before-state; opening the output project correctly produces a source
+precondition rejection and rollback.
+
+The first authoritative M3.5 acceptance run passed on 2026-08-30. Model-repaired
+candidate `candidate_67755f37e357ba8a17f31bc6` applied bounded PatchSet
+`patch_generated_1a9230403ea1d2b0b5ac1604`; all 14 correlated CollectFruit,
+SellInventory, and composition assertions passed in the exact-hash
+`collect-sell-v4` harness; and the Studio transaction committed. Verified
+ProofBundle `proof_7a12304b1f2a1f12a5ec901a` links the candidate, prior
+CollectFruit regression proof, contract-specific assertion results, and accepted
+BuildTrace `trace_f732f5ad-7173-4cd0-9e2a-73289711c5fd`. The retained-candidate
+Studio invocation made no model calls and performed no human source edits.
+
+M3.5 is **complete**. The final fresh model-repaired candidate
+`candidate_144cf0452d72bf415afb1ffe` applied
+`patch_generated_d9821df83d8a5caba5bbcb1d`, passed all fourteen correlated
+assertions in real Studio, and committed. Its verified ProofBundle is
+`proof_1fe98358c9d6262b92759b90`; its Studio BuildTrace is
+`trace_55d4b781-3e55-4992-bba3-c266c922abc7`; and its separate current local
+verification trace is `trace_59efa7ea-1967-4ed2-a80b-70cc7b26bb4e`. Together
+with the rejected payout-fault proof, this demonstrates the required
+model-authored candidate → bounded PatchSet → local gates → real StudioProof →
+commit/reject decision loop. UpgradeBasket, capsules, routing, UI, and product
+infrastructure remain out of scope for this milestone.
+
+The payout fault is exercised through a generic contract-scoped fault mode, not
+through a Sell-only verifier exemption or a known-good replacement. Forge starts
+from a sealed safe candidate, applies one bounded server `replace_text` mutation
+that adds an undeclared callback input to a no-client-input economic ABI, and
+then requires M2 to report both the ABI divergence and the untrusted flow into
+the declared currency mutation. The same StudioProof harness calls the
+production path for happy assertions and makes a direct `FireServer(999999)`
+call only for the designated adversarial assertion. That fault proof is tied to
+its own PatchSet, snapshot, trace, and rejected ProofBundle; it cannot be
+represented as a proof of the safe candidate.
+
+The payout fault can be reproduced with:
+
+```bash
+node bin/forge.js candidate studio \
+  /absolute/path/to/candidate.json \
+  --fault client-controlled-payout \
+  --timeout-ms 180000
+```
+
+It is expected to exit nonzero after a valid rejection. The expected outcomes
+are `REMOTE_ABI_ARITY_MISMATCH`, `REMOTE_UNDECLARED_CLIENT_INPUT`, and
+`ECONOMY_CLIENT_CONTROLLED_PAYOUT` locally; a failed adversarial payout
+assertion in Studio; a rejected ProofBundle; and observed rollback.
+
+The first real payout-fault attempt is retained as diagnostic evidence:
+`patch_studio_dbcd7e5f-f089-40ac-a8ac-f40e68256dda`, ProofBundle
+`proof_8504a3036f25ef3984665901`, and BuildTrace
+`trace_affe594a-4dcf-4469-a813-26dbc5f5de65` were rejected and rolled back.
+It showed that the initial mutation incorrectly treated the normal zero-argument
+production call as invalid, causing non-adversarial Sell assertions to fail as
+well. The corrected fault now preserves the server-derived payout when no extra
+argument is supplied and trusts only an explicitly supplied adversarial payout.
+The historical proof and trace remain unchanged; the corrected run has its own
+separate evidence.
+
+The corrected authoritative fault run then passed its intended regression shape:
+safe baseline `candidate_67755f37e357ba8a17f31bc6` received fault PatchSet
+`patch_studio_f2d12703-7c6e-4f72-af43-a31f14c4d3f9`; thirteen of fourteen
+assertions passed, while the sole direct payout-spoof assertion observed
+`1000009` instead of the server-derived `20`. M2 emitted
+`REMOTE_ABI_ARITY_MISMATCH`, `REMOTE_UNDECLARED_CLIENT_INPUT`, and
+`ECONOMY_CLIENT_CONTROLLED_PAYOUT`; Studio rolled back to the exact prior
+snapshot; ProofBundle `proof_4ec631d5d8117fee86a3292e` and BuildTrace
+`trace_b332b0ae-ea9f-40de-b37f-a62df52bfc23` are rejected evidence. Because
+this fault was Forge-owned test instrumentation rather than model-authored
+candidate source, the follow-up is a new model-authored candidate from the
+unchanged seed and a new StudioProof—not a claim that the model repaired its
+own safe baseline.
 
 ## M4 — CoreLoopBench and model comparison
 

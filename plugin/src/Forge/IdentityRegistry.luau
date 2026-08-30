@@ -7,7 +7,7 @@ local IdentityRegistry = {}
 IdentityRegistry.__index = IdentityRegistry
 
 local function eligible(instance: Instance): boolean
-	return instance:IsA("BasePart") or instance:IsA("Folder") or instance:IsA("Model") or instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction") or instance:IsA("LuaSourceContainer") or instance:IsA("GuiObject")
+	return instance:IsA("BasePart") or instance:IsA("ProximityPrompt") or instance:IsA("Folder") or instance:IsA("Model") or instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction") or instance:IsA("LuaSourceContainer") or instance:IsA("GuiObject")
 end
 
 function IdentityRegistry.new()

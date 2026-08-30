@@ -1,4 +1,4 @@
-import { contentHash, type CoreLoop, type GameIntent, type IntentDraft, type MechanicContract } from "../../contracts/src/index.js";
+import { contentHash, type CoreLoop, type CoreLoopExtensionDraft, type GameIntent, type IntentDraft, type MechanicContract } from "../../contracts/src/index.js";
 
 const ASSERTION_IDS = ["CF-001", "CF-002", "CF-003", "CF-004", "CF-005", "CF-006", "CF-007"] as const;
 
@@ -6,6 +6,11 @@ export interface CompiledIntent {
   gameIntent: GameIntent;
   coreLoop: CoreLoop;
   mechanicContract: MechanicContract;
+}
+
+export interface CompiledCoreLoopExtension extends CompiledIntent {
+  priorGameIntent: GameIntent;
+  priorCoreLoop: CoreLoop;
 }
 
 /** Validate an untrusted model answer before it reaches Forge domain objects. */
@@ -26,6 +31,13 @@ export function parseIntentDraft(value: unknown): IntentDraft {
     genreSignals: normalizedStrings(value.genreSignals), desiredOutcomes: normalizedStrings(value.desiredOutcomes), unresolvedQuestions: normalizedStrings(value.unresolvedQuestions), selectedMechanic: "CollectFruit",
     coreLoop: { title: value.coreLoop.title.trim(), nodes, edges, entryNodeId: value.coreLoop.entryNodeId }
   };
+}
+
+export function parseCoreLoopExtensionDraft(value: unknown): CoreLoopExtensionDraft {
+  if (!record(value)) throw new Error("CoreLoopExtensionDraft must be an object");
+  exactKeys(value, ["normalizedGoal", "desiredOutcomes", "unresolvedQuestions", "selectedMechanic"]);
+  if (!string(value.normalizedGoal) || !strings(value.desiredOutcomes) || !strings(value.unresolvedQuestions) || value.selectedMechanic !== "SellInventory") throw new Error("Invalid CoreLoopExtensionDraft fields");
+  return { kind: "CoreLoopExtensionDraft", schemaVersion: 1, normalizedGoal: value.normalizedGoal.trim(), desiredOutcomes: normalizedStrings(value.desiredOutcomes), unresolvedQuestions: normalizedStrings(value.unresolvedQuestions), selectedMechanic: "SellInventory" };
 }
 
 /** Forge owns IDs, authority, assertions, and security invariants. */
@@ -84,6 +96,66 @@ export function compileIntent(prompt: string, draft: IntentDraft, now: Date = ne
     instrumentation: [{ event: "fruit.collected", fields: ["fruit_id", "reward"], privacyClass: "project" }], studioAssertions: [...ASSERTION_IDS], risk: "critical"
   };
   return { gameIntent, coreLoop, mechanicContract };
+}
+
+/** Forge preserves the established loop and compiles only its declared next node. */
+export function compileCoreLoopExtension(prompt: string, draft: CoreLoopExtensionDraft, previousIntent: GameIntent, previousLoop: CoreLoop, targetNodeId: string, now: Date = new Date()): CompiledCoreLoopExtension {
+  if (!prompt.trim() || draft.kind !== "CoreLoopExtensionDraft" || draft.schemaVersion !== 1) throw new Error("Invalid core-loop extension input");
+  const target = previousLoop.nodes.find((node) => node.id === targetNodeId);
+  if (!target || target.status !== "proposed" || target.category !== "conversion") throw new Error(`CoreLoop extension target ${targetNodeId} is not a proposed conversion node`);
+  const suffix = contentHash(`${previousIntent.id}\n${previousLoop.id}\n${prompt}\n${JSON.stringify(draft)}`).slice(0, 16);
+  const contractId = `contract_sell_inventory_${suffix}`;
+  const gameIntent: GameIntent = {
+    ...previousIntent,
+    rawPrompt: `${previousIntent.rawPrompt}\n\n${prompt}`,
+    normalizedGoal: draft.normalizedGoal,
+    desiredOutcomes: [...new Set([...previousIntent.desiredOutcomes, ...draft.desiredOutcomes])].sort(),
+    referencedMechanics: [...new Set([...previousIntent.referencedMechanics, "SellInventory"])].sort(),
+    unresolvedQuestions: draft.unresolvedQuestions,
+    source: { type: "creator_prompt", createdAt: now.toISOString() }
+  };
+  const nextRecommendedNodeId = previousLoop.nodes.find((node) => node.id === "node_upgrade")?.id;
+  const coreLoop: CoreLoop = {
+    ...previousLoop,
+    nodes: previousLoop.nodes.map((node) => node.id === targetNodeId
+      ? { ...node, mechanicContractId: contractId, status: "in_progress" }
+      : node.label === "CollectFruit"
+        ? { ...node, status: "verified" }
+        : node),
+    ...(nextRecommendedNodeId ? { nextRecommendedNodeId } : {}),
+    invariants: [...new Set([...previousLoop.invariants, "Only the server converts Inventory into Coins.", "A client cannot select sale price, quantity, payout, or resulting coin balance."])]
+  };
+  const mechanicContract: MechanicContract = {
+    kind: "MechanicContract", schemaVersion: 2, id: contractId, coreLoopId: coreLoop.id, name: "SellInventory",
+    playerGoal: "Sell the current authoritative fruit inventory for server-calculated coins.",
+    preconditions: [
+      { id: "inventory_positive", statement: "Player Inventory is greater than zero.", authority: "server" },
+      { id: "sell_context", statement: "Player is within the authorized SellZone interaction distance.", authority: "server" }
+    ],
+    postconditions: [
+      { id: "inventory_cleared", statement: "Server clears Inventory exactly to zero before crediting Coins.", authority: "server" },
+      { id: "coins_server_derived", statement: "Server credits Coins by Inventory multiplied by server-owned UnitPrice.", authority: "server" }
+    ],
+    authorityModel: {
+      stateOwner: "server", clientInputs: [],
+      validationRequirements: [
+        { category: "context", subjectRole: "sell_context", applicability: "required", rationale: "Server establishes live player-to-SellZone distance." },
+        { category: "permission", subjectRole: "interaction", applicability: "required", rationale: "The server-supplied Player owns the authoritative attributes." }
+      ],
+      stateMutations: [
+        { field: "Inventory", authority: "server", operation: "set exactly zero before payout" },
+        { field: "Coins", authority: "server", operation: "increment by server-owned Inventory times UnitPrice" }
+      ]
+    },
+    persistentState: [
+      { field: "Inventory", type: "number", owner: "server", durability: "session" },
+      { field: "Coins", type: "number", owner: "server", durability: "session" }
+    ],
+    uiOutputs: [], economyEffects: [{ currency: "coins", delta: "+ Inventory × UnitPrice", computedBy: "server" }],
+    instrumentation: [{ event: "inventory.sold", fields: ["inventory_count", "unit_price", "payout"], privacyClass: "project" }],
+    studioAssertions: ["SF-001", "SF-002", "SF-003", "SF-004", "SF-005", "SF-006", "CL-001"], risk: "critical"
+  };
+  return { priorGameIntent: previousIntent, priorCoreLoop: previousLoop, gameIntent, coreLoop, mechanicContract };
 }
 
 function parseNode(value: unknown): IntentDraft["coreLoop"]["nodes"][number] {

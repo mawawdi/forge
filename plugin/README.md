@@ -45,7 +45,7 @@ mutating whichever session happened to arrive first.
 
 ## Runtime boundary
 
-Protocol v7 requires `forge-studio-plugin-3.9.0`, reports capabilities during
+Protocol v10 requires `forge-studio-plugin-6.0.0`, reports capabilities during
 pairing, and rejects older plugins outright. Studio transports a `ProjectObservation`; the backend alone
 maps it into the canonical semantic `ProjectSnapshot`. Live revision hashes use a deterministic, length-delimited
 canonical observation that excludes `capturedAt`; repeated unchanged snapshots
@@ -53,6 +53,9 @@ therefore have the same revision. Full source is transported without silent
 truncation, using bounded SHA-256-checked chunks when needed.
 Property and attribute maps are encoded as sorted entry arrays so empty Luau
 tables have one unambiguous JSON representation.
+ProximityPrompt instances are observed with bounded activation properties, and
+BasePart observations include a numeric position vector. These facts feed the
+backend interaction binding; they are not inferred from source text.
 
 Eligible mutable instances receive `_forgeStableId` in a separate visible
 ChangeHistory action. Stable IDs are live mutation handles only: Forge combines
@@ -67,7 +70,10 @@ For StudioProof, the plugin:
 3. takes a fresh pre-play observation and rejects a stale revision;
 4. injects one temporary default-context server harness in `Workspace` and one client driver in `StarterPlayerScripts`;
 5. calls `StudioTestService:ExecutePlayModeAsync` with only a non-secret run hint while an outer plugin task owns the deadline;
-6. lets the real client invoke the fixture's real `CollectFruit` remote;
+6. invokes the same model-authored client action modules used by the fixture's
+   real input handlers; static verification proves Button1Down/Triggered wiring,
+   while bounded adversarial assertions may invoke the corresponding RemoteEvent
+   directly to attack the server boundary;
 7. receives exactly one JSON string directly from the server's `EndTest(JSON)` call;
 8. validates run, plan, session, project snapshot, contract, nonce, and harness
    bindings before sending `StudioTestResult`;

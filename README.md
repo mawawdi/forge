@@ -94,6 +94,9 @@ forge candidate studio /absolute/path/to/candidate_repair_<id>.json \
 `candidate studio` verifies the artifact hash, seed preconditions, output
 source hashes, contract/interface/PatchSet linkage, and current local gate
 before it can enter the existing StudioProof transaction.
+Open the artifact's original seed place in Studio, not its materialized output
+directory: the Studio transaction applies the sealed PatchSet against that
+exact seed revision.
 `candidate repair --format json` emits only the structured summary, so its
 `artifactPath` can be passed directly into automation.
 

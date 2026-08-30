@@ -6,7 +6,7 @@ export function assembleStaticSemanticProof(report: VerificationReport, contract
   const semanticCheck = report.checks.find((check) => check.name === "replication_and_authority_contracts");
   const bundle: ProofBundle = {
     kind: "ProofBundle",
-    schemaVersion: 3,
+    schemaVersion: 4,
     id: `proof_${contentHash(stableJson({ projectHash: report.projectHash, patchSetId, patchSetHash, snapshotBeforeHash, snapshotAfterHash, contractId: contract.id, reportHash: contentHash(stableJson(report)) })).slice(0, 24)}`,
     projectHash: report.projectHash,
     projectSnapshotBeforeHash: snapshotBeforeHash,
@@ -25,7 +25,7 @@ export function assembleStaticSemanticProof(report: VerificationReport, contract
       { name: "roblox_studio", tier: "studio", status: "not_run", issueIds: [] }
     ],
     issues: report.issues,
-    assertions: contract.studioAssertions.map((assertionId) => ({ assertionId, status: "not_run" })),
+    assertions: contract.studioAssertions.map((assertionId) => ({ assertionId, mechanicContractId: contract.id, status: "not_run" })),
     gate: { status: report.gate.status === "rejected" ? "rejected" : "incomplete", reasons: report.gate.status === "rejected" ? report.gate.reasons : ["Static and semantic verification passed; preflight and Studio proof remain not_run."] },
     reproducibility: report.reproducibility
   };

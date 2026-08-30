@@ -9,14 +9,14 @@ import { assertBackendToPluginMessage, assertPluginToBackendMessage, COLLECT_FRU
 
 const time = "2026-08-29T00:00:00.000Z";
 const identity = { name: "Fruit Islands", placeId: 123, universeId: 456 };
-const base = { kind: "StudioProtocolMessage" as const, schemaVersion: 7 as const, direction: "plugin_to_backend" as const, messageId: "msg_protocol", sentAt: time };
+const base = { kind: "StudioProtocolMessage" as const, schemaVersion: 10 as const, direction: "plugin_to_backend" as const, messageId: "msg_protocol", sentAt: time };
 const binding = { projectId: "project_1", sessionId: "session_1", project: identity, runId: "run_1", testPlanId: "plan_1", correlationId: "correlation_1", projectSnapshotHash: "snapshot_1", mechanicContractHash: "contract_1", nonceCommitment: "a".repeat(64) };
 
-test("Studio bridge v7 auto-pairs, authenticates control, and delivers messages", async () => {
+test("Studio bridge v10 auto-pairs, authenticates control, and delivers messages", async () => {
   const bridge = new StudioBridgeServer({ port: 0, now: () => new Date(time) }); const received: PluginToBackendMessage[] = []; bridge.subscribe((message) => { received.push(message); }); const started = await bridge.listen();
   try {
     const autoPairing = await (await fetch(`http://${started.host}:${started.port}/v1/pairing`)).json() as { pairing: { token: string } };
-    const pair: PluginToBackendMessage = { ...base, messageId: "msg_pair", type: "PairProject", payload: { pairingToken: autoPairing.pairing.token, project: identity, pluginVersion: STUDIO_PLUGIN_VERSION, studioVersion: "test-studio", protocolVersion: 7, capabilities: ["snapshot", "snapshot_chunks", "sha256", "stable_identity", "typed_patch", "transaction", "studio_play_mode", "http_polling", "bounded_diagnostics"] } };
+    const pair: Extract<PluginToBackendMessage, { type: "PairProject" }> = { ...base, messageId: "msg_pair", type: "PairProject", payload: { pairingToken: autoPairing.pairing.token, project: identity, pluginVersion: STUDIO_PLUGIN_VERSION, studioVersion: "test-studio", protocolVersion: 10, capabilities: ["snapshot", "snapshot_chunks", "sha256", "stable_identity", "typed_patch", "transaction", "studio_play_mode", "http_polling", "bounded_diagnostics"] } };
     const response = await fetch(`http://${started.host}:${started.port}/v1/message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(pair) }); assert.equal(response.status, 200); const session = await response.json() as { sessionId: string; sessionToken: string };
     assert.equal((await fetch(`http://${started.host}:${started.port}/v1/sessions`)).status, 401);
     const client = new StudioBridgeClient({ host: started.host, port: started.port, controlToken: started.controlToken }); const attached = await client.waitForSession(1_000); assert.equal(attached.sessionId, session.sessionId);
@@ -45,7 +45,7 @@ test("concurrent local Studio windows receive independent grants and identities"
   const localB = { name: "ForgeCollectFruit-fault.rbxlx", placeId: 0, universeId: 0 };
   const capabilities = ["snapshot", "snapshot_chunks", "sha256", "stable_identity", "typed_patch", "transaction", "studio_play_mode", "http_polling", "bounded_diagnostics"] as const;
   const postPair = (token: string, project: typeof localA, messageId: string) => fetch(`http://${started.host}:${started.port}/v1/message`, {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...base, messageId, type: "PairProject", payload: { pairingToken: token, project, pluginVersion: STUDIO_PLUGIN_VERSION, studioVersion: "test-studio", protocolVersion: 7, capabilities } })
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...base, messageId, type: "PairProject", payload: { pairingToken: token, project, pluginVersion: STUDIO_PLUGIN_VERSION, studioVersion: "test-studio", protocolVersion: 10, capabilities } })
   });
   try {
     const [grantA, grantB] = await Promise.all([
@@ -76,7 +76,7 @@ test("a verifier attaches at the live event cursor and requests fresh state", as
   const started = await bridge.listen();
   try {
     const grant = await fetch(`http://${started.host}:${started.port}/v1/pairing`).then((response) => response.json()) as { pairing: { token: string } };
-    const pair: PluginToBackendMessage = { ...base, messageId: "pair_cursor", type: "PairProject", payload: { pairingToken: grant.pairing.token, project: identity, pluginVersion: STUDIO_PLUGIN_VERSION, studioVersion: "test-studio", protocolVersion: 7, capabilities: ["snapshot", "snapshot_chunks", "sha256", "stable_identity", "typed_patch", "transaction", "studio_play_mode", "http_polling", "bounded_diagnostics"] } };
+    const pair: PluginToBackendMessage = { ...base, messageId: "pair_cursor", type: "PairProject", payload: { pairingToken: grant.pairing.token, project: identity, pluginVersion: STUDIO_PLUGIN_VERSION, studioVersion: "test-studio", protocolVersion: 10, capabilities: ["snapshot", "snapshot_chunks", "sha256", "stable_identity", "typed_patch", "transaction", "studio_play_mode", "http_polling", "bounded_diagnostics"] } };
     const pairResponse = await fetch(`http://${started.host}:${started.port}/v1/message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(pair) });
     const session = await pairResponse.json() as { sessionId: string; sessionToken: string };
     const headers = { "content-type": "application/json", "x-forge-session-token": session.sessionToken };
@@ -98,33 +98,35 @@ test("a verifier attaches at the live event cursor and requests fresh state", as
   }
 });
 
-test("v7 rejects old, malformed, raw Output, and invalid lifecycle envelopes", () => {
+test("v10 rejects old, malformed, raw Output, and invalid lifecycle envelopes", () => {
   assert.throws(() => assertPluginToBackendMessage({ ...base, schemaVersion: 6, type: "PairProject", payload: {} }), /envelope/);
-  assert.throws(() => assertPluginToBackendMessage({ ...base, type: "PairProject", payload: { pairingToken: "token", project: identity, pluginVersion: "forge-studio-plugin-2.1.0", studioVersion: "studio", protocolVersion: 7, capabilities: ["snapshot", "snapshot_chunks", "sha256", "stable_identity", "typed_patch", "transaction", "studio_play_mode", "http_polling", "bounded_diagnostics"] } }), /PairProject/);
+  assert.throws(() => assertPluginToBackendMessage({ ...base, type: "PairProject", payload: { pairingToken: "token", project: identity, pluginVersion: "forge-studio-plugin-2.1.0", studioVersion: "studio", protocolVersion: 8, capabilities: ["snapshot", "snapshot_chunks", "sha256", "stable_identity", "typed_patch", "transaction", "studio_play_mode", "http_polling", "bounded_diagnostics"] } }), /PairProject/);
   assert.throws(() => assertPluginToBackendMessage({ ...base, type: "RequestObservation", payload: {} }), /Invalid plugin message type/);
   assert.throws(() => assertBackendToPluginMessage({ ...base, direction: "backend_to_plugin", type: "PairAccepted", payload: { sessionId: "s", projectId: "p", expiresAt: time } }), /Unsupported/);
   const evidence = { kind: "StudioHarnessEvidence", schemaVersion: 1, ...binding, nonce: "nonce_1234567890", id: "result_1", assertionId: "assert_1", status: "pass", expected: true, observed: true, evidence: [{ type: "state", statement: "ok" }], authoritative: true, durationMs: 1, emittedAt: time };
   assertPluginToBackendMessage({ ...base, type: "StudioTestResult", payload: { kind: "StudioHarnessRunEnvelope", schemaVersion: 1, ...binding, nonce: "nonce_1234567890", harnessId: "collect-fruit", harnessVersion: COLLECT_FRUIT_HARNESS_VERSION, harnessHash: COLLECT_FRUIT_HARNESS_HASH, status: "completed", authoritative: true, startedAt: time, endedAt: time, durationMs: 1, assertions: [evidence], diagnostics: [] } });
+  assert.throws(() => assertPluginToBackendMessage({ ...base, type: "StudioTestResult", payload: { kind: "StudioHarnessRunEnvelope", schemaVersion: 1, ...binding, nonce: "nonce_1234567890", harnessId: "collect-fruit", harnessVersion: COLLECT_FRUIT_HARNESS_VERSION, harnessHash: COLLECT_FRUIT_HARNESS_HASH, status: "completed", authoritative: true, startedAt: time, endedAt: time, durationMs: 1, assertions: [{ ...evidence, observed: {} }], diagnostics: [] } }), /assertions\[0\] observed must be a primitive/);
+  assert.throws(() => assertPluginToBackendMessage({ ...base, type: "StudioTestResult", payload: { kind: "StudioHarnessRunEnvelope", schemaVersion: 1, ...binding, nonce: "nonce_1234567890", harnessId: "collect-fruit", harnessVersion: COLLECT_FRUIT_HARNESS_VERSION, harnessHash: COLLECT_FRUIT_HARNESS_HASH, status: "completed", authoritative: true, startedAt: time, endedAt: time, durationMs: 1, assertions: [{ ...evidence, evidence: [{ type: "state", statement: "empty data", data: [] }] }], diagnostics: [] } }), /assertions\[0\] evidence must contain bounded assertion evidence/);
   assert.throws(() => assertPluginToBackendMessage({ ...base, type: "StudioOutput", payload: { stream: "output", text: "CF-001 PASS", occurredAt: time } }), /Unsupported/);
   assert.throws(() => assertPluginToBackendMessage({ ...base, type: "PlaytestStarted", payload: { ...binding, mode: "multiplayer", playerCount: 1, control: "studio_test_service" } }), /PlaytestStarted/);
   assertPluginToBackendMessage({ ...base, type: "PlaytestStarted", payload: { ...binding, mode: "play_solo", playerCount: 1, control: "plugin_action" } });
   assertPluginToBackendMessage({ ...base, type: "TransactionRolledBack", payload: { transactionId: "tx_1", projectSnapshotHash: "revision_1", status: "rolled_back", success: true, rollback: "change_history_cancelled_and_inverse_applied" } });
   assert.throws(() => assertPluginToBackendMessage({ ...base, type: "TransactionRolledBack", payload: { transactionId: "tx_1", projectSnapshotHash: "revision_1", status: "rolled_back" } }), /TransactionRolledBack/);
   const source = "return true";
-  const studioObservation = { kind: "StudioSnapshotObservation", schemaVersion: 2, project: identity, capturedAt: time, instances: [{ stableId: "forge_script", path: "ServerScriptService/Test", className: "Script", properties: [], attributes: [], tags: [] }], scripts: [{ stableId: "forge_script", path: "ServerScriptService/Test", executionContext: "server", sourceHash: createHash("sha256").update(source).digest("hex"), source }], remotes: [] };
+  const studioObservation = { kind: "StudioSnapshotObservation", schemaVersion: 3, project: identity, capturedAt: time, instances: [{ stableId: "forge_script", path: "ServerScriptService/Test", className: "Script", properties: [], attributes: [], tags: [] }], scripts: [{ stableId: "forge_script", path: "ServerScriptService/Test", executionContext: "server", sourceHash: createHash("sha256").update(source).digest("hex"), source }], remotes: [] };
   const revision = { kind: "StudioRevision", schemaVersion: 1, observationHash: "b".repeat(64), identityHash: "c".repeat(64), capturedAt: time };
   assertPluginToBackendMessage({ ...base, type: "ProjectObservation", payload: { project: identity, revision, reason: "pairing", observation: studioObservation } });
   assert.throws(() => assertPluginToBackendMessage({ ...base, type: "ProjectObservation", payload: { project: identity, revision, reason: "pairing", observation: { ...studioObservation, instances: [{ ...studioObservation.instances[0], properties: {} }] } } }), /instance/);
 });
 
-test("v7 reconstructs SHA-256 checked snapshot chunks before dispatch", async () => {
+test("v10 reconstructs SHA-256 checked snapshot chunks before dispatch", async () => {
   const bridge = new StudioBridgeServer({ port: 0, now: () => new Date(time) }); const started = await bridge.listen();
   try {
     const autoPairing = await (await fetch(`http://${started.host}:${started.port}/v1/pairing`)).json() as { pairing: { token: string } };
-    const pair: PluginToBackendMessage = { ...base, messageId: "msg_chunk_pair", type: "PairProject", payload: { pairingToken: autoPairing.pairing.token, project: identity, pluginVersion: STUDIO_PLUGIN_VERSION, studioVersion: "test-studio", protocolVersion: 7, capabilities: ["snapshot", "snapshot_chunks", "sha256", "stable_identity", "typed_patch", "transaction", "studio_play_mode", "http_polling", "bounded_diagnostics"] } };
+    const pair: PluginToBackendMessage = { ...base, messageId: "msg_chunk_pair", type: "PairProject", payload: { pairingToken: autoPairing.pairing.token, project: identity, pluginVersion: STUDIO_PLUGIN_VERSION, studioVersion: "test-studio", protocolVersion: 10, capabilities: ["snapshot", "snapshot_chunks", "sha256", "stable_identity", "typed_patch", "transaction", "studio_play_mode", "http_polling", "bounded_diagnostics"] } };
     const paired = await fetch(`http://${started.host}:${started.port}/v1/message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(pair) }); const session = await paired.json() as { sessionId: string; sessionToken: string };
     const client = new StudioBridgeClient({ host: started.host, port: started.port, controlToken: started.controlToken }); const received: PluginToBackendMessage[] = []; const unsubscribe = client.subscribeWithSession((message) => { received.push(message); });
-    const observation = JSON.stringify({ kind: "StudioSnapshotObservation", schemaVersion: 2, project: identity, capturedAt: time, instances: [], scripts: [], remotes: [] }); const midpoint = Math.ceil(observation.length / 2); const revision = { kind: "StudioRevision" as const, schemaVersion: 1 as const, observationHash: "b".repeat(64), identityHash: "c".repeat(64), capturedAt: time };
+    const observation = JSON.stringify({ kind: "StudioSnapshotObservation", schemaVersion: 3, project: identity, capturedAt: time, instances: [], scripts: [], remotes: [] }); const midpoint = Math.ceil(observation.length / 2); const revision = { kind: "StudioRevision" as const, schemaVersion: 1 as const, observationHash: "b".repeat(64), identityHash: "c".repeat(64), capturedAt: time };
     for (const [index, payload] of [observation.slice(0, midpoint), observation.slice(midpoint)].entries()) {
       const chunk: PluginToBackendMessage = { ...base, messageId: `chunk_${index}`, type: "SnapshotChunk", sessionId: session.sessionId, payload: { project: identity, revision, reason: "manual", snapshotId: "snapshot_chunks", index, total: 2, encoding: "json", payload, payloadHash: createHash("sha256").update(payload).digest("hex") } };
       const response = await fetch(`http://${started.host}:${started.port}/v1/message`, { method: "POST", headers: { "content-type": "application/json", "x-forge-session-token": session.sessionToken }, body: JSON.stringify(chunk) }); assert.equal(response.status, 202);

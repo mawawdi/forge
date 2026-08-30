@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { assertFixtureManifest, assertMechanicContract, contentHash, type MechanicContract, type MechanicImplementationSpec } from "../packages/contracts/src/index.js";
-import { buildGeneratedCandidate, compilePatchProposal, loadCandidateRepairArtifact, parseModelPatchProposal, repairCandidateRegression, reverifyCandidateRegression, type ModelProvider, type ModelRequest, type ModelResult } from "../packages/generation/src/index.js";
+import { buildGeneratedCandidate, compilePatchProposal, loadCandidateArtifact, parseModelPatchProposal, repairCandidateRegression, reverifyCandidateRegression, type ModelProvider, type ModelRequest, type ModelResult } from "../packages/generation/src/index.js";
 import { buildSemanticMap, compileMechanicImplementationSpec } from "../packages/semantic-map/src/index.js";
 
 const ROOT = resolve(process.cwd());
@@ -127,8 +127,8 @@ test("candidate repair makes exactly one repair call, preserves history, and ver
   assert.equal(result.verification.trace.references.modelResponseHash, "837b2ce2135a38874eb553291b44b4e5a4cb4554bf6c99aabce9b111ac076f8c");
   assert.equal(result.outputRoot.startsWith(`${regressionRoot}/`), false);
   assert.equal(result.outputRoot.startsWith(`${result.seedRoot}/`), false);
-  assert.equal(await readFile(result.artifactPath, "utf8").then((value) => JSON.parse(value).kind), "CandidateRepairArtifact");
-  const loaded = await loadCandidateRepairArtifact(result.artifactPath, join(sandbox, "load-traces"));
+  assert.equal(await readFile(result.artifactPath, "utf8").then((value) => JSON.parse(value).kind), "CandidateArtifact");
+  const loaded = await loadCandidateArtifact(result.artifactPath, join(sandbox, "load-traces"));
   assert.equal(loaded.artifact.artifactHash, result.artifact.artifactHash);
   assert.equal(loaded.artifact.patchSet.id, result.patchSet.id);
   assert.equal(loaded.verification.report.gate.status, "verified");
@@ -137,13 +137,13 @@ test("candidate repair makes exactly one repair call, preserves history, and ver
 
   const tamperedArtifactPath = join(sandbox, "tampered-artifact.json");
   const tamperedArtifact = JSON.parse(await readFile(result.artifactPath, "utf8")) as Record<string, unknown>;
-  tamperedArtifact.regressionId = "different-regression";
+  (tamperedArtifact.origin as Record<string, unknown>).regressionId = "different-regression";
   await writeFile(tamperedArtifactPath, JSON.stringify(tamperedArtifact), "utf8");
-  await assert.rejects(() => loadCandidateRepairArtifact(tamperedArtifactPath, join(sandbox, "artifact-tamper-traces")), /artifact hash mismatch/);
+  await assert.rejects(() => loadCandidateArtifact(tamperedArtifactPath, join(sandbox, "artifact-tamper-traces")), /artifact hash mismatch/);
 
   const serverPath = join(result.outputRoot, "src/server/CollectFruit.server.luau");
   await writeFile(serverPath, `${await readFile(serverPath, "utf8")}\n-- changed after artifact creation\n`, "utf8");
-  await assert.rejects(() => loadCandidateRepairArtifact(result.artifactPath, join(sandbox, "tamper-traces")), /output source changed/);
+  await assert.rejects(() => loadCandidateArtifact(result.artifactPath, join(sandbox, "tamper-traces")), /output source changed/);
 });
 
 test("candidate repair retains a genuine model defect as a rejected one-call result", async () => {
@@ -155,7 +155,7 @@ test("candidate repair retains a genuine model defect as a rejected one-call res
   assert.equal(result.verification.report.gate.status, "rejected");
   assert.deepEqual(result.verification.report.issues.map((issue) => issue.ruleId), ["IMPLEMENTATION_CONSTANT_MISMATCH"]);
   assert.equal(result.verification.trace.outcome.modelUsage.calls, 1);
-  await assert.rejects(() => loadCandidateRepairArtifact(result.artifactPath, join(sandbox, "load-traces")), /not eligible for Studio/);
+  await assert.rejects(() => loadCandidateArtifact(result.artifactPath, join(sandbox, "load-traces")), /not eligible for Studio/);
 });
 
 test("candidate repair has no Studio execution flags", () => {
@@ -191,4 +191,4 @@ function assertStructuredOutputSchema(value: unknown): void {
   }
 }
 function server(): string { return `--!nocheck\nlocal Players = game:GetService("Players")\nlocal ReplicatedStorage = game:GetService("ReplicatedStorage")\nlocal Workspace = game:GetService("Workspace")\nlocal CollectFruit = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CollectFruit")\nlocal Fruit42 = Workspace:WaitForChild("Fruit42")\nlocal MAX_DISTANCE = 20\n\nlocal function initializePlayer(player: Player)\n    player:SetAttribute("Inventory", 0)\nend\n\nPlayers.PlayerAdded:Connect(initializePlayer)\nfor _, player in Players:GetPlayers() do initializePlayer(player) end\n\nCollectFruit.OnServerEvent:Connect(function(player: Player, fruitId: unknown, _claimedAmount: unknown)\n    if player.UserId <= 0 then return end\n    if typeof(fruitId) ~= "string" or fruitId ~= "Fruit42" then return end\n    if typeof(_claimedAmount) ~= "number" or _claimedAmount <= 0 then return end\n    if Fruit42:GetAttribute("Consumed") == true then return end\n    local character = player.Character\n    local root = character and character:FindFirstChild("HumanoidRootPart")\n    if not root or not root:IsA("BasePart") then return end\n    if (root.Position - Fruit42.Position).Magnitude > MAX_DISTANCE then return end\n    Fruit42:SetAttribute("Consumed", true)\n    player:SetAttribute("Inventory", (player:GetAttribute("Inventory") or 0) + Fruit42:GetAttribute("Reward"))\nend)\n`; }
-function client(): string { return `local ReplicatedStorage = game:GetService("ReplicatedStorage")\nlocal CollectFruit = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CollectFruit")\n\nlocal function requestCollection(fruitId: string, _claimedAmount: number)\n    CollectFruit:FireServer(fruitId, _claimedAmount)\nend\n\nif false then requestCollection("Fruit42", 1) end\n`; }
+function client(): string { return `local Players = game:GetService("Players")\nlocal ReplicatedStorage = game:GetService("ReplicatedStorage")\nlocal CollectionService = game:GetService("CollectionService")\nlocal Workspace = game:GetService("Workspace")\nlocal player = Players.LocalPlayer\nlocal mouse = player:GetMouse()\nlocal CollectFruit = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CollectFruit")\n\nmouse.Button1Down:Connect(function()\n    local fruit = mouse.Target\n    if fruit and fruit:IsDescendantOf(Workspace) and CollectionService:HasTag(fruit, "collectible") then\n        CollectFruit:FireServer(fruit.Name, 1)\n    end\nend)\n`; }

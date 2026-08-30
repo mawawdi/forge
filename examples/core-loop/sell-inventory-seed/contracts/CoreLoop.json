@@ -1,0 +1,18 @@
+{
+  "kind": "CoreLoop",
+  "schemaVersion": 1,
+  "id": "loop_collect_sell_seed",
+  "intentId": "intent_collect_sell_seed",
+  "title": "Collect, sell, progress",
+  "entryNodeId": "node_collect",
+  "nodes": [
+    {"id": "node_collect", "label": "CollectFruit", "category": "acquisition", "mechanicContractId": "contract_collect_fruit_seed", "status": "verified"},
+    {"id": "node_sell", "label": "SellInventory", "category": "conversion", "status": "proposed"},
+    {"id": "node_upgrade", "label": "UpgradeBasket", "category": "progression", "status": "proposed"}
+  ],
+  "edges": [
+    {"from": "node_collect", "to": "node_sell", "condition": "inventory is nonzero"},
+    {"from": "node_sell", "to": "node_upgrade", "condition": "coins are available"}
+  ],
+  "invariants": ["Only the server mutates Inventory.", "Only the server converts Inventory into Coins.", "A client cannot select reward, price, quantity, payout, or resulting coin balance."]
+}

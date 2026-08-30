@@ -1,6 +1,6 @@
 # Lemonade Forge Specification
 
-Status: M1, M1.5, M2, M2.5, M3, and M3.25 complete; M3.5 next
+Status: M1, M1.5, M2, M2.5, M3, M3.25, and M3.5 complete
 Scope: candidate proof-of-work; deterministic verifier plus local execution evidence
 
 ## M3.25 prompt-to-proof requirement
@@ -11,8 +11,9 @@ contract and compiles a `MechanicImplementationSpec` for the exact existing
 remote ABI, state schema, constants, validation categories, authority
 invariants, and allowed source targets. The model remains responsible for the
 substantive two-file Luau implementation. Forge runs official syntax,
-Roblox-aware type analysis, and M2 before Studio. `--studio` may invoke the
-existing StudioProof only with that prevalidated PatchSet. BuildTrace never
+Roblox-aware type analysis, and M2 before Studio. `forge build` never invokes
+Studio; `forge candidate studio <artifact>` may invoke the existing StudioProof
+only with that prevalidated PatchSet. BuildTrace never
 stores raw model output, source, or prompt; Studio remains the runtime authority.
 
 Preserved-candidate repair has a stricter two-command boundary. `forge
@@ -27,6 +28,26 @@ M3.25 acceptance is established by verified ProofBundle
 Luau and M2 gates, then passed 7/7 correlated assertions in real Studio under
 `collect-fruit-v7` and committed. BuildTrace
 `trace_596ab00b-5087-449b-8e33-a0ae0f5aee2e` records the accepted execution.
+
+## M3.5 SellInventory requirement
+
+`examples/core-loop/sell-inventory-seed` is the controlled incremental seed.
+It pins the sealed M3.25 CollectFruit bytes and prior evidence, declares the
+zero-argument `SellInventory:FireServer()` ABI, and allows model-authored
+complete replacements for Sell server/client plus an optional Collect server
+shared-state correction. Forge owns Inventory/Coins attribute state, SellZone
+UnitPrice, the independent 20-stud server authorization limit, and exact Inventory-clear then
+Coins-credit ordering. A StudioProof plan must execute 14 authoritative
+correlated assertions in one run: seven CollectFruit regressions, six Sell
+checks, and Collect→Sell composition. M3.5 acceptance is recorded by rejected
+payout-fault ProofBundle `proof_4ec631d5d8117fee86a3292e` and fresh
+model-repaired verified ProofBundle `proof_1fe98358c9d6262b92759b90`.
+
+Production selling is a separate explicit interaction contract:
+`Workspace/SellZone/SellPrompt` is a `ProximityPrompt` with
+`MaxActivationDistance = 12`. A model may not replace that user action with
+periodic or autonomous RemoteEvent requests. The 12-stud client activation
+boundary does not weaken or redefine the server's 20-stud authorization check.
 
 ## 1. Product thesis
 

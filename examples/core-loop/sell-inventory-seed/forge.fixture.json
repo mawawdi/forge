@@ -1,0 +1,67 @@
+{
+  "kind": "ForgeFixture",
+  "schemaVersion": 5,
+  "name": "fruit-core-loop-sell-seed",
+  "luauRoots": ["src"],
+  "instances": [
+    { "path": "ReplicatedStorage/Remotes", "className": "Folder", "tags": ["network"] },
+    { "path": "ReplicatedStorage/ClientActions", "className": "Folder" },
+    { "path": "ReplicatedStorage/ClientActions/CollectFruitAction", "className": "ModuleScript", "parentPath": "ReplicatedStorage/ClientActions" },
+    { "path": "ReplicatedStorage/ClientActions/SellInventoryAction", "className": "ModuleScript", "parentPath": "ReplicatedStorage/ClientActions" },
+    { "path": "ReplicatedStorage/Remotes/CollectFruit", "className": "RemoteEvent", "parentPath": "ReplicatedStorage/Remotes" },
+    { "path": "ReplicatedStorage/Remotes/SellInventory", "className": "RemoteEvent", "parentPath": "ReplicatedStorage/Remotes" },
+    { "path": "Workspace/Fruit42", "className": "Part", "position": { "x": 0, "y": 3, "z": 0 }, "attributes": { "FruitType": "Apple", "Reward": 1, "Consumed": false }, "tags": ["collectible"] },
+    { "path": "Workspace/SellZone", "className": "Part", "position": { "x": 18, "y": 2, "z": 0 }, "attributes": { "UnitPrice": 5 }, "tags": ["sell_station"] },
+    { "path": "Workspace/SellZone/SellPrompt", "className": "ProximityPrompt", "parentPath": "Workspace/SellZone", "properties": { "ActionText": "Sell fruit", "ObjectText": "Fruit Market", "MaxActivationDistance": 12 } }
+  ],
+  "persistentState": [
+    { "field": "Inventory", "type": "number", "owner": "server", "durability": "session" },
+    { "field": "Coins", "type": "number", "owner": "server", "durability": "session" }
+  ],
+  "uiBindings": [],
+  "generationTarget": {
+    "mode": "core_loop_extension",
+    "gameIntentPath": "contracts/GameIntent.json",
+    "coreLoopPath": "contracts/CoreLoop.json",
+    "targetNodeId": "node_sell",
+    "verifiedMechanics": [{
+      "name": "CollectFruit",
+      "contractPath": "contracts/CollectFruit.json",
+      "proofBundleId": "proof_932e3d0abd04b04894b38e73",
+      "sourceHashes": {
+        "src/client/CollectFruitClient.client.luau": "bc6e639520ed7e59c1d53ba4336aaff632a382f5a32465a48202ab21c67d4885",
+        "src/server/CollectFruit.server.luau": "a6ae74d993785990ca71ffb5bea5424660f6c37f47eb9b6ac9d398e4182b60c1"
+      }
+    }]
+  },
+  "remoteFlows": [
+    {
+      "name": "CollectFruit",
+      "direction": "client_to_server",
+      "remote": { "stableId": "remote_collect_fruit", "path": "ReplicatedStorage/Remotes/CollectFruit", "className": "RemoteEvent", "preserveExisting": true },
+      "clientScript": "src/ReplicatedStorage/ClientActions/CollectFruitAction.luau",
+      "interactionScript": "src/client/CollectFruitClient.client.luau",
+      "serverScript": "src/server/CollectFruit.server.luau",
+      "clientInputs": [{ "position": 1, "role": "fruit_id", "type": "string", "trust": "untrusted" }, { "position": 2, "role": "claimed_reward", "type": "number", "trust": "untrusted" }],
+      "serverArguments": [{ "position": 0, "role": "player", "type": "Player", "source": "roblox_server" }, { "position": 1, "role": "fruit_id", "type": "string", "source": "client" }, { "position": 2, "role": "claimed_reward", "type": "number", "source": "client" }],
+      "interactionBinding": { "kind": "InteractionBinding", "schemaVersion": 2, "requirement": "explicit_user_action", "production": { "kind": "pointer_click", "event": "Button1Down", "targetTag": "collectible" }, "clientAction": { "kind": "module_function", "modulePath": "ReplicatedStorage/ClientActions/CollectFruitAction", "sourcePath": "src/ReplicatedStorage/ClientActions/CollectFruitAction.luau", "functionName": "request", "argumentMode": "target_instance" }, "serverAuthorization": { "kind": "distance", "target": "requested_target", "maxDistance": 20 } },
+      "validationRequirements": [{ "category": "type", "subjectRole": "fruit_id", "applicability": "required", "rationale": "Fruit identity is untrusted." }, { "category": "value", "subjectRole": "fruit_id", "applicability": "required", "rationale": "Fruit must be a valid collectible." }, { "category": "type", "subjectRole": "claimed_reward", "applicability": "required", "rationale": "Claim must be handled safely." }, { "category": "value", "subjectRole": "claimed_reward", "applicability": "required", "rationale": "Claim must be finite and non-negative." }, { "category": "context", "subjectRole": "interaction", "applicability": "required", "rationale": "Server checks world membership and distance." }, { "category": "permission", "subjectRole": "interaction", "applicability": "required", "rationale": "Server-supplied Player is authoritative." }],
+      "stateMutations": [{ "field": "Inventory", "sourceExpression": "server_owned_reward", "authority": "server", "operation": "increment" }, { "field": "Consumed", "sourceExpression": "server_owned_availability", "authority": "server", "operation": "set_true" }],
+      "implementation": { "stateBindings": [{ "role": "inventory", "subject": "player", "storage": "attribute", "name": "Inventory", "type": "number", "authority": "server" }, { "role": "availability", "subject": "target", "storage": "attribute", "name": "Consumed", "type": "boolean", "authority": "server" }, { "role": "reward", "subject": "target", "storage": "attribute", "name": "Reward", "type": "number", "authority": "server" }, { "role": "collectible", "subject": "target", "storage": "tag", "name": "collectible", "type": "boolean", "authority": "server" }], "constants": [{ "role": "canonical_target_id", "type": "string", "value": "Fruit42" }, { "role": "max_interaction_distance", "type": "number", "value": 20 }], "postconditions": ["Fruit becomes consumed.", "Inventory increases exactly once."], "authorityInvariants": ["Client cannot choose reward.", "Inventory is represented by the player Inventory attribute."] }
+    },
+    {
+      "name": "SellInventory",
+      "direction": "client_to_server",
+      "remote": { "stableId": "remote_sell_inventory", "path": "ReplicatedStorage/Remotes/SellInventory", "className": "RemoteEvent", "preserveExisting": true },
+      "clientScript": "src/ReplicatedStorage/ClientActions/SellInventoryAction.luau",
+      "interactionScript": "src/client/SellInventoryClient.client.luau",
+      "serverScript": "src/server/SellInventory.server.luau",
+      "clientInputs": [],
+      "serverArguments": [{ "position": 0, "role": "player", "type": "Player", "source": "roblox_server" }],
+      "interactionBinding": { "kind": "InteractionBinding", "schemaVersion": 2, "requirement": "explicit_user_action", "production": { "kind": "proximity_prompt", "path": "Workspace/SellZone/SellPrompt", "className": "ProximityPrompt", "event": "Triggered", "maxActivationDistance": 12 }, "clientAction": { "kind": "module_function", "modulePath": "ReplicatedStorage/ClientActions/SellInventoryAction", "sourcePath": "src/ReplicatedStorage/ClientActions/SellInventoryAction.luau", "functionName": "request", "argumentMode": "none" }, "serverAuthorization": { "kind": "distance", "target": "bound_instance", "path": "Workspace/SellZone", "maxDistance": 20 } },
+      "validationRequirements": [{ "category": "context", "subjectRole": "sell_context", "applicability": "required", "rationale": "Server checks player distance to SellZone." }, { "category": "permission", "subjectRole": "interaction", "applicability": "required", "rationale": "Server-supplied Player owns the state." }],
+      "stateMutations": [{ "field": "Inventory", "sourceExpression": "constant_zero", "authority": "server", "operation": "set_zero" }, { "field": "Coins", "sourceExpression": "server_owned_inventory_times_unit_price", "authority": "server", "operation": "increment" }],
+      "implementation": { "stateBindings": [{ "role": "inventory", "subject": "player", "storage": "attribute", "name": "Inventory", "type": "number", "authority": "server" }, { "role": "currency", "subject": "player", "storage": "attribute", "name": "Coins", "type": "number", "authority": "server" }, { "role": "unit_price", "subject": "world", "storage": "attribute", "name": "UnitPrice", "type": "number", "authority": "server" }, { "role": "sell_context", "subject": "world", "storage": "tag", "name": "sell_station", "type": "boolean", "authority": "server" }], "constants": [{ "role": "canonical_sell_station_id", "type": "string", "value": "SellZone" }, { "role": "max_interaction_distance", "type": "number", "value": 20 }], "postconditions": ["Inventory clears exactly to zero.", "Coins increase by server-owned Inventory times UnitPrice."], "authorityInvariants": ["Client ABI contains no economic amount.", "Server clears inventory before crediting coins.", "No yield occurs between the conversion mutations."] }
+    }
+  ]
+}

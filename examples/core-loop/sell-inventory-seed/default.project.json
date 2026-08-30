@@ -1,0 +1,88 @@
+{
+  "name": "ForgeFruitLoop",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "ClientActions": {
+        "$className": "Folder",
+        "CollectFruitAction": { "$path": "src/ReplicatedStorage/ClientActions/CollectFruitAction.luau" },
+        "SellInventoryAction": { "$path": "src/ReplicatedStorage/ClientActions/SellInventoryAction.luau" }
+      },
+      "Remotes": {
+        "$className": "Folder",
+        "CollectFruit": { "$className": "RemoteEvent" },
+        "SellInventory": { "$className": "RemoteEvent" }
+      }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "CollectFruit.server.luau": {
+        "$path": "src/server/CollectFruit.server.luau",
+        "$properties": { "RunContext": "Server" }
+      },
+      "SellInventory.server.luau": {
+        "$path": "src/server/SellInventory.server.luau",
+        "$properties": { "RunContext": "Server" }
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "CollectFruitClient.client.luau": {
+          "$path": "src/client/CollectFruitClient.client.luau"
+        },
+        "SellInventoryClient.client.luau": {
+          "$path": "src/client/SellInventoryClient.client.luau"
+        }
+      }
+    },
+    "Workspace": {
+      "$className": "Workspace",
+      "Baseplate": {
+        "$className": "Part",
+        "$properties": {
+          "Anchored": true,
+          "CanCollide": true,
+          "Size": [64.0, 1.0, 64.0],
+          "Position": [0.0, -0.5, 0.0]
+        }
+      },
+      "Fruit42": {
+        "$className": "Part",
+        "$properties": {
+          "Anchored": true,
+          "CanCollide": true,
+          "Size": [4.0, 4.0, 4.0],
+          "Position": [0.0, 3.0, 0.0],
+          "Attributes": {
+            "FruitType": { "String": "Apple" },
+            "Reward": { "Float64": 1.0 },
+            "Consumed": { "Bool": false }
+          },
+          "Tags": ["collectible"]
+        }
+      },
+      "SellZone": {
+        "$className": "Part",
+        "$properties": {
+          "Anchored": true,
+          "CanCollide": true,
+          "Size": [8.0, 4.0, 8.0],
+          "Position": [18.0, 2.0, 0.0],
+          "Attributes": { "UnitPrice": { "Float64": 5.0 } },
+          "Tags": ["sell_station"]
+        },
+        "SellPrompt": {
+          "$className": "ProximityPrompt",
+          "$properties": {
+            "ActionText": "Sell fruit",
+            "ObjectText": "Fruit Market",
+            "MaxActivationDistance": 12.0
+          }
+        }
+      }
+    }
+  }
+}

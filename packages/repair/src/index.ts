@@ -23,14 +23,20 @@ export async function createCollectFruitRepair(projectRoot: string, contract: Me
   if (!input) throw new Error(`No client input is declared for ${contract.name}`);
   const inputName = mapped.serverEvidence.parameters.find((parameter) => parameter.position === input.position)?.name;
   if (!inputName) throw new Error(`No server parameter is bound to ${input.role} at position ${input.position}`);
-  if (!new RegExp(`\\b${escapeRegExp(inputName)}\\b`).test(mapped.serverEvidence.mutationExpression)) throw new Error(`No client-controlled reward expression was found for ${contract.name}`);
+  const inventoryMutation = mapped.serverEvidence.mutations.find((mutation) => mutation.field === "Inventory");
+  if (!inventoryMutation || !new RegExp(`\\b${escapeRegExp(inputName)}\\b`).test(inventoryMutation.expression)) throw new Error(`No client-controlled reward expression was found for ${contract.name}`);
 
   const before = mapped.server.source;
-  const mutation = mapped.serverEvidence.mutation;
+  const mutation = inventoryMutation.statement;
   const safeMutation = mutation.replace(new RegExp(`\\+\\s*${escapeRegExp(inputName)}\\s*$`), "+ 1");
   if (safeMutation === mutation) throw new Error(`Unsupported ${contract.name} mutation shape`);
-  const indentation = mutation.match(/^\s*/)?.[0] ?? "";
-  const after = before.replace(mutation, `${indentation}if typeof(${inputName}) ~= "number" then return end\n${indentation}if ${inputName} <= 0 then return end\n${safeMutation}`);
+  const mutationOffset = before.indexOf(mutation);
+  if (mutationOffset < 0) throw new Error(`Unable to locate ${contract.name} mutation indentation`);
+  const lineStart = before.lastIndexOf("\n", mutationOffset) + 1;
+  const lineEnd = before.indexOf("\n", mutationOffset);
+  const line = before.slice(lineStart, lineEnd < 0 ? before.length : lineEnd);
+  const indentation = line.match(/^[\t ]*/)?.[0] ?? "";
+  const after = before.replace(line, `${indentation}if typeof(${inputName}) ~= "number" then return end\n${indentation}if ${inputName} <= 0 then return end\n${indentation}${safeMutation}`);
   if (after === before) throw new Error(`Unable to construct deterministic repair for ${contract.name}`);
   const generatedAt = (options.now ?? (() => new Date()))().toISOString();
   const projectHash = await sourceSnapshotHash(root);

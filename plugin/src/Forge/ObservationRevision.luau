@@ -5,7 +5,8 @@ local ObservationRevision = {}
 
 type Primitive = string | number | boolean
 type PrimitiveEntry = { name: string, value: Primitive }
-type InstanceObservation = { stableId: string, path: string, className: string, properties: {PrimitiveEntry}, attributes: {PrimitiveEntry}, tags: {string} }
+type Position = { x: number, y: number, z: number }
+type InstanceObservation = { stableId: string, path: string, className: string, position: Position?, properties: {PrimitiveEntry}, attributes: {PrimitiveEntry}, tags: {string} }
 type ScriptObservation = { stableId: string, path: string, executionContext: string, sourceHash: string }
 type RemoteObservation = { path: string, name: string, className: string, direction: string }
 type Observation = {
@@ -46,6 +47,12 @@ function ObservationRevision.material(observation: Observation): string
 		append(parts, instance.stableId)
 		append(parts, instance.path)
 		append(parts, instance.className)
+		append(parts, instance.position ~= nil)
+		if instance.position then
+			append(parts, instance.position.x)
+			append(parts, instance.position.y)
+			append(parts, instance.position.z)
+		end
 		appendEntries(parts, instance.properties)
 		appendEntries(parts, instance.attributes)
 		append(parts, #instance.tags)

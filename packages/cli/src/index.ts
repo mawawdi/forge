@@ -4,10 +4,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadMechanicContract, repairProject } from "../../repair/src/orchestrator.js";
 import { StudioBridgeServer, readStudioBridgeDiscovery, removeStudioBridgeDiscovery, writeStudioBridgeDiscovery } from "../../studio-bridge/src/index.js";
-import { runStudioPatchVerification, runStudioVerification } from "../../studio-proof/src/runner.js";
+import { runStudioPatchVerification, runStudioVerification, type StudioFaultMode } from "../../studio-proof/src/runner.js";
 import type { PluginToBackendMessage } from "../../studio-protocol/src/index.js";
 import { verifyProject } from "../../verifier/src/index.js";
-import { OPENROUTER_MODELS, OpenRouterProvider, buildGeneratedCandidate, loadCandidateRepairArtifact, repairCandidateRegression, reverifyCandidateRegression, type OpenRouterModel } from "../../generation/src/index.js";
+import { OPENROUTER_MODELS, OpenRouterProvider, buildGeneratedCandidate, loadCandidateArtifact, repairCandidateRegression, reverifyCandidateRegression, type OpenRouterModel } from "../../generation/src/index.js";
 
 const args = process.argv.slice(2);
 
@@ -117,21 +117,42 @@ async function candidateRepair(regressionPath: string | undefined, optionArgs: s
 async function candidateStudio(artifactPath: string | undefined, optionArgs: string[]): Promise<void> {
   const options = parseCandidateStudioOptions(optionArgs);
   if (!artifactPath || !options.valid) {
-    process.stderr.write("Usage: forge candidate studio <candidate-repair-artifact> [--timeout-ms <ms>] [--trace-dir <path>] [--proof-dir <path>]\n");
+    process.stderr.write("Usage: forge candidate studio <candidate-artifact> [--fault client-controlled-reward|client-controlled-payout] [--timeout-ms <ms>] [--trace-dir <path>] [--proof-dir <path>]\n");
     process.exitCode = 2;
     return;
   }
   try {
     process.stdout.write("Validating the retained candidate artifact and rerunning current local gates; no model will be called.\n");
-    const loaded = await loadCandidateRepairArtifact(resolve(artifactPath), options.traceDirectory);
+    const loaded = await loadCandidateArtifact(resolve(artifactPath), options.traceDirectory);
     const discovery = await readStudioBridgeDiscovery();
-    process.stdout.write(`Candidate ${loaded.artifact.id} passed artifact integrity and local verification. Attaching its exact PatchSet to StudioProof.\n`);
+    if (options.fault) {
+      process.stdout.write(`INTENTIONAL FAULT MODE: ${options.fault}\nExpected outcome: semantic rejection, one failed authoritative assertion, rejected ProofBundle, and transaction rollback.\n`);
+      process.stdout.write(`Candidate ${loaded.artifact.id} is the preserved safe baseline. Open its output project in Studio before clicking Verify in Studio.\n`);
+      const studio = await runStudioVerification({
+        projectRoot: loaded.artifact.outputRoot,
+        contract: loaded.artifact.contract,
+        fault: options.fault,
+        controlToken: discovery.controlToken,
+        host: discovery.host,
+        port: discovery.port,
+        ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+        ...(options.traceDirectory ? { traceDirectory: options.traceDirectory } : {}),
+        ...(options.proofDirectory ? { proofDirectory: options.proofDirectory } : {}),
+        onReady: (address) => process.stdout.write(`Attaching to discovered Forge Studio bridge at http://${address.host}:${address.port}\nWaiting for Studio to connect and send a live snapshot...\n`),
+        onMessage: printStudioVerificationMessage
+      });
+      process.stdout.write(`${JSON.stringify({ kind: "CandidateStudioFaultResult", schemaVersion: 1, fault: options.fault, baselineCandidateArtifactId: loaded.artifact.id, baselineArtifactHash: loaded.artifact.artifactHash, faultPatchSetId: studio.patchSet.id, localVerificationTraceId: studio.staticAfter.trace.id, localIssueCodes: [...new Set(studio.staticAfter.report.issues.map((issue) => issue.ruleId))], studioStatus: studio.status, proofBundleId: studio.proofBundle.id, traceId: studio.trace?.id }, null, 2)}\n`);
+      process.exitCode = studio.status === "verified" ? 0 : studio.status === "incomplete" ? 2 : 1;
+      return;
+    }
+    process.stdout.write(`Candidate ${loaded.artifact.id} passed artifact integrity and local verification. Open the original seed project in Studio (not the generated candidate output): Forge will apply this exact PatchSet to that seed during StudioProof.\n`);
     const studio = await runStudioPatchVerification({
       projectRoot: loaded.artifact.seedRoot,
       candidateProjectRoot: loaded.artifact.outputRoot,
       candidatePatchSet: loaded.artifact.patchSet,
       candidateVerification: loaded.verification,
       contract: loaded.artifact.contract,
+      candidateArtifact: loaded.artifact,
       controlToken: discovery.controlToken,
       host: discovery.host,
       port: discovery.port,
@@ -141,10 +162,14 @@ async function candidateStudio(artifactPath: string | undefined, optionArgs: str
       onReady: (address) => process.stdout.write(`Attaching to discovered Forge Studio bridge at http://${address.host}:${address.port}\nWaiting for Studio to connect and send a live snapshot...\n`),
       onMessage: printStudioVerificationMessage
     });
-    process.stdout.write(`${JSON.stringify({ kind: "CandidateStudioResult", schemaVersion: 1, candidateRepairId: loaded.artifact.id, artifactHash: loaded.artifact.artifactHash, regressionId: loaded.artifact.regressionId, patchSetId: loaded.artifact.patchSet.id, localVerificationTraceId: loaded.verification.trace.id, studioStatus: studio.status, proofBundleId: studio.proofBundle.id, traceId: studio.trace?.id }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ kind: "CandidateStudioResult", schemaVersion: 1, candidateArtifactId: loaded.artifact.id, artifactHash: loaded.artifact.artifactHash, ...(loaded.artifact.origin.regressionId ? { regressionId: loaded.artifact.origin.regressionId } : {}), patchSetId: loaded.artifact.patchSet.id, localVerificationTraceId: loaded.verification.trace.id, studioStatus: studio.status, proofBundleId: studio.proofBundle.id, traceId: studio.trace?.id }, null, 2)}\n`);
     process.exitCode = studio.status === "verified" ? 0 : studio.status === "incomplete" ? 2 : 1;
   } catch (error) {
-    process.stderr.write(`Candidate StudioProof did not complete: ${error instanceof Error ? error.message : String(error)}\n`);
+    const detail = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`Candidate StudioProof did not complete: ${detail}\n`);
+    if (!options.fault && /source precondition mismatch/i.test(detail)) {
+      process.stderr.write("Studio is not at the artifact's seed revision. Reopen the original seed project, not the generated candidate output; candidate studio applies the artifact PatchSet itself.\n");
+    }
     process.exitCode = 2;
   }
 }
@@ -152,24 +177,22 @@ async function candidateStudio(artifactPath: string | undefined, optionArgs: str
 async function build(seedPath: string | undefined, optionArgs: string[]): Promise<void> {
   const options = parseBuildOptions(optionArgs);
   if (!seedPath || !options.valid || !options.prompt) {
-    process.stderr.write("Usage: forge build <generated-seed-project> --prompt <creator request> [--model openai/gpt-5.6-luna|google/gemini-3.7-flash] [--model-timeout-ms <ms>] [--run-dir <path>] [--trace-dir <path>] [--proof-dir <path>] [--studio] [--timeout-ms <ms>] [--format json]\n");
+    process.stderr.write("Usage: forge build <generated-seed-project> --prompt <creator request> [--model openai/gpt-5.6-luna|google/gemini-3.7-flash] [--model-timeout-ms <ms>] [--run-dir <path>] [--trace-dir <path>] [--format json]\n");
     process.exitCode = 2;
     return;
   }
   try {
-    process.stdout.write(`Forge build: ${options.model ?? "openai/gpt-5.6-luna"}; compiling bounded intent and candidate.\n`);
+    const progress = `Forge build: ${options.model ?? "openai/gpt-5.6-luna"}; compiling bounded intent and candidate.\n`;
+    if (options.formatJson) process.stderr.write(progress);
+    else process.stdout.write(progress);
     const result = await buildGeneratedCandidate({ seedRoot: resolve(seedPath), prompt: options.prompt, provider: new OpenRouterProvider(), ...(options.model ? { model: options.model } : {}), ...(options.modelTimeoutMs !== undefined ? { modelTimeoutMs: options.modelTimeoutMs } : {}), ...(options.runDirectory ? { runDirectory: options.runDirectory } : {}), ...(options.traceDirectory ? { traceDirectory: options.traceDirectory } : {}) });
-    const summary = { kind: "ForgeBuildSummary", schemaVersion: 1, run: result.run, outputRoot: result.outputRoot, verification: result.verification?.report.gate, context: result.contextSummary };
+    const summary = { kind: "ForgeBuildSummary", schemaVersion: 1, run: result.run, outputRoot: result.outputRoot, artifactPath: result.artifactPath, verification: result.verification?.report.gate, context: result.contextSummary };
     process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
-    if (result.run.status === "verified" && options.studio && result.intent && result.patchSet && result.verification && result.outputRoot) {
-      const discovery = await readStudioBridgeDiscovery();
-      process.stdout.write("Candidate passed static and semantic gates. Attaching the unchanged StudioProof protocol to the live seed place.\n");
-      const studio = await runStudioPatchVerification({ projectRoot: resolve(seedPath), candidateProjectRoot: result.outputRoot, candidatePatchSet: result.patchSet, candidateVerification: result.verification, contract: result.intent.mechanicContract, controlToken: discovery.controlToken, host: discovery.host, port: discovery.port, ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}), ...(options.traceDirectory ? { traceDirectory: options.traceDirectory } : {}), ...(options.proofDirectory ? { proofDirectory: options.proofDirectory } : {}), onReady: (address) => process.stdout.write(`Attaching to discovered Forge Studio bridge at http://${address.host}:${address.port}\nWaiting for Studio to connect and send a live snapshot...\n`), onMessage: printStudioVerificationMessage });
-      process.stdout.write(`${JSON.stringify({ kind: "ForgeStudioBuildResult", studioStatus: studio.status, proofBundleId: studio.proofBundle.id, traceId: studio.trace?.id }, null, 2)}\n`);
-      process.exitCode = studio.status === "verified" ? 0 : studio.status === "incomplete" ? 2 : 1;
-      return;
+    if (result.run.status === "verified") {
+      const hint = `Candidate passed local gates. Attach this sealed artifact to StudioProof with: forge candidate studio ${result.artifactPath}\n`;
+      if (options.formatJson) process.stderr.write(hint);
+      else process.stdout.write(hint);
     }
-    if (result.run.status === "verified") process.stdout.write("Candidate passed static and semantic gates. Run the same command with --studio after building/opening the fresh generated seed place and starting the user-owned bridge.\n");
     process.exitCode = result.run.status === "verified" ? 0 : result.run.status === "incomplete" ? 2 : 1;
   } catch (error) {
     process.stderr.write(`Forge build did not complete: ${error instanceof Error ? error.message : String(error)}\n`);
@@ -239,6 +262,10 @@ async function studioBridge(optionArgs: string[]): Promise<void> {
   }
   const bridge = new StudioBridgeServer();
   bridge.subscribe((message) => {
+    // Heartbeats maintain session liveness but are not operator events. Keeping
+    // them off the bridge console makes real pairing, patch, and proof events
+    // inspectable without changing transport behavior or retention.
+    if (message.type === "Heartbeat") return;
     process.stdout.write(`\n[studio -> forge] ${message.type}${message.sessionId ? ` (${message.sessionId})` : ""}\n${JSON.stringify(message, null, 2)}\n`);
   });
   const address = await bridge.listen();
@@ -259,19 +286,19 @@ async function studioBridge(optionArgs: string[]): Promise<void> {
 async function studioVerify(projectPath: string | undefined, optionArgs: string[]): Promise<void> {
   const options = parseStudioVerifyOptions(optionArgs);
   if (!projectPath || !options.valid) {
-    process.stderr.write("Usage: forge studio verify <project-path> [--contract <path>] [--timeout-ms <ms>] [--trace-dir <path>] [--proof-dir <path>] [--fault-client-reward]\n");
+    process.stderr.write("Usage: forge studio verify <project-path> [--contract <path>] [--timeout-ms <ms>] [--trace-dir <path>] [--proof-dir <path>] [--fault client-controlled-reward|client-controlled-payout]\n");
     process.exitCode = 2;
     return;
   }
   const projectRoot = resolve(projectPath);
   const contractPath = options.contractPath ?? resolve(projectRoot, "../contracts/MechanicContract.json");
   try {
-    process.stdout.write(options.faultClientReward
-      ? "INTENTIONAL FAULT MODE: CLIENT_CONTROLLED_REWARD\nExpected outcome: CF-007 fails, ProofBundle is rejected, and the Studio transaction rolls back.\n"
+    process.stdout.write(options.fault
+      ? `INTENTIONAL FAULT MODE: ${options.fault}\nExpected outcome: a contract-applicable assertion fails, the ProofBundle is rejected, and the Studio transaction rolls back.\n`
       : "Studio verification mode: SAFE CANDIDATE\n");
     const contract = await loadMechanicContract(contractPath);
     const discovery = await readStudioBridgeDiscovery();
-    const result = await runStudioVerification({ projectRoot, contract, controlToken: discovery.controlToken, host: discovery.host, port: discovery.port, ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}), ...(options.traceDirectory ? { traceDirectory: options.traceDirectory } : {}), ...(options.proofDirectory ? { proofDirectory: options.proofDirectory } : {}), ...(options.faultClientReward ? { faultClientReward: true } : {}), onReady: (address) => process.stdout.write(`Attaching to discovered Forge Studio bridge at http://${address.host}:${address.port}\nWaiting for Studio to connect and send a live snapshot...\n`), onMessage: printStudioVerificationMessage });
+    const result = await runStudioVerification({ projectRoot, contract, controlToken: discovery.controlToken, host: discovery.host, port: discovery.port, ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}), ...(options.traceDirectory ? { traceDirectory: options.traceDirectory } : {}), ...(options.proofDirectory ? { proofDirectory: options.proofDirectory } : {}), ...(options.fault ? { fault: options.fault } : {}), onReady: (address) => process.stdout.write(`Attaching to discovered Forge Studio bridge at http://${address.host}:${address.port}\nWaiting for Studio to connect and send a live snapshot...\n`), onMessage: printStudioVerificationMessage });
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     if (result.proofPath) process.stderr.write(`Forge Studio ProofBundle: ${result.proofPath}\n`);
     if (result.proofRunPath) process.stderr.write(`Forge Studio proof run: ${result.proofRunPath}\n`);
@@ -295,6 +322,7 @@ function printStudioVerificationMessage(message: PluginToBackendMessage): void {
   if (message.type === "StudioTestResult") {
     process.stdout.write(`[studio result] ${message.payload.status}: ${message.payload.assertions.length} correlated assertions\n`);
     for (const assertion of message.payload.assertions) process.stdout.write(`[studio assertion] ${assertion.assertionId}: ${assertion.status} (observed ${String(assertion.observed)})\n`);
+    for (const diagnostic of message.payload.diagnostics) process.stdout.write(`[studio diagnostic] ${diagnostic.context}/${diagnostic.level}: ${diagnostic.message}\n`);
     return;
   }
   if (message.type === "PluginError") {
@@ -389,30 +417,30 @@ function parseCandidateRepairOptions(values: string[]): { valid: boolean; model?
   return { valid: true, ...(model ? { model } : {}), ...(modelTimeoutMs !== undefined ? { modelTimeoutMs } : {}), ...(runDirectory ? { runDirectory } : {}), ...(traceDirectory ? { traceDirectory } : {}), ...(formatJson ? { formatJson: true as const } : {}) };
 }
 
-function parseCandidateStudioOptions(values: string[]): { valid: boolean; timeoutMs?: number; traceDirectory?: string; proofDirectory?: string } {
+function parseCandidateStudioOptions(values: string[]): { valid: boolean; timeoutMs?: number; traceDirectory?: string; proofDirectory?: string; fault?: StudioFaultMode } {
   let timeoutMs: number | undefined;
   let traceDirectory: string | undefined;
   let proofDirectory: string | undefined;
+  let fault: StudioFaultMode | undefined;
   for (let index = 0; index < values.length; index += 1) {
     const option = values[index];
     const next = values[index + 1];
     if (option === "--timeout-ms" && next && /^\d+$/.test(next)) { timeoutMs = Number(next); index += 1; continue; }
     if (option === "--trace-dir" && next) { traceDirectory = next; index += 1; continue; }
     if (option === "--proof-dir" && next) { proofDirectory = next; index += 1; continue; }
+    if (option === "--fault" && (next === "client-controlled-reward" || next === "client-controlled-payout")) { fault = next; index += 1; continue; }
     return { valid: false };
   }
-  return { valid: true, ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(traceDirectory ? { traceDirectory } : {}), ...(proofDirectory ? { proofDirectory } : {}) };
+  return { valid: true, ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(traceDirectory ? { traceDirectory } : {}), ...(proofDirectory ? { proofDirectory } : {}), ...(fault ? { fault } : {}) };
 }
 
-function parseBuildOptions(values: string[]): { valid: boolean; prompt?: string; model?: OpenRouterModel; modelTimeoutMs?: number; runDirectory?: string; traceDirectory?: string; proofDirectory?: string; studio?: boolean; timeoutMs?: number } {
+function parseBuildOptions(values: string[]): { valid: boolean; prompt?: string; model?: OpenRouterModel; modelTimeoutMs?: number; runDirectory?: string; traceDirectory?: string; formatJson?: boolean } {
   let prompt: string | undefined;
   let model: OpenRouterModel | undefined;
   let modelTimeoutMs: number | undefined;
   let runDirectory: string | undefined;
   let traceDirectory: string | undefined;
-  let proofDirectory: string | undefined;
-  let studio = false;
-  let timeoutMs: number | undefined;
+  let formatJson = false;
   for (let index = 0; index < values.length; index += 1) {
     const option = values[index];
     const next = values[index + 1];
@@ -421,21 +449,18 @@ function parseBuildOptions(values: string[]): { valid: boolean; prompt?: string;
     if (option === "--model-timeout-ms" && next && /^\d+$/.test(next)) { modelTimeoutMs = Number(next); index += 1; continue; }
     if (option === "--run-dir" && next) { runDirectory = next; index += 1; continue; }
     if (option === "--trace-dir" && next) { traceDirectory = next; index += 1; continue; }
-    if (option === "--proof-dir" && next) { proofDirectory = next; index += 1; continue; }
-    if (option === "--studio") { studio = true; continue; }
-    if (option === "--timeout-ms" && next && /^\d+$/.test(next)) { timeoutMs = Number(next); index += 1; continue; }
-    if (option === "--format" && next === "json") { index += 1; continue; }
+    if (option === "--format" && next === "json") { formatJson = true; index += 1; continue; }
     return { valid: false };
   }
-  return { valid: true, ...(prompt ? { prompt } : {}), ...(model ? { model } : {}), ...(modelTimeoutMs !== undefined ? { modelTimeoutMs } : {}), ...(runDirectory ? { runDirectory } : {}), ...(traceDirectory ? { traceDirectory } : {}), ...(proofDirectory ? { proofDirectory } : {}), ...(studio ? { studio: true } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}) };
+  return { valid: true, formatJson, ...(prompt ? { prompt } : {}), ...(model ? { model } : {}), ...(modelTimeoutMs !== undefined ? { modelTimeoutMs } : {}), ...(runDirectory ? { runDirectory } : {}), ...(traceDirectory ? { traceDirectory } : {}) };
 }
 
-function parseStudioVerifyOptions(values: string[]): { valid: boolean; contractPath?: string; timeoutMs?: number; traceDirectory?: string; proofDirectory?: string; faultClientReward?: boolean } {
+function parseStudioVerifyOptions(values: string[]): { valid: boolean; contractPath?: string; timeoutMs?: number; traceDirectory?: string; proofDirectory?: string; fault?: StudioFaultMode } {
   let contractPath: string | undefined;
   let timeoutMs: number | undefined;
   let traceDirectory: string | undefined;
   let proofDirectory: string | undefined;
-  let faultClientReward = false;
+  let fault: StudioFaultMode | undefined;
   for (let index = 0; index < values.length; index += 1) {
     const option = values[index];
     const next = values[index + 1];
@@ -443,14 +468,14 @@ function parseStudioVerifyOptions(values: string[]): { valid: boolean; contractP
     if (option === "--timeout-ms" && next && /^\d+$/.test(next)) { timeoutMs = Number(next); index += 1; continue; }
     if (option === "--trace-dir" && next) { traceDirectory = next; index += 1; continue; }
     if (option === "--proof-dir" && next) { proofDirectory = next; index += 1; continue; }
-    if (option === "--fault-client-reward") { faultClientReward = true; continue; }
+    if (option === "--fault" && (next === "client-controlled-reward" || next === "client-controlled-payout")) { fault = next; index += 1; continue; }
     return { valid: false };
   }
-  return { valid: true, ...(contractPath ? { contractPath } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(traceDirectory ? { traceDirectory } : {}), ...(proofDirectory ? { proofDirectory } : {}), ...(faultClientReward ? { faultClientReward: true } : {}) };
+  return { valid: true, ...(contractPath ? { contractPath } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(traceDirectory ? { traceDirectory } : {}), ...(proofDirectory ? { proofDirectory } : {}), ...(fault ? { fault } : {}) };
 }
 
 function usage(): void {
-  process.stderr.write("Usage:\n  forge verify <project-path> [--format json] [--trace-dir <path>]\n  forge repair <project-path> --contract <path> --out <directory> [--trace-dir <path>]\n  forge build <generated-seed-project> --prompt <creator request> [--model <model>] [--model-timeout-ms <ms>] [--run-dir <path>] [--trace-dir <path>] [--proof-dir <path>] [--studio] [--timeout-ms <ms>] [--format json]\n  forge candidate reverify <candidate-regression> [--trace-dir <path>] [--studio] [--timeout-ms <ms>] [--proof-dir <path>]\n  forge candidate repair <candidate-regression> [--model <model>] [--model-timeout-ms <ms>] [--run-dir <path>] [--trace-dir <path>] [--format json]\n  forge candidate studio <candidate-repair-artifact> [--timeout-ms <ms>] [--trace-dir <path>] [--proof-dir <path>]\n  forge trace show <trace-id> [--trace-dir <path>]\n  forge studio bridge\n  forge studio verify <project-path> [--contract <path>] [--timeout-ms <ms>] [--trace-dir <path>] [--proof-dir <path>] [--fault-client-reward]\n");
+  process.stderr.write("Usage:\n  forge verify <project-path> [--format json] [--trace-dir <path>]\n  forge repair <project-path> --contract <path> --out <directory> [--trace-dir <path>]\n  forge build <generated-seed-project> --prompt <creator request> [--model <model>] [--model-timeout-ms <ms>] [--run-dir <path>] [--trace-dir <path>] [--format json]\n  forge candidate reverify <candidate-regression> [--trace-dir <path>] [--studio] [--timeout-ms <ms>] [--proof-dir <path>]\n  forge candidate repair <candidate-regression> [--model <model>] [--model-timeout-ms <ms>] [--run-dir <path>] [--trace-dir <path>] [--format json]\n  forge candidate studio <candidate-artifact> [--fault client-controlled-reward|client-controlled-payout] [--timeout-ms <ms>] [--trace-dir <path>] [--proof-dir <path>]\n  forge trace show <trace-id> [--trace-dir <path>]\n  forge studio bridge\n  forge studio verify <project-path> [--contract <path>] [--timeout-ms <ms>] [--trace-dir <path>] [--proof-dir <path>] [--fault client-controlled-reward|client-controlled-payout]\n");
 }
 
 void main();

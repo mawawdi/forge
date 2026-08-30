@@ -1,6 +1,6 @@
 {
   "kind": "ForgeFixture",
-  "schemaVersion": 2,
+  "schemaVersion": 5,
   "name": "collect-fruit-studio",
   "luauRoots": ["src"],
   "instances": [
@@ -35,7 +35,7 @@
         { "category": "permission", "subjectRole": "interaction", "applicability": "required", "rationale": "The request is bound to the server-supplied player." },
         { "category": "ownership", "subjectRole": "target", "applicability": "not_applicable", "rationale": "Fruit is globally collectible." }
       ],
-      "mutation": { "field": "Inventory", "sourceExpression": "server_owned_reward", "authority": "server" },
+      "stateMutations": [{ "field": "Inventory", "sourceExpression": "server_owned_reward", "authority": "server", "operation": "increment" }, { "field": "Consumed", "sourceExpression": "server_owned_availability", "authority": "server", "operation": "set_true" }],
       "implementation": {
         "stateBindings": [
           { "role": "inventory", "subject": "player", "storage": "attribute", "name": "Inventory", "type": "number", "authority": "server" },

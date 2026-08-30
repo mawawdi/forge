@@ -1,0 +1,18 @@
+{
+  "kind": "MechanicContract",
+  "schemaVersion": 2,
+  "id": "contract_collect_fruit_seed",
+  "name": "CollectFruit",
+  "version": "1.0.0",
+  "coreLoopId": "loop_collect_sell_seed",
+  "playerGoal": "Request a collectible fruit and receive exactly its server-defined reward once.",
+  "preconditions": [{"id": "fruit_exists", "statement": "The requested fruit exists and is collectible.", "authority": "server"}],
+  "postconditions": [{"id": "fruit_consumed", "statement": "The server marks the fruit unavailable after collection.", "authority": "server"}],
+  "authorityModel": {"stateOwner": "server", "clientInputs": [{"position": 1, "role": "fruit_id", "type": "string", "trust": "untrusted"}, {"position": 2, "role": "claimed_reward", "type": "number", "trust": "untrusted"}], "validationRequirements": [{"category": "type", "subjectRole": "fruit_id", "applicability": "required", "rationale": "Fruit identity is untrusted."}], "stateMutations": [{"field": "Inventory", "authority": "server", "operation": "increment by Fruit.Reward"}]},
+  "persistentState": [{"field": "Inventory", "type": "number", "owner": "server", "durability": "session"}],
+  "uiOutputs": [],
+  "economyEffects": [{"currency": "fruit", "delta": "+ server-defined reward", "computedBy": "server"}],
+  "instrumentation": [{"event": "fruit.collected", "fields": ["fruit_id", "reward"], "privacyClass": "project"}],
+  "studioAssertions": ["CF-001", "CF-002", "CF-003", "CF-004", "CF-005", "CF-006", "CF-007"],
+  "risk": "critical"
+}

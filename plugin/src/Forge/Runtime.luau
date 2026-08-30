@@ -76,13 +76,16 @@ function Runtime.start(plugin: Plugin)
 		local decoded, value = pcall(function() return HttpService:JSONDecode(response.Body) end)
 		return decoded, value, response.StatusCode
 	end
-	local function send(kind: string, payload: any, requestId: string?, suppliedId: string?): (boolean, any?)
+	local function send(kind: string, payload: any, requestId: string?, suppliedId: string?): (boolean, any?, number)
 		local message = { kind = "StudioProtocolMessage", schemaVersion = Constants.PROTOCOL, direction = "plugin_to_backend", type = kind, messageId = suppliedId or messageId("msg"), sentAt = iso(), payload = payload }
 		if sessionId then message.sessionId = sessionId end
 		if requestId then message.requestId = requestId end
 		local ok, reason, status = request("POST", "/v1/message", message)
 		if not ok and status == 401 then state("DISCONNECTED", "Bridge session expired. Forge is cancelling local transaction state.") end
-		return ok, reason
+		return ok, reason, status
+	end
+	local function permanentBridgeRejection(status: any): boolean
+		return typeof(status) == "number" and status >= 400 and status < 500
 	end
 	local function pluginError(code: string, detail: string, retryable: boolean, requestId: string?)
 		if sessionId then send("PluginError", { code = code, message = string.sub(detail, 1, Constants.MAX_DIAGNOSTIC_CHARS), retryable = retryable }, requestId) end
@@ -92,10 +95,20 @@ function Runtime.start(plugin: Plugin)
 		local item = { kind = kind, payload = payload, requestId = requestId, messageId = messageId("proof") }
 		-- Preserve lifecycle/result order across transient HTTP failures. Once one
 		-- proof message enters the outbox, later messages queue behind it.
-		if #pending > 0 or not send(item.kind, item.payload, item.requestId, item.messageId) then
+		if #pending > 0 then
 			if #pending >= 16 then error("StudioProof result outbox exceeded its bound") end
 			table.insert(pending, item)
+			return false
 		end
+		local sent, failure, status = send(item.kind, item.payload, item.requestId, item.messageId)
+		if sent then return true end
+		if permanentBridgeRejection(status) then
+			pluginError("STUDIO_FAILURE", "Bridge rejected " .. item.kind .. ": " .. string.sub(tostring(failure), 1, Constants.MAX_DIAGNOSTIC_CHARS), false, item.requestId)
+			return nil
+		end
+		if #pending >= 16 then error("StudioProof result outbox exceeded its bound") end
+		table.insert(pending, item)
+		return false
 	end, state)
 
 	local function sendSnapshot(reason: string): boolean
@@ -272,8 +285,13 @@ function Runtime.start(plugin: Plugin)
 					for _, message in ipairs(response.messages) do local handled, failure = pcall(function() handle(message) end); if not handled then pluginError("SECURITY_REJECTION", tostring(failure), false, message.requestId) end end
 					while #pending > 0 do
 						local item = pending[1]
-						if not send(item.kind, item.payload, item.requestId, item.messageId) then break end
-						table.remove(pending, 1)
+						local sent, failure, status = send(item.kind, item.payload, item.requestId, item.messageId)
+						if sent then
+							table.remove(pending, 1)
+						elseif permanentBridgeRejection(status) then
+							table.remove(pending, 1)
+							pluginError("STUDIO_FAILURE", "Bridge rejected queued " .. item.kind .. ": " .. string.sub(tostring(failure), 1, Constants.MAX_DIAGNOSTIC_CHARS), false, item.requestId)
+						else break end
 					end
 				else
 					transportFailures += 1

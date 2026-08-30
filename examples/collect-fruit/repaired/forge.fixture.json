@@ -1,6 +1,6 @@
 {
   "kind": "ForgeFixture",
-  "schemaVersion": 2,
+  "schemaVersion": 5,
   "name": "collect-fruit-repaired",
   "luauRoots": ["src"],
   "instances": [
@@ -26,7 +26,7 @@
         { "category": "type", "subjectRole": "claimed_reward", "applicability": "required", "rationale": "The claim crosses an untrusted remote boundary." },
         { "category": "value", "subjectRole": "claimed_reward", "applicability": "required", "rationale": "Only positive requests are accepted." }
       ],
-      "mutation": { "field": "Inventory", "sourceExpression": "server_owned_reward", "authority": "server" },
+      "stateMutations": [{ "field": "Inventory", "sourceExpression": "server_owned_reward", "authority": "server", "operation": "increment" }],
       "implementation": {
         "stateBindings": [{ "role": "inventory", "subject": "player", "storage": "table", "name": "Inventory", "type": "number", "authority": "server" }],
         "constants": [{ "role": "server_reward", "type": "number", "value": 1 }],

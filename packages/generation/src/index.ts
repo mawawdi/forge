@@ -2,9 +2,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { applyPatchSet } from "../../patch-model/src/index.js";
-import { assertFixtureManifest, assertMechanicContract, assertMechanicImplementationSpec, assertPatchSet, contentHash, stableJson, type GenerationAttempt, type GenerationRun, type MechanicContract, type MechanicImplementationSpec, type ModelPatchProposal, type PatchSet, type VerificationReport } from "../../contracts/src/index.js";
+import { assertCoreLoop, assertFixtureManifest, assertGameIntent, assertMechanicContract, assertMechanicImplementationSpec, assertPatchSet, contentHash, stableJson, type CoreLoop, type GameIntent, type GenerationAttempt, type GenerationRun, type MechanicContract, type MechanicImplementationSpec, type ModelPatchProposal, type PatchSet, type VerificationReport } from "../../contracts/src/index.js";
 import { DeterministicContextCompiler, contextSummary } from "../../context-compiler/src/index.js";
-import { compileIntent, parseIntentDraft, type CompiledIntent } from "../../intent/src/index.js";
+import { compileCoreLoopExtension, compileIntent, parseCoreLoopExtensionDraft, parseIntentDraft, type CompiledIntent } from "../../intent/src/index.js";
 import { compileMechanicImplementationSpec, FilesystemProjectSourceAdapter } from "../../semantic-map/src/index.js";
 import { verifyProject, type VerificationRun } from "../../verifier/src/index.js";
 
@@ -60,15 +60,46 @@ export class OpenRouterProvider implements ModelProvider {
 }
 
 export interface GenerationPolicy {
-  allowedPaths: readonly ["src/server/CollectFruit.server.luau", "src/client/CollectFruitClient.client.luau"];
-  maxFiles: 2;
-  maxAddedLines: 240;
-  maxRemovedLines: 20;
-  maxSourceBytes: 24_576;
+  mechanicName: "CollectFruit" | "SellInventory";
+  allowedPaths: readonly string[];
+  requiredPaths: readonly string[];
+  maxFiles: number;
+  maxAddedLines: number;
+  maxRemovedLines: number;
+  maxSourceBytes: number;
 }
 
 export const COLLECT_FRUIT_GENERATION_POLICY: GenerationPolicy = {
-  allowedPaths: ["src/server/CollectFruit.server.luau", "src/client/CollectFruitClient.client.luau"], maxFiles: 2, maxAddedLines: 240, maxRemovedLines: 20, maxSourceBytes: 24_576
+  mechanicName: "CollectFruit", allowedPaths: ["src/server/CollectFruit.server.luau", "src/client/CollectFruitClient.client.luau"], requiredPaths: ["src/server/CollectFruit.server.luau", "src/client/CollectFruitClient.client.luau"], maxFiles: 2, maxAddedLines: 240, maxRemovedLines: 20, maxSourceBytes: 24_576
+};
+
+export const SELL_INVENTORY_GENERATION_POLICY: GenerationPolicy = {
+  mechanicName: "SellInventory",
+  allowedPaths: [
+    "src/server/SellInventory.server.luau",
+    "src/client/SellInventoryClient.client.luau",
+    "src/ReplicatedStorage/ClientActions/SellInventoryAction.luau",
+    "src/server/CollectFruit.server.luau",
+    "src/client/CollectFruitClient.client.luau",
+    "src/ReplicatedStorage/ClientActions/CollectFruitAction.luau"
+  ],
+  requiredPaths: [
+    "src/server/SellInventory.server.luau",
+    "src/client/SellInventoryClient.client.luau",
+    "src/ReplicatedStorage/ClientActions/SellInventoryAction.luau",
+    "src/server/CollectFruit.server.luau",
+    "src/client/CollectFruitClient.client.luau",
+    "src/ReplicatedStorage/ClientActions/CollectFruitAction.luau"
+  ],
+  maxFiles: 6,
+  maxAddedLines: 520,
+  maxRemovedLines: 140,
+  maxSourceBytes: 48_000
+};
+
+export const MECHANIC_DEFINITIONS: Readonly<Record<GenerationPolicy["mechanicName"], GenerationPolicy>> = {
+  CollectFruit: COLLECT_FRUIT_GENERATION_POLICY,
+  SellInventory: SELL_INVENTORY_GENERATION_POLICY
 };
 
 export interface GenerationBuildOptions {
@@ -88,6 +119,8 @@ export interface GenerationBuildResult {
   verification?: VerificationRun;
   outputRoot?: string;
   contextSummary?: ReturnType<typeof contextSummary>;
+  artifact?: CandidateArtifact;
+  artifactPath?: string;
 }
 
 export interface CandidateRegression {
@@ -153,24 +186,34 @@ export interface CandidateRepairResult {
   patchSet: PatchSet;
   verification: VerificationRun;
   contextSummary: ReturnType<typeof contextSummary>;
-  artifact: CandidateRepairArtifact;
+  artifact: CandidateArtifact;
   artifactPath: string;
 }
 
-export interface CandidateRepairArtifact {
-  kind: "CandidateRepairArtifact";
+export interface CandidateArtifact {
+  kind: "CandidateArtifact";
   schemaVersion: 1;
   id: string;
-  regressionId: string;
-  createdAt: string;
-  source: {
-    generationRunId: string;
-    generationAttemptId: string;
-    buildTraceId: string;
-    modelResponseHash: string;
-    patchSetId: string;
-    sourceHashes: Record<string, string>;
+  origin: {
+    kind: "initial_generation" | "regression_repair";
+    regressionId?: string;
+    source?: {
+      generationRunId: string;
+      generationAttemptId: string;
+      buildTraceId: string;
+      modelResponseHash: string;
+      patchSetId: string;
+      sourceHashes: Record<string, string>;
+    };
   };
+  lineage: {
+    gameIntent?: GameIntent;
+    gameIntentHash?: string;
+    coreLoop?: CoreLoop;
+    coreLoopHash?: string;
+    contextCompositionHash: string;
+  };
+  createdAt: string;
   model: {
     provider: "openrouter";
     name: OpenRouterModel;
@@ -193,8 +236,8 @@ export interface CandidateRepairArtifact {
   artifactHash: string;
 }
 
-export interface LoadedCandidateRepairArtifact {
-  artifact: CandidateRepairArtifact;
+export interface LoadedCandidateArtifact {
+  artifact: CandidateArtifact;
   verification: VerificationRun;
 }
 
@@ -289,10 +332,11 @@ export async function repairCandidateRegression(options: CandidateRepairOptions)
   const repairAttempt = attempt("model_repair", patchSet, verification.report, { provider: "openrouter", name: model, requestHash: modelResult.requestHash, responseHash: modelResult.responseHash });
   const artifactPath = join(runDirectory, `${id}.json`);
   const outputSourceHashes = Object.fromEntries(await Promise.all(COLLECT_FRUIT_GENERATION_POLICY.allowedPaths.map(async (path) => [path, contentHash(await readFile(join(outputRoot, path), "utf8"))])));
-  const artifactPayload: Omit<CandidateRepairArtifact, "artifactHash"> = {
-    kind: "CandidateRepairArtifact", schemaVersion: 1, id, regressionId: metadata.id,
+  const artifactPayload: Omit<CandidateArtifact, "artifactHash"> = {
+    kind: "CandidateArtifact", schemaVersion: 1, id,
+    origin: { kind: "regression_repair", regressionId: metadata.id, source: { generationRunId: metadata.sourceGenerationRunId, generationAttemptId: metadata.sourceGenerationAttemptId, buildTraceId: metadata.sourceBuildTraceId, modelResponseHash: metadata.model.responseHash, patchSetId: metadata.sourcePatchSetId, sourceHashes: metadata.sourceHashes } },
+    lineage: { contextCompositionHash: contextSummary(context).compositionHash },
     createdAt: new Date().toISOString(),
-    source: { generationRunId: metadata.sourceGenerationRunId, generationAttemptId: metadata.sourceGenerationAttemptId, buildTraceId: metadata.sourceBuildTraceId, modelResponseHash: metadata.model.responseHash, patchSetId: metadata.sourcePatchSetId, sourceHashes: metadata.sourceHashes },
     model: { provider: "openrouter", name: model, requestHash: modelResult.requestHash, responseHash: modelResult.responseHash, usage: modelResult.usage },
     attempt: repairAttempt,
     seedRoot: source.seedRoot,
@@ -307,7 +351,7 @@ export async function repairCandidateRegression(options: CandidateRepairOptions)
     verification: { report: verification.report, traceId: verification.trace.id },
     context: summary
   };
-  const artifact: CandidateRepairArtifact = { ...artifactPayload, artifactHash: contentHash(stableJson(artifactPayload)) };
+  const artifact: CandidateArtifact = { ...artifactPayload, artifactHash: contentHash(stableJson(artifactPayload)) };
   await persistPrivateArtifact(artifactPath, artifact);
   return {
     kind: "CandidateRepairRun", schemaVersion: 1, id, regressionId: metadata.id,
@@ -322,28 +366,29 @@ export async function repairCandidateRegression(options: CandidateRepairOptions)
  * only a claim until its envelope, referenced source bytes, seed preconditions,
  * and current local verification all agree.
  */
-export async function loadCandidateRepairArtifact(artifactPath: string, traceDirectory?: string): Promise<LoadedCandidateRepairArtifact> {
-  const artifact = parseCandidateRepairArtifact(JSON.parse(await readFile(resolve(artifactPath), "utf8")) as unknown);
+export async function loadCandidateArtifact(artifactPath: string, traceDirectory?: string): Promise<LoadedCandidateArtifact> {
+  const artifact = parseCandidateArtifact(JSON.parse(await readFile(resolve(artifactPath), "utf8")) as unknown);
   const { artifactHash, ...payload } = artifact;
   const observedArtifactHash = contentHash(stableJson(payload));
-  if (artifactHash !== observedArtifactHash) throw new Error(`Candidate repair artifact hash mismatch: expected ${artifactHash}, observed ${observedArtifactHash}`);
+  if (artifactHash !== observedArtifactHash) throw new Error(`Candidate artifact hash mismatch: expected ${artifactHash}, observed ${observedArtifactHash}`);
 
   assertMechanicContract(artifact.contract);
   assertMechanicImplementationSpec(artifact.implementationSpec);
   assertPatchSet(artifact.patchSet);
-  if (artifact.contractHash !== contentHash(stableJson(artifact.contract))) throw new Error("Candidate repair contract hash mismatch");
-  if (artifact.implementationSpecHash !== contentHash(stableJson(artifact.implementationSpec))) throw new Error("Candidate repair implementation spec hash mismatch");
-  if (artifact.patchSetHash !== contentHash(stableJson(artifact.patchSet))) throw new Error("Candidate repair PatchSet hash mismatch");
-  if (artifact.implementationSpec.mechanicContractId !== artifact.contract.id || artifact.patchSet.mechanicContractId !== artifact.contract.id) throw new Error("Candidate repair contract linkage mismatch");
-  if (artifact.attempt.type !== "model_repair" || artifact.attempt.patchSetId !== artifact.patchSet.id || artifact.attempt.verificationStatus !== artifact.verification.report.gate.status || artifact.attempt.model?.provider !== artifact.model.provider || artifact.attempt.model.name !== artifact.model.name || artifact.attempt.model.requestHash !== artifact.model.requestHash || artifact.attempt.model.responseHash !== artifact.model.responseHash) throw new Error("Candidate repair attempt linkage mismatch");
-  if (artifact.patchSet.provenance.model !== artifact.model.name) throw new Error("Candidate repair model provenance mismatch");
-  if (artifact.verification.report.gate.status !== "verified") throw new Error(`Candidate repair artifact is not eligible for Studio: local gate is ${artifact.verification.report.gate.status}`);
+  if (artifact.contractHash !== contentHash(stableJson(artifact.contract))) throw new Error("Candidate artifact contract hash mismatch");
+  if (artifact.implementationSpecHash !== contentHash(stableJson(artifact.implementationSpec))) throw new Error("Candidate artifact implementation spec hash mismatch");
+  if (artifact.patchSetHash !== contentHash(stableJson(artifact.patchSet))) throw new Error("Candidate artifact PatchSet hash mismatch");
+  if (artifact.implementationSpec.mechanicContractId !== artifact.contract.id || artifact.patchSet.mechanicContractId !== artifact.contract.id) throw new Error("Candidate artifact contract linkage mismatch");
+  if (artifact.attempt.patchSetId !== artifact.patchSet.id || artifact.attempt.verificationStatus !== artifact.verification.report.gate.status || artifact.attempt.model?.provider !== artifact.model.provider || artifact.attempt.model.name !== artifact.model.name || artifact.attempt.model.requestHash !== artifact.model.requestHash || artifact.attempt.model.responseHash !== artifact.model.responseHash) throw new Error("Candidate artifact attempt linkage mismatch");
+  if (artifact.patchSet.provenance.model !== artifact.model.name) throw new Error("Candidate artifact model provenance mismatch");
+  if (artifact.verification.report.gate.status !== "verified") throw new Error(`Candidate artifact is not eligible for Studio: local gate is ${artifact.verification.report.gate.status}`);
 
-  const expectedPaths = [...COLLECT_FRUIT_GENERATION_POLICY.allowedPaths].sort();
+  const policy = policyForMechanic(artifact.contract.name);
+  const expectedPaths = [...artifact.patchSet.operations.map((operation) => operation.path)].sort();
   const operationPaths = artifact.patchSet.operations.map((operation) => operation.path).sort();
-  if (artifact.patchSet.operations.length !== expectedPaths.length || operationPaths.some((path, index) => path !== expectedPaths[index])) throw new Error("Candidate repair artifact does not contain the complete bounded source target set");
-  if (artifact.patchSet.operations.some((operation) => operation.type !== "replace_text")) throw new Error("Candidate repair artifact contains an unsupported PatchSet operation");
-  if (Object.keys(artifact.outputSourceHashes).sort().some((path, index) => path !== expectedPaths[index]) || Object.keys(artifact.outputSourceHashes).length !== expectedPaths.length) throw new Error("Candidate repair artifact has an invalid output source hash set");
+  if (artifact.patchSet.operations.length > policy.maxFiles || !policy.requiredPaths.every((path) => operationPaths.includes(path)) || operationPaths.some((path) => !policy.allowedPaths.includes(path))) throw new Error("Candidate artifact does not contain the allowed complete source target set");
+  if (artifact.patchSet.operations.some((operation) => operation.type !== "replace_text")) throw new Error("Candidate artifact contains an unsupported PatchSet operation");
+  if (Object.keys(artifact.outputSourceHashes).sort().some((path, index) => path !== expectedPaths[index]) || Object.keys(artifact.outputSourceHashes).length !== expectedPaths.length) throw new Error("Candidate artifact has an invalid output source hash set");
 
   const seedRoot = resolve(artifact.seedRoot);
   const outputRoot = resolve(artifact.outputRoot);
@@ -351,15 +396,15 @@ export async function loadCandidateRepairArtifact(artifactPath: string, traceDir
   assertFixtureManifest(seedManifestValue);
   const seedMap = await new FilesystemProjectSourceAdapter().load({ root: seedRoot, manifest: seedManifestValue });
   const seedSnapshot = new FilesystemProjectSourceAdapter().snapshot(seedMap);
-  if (artifact.patchSet.projectHash !== seedSnapshot.sourceHash) throw new Error("Candidate repair seed snapshot no longer matches the PatchSet precondition");
+  if (artifact.patchSet.projectHash !== seedSnapshot.sourceHash) throw new Error("Candidate artifact seed snapshot no longer matches the PatchSet precondition");
 
   for (const operation of artifact.patchSet.operations) {
-    if (operation.type !== "replace_text") throw new Error("Candidate repair artifact contains an unsupported PatchSet operation");
-    if (contentHash(operation.before) !== operation.beforeHash) throw new Error(`Candidate repair PatchSet beforeHash is invalid: ${operation.path}`);
+    if (operation.type !== "replace_text") throw new Error("Candidate artifact contains an unsupported PatchSet operation");
+    if (contentHash(operation.before) !== operation.beforeHash) throw new Error(`Candidate artifact PatchSet beforeHash is invalid: ${operation.path}`);
     const seedSource = await readFile(join(seedRoot, operation.path), "utf8");
-    if (seedSource !== operation.before) throw new Error(`Candidate repair seed source changed: ${operation.path}`);
+    if (seedSource !== operation.before) throw new Error(`Candidate artifact seed source changed: ${operation.path}`);
     const outputSource = await readFile(join(outputRoot, operation.path), "utf8");
-    if (outputSource !== operation.after || contentHash(outputSource) !== artifact.outputSourceHashes[operation.path]) throw new Error(`Candidate repair output source changed: ${operation.path}`);
+    if (outputSource !== operation.after || contentHash(outputSource) !== artifact.outputSourceHashes[operation.path]) throw new Error(`Candidate artifact output source changed: ${operation.path}`);
   }
 
   const verification = await verifyProject(outputRoot, {
@@ -367,16 +412,16 @@ export async function loadCandidateRepairArtifact(artifactPath: string, traceDir
     traceReferences: {
       mechanicContractId: artifact.contract.id,
       patchSetId: artifact.patchSet.id,
-      benchmarkCaseId: artifact.regressionId,
-      generationRunId: artifact.source.generationRunId,
+      ...(artifact.origin.regressionId ? { benchmarkCaseId: artifact.origin.regressionId } : {}),
+      ...(artifact.origin.source ? { generationRunId: artifact.origin.source.generationRunId } : {}),
       generationAttemptId: artifact.attempt.id,
       modelResponseHash: artifact.model.responseHash
     },
     traceComponents: { model: { provider: artifact.model.provider, name: artifact.model.name, configurationHash: contentHash(stableJson({ requestHash: artifact.model.requestHash, responseHash: artifact.model.responseHash })) } },
     outcomeOverrides: { attempts: 0, modelRepairs: 0, modelUsage: { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 } }
   });
-  if (verification.report.projectHash !== artifact.verification.report.projectHash) throw new Error("Candidate repair output project hash changed after artifact creation");
-  if (verification.report.gate.status !== "verified") throw new Error(`Candidate repair no longer passes the current local gate: ${verification.report.gate.reasons.join(", ")}`);
+  if (verification.report.projectHash !== artifact.verification.report.projectHash) throw new Error("Candidate artifact output project hash changed after artifact creation");
+  if (verification.report.gate.status !== "verified") throw new Error(`Candidate artifact no longer passes the current local gate: ${verification.report.gate.reasons.join(", ")}`);
   return { artifact: { ...artifact, seedRoot, outputRoot }, verification };
 }
 
@@ -397,21 +442,29 @@ export async function buildGeneratedCandidate(options: GenerationBuildOptions): 
   const attempts: GenerationAttempt[] = [];
   let modelCalls = 0;
   try {
-    const intentResult = await options.provider.generate({ purpose: "intent", model, timeoutMs, schema: intentDraftSchema(), prompt: intentPrompt(options.prompt) });
-    modelCalls += 1;
-    const usages: ModelResult["usage"][] = [intentResult.usage];
-    const intent = compileIntent(options.prompt, parseIntentDraft(intentResult.content));
-    const adapter = new FilesystemProjectSourceAdapter();
     const manifest = JSON.parse(await readFile(join(root, "forge.fixture.json"), "utf8")) as unknown;
     assertFixtureManifest(manifest);
+    const extension = manifest.generationTarget;
+    const intentResult = await options.provider.generate({ purpose: "intent", model, timeoutMs, schema: extension ? coreLoopExtensionDraftSchema() : intentDraftSchema(), prompt: extension ? coreLoopExtensionPrompt(options.prompt) : intentPrompt(options.prompt) });
+    modelCalls += 1;
+    const usages: ModelResult["usage"][] = [intentResult.usage];
+    let intent: CompiledIntent;
+    let priorContext: { gameIntent: unknown; coreLoop: unknown; verifiedMechanics: Array<{ name: string; contract: unknown; proofBundleId: string; sourceHashes: Record<string, string> }> } | undefined;
+    if (extension) {
+      const compiled = compileCoreLoopExtension(options.prompt, parseCoreLoopExtensionDraft(intentResult.content), await readGameIntent(root, extension.gameIntentPath), await readCoreLoop(root, extension.coreLoopPath), extension.targetNodeId);
+      intent = compiled;
+      priorContext = { gameIntent: compiled.priorGameIntent, coreLoop: compiled.priorCoreLoop, verifiedMechanics: await Promise.all(extension.verifiedMechanics.map(async (entry) => ({ name: entry.name, contract: await readMechanicContract(root, entry.contractPath), proofBundleId: entry.proofBundleId, sourceHashes: entry.sourceHashes }))) };
+    } else intent = compileIntent(options.prompt, parseIntentDraft(intentResult.content));
+    const policy = policyForMechanic(intent.mechanicContract.name);
+    const adapter = new FilesystemProjectSourceAdapter();
     const map = await adapter.load({ root, manifest });
-    const implementationSpec = compileMechanicImplementationSpec(map, intent.mechanicContract, { allowedPaths: [...COLLECT_FRUIT_GENERATION_POLICY.allowedPaths], allowedPatchOperations: ["replace_text"] });
-    const context = await new DeterministicContextCompiler().compile({ semanticMap: map, mechanicContract: intent.mechanicContract, mechanicImplementationSpec: implementationSpec, verificationIssues: [], requestedChange: "Implement the Forge-owned mechanic contract while preserving the exact project ABI and state interface.", generationPolicy: { allowedPaths: [...COLLECT_FRUIT_GENERATION_POLICY.allowedPaths], maxFiles: COLLECT_FRUIT_GENERATION_POLICY.maxFiles, maxAddedLines: COLLECT_FRUIT_GENERATION_POLICY.maxAddedLines, maxRemovedLines: COLLECT_FRUIT_GENERATION_POLICY.maxRemovedLines, maxSourceBytes: COLLECT_FRUIT_GENERATION_POLICY.maxSourceBytes }, allowedSourcePaths: [...COLLECT_FRUIT_GENERATION_POLICY.allowedPaths] });
-    const patchResult = await options.provider.generate({ purpose: "patch", model, timeoutMs, schema: patchProposalSchema(), prompt: patchPrompt(context.modelReadyContent, intent.mechanicContract) });
+    const implementationSpec = compileMechanicImplementationSpec(map, intent.mechanicContract, { allowedPaths: [...policy.allowedPaths], allowedPatchOperations: ["replace_text"] });
+    let context = await new DeterministicContextCompiler().compile({ semanticMap: map, mechanicContract: intent.mechanicContract, mechanicImplementationSpec: implementationSpec, verificationIssues: [], requestedChange: "Implement the Forge-owned mechanic contract while preserving the exact project ABI and state interface.", generationPolicy: generationPolicyContext(policy), allowedSourcePaths: [...policy.allowedPaths], ...(priorContext ?? {}) });
+    let patchResult = await options.provider.generate({ purpose: "patch", model, timeoutMs, schema: patchProposalSchema(policy), prompt: patchPrompt(context.modelReadyContent, intent.mechanicContract) });
     modelCalls += 1;
     usages.push(patchResult.usage);
     const proposal = parseModelPatchProposal(patchResult.content, intent.mechanicContract.id);
-    let patchSet = await compilePatchProposal(root, proposal, intent.mechanicContract, implementationSpec, { model, promptHash: contentHash(options.prompt) });
+    let patchSet = await compilePatchProposal(root, proposal, intent.mechanicContract, implementationSpec, { model, promptHash: contentHash(options.prompt) }, policy);
     let outputRoot = join(runDirectory, runId, "candidate");
     await applyPatchSet(root, patchSet, outputRoot);
     let verification = await generatedVerification(outputRoot, intent, patchSet, model, contextSummary(context), modelCalls, usages, options.traceDirectory);
@@ -421,23 +474,28 @@ export async function buildGeneratedCandidate(options: GenerationBuildOptions): 
       const candidateManifestValue: unknown = JSON.parse(await readFile(join(outputRoot, "forge.fixture.json"), "utf8"));
       assertFixtureManifest(candidateManifestValue);
       const candidateMap = await adapter.load({ root: outputRoot, manifest: candidateManifestValue });
-      const repairContext = await new DeterministicContextCompiler().compile({ semanticMap: candidateMap, mechanicContract: intent.mechanicContract, mechanicImplementationSpec: implementationSpec, verificationIssues: verification.report.issues, requestedChange: "Repair the candidate without changing the Forge-owned project ABI or state representation.", patchSet, generationPolicy: { allowedPaths: [...COLLECT_FRUIT_GENERATION_POLICY.allowedPaths], maxFiles: COLLECT_FRUIT_GENERATION_POLICY.maxFiles, maxAddedLines: COLLECT_FRUIT_GENERATION_POLICY.maxAddedLines, maxRemovedLines: COLLECT_FRUIT_GENERATION_POLICY.maxRemovedLines, maxSourceBytes: COLLECT_FRUIT_GENERATION_POLICY.maxSourceBytes }, allowedSourcePaths: [...COLLECT_FRUIT_GENERATION_POLICY.allowedPaths] });
-      const repairResult = await options.provider.generate({ purpose: "repair", model, timeoutMs, schema: patchProposalSchema(), prompt: repairPrompt(repairContext.modelReadyContent) });
+      context = await new DeterministicContextCompiler().compile({ semanticMap: candidateMap, mechanicContract: intent.mechanicContract, mechanicImplementationSpec: implementationSpec, verificationIssues: verification.report.issues, requestedChange: "Repair the candidate without changing the Forge-owned project ABI or state representation.", patchSet, generationPolicy: generationPolicyContext(policy), allowedSourcePaths: [...policy.allowedPaths], ...(priorContext ?? {}) });
+      const repairResult = await options.provider.generate({ purpose: "repair", model, timeoutMs, schema: patchProposalSchema(policy), prompt: repairPrompt(context.modelReadyContent) });
       modelCalls += 1;
       usages.push(repairResult.usage);
       const repairProposal = parseModelPatchProposal(repairResult.content, intent.mechanicContract.id);
-      const repairedPatch = await compilePatchProposal(root, repairProposal, intent.mechanicContract, implementationSpec, { model, promptHash: contentHash(options.prompt) });
+      const repairedPatch = await compilePatchProposal(root, repairProposal, intent.mechanicContract, implementationSpec, { model, promptHash: contentHash(options.prompt) }, policy);
       const repairedRoot = join(runDirectory, runId, "model-repaired");
       await applyPatchSet(root, repairedPatch, repairedRoot);
       const repairedVerification = await generatedVerification(repairedRoot, intent, repairedPatch, model, contextSummary(context), modelCalls, usages, options.traceDirectory);
       attempts.push(attempt("model_repair", repairedPatch, repairedVerification.report, { provider: "openrouter", name: model, requestHash: repairResult.requestHash, responseHash: repairResult.responseHash }));
-      patchSet = repairedPatch; outputRoot = repairedRoot; verification = repairedVerification;
+      patchSet = repairedPatch; outputRoot = repairedRoot; verification = repairedVerification; patchResult = repairResult;
     }
     const status = verification.report.gate.status;
     const classification = status !== "verified" ? null : attempts.some((entry) => entry.type === "model_repair") ? "MODEL_REPAIRED_VERIFIED" : attempts.some((entry) => entry.type === "deterministic_repair") ? "DETERMINISTICALLY_REPAIRED_VERIFIED" : "FIRST_PASS_VERIFIED";
     const run: GenerationRun = { kind: "GenerationRun", schemaVersion: 1, id: runId, status, classification, gameIntentId: intent.gameIntent.id, coreLoopId: intent.coreLoop.id, mechanicContractId: intent.mechanicContract.id, patchSetId: patchSet.id, attempts, traceId: verification.trace.id, generatedAt: new Date().toISOString() };
     await persistPrivateRun(runDirectory, run, { intent, patchSet, verificationReport: verification.report, modelUsage: { calls: modelCalls } });
-    return { run, intent, patchSet, verification, outputRoot, contextSummary: contextSummary(context) };
+    const outputSourceHashes = Object.fromEntries(await Promise.all(patchSet.operations.map(async (operation) => [operation.path, contentHash(await readFile(join(outputRoot, operation.path), "utf8"))])));
+    const artifactPayload: Omit<CandidateArtifact, "artifactHash"> = { kind: "CandidateArtifact", schemaVersion: 1, id: `candidate_${contentHash(`${runId}|${patchSet.id}`).slice(0, 24)}`, origin: { kind: "initial_generation" }, lineage: { gameIntent: intent.gameIntent, gameIntentHash: contentHash(stableJson(intent.gameIntent)), coreLoop: intent.coreLoop, coreLoopHash: contentHash(stableJson(intent.coreLoop)), contextCompositionHash: contextSummary(context).compositionHash }, createdAt: new Date().toISOString(), model: { provider: "openrouter", name: model, requestHash: patchResult.requestHash, responseHash: patchResult.responseHash, usage: patchResult.usage }, attempt: attempts.at(-1)!, seedRoot: root, outputRoot, contract: intent.mechanicContract, contractHash: contentHash(stableJson(intent.mechanicContract)), implementationSpec, implementationSpecHash: contentHash(stableJson(implementationSpec)), patchSet, patchSetHash: contentHash(stableJson(patchSet)), outputSourceHashes, verification: { report: verification.report, traceId: verification.trace.id }, context: contextSummary(context) };
+    const artifact: CandidateArtifact = { ...artifactPayload, artifactHash: contentHash(stableJson(artifactPayload)) };
+    const artifactPath = join(runDirectory, `${artifact.id}.json`);
+    await persistPrivateArtifact(artifactPath, artifact);
+    return { run, intent, patchSet, verification, outputRoot, contextSummary: contextSummary(context), artifact, artifactPath };
   } catch (error) {
     const run: GenerationRun = { kind: "GenerationRun", schemaVersion: 1, id: runId, status: "incomplete", classification: null, attempts, generatedAt: new Date().toISOString() };
     await persistPrivateRun(runDirectory, run, { error: error instanceof Error ? error.message : String(error), modelCalls });
@@ -445,13 +503,13 @@ export async function buildGeneratedCandidate(options: GenerationBuildOptions): 
   }
 }
 
-export async function compilePatchProposal(root: string, proposal: ModelPatchProposal, contract: MechanicContract, implementationSpec: MechanicImplementationSpec, provenance: { model: string; promptHash: string }): Promise<PatchSet> {
+export async function compilePatchProposal(root: string, proposal: ModelPatchProposal, contract: MechanicContract, implementationSpec: MechanicImplementationSpec, provenance: { model: string; promptHash: string }, policy: GenerationPolicy = policyForMechanic(contract.name)): Promise<PatchSet> {
   const parsed = validateModelPatchProposal(proposal, contract.id);
   if (implementationSpec.mechanicContractId !== contract.id) throw new Error("MechanicImplementationSpec contract linkage mismatch");
-  if (parsed.operations.length !== 2 || new Set(parsed.operations.map((operation) => operation.path)).size !== 2) throw new Error("Generation policy requires exactly one server and one client replacement");
+  if (parsed.operations.length < policy.requiredPaths.length || parsed.operations.length > policy.maxFiles || new Set(parsed.operations.map((operation) => operation.path)).size !== parsed.operations.length || !policy.requiredPaths.every((path) => parsed.operations.some((operation) => operation.path === path)) || parsed.operations.some((operation) => !policy.allowedPaths.includes(operation.path))) throw new Error(`Generation policy requires the complete bounded ${policy.mechanicName} source target set`);
   const operations = await Promise.all(parsed.operations.map(async (operation) => {
     if (!implementationSpec.sourceTargets.some((target) => target.path === operation.path) || !implementationSpec.allowedPatchOperations.includes("replace_text")) throw new Error(`MechanicImplementationSpec rejects path or operation: ${operation.path}`);
-    if (operation.after.length > COLLECT_FRUIT_GENERATION_POLICY.maxSourceBytes || forbiddenSource(operation.after)) throw new Error(`Generation policy rejects source for ${operation.path}`);
+    if (operation.after.length > policy.maxSourceBytes || forbiddenSource(operation.after)) throw new Error(`Generation policy rejects source for ${operation.path}`);
     if (implementationSpec.remote.preserveExisting && /Instance\.new\s*\(\s*["']Remote(?:Event|Function)["']\s*\)/.test(operation.after)) throw new Error(`MechanicImplementationSpec requires preserving ${implementationSpec.remote.path}`);
     const before = await readFile(join(resolve(root), operation.path), "utf8");
     return { type: "replace_text" as const, path: operation.path, beforeHash: contentHash(before), before, after: operation.after };
@@ -460,7 +518,7 @@ export async function compilePatchProposal(root: string, proposal: ModelPatchPro
   const manifest = JSON.parse(await readFile(join(absoluteRoot, "forge.fixture.json"), "utf8")) as Parameters<FilesystemProjectSourceAdapter["load"]>[0]["manifest"];
   const map = await new FilesystemProjectSourceAdapter().load({ root: absoluteRoot, manifest });
   const projectHash = new FilesystemProjectSourceAdapter().snapshot(map).sourceHash;
-  const patchSet: PatchSet = { kind: "PatchSet", schemaVersion: 1, id: `patch_generated_${contentHash(stableJson({ projectHash, after: operations.map((operation) => operation.after) })).slice(0, 24)}`, projectHash, mechanicContractId: contract.id, operations, expectedEffects: [{ statement: "Implements the Forge-owned CollectFruit server authority boundary.", evidence: "contract" }, { statement: "Creates the real client request boundary for StudioProof.", evidence: "preflight" }], provenance: { model: provenance.model, promptHash: provenance.promptHash, generatedAt: new Date().toISOString() }, bounds: { maxFiles: 2, maxAddedLines: 240, maxRemovedLines: 20 } };
+  const patchSet: PatchSet = { kind: "PatchSet", schemaVersion: 1, id: `patch_generated_${contentHash(stableJson({ projectHash, after: operations.map((operation) => operation.after) })).slice(0, 24)}`, projectHash, mechanicContractId: contract.id, operations, expectedEffects: [{ statement: `Implements the Forge-owned ${contract.name} server authority boundary.`, evidence: "contract" }, { statement: "Preserves the declared client/server ABI for StudioProof.", evidence: "preflight" }], provenance: { model: provenance.model, promptHash: provenance.promptHash, generatedAt: new Date().toISOString() }, bounds: { maxFiles: policy.maxFiles, maxAddedLines: policy.maxAddedLines, maxRemovedLines: policy.maxRemovedLines } };
   return patchSet;
 }
 
@@ -506,8 +564,8 @@ async function generatedVerification(outputRoot: string, intent: CompiledIntent,
   });
 }
 
-function generationPolicyContext(): { allowedPaths: string[]; maxFiles: number; maxAddedLines: number; maxRemovedLines: number; maxSourceBytes: number } {
-  return { allowedPaths: [...COLLECT_FRUIT_GENERATION_POLICY.allowedPaths], maxFiles: COLLECT_FRUIT_GENERATION_POLICY.maxFiles, maxAddedLines: COLLECT_FRUIT_GENERATION_POLICY.maxAddedLines, maxRemovedLines: COLLECT_FRUIT_GENERATION_POLICY.maxRemovedLines, maxSourceBytes: COLLECT_FRUIT_GENERATION_POLICY.maxSourceBytes };
+function generationPolicyContext(policy: GenerationPolicy = COLLECT_FRUIT_GENERATION_POLICY): { allowedPaths: string[]; maxFiles: number; maxAddedLines: number; maxRemovedLines: number; maxSourceBytes: number } {
+  return { allowedPaths: [...policy.allowedPaths], maxFiles: policy.maxFiles, maxAddedLines: policy.maxAddedLines, maxRemovedLines: policy.maxRemovedLines, maxSourceBytes: policy.maxSourceBytes };
 }
 
 function assertExternalRunDirectory(runDirectory: string, protectedRoots: string[]): void {
@@ -527,23 +585,37 @@ function sumUsage(usages: ModelResult["usage"][], field: keyof ModelResult["usag
 
 function forbiddenSource(source: string): boolean { return /(?:StudioTestService|ScriptEditorService|ChangeHistoryService|_forgeStableId|__Forge|loadstring)/.test(source); }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
-function parseCandidateRepairArtifact(value: unknown): CandidateRepairArtifact {
-  if (!isRecord(value)) throw new Error("Invalid CandidateRepairArtifact");
-  exactKeys(value, ["kind", "schemaVersion", "id", "regressionId", "createdAt", "source", "model", "attempt", "seedRoot", "outputRoot", "contract", "contractHash", "implementationSpec", "implementationSpecHash", "patchSet", "patchSetHash", "outputSourceHashes", "verification", "context", "artifactHash"], "CandidateRepairArtifact");
-  if (value.kind !== "CandidateRepairArtifact" || value.schemaVersion !== 1 || typeof value.id !== "string" || typeof value.regressionId !== "string" || typeof value.createdAt !== "string" || typeof value.seedRoot !== "string" || !isAbsolute(value.seedRoot) || typeof value.outputRoot !== "string" || !isAbsolute(value.outputRoot) || !isSha256(value.contractHash) || !isSha256(value.implementationSpecHash) || !isSha256(value.patchSetHash) || !isSha256(value.artifactHash)) throw new Error("Invalid CandidateRepairArtifact envelope");
-  if (!isRecord(value.source)) throw new Error("Invalid CandidateRepairArtifact source");
-  exactKeys(value.source, ["generationRunId", "generationAttemptId", "buildTraceId", "modelResponseHash", "patchSetId", "sourceHashes"], "CandidateRepairArtifact source");
-  if (typeof value.source.generationRunId !== "string" || typeof value.source.generationAttemptId !== "string" || typeof value.source.buildTraceId !== "string" || !isSha256(value.source.modelResponseHash) || typeof value.source.patchSetId !== "string" || !isHashRecord(value.source.sourceHashes)) throw new Error("Invalid CandidateRepairArtifact source");
-  if (!isRecord(value.model)) throw new Error("Invalid CandidateRepairArtifact model");
-  exactKeys(value.model, ["provider", "name", "requestHash", "responseHash", "usage"], "CandidateRepairArtifact model");
-  if (value.model.provider !== "openrouter" || !(OPENROUTER_MODELS as readonly unknown[]).includes(value.model.name) || !isSha256(value.model.requestHash) || !isSha256(value.model.responseHash) || !isModelUsage(value.model.usage)) throw new Error("Invalid CandidateRepairArtifact model");
-  if (!isGenerationAttempt(value.attempt)) throw new Error("Invalid CandidateRepairArtifact attempt");
-  if (!isHashRecord(value.outputSourceHashes)) throw new Error("Invalid CandidateRepairArtifact output source hashes");
-  if (!isRecord(value.verification)) throw new Error("Invalid CandidateRepairArtifact verification");
-  exactKeys(value.verification, ["report", "traceId"], "CandidateRepairArtifact verification");
-  if (!isVerificationReportEnvelope(value.verification.report) || typeof value.verification.traceId !== "string") throw new Error("Invalid CandidateRepairArtifact verification");
-  if (!isContextSummary(value.context)) throw new Error("Invalid CandidateRepairArtifact context");
-  return value as unknown as CandidateRepairArtifact;
+function parseCandidateArtifact(value: unknown): CandidateArtifact {
+  if (!isRecord(value)) throw new Error("Invalid CandidateArtifact");
+  exactKeys(value, ["kind", "schemaVersion", "id", "origin", "lineage", "createdAt", "model", "attempt", "seedRoot", "outputRoot", "contract", "contractHash", "implementationSpec", "implementationSpecHash", "patchSet", "patchSetHash", "outputSourceHashes", "verification", "context", "artifactHash"], "CandidateArtifact");
+  if (value.kind !== "CandidateArtifact" || value.schemaVersion !== 1 || typeof value.id !== "string" || typeof value.createdAt !== "string" || typeof value.seedRoot !== "string" || !isAbsolute(value.seedRoot) || typeof value.outputRoot !== "string" || !isAbsolute(value.outputRoot) || !isSha256(value.contractHash) || !isSha256(value.implementationSpecHash) || !isSha256(value.patchSetHash) || !isSha256(value.artifactHash)) throw new Error("Invalid CandidateArtifact envelope");
+  if (!isRecord(value.origin) || !["initial_generation", "regression_repair"].includes(String(value.origin.kind)) || (value.origin.regressionId !== undefined && typeof value.origin.regressionId !== "string")) throw new Error("Invalid CandidateArtifact origin");
+  if (!isRecord(value.lineage) || !isSha256(value.lineage.contextCompositionHash) || (value.lineage.gameIntentHash !== undefined && !isSha256(value.lineage.gameIntentHash)) || (value.lineage.coreLoopHash !== undefined && !isSha256(value.lineage.coreLoopHash))) throw new Error("Invalid CandidateArtifact lineage");
+  if ((value.lineage.gameIntent === undefined) !== (value.lineage.gameIntentHash === undefined) || (value.lineage.coreLoop === undefined) !== (value.lineage.coreLoopHash === undefined)) throw new Error("Invalid CandidateArtifact lineage references");
+  if (value.lineage.gameIntent !== undefined) {
+    assertGameIntent(value.lineage.gameIntent);
+    if (contentHash(stableJson(value.lineage.gameIntent)) !== value.lineage.gameIntentHash) throw new Error("CandidateArtifact GameIntent hash mismatch");
+  }
+  if (value.lineage.coreLoop !== undefined) {
+    assertCoreLoop(value.lineage.coreLoop);
+    if (contentHash(stableJson(value.lineage.coreLoop)) !== value.lineage.coreLoopHash) throw new Error("CandidateArtifact CoreLoop hash mismatch");
+  }
+  if (value.origin.kind === "initial_generation" && (value.origin.regressionId !== undefined || value.origin.source !== undefined)) throw new Error("Invalid initial CandidateArtifact origin");
+  if (value.origin.kind === "regression_repair") {
+    if (typeof value.origin.regressionId !== "string" || !isRecord(value.origin.source)) throw new Error("Invalid repair CandidateArtifact origin");
+    exactKeys(value.origin.source, ["generationRunId", "generationAttemptId", "buildTraceId", "modelResponseHash", "patchSetId", "sourceHashes"], "CandidateArtifact origin source");
+    if (typeof value.origin.source.generationRunId !== "string" || typeof value.origin.source.generationAttemptId !== "string" || typeof value.origin.source.buildTraceId !== "string" || !isSha256(value.origin.source.modelResponseHash) || typeof value.origin.source.patchSetId !== "string" || !isHashRecord(value.origin.source.sourceHashes)) throw new Error("Invalid CandidateArtifact origin source");
+  }
+  if (!isRecord(value.model)) throw new Error("Invalid CandidateArtifact model");
+  exactKeys(value.model, ["provider", "name", "requestHash", "responseHash", "usage"], "CandidateArtifact model");
+  if (value.model.provider !== "openrouter" || !(OPENROUTER_MODELS as readonly unknown[]).includes(value.model.name) || !isSha256(value.model.requestHash) || !isSha256(value.model.responseHash) || !isModelUsage(value.model.usage)) throw new Error("Invalid CandidateArtifact model");
+  if (!isGenerationAttempt(value.attempt)) throw new Error("Invalid CandidateArtifact attempt");
+  if (!isHashRecord(value.outputSourceHashes)) throw new Error("Invalid CandidateArtifact output source hashes");
+  if (!isRecord(value.verification)) throw new Error("Invalid CandidateArtifact verification");
+  exactKeys(value.verification, ["report", "traceId"], "CandidateArtifact verification");
+  if (!isVerificationReportEnvelope(value.verification.report) || typeof value.verification.traceId !== "string") throw new Error("Invalid CandidateArtifact verification");
+  if (!isContextSummary(value.context) || value.context.compositionHash !== value.lineage.contextCompositionHash) throw new Error("Invalid CandidateArtifact context linkage");
+  return value as unknown as CandidateArtifact;
 }
 function exactKeys(value: Record<string, unknown>, keys: string[], label: string): void { const received = Object.keys(value).sort(); const expected = [...keys].sort(); if (received.length !== expected.length || received.some((key, index) => key !== expected[index])) throw new Error(`Invalid ${label} fields: ${received.join(", ")}`); }
 function isSha256(value: unknown): value is string { return typeof value === "string" && /^[0-9a-f]{64}$/.test(value); }
@@ -563,11 +635,37 @@ async function persistPrivateRun(directory: string, run: GenerationRun, details:
 async function persistPrivateArtifact(destination: string, value: unknown): Promise<void> { await mkdir(dirname(destination), { recursive: true }); await writeFile(destination, `${stableJson(value)}\n`, { encoding: "utf8", mode: 0o600 }); }
 
 function intentPrompt(prompt: string): string { return `Turn this creator request into one bounded CollectFruit core-loop payload. Select only CollectFruit. Return ONLY the requested payload fields: normalizedGoal, audience, genreSignals, desiredOutcomes, unresolvedQuestions, selectedMechanic, coreLoop. The coreLoop must have unique non-empty node IDs, and entryNodeId must exactly equal one node ID; every edge endpoint must be a node ID. Do not return kind, schemaVersion, security rules, source code, markdown, or any extra fields.\n\nCreator request:\n${prompt}`; }
-function patchPrompt(context: string, _contract: MechanicContract): string { return `Implement the supplied mechanic in exactly the complete Luau replacements permitted by the MechanicImplementationSpec. Return ONLY this payload shape: {"rationale":"short explanation","operations":[{"path":"allowed source path","after":"complete source"}]}. Preserve remote identity, positional ABI, state bindings, constants, and authority invariants exactly. The model authors the implementation logic; the interface is immutable. Never create a preserved remote or use Forge/Test/Studio services, markdown, PatchSet fields, IDs, versions, or extra fields.\n\n${context}`; }
-function repairPrompt(context: string): string { return `Repair this bounded candidate while preserving the supplied MechanicImplementationSpec. Return ONLY a payload with rationale and complete replacement operations for every allowed source target. The context includes the original contract, exact ABI/state interface, candidate source, PatchSet, normalized ranged diagnostics, and semantic evidence. Do not invent a different remote, state schema, tag, attribute, target path, or mechanic. Do not add tests, Forge code, Studio services, PatchSet fields, IDs, versions, or extra fields.\n\n${context}`; }
+function coreLoopExtensionPrompt(prompt: string): string { return `Interpret this follow-up request as the already-selected SellInventory extension. Return ONLY normalizedGoal, desiredOutcomes, unresolvedQuestions, and selectedMechanic. selectedMechanic must be SellInventory. Do not alter loop identities, source code, remote ABI, contracts, security rules, or return markdown/extra fields; Forge owns those.\n\nCreator request:\n${prompt}`; }
+function patchPrompt(context: string, _contract: MechanicContract): string { return `Implement the supplied mechanic in exactly the complete Luau replacements permitted by the MechanicImplementationSpec. Return ONLY this payload shape: {"rationale":"short explanation","operations":[{"path":"allowed source path","after":"complete source"}]}. Preserve remote identity, positional ABI, state bindings, constants, authority invariants, and InteractionBinding exactly. When InteractionBinding requires explicit_user_action, the production interaction script must invoke the declared clientAction module function from that exact user event; the clientAction module owns the production RemoteEvent request. The local clientAction arguments describe interaction context and do not replace the RemoteEvent ABI: the module must translate that context into every declared positional client input with the declared types. Periodic or autonomous requests are invalid. Keep production activation distance separate from independent server authorization distance. The model authors the implementation logic; the interface is immutable. Never create a preserved remote or use Forge/Test/Studio services, markdown, PatchSet fields, IDs, versions, or extra fields.\n\n${context}`; }
+function repairPrompt(context: string): string { return `Repair this bounded candidate while preserving the supplied MechanicImplementationSpec and InteractionBinding. Return ONLY a payload with rationale and complete replacement operations for every allowed source target. The context includes the original contract, exact ABI/state/interaction interface, candidate source, PatchSet, normalized ranged diagnostics, and semantic evidence. An explicit_user_action binding must invoke its declared clientAction module function from the exact production event; the module owns the RemoteEvent request. The local clientAction arguments are interaction context, not a replacement RemoteEvent ABI; translate them into every declared positional client input with the declared types. The interaction must not be replaced by polling or periodic requests, and client activation distance must remain distinct from server authorization distance. Do not invent a different remote, state schema, tag, attribute, target path, or mechanic. Do not add tests, Forge code, Studio services, PatchSet fields, IDs, versions, or extra fields.\n\n${context}`; }
 /**
  * Deliberately uses the portable structural subset accepted by OpenAI-backed
  * OpenRouter providers. Semantic bounds stay in Forge's parser/compiler.
  */
 function intentDraftSchema(): Record<string, unknown> { return { type: "object", additionalProperties: false, required: ["normalizedGoal", "audience", "genreSignals", "desiredOutcomes", "unresolvedQuestions", "selectedMechanic", "coreLoop"], properties: { normalizedGoal: { type: "string" }, audience: { type: "string", enum: ["novice_creator", "experienced_creator", "unknown"] }, genreSignals: { type: "array", items: { type: "string" } }, desiredOutcomes: { type: "array", items: { type: "string" } }, unresolvedQuestions: { type: "array", items: { type: "string" } }, selectedMechanic: { type: "string", const: "CollectFruit" }, coreLoop: { type: "object", additionalProperties: false, required: ["title", "nodes", "edges", "entryNodeId"], properties: { title: { type: "string" }, nodes: { type: "array", items: { type: "object", additionalProperties: false, required: ["id", "label", "category"], properties: { id: { type: "string" }, label: { type: "string" }, category: { type: "string", enum: ["acquisition", "conversion", "progression", "social", "retention", "monetization"] } } } }, edges: { type: "array", items: { type: "object", additionalProperties: false, required: ["from", "to", "condition"], properties: { from: { type: "string" }, to: { type: "string" }, condition: { anyOf: [{ type: "string" }, { type: "null" }] } } } }, entryNodeId: { type: "string" } } } } }; }
-function patchProposalSchema(): Record<string, unknown> { return { type: "object", additionalProperties: false, required: ["rationale", "operations"], properties: { rationale: { type: "string" }, operations: { type: "array", items: { type: "object", additionalProperties: false, required: ["path", "after"], properties: { path: { type: "string", enum: [...COLLECT_FRUIT_GENERATION_POLICY.allowedPaths] }, after: { type: "string" } } } } } }; }
+function coreLoopExtensionDraftSchema(): Record<string, unknown> { return { type: "object", additionalProperties: false, required: ["normalizedGoal", "desiredOutcomes", "unresolvedQuestions", "selectedMechanic"], properties: { normalizedGoal: { type: "string" }, desiredOutcomes: { type: "array", items: { type: "string" } }, unresolvedQuestions: { type: "array", items: { type: "string" } }, selectedMechanic: { type: "string", const: "SellInventory" } } }; }
+function patchProposalSchema(policy: GenerationPolicy = COLLECT_FRUIT_GENERATION_POLICY): Record<string, unknown> { return { type: "object", additionalProperties: false, required: ["rationale", "operations"], properties: { rationale: { type: "string" }, operations: { type: "array", items: { type: "object", additionalProperties: false, required: ["path", "after"], properties: { path: { type: "string", enum: [...policy.allowedPaths] }, after: { type: "string" } } } } } }; }
+
+function policyForMechanic(name: string): GenerationPolicy {
+  const policy = MECHANIC_DEFINITIONS[name as keyof typeof MECHANIC_DEFINITIONS];
+  if (!policy) throw new Error(`No allowlisted generation policy exists for ${name}`);
+  return policy;
+}
+
+async function readGameIntent(root: string, path: string) {
+  const value: unknown = JSON.parse(await readFile(join(root, path), "utf8"));
+  assertGameIntent(value);
+  return value;
+}
+
+async function readCoreLoop(root: string, path: string) {
+  const value: unknown = JSON.parse(await readFile(join(root, path), "utf8"));
+  assertCoreLoop(value);
+  return value;
+}
+
+async function readMechanicContract(root: string, path: string) {
+  const value: unknown = JSON.parse(await readFile(join(root, path), "utf8"));
+  assertMechanicContract(value);
+  return value;
+}
