@@ -1,7 +1,20 @@
 # Lemonade Forge Architecture
 
-Status: M1, M1.5, M2, M2.5, M3, M3.25, and M3.5 complete
-Scope: candidate proof-of-work; local verifier plus portable execution evidence
+Status: M1, M1.5, M2, M2.5, M3, M3.25, M3.5, and M4.0 complete
+Scope: preserved vertical slice plus additive agent-harness provenance seam
+
+## M4.0 provenance boundary
+
+M4.0 adds `packages/semantic-authority` beside the unchanged runtime. It owns
+I/O-free Requirement, RequirementSet, AcceptanceSpec, IntegrationConstraint,
+and RequirementView contracts; source-aligned evidence validation; canonical
+serialization/hashing; and one scope-selection policy. Its historical M3.5
+adapter accepts already-loaded artifacts and emits references/classifications
+without importing filesystem, model, verifier, or Studio execution behavior.
+
+No M1–M3.5 package imports this layer. That deliberate one-way isolation proves
+the contract and leakage boundary before an M4.1 tool-using builder consumes
+it. See `docs/rfcs/semantic-authority.md`.
 
 ## M3.25 generation boundary
 
@@ -20,9 +33,24 @@ bridge/plugin/harness/ProofBundle boundary is entered.
 
 ## 1. Architectural stance
 
-Forge is a control plane around replaceable models. One context-rich execution agent may propose a change, but deterministic services define its allowed semantic shape and decide whether it is eligible for commit. A forest of planner/executor agents is not part of the initial architecture.
+Forge is a control plane around replaceable game-building agents. Agents may
+choose novel architecture; Forge supplies observed project state, bounded
+tools, universal Roblox trust policy, honest validators, Studio truth,
+evaluation, rollback, and evidence. A forest of planner/executor agents is not
+the default architecture.
 
-The central flow is:
+The post-M3.5 target flow is:
+
+```text
+creator request + visible requirements + observed project facts + tools
+  -> tool-using builder
+  -> candidate state
+  -> verification/evaluation bus
+  -> pass / feedback / repair
+  -> ProofBundle + BuildTrace + reviewed regression
+```
+
+The preserved M1–M3.5 flow is:
 
 ```text
 GameIntent -> CoreLoop -> MechanicContract -> PatchSet
@@ -69,6 +97,7 @@ forge/
 │   ├── flight-recorder/         # BuildTrace, spans/events, sink interface, local JSON sink
 │   ├── repair/                  # narrow deterministic repairs; no model dependency in M2
 │   ├── context-compiler/        # bounded, provenance-bearing model-neutral context selection
+│   ├── semantic-authority/      # requirement provenance, visibility, enforcement, and scope policy
 │   ├── capsules/                # candidate/verified mechanic capability schema
 │   ├── studio-protocol/         # versioned plugin/backend messages and validators
 │   ├── studio-bridge/           # loopback HTTP polling transport and pairing
@@ -101,6 +130,22 @@ M1 should remain a local CLI and library monorepo. A database, hosted API, auth 
 
 Pure, serializable schemas are the system boundary. They must validate at load and output. Contracts contain no model-specific fields that would make a provider the semantic authority.
 
+### Semantic authority
+
+Represents why a requirement may influence a consumer without modeling the
+mechanic itself. The source, authority, visibility, enforcement, verification,
+and evidence axes are independently validated. `resolveRequirementView`
+selects builder/evaluator/internal production or benchmark views. Hidden
+decisions omit Requirement IDs, statements, and evidence. Internal platform policy
+may remain enforceable without exposing verifier details; benchmark oracles
+are never available to a builder.
+
+AcceptanceSpec contains references only. IntegrationConstraint is an explicit
+project/snapshot-bound use of an observation, so a before-state fact is not
+silently converted into an immutable design constraint. Source and authority
+cannot change in place for an existing requirement ID. No promotion workflow,
+conflict solver, confidence score, BuildPlan, or temporal DSL exists in M4.0.
+
 ### Intent compiler
 
 Transforms a raw creator request into a candidate `CoreLoop`. It may use a model in a later milestone, but its output is always validated and may contain unresolved questions. It must not generate arbitrary source as its primary output.
@@ -114,6 +159,10 @@ There is no autonomous `AgentRuntime` implementation in M2.5. The future runtime
 Represents the relevant project structure: Instances, script execution context and hashes, modules, remotes, M2 replication relationships, persistent state, UI bindings, mechanic contracts, and dependency edges. M2.5 formalizes the existing script/remote graph inside a versioned map and derives a canonical projection that excludes absolute paths and raw source. The loaded source remains available only to the local analyzer. `ProjectSnapshot` carries layered source, structure, contract, aggregate semantic, and canonical-map hashes.
 
 The map is adapter-owned. The current adapter is deterministic filesystem/fixture input; M3 adds a live Studio adapter. An optional rbx-dom adapter remains behind the same boundary for serialized Roblox place/model input. A missing world fact is unknown, not inferred as safe.
+
+Post-M3.5, ProjectSemanticMap is observation infrastructure. It may provide
+evidenced project facts to a tool-using builder and verifier, but it is not a
+complete world model or a source of universal game design authority.
 
 ### Patch model
 
@@ -201,6 +250,11 @@ contains canonical project metadata. Each item carries a reason, source,
 entity, content hash, token estimate, and required/evictable flags. Correctness
 takes priority over minimizing token count; required P0/P1 items are not
 evicted. Retrieval and learned ranking remain future work.
+
+Post-M3.5 the compiler remains useful for deterministic provenance, caching,
+and controlled context experiments. A future agent may also inspect the
+project incrementally through bounded tools; the compiler is not the sole path
+by which it may learn project facts.
 
 ### Verified Mechanic Capsules
 

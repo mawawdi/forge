@@ -1,7 +1,7 @@
 # Lemonade Forge Specification
 
-Status: M1, M1.5, M2, M2.5, M3, M3.25, and M3.5 complete
-Scope: candidate proof-of-work; deterministic verifier plus local execution evidence
+Status: M1, M1.5, M2, M2.5, M3, M3.25, M3.5, and M4.0 complete
+Scope: preserved compiler-style vertical slice plus agent-harness provenance foundation
 
 ## M3.25 prompt-to-proof requirement
 
@@ -49,11 +49,49 @@ Production selling is a separate explicit interaction contract:
 periodic or autonomous RemoteEvent requests. The 12-stud client activation
 boundary does not weaken or redefine the server's 20-stud authorization check.
 
+## M4.0 semantic-authority requirement
+
+Post-M3.5, Forge is a Roblox-specific agent harness and evaluation system. It
+must not scale by compiling an exact `MechanicImplementationSpec` and
+handwritten harness for every possible mechanic. The M1–M3.5 objects and
+verdict paths remain immutable historical regressions and may remain useful for
+existing-project integration or exact benchmark fixtures.
+
+M4.0 introduces an additive, runtime-validated Requirement layer. Every claim
+that may guide generation, reject a candidate, or grade an outcome records its
+source, authority, visibility, enforcement strength, verification modes, and
+source-aligned evidence. A single scope resolver decides what a builder,
+evaluator, or internal Forge consumer may see and enforce. Hidden benchmark
+oracles and evaluator-only bodies never enter builder-visible Requirements or
+AcceptanceSpec bodies.
+
+M4.0 does not add BuildPlan, a tool-using agent, a game ontology, semantic
+conflict solving, policy promotion, a general Studio action layer, or benchmark
+infrastructure. It is the smallest provenance seam needed before those systems
+can be evaluated honestly.
+
 ## 1. Product thesis
 
-Lemonade Forge is a verified, model-agnostic compiler for Roblox game mechanics. It turns an underspecified creator goal into a typed game-design contract, proposes a bounded Luau change, verifies the change deterministically, and only then presents it as safe to commit.
+Lemonade Forge is a Roblox-specific harness for game-building agents. It makes
+model/tool behavior observable, bounded, falsifiable, recoverable, and
+empirically improvable. The agent may own novel design and implementation;
+Forge owns truthful project/runtime observation, universal trust policy,
+capability boundaries, verification/evaluation, evidence, rollback, tracing,
+and the failure-to-regression loop.
 
-The product is about completion, not code generation. Its durable object is the mechanic contract, not the prompt, model, or source diff:
+The scalable direction is:
+
+```text
+creator request
+  -> model-derived high-level requirements / BuildPlan
+  -> tool-using builder over observed project state
+  -> candidate game state
+  -> deterministic + Studio + qualitative evaluation as applicable
+  -> pass / feedback / repair
+  -> trace + proof + reviewed regression
+```
+
+M1–M3.5 proved the trust boundary with this narrower compiler-style flow:
 
 ```text
 creator intent
@@ -65,11 +103,14 @@ creator intent
   -> atomic verified commit
 ```
 
-The proof-of-work succeeds if it makes this claim credible:
+That preserved proof-of-work succeeds if it makes this claim credible:
 
 > A replaceable model can produce useful Roblox code, but Forge is the system that decides whether the mechanic is coherent, server-authoritative, reproducible, and safe to commit.
 
-The north-star metric is Verified Core Loop Completion Rate: the fraction of creators who start with an idea and reach a Studio-verified playable core loop. Milestone 1 does not measure this product metric yet; it establishes the deterministic verification substrate needed to measure it honestly.
+The unit evaluated is `model + harness + tools + environment`. The north-star
+metric remains Verified Core Loop Completion Rate, supported by separate
+security, runtime, repair, cost, latency, and rollback measures rather than one
+invented composite score.
 
 ## 2. Verified requirements and scope
 
@@ -85,6 +126,7 @@ The following are requirements for this proof-of-work because they are directly 
 | Reproducibility | Inputs, tool versions, rule version, and project hash are recorded | ProofBundle and benchmark result metadata |
 | Flight Recorder foundation | Every local verification run creates versioned, privacy-minimized execution evidence | a `BuildTrace` is persisted separately from deterministic CLI JSON |
 | Canonical project semantics | Verification and future Studio work share a normalized representation of Roblox structure and source relationships | versioned `ProjectSemanticMap` and layered `ProjectSnapshot` hashes |
+| Semantic authority | Every requirement that can guide, reject, or grade has explicit provenance, visibility, enforcement, and evidence | runtime-validated RequirementSet, scope resolver, leakage tests, and historical M3.5 projection |
 
 ## 3. Explicit non-goals
 
@@ -98,6 +140,7 @@ This project will not begin as:
 - a fake Roblox runtime presented as authoritative;
 - a visual-polish project whose main output is UI;
 - a whole-game one-shot generator;
+- a hand-authored compiler or ontology for every Roblox game mechanic;
 - a replacement for Roblox Studio or Roblox's own authoritative runtime.
 
 The model interface remains swappable, but model routing, fine-tuning, trajectory retention, and large-scale hosted infrastructure are future concerns. No compatibility layer for superseded schemas or storage formats is planned; a schema change will replace the current format and invalidate old fixtures/results when necessary.
@@ -108,14 +151,15 @@ The report contains a strong strategic direction and several future systems. The
 
 | Status | Include now | Defer / record as future |
 | --- | --- | --- |
-| Required now | typed contracts; official Luau analysis; deterministic issue model; project semantic map sufficient for remote analysis; insecure fixture; structured CLI diagnostics; 10 benchmark definitions; reproducible rule/config metadata | — |
+| Required now | typed contracts; official Luau analysis; deterministic issue model; project semantic map; requirement provenance/visibility; structured diagnostics; 10 benchmark concepts; reproducible rule/config metadata | — |
 | Required for the thesis slice | intent-to-contract example; bounded patch representation; deterministic repair or repair recommendation; Studio-backed assertion protocol; proof bundle; one coherent collect -> sell -> upgrade loop | production creator UX and real model routing |
 | Useful preflight | Lute programmable lint rules; pure Luau tests; mocked services; state-machine/economy checks; fuzzed hostile inputs | must never be labeled authoritative Roblox execution |
 | M3 implementation now | Forge Studio Plugin, typed Studio protocol, live semantic observation, bounded PatchSet execution, ChangeHistory transaction boundary, and authoritative CollectFruit test harness | requires real Studio installation/run; no mock may satisfy the gate |
-| Later, not required for candidate MVP | MCP connection as product interface; isolated Studio workers; OpenGameEval-compatible benchmark execution; production auth; distributed relay | all require environment access and operational design |
+| Post-M4.0 evidence tasks | tool-using builder harness; general Studio actions/observations; isolated hidden evaluation; repeated unseen-game trials | exact consumer design follows measured failures rather than a new mechanic compiler |
+| Later, not required for candidate MVP | isolated/hosted Studio workers; production auth; distributed relay | all require demonstrated long-horizon or parallel workload |
 | Speculative/future | ModelArena; model posterior routing; FirstDollar; trajectory learning; performance regression gates; large-scale queues and multi-tenant services | no dependency from M1 |
 
-## 5. Smallest vertical slice that proves the thesis
+## 5. Preserved vertical slice that proved the trust boundary
 
 The smallest convincing end-to-end demonstration is one intentionally small fruit game, not a general compiler:
 
@@ -130,7 +174,12 @@ The smallest convincing end-to-end demonstration is one intentionally small frui
 9. Forge emits a ProofBundle and commits only the verified delta.
 10. Forge recommends `sell` as the next CoreLoop node.
 
-This slice proves intent reconstruction, typed game semantics, bounded code change, Roblox security reasoning, repair, authoritative runtime verification, proof, and next-step guidance. It deliberately excludes monetization, model competition, persistent user accounts, and a generalized autonomous architecture.
+This slice proves intent reconstruction, typed game semantics, bounded code
+change, Roblox security reasoning, repair, authoritative runtime verification,
+proof, and next-step guidance. It deliberately excludes monetization, model
+competition, persistent user accounts, and a generalized autonomous
+architecture. Post-M3.5 work preserves this evidence but does not reproduce the
+same compiler and exact harness for every new mechanic.
 
 Milestone 1 is the deterministic foundation of this slice. It must end with:
 
@@ -196,7 +245,14 @@ Forge does not define a Roblox project as only Luau source. The M2.5 `ProjectSem
 
 `ProjectSnapshot` separates source, structure, contract, and aggregate semantic hashes. Ordering, paths, tags, attributes, and metadata are canonicalized before hashing. The source hash remains the patch/verifier precondition; the aggregate semantic hash is the comparison key for semantically equivalent starting states. A future Studio adapter must produce the same shape without pretending static data is live truth.
 
-The `ContextCompiler` selects only context relevant to one bounded mechanic task and records provenance for every item. M2.5 implements deterministic P0/P1/P2 selection and composition metadata, not retrieval, budget optimization, or a model runtime. A `VerifiedMechanicCapsule` is candidate-only until a ProofBundle contains authoritative Studio evidence; reuse always triggers re-verification.
+The historical `ContextCompiler` selects only context relevant to one bounded
+mechanic task and records provenance for every item. M2.5 implements
+deterministic P0/P1/P2 selection and composition metadata, not retrieval,
+budget optimization, or a model runtime. It remains useful for deterministic
+context, caching, and experiments beneath future tool-driven exploration; it
+is not required to precompute everything an agent may discover. A
+`VerifiedMechanicCapsule` is candidate-only until a ProofBundle contains
+authoritative Studio evidence; reuse always triggers re-verification.
 
 ## 11. Studio Plugin and StudioProof boundary
 

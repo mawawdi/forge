@@ -1,7 +1,7 @@
 # CoreLoopBench and Verification Evals
 
-Status: M1, M1.5, M2, M2.5, M3, M3.25, and M3.5 complete
-Purpose: executable evidence for verified Roblox mechanic generation
+Status: M1, M1.5, M2, M2.5, M3, M3.25, M3.5, and M4.0 complete
+Purpose: executable evidence for improving the Roblox model+harness+tools+environment
 
 ## M3.25 acceptance addition
 
@@ -76,6 +76,39 @@ happy-path driver must invoke the same model-authored client action function;
 direct RemoteEvent invocation is allowed only for adversarial/security
 assertions.
 
+## M4.0 authority and leakage split
+
+The ten CoreLoopBench cases remain useful benchmark concepts, but their exact
+M1–M3.5 mechanic contracts are not production semantics for arbitrary games.
+Each future executable agent task must separate:
+
+```text
+builder-visible task input
+  creator goal
+  builder-visible acceptance outcomes
+  observed project facts selected for the task
+  applicable visible policies and bounded tools
+
+hidden evaluator input
+  evaluator-only requirements
+  benchmark oracles and exact fixture values
+  adversarial mechanics/inputs
+  assertion and grader implementation
+  golden source or successful historical PatchSets, when retained
+```
+
+`AcceptanceSpec` crosses that boundary only through requirement, assertion,
+and artifact IDs. It cannot contain hidden assertion bodies, actions, expected
+values, grader source, or answer source. `resolveRequirementView` with a builder
+audience withholds benchmark oracles in both production and benchmark builds.
+Only benchmark evaluation may expose and enforce those oracles to an evaluator
+or internal consumer.
+
+An evaluator-created outcome may be builder-visible when it states what success
+looks like without revealing how the hidden test forces or measures it. A
+failed deterministic security/runtime invariant cannot be overturned by an
+evaluator model.
+
 ## 1. Evaluation philosophy
 
 CoreLoopBench measures whether a proposed mechanic satisfies its contract in the target environment. It does not primarily measure code style, token count, or an LLM judge’s opinion.
@@ -101,7 +134,8 @@ A build trace is eligible for promotion only when it has sufficient retained ref
 
 ## 2. Fixture contract
 
-Every benchmark case is a directory with a manifest like this:
+The following is the preserved compiler-era benchmark concept, not a shape to
+send wholesale to an M4 builder:
 
 ```ts
 interface CoreLoopBenchCase {
@@ -123,6 +157,13 @@ interface CoreLoopBenchCase {
 ```
 
 The fixture also records expected observable behavior, performance budget, toolchain version, and an input hash. Hidden assertions must not be sent to the generation model. A case is verified only if every required assertion passes and no blocking issue remains.
+
+Post-M4.0, a task loader must produce separate builder and evaluator views from
+a provenance-classified RequirementSet. Exact fixture paths, constants, ABI,
+or state order are builder-visible only when their provenance is a creator
+requirement, a selected existing-project integration constraint, or an
+applicable visible platform policy. A benchmark may still require those values
+inside its hidden evaluator.
 
 ## 3. Initial 10 cases
 
@@ -234,7 +275,10 @@ CI must fail for critical security regressions, reintroduced promoted exploits, 
 2. M2: add deterministic repair and static/semantic ProofBundle evidence for CLB-001 and CLB-009; preflight remains an explicit follow-on layer.
 3. M2.5: use canonical semantic maps, affected cones, and explainable context selection for CLB-001 and CLB-009 without narrowing correctness checks unsafely.
 4. M3: prove the full authoritative Studio pipeline on CLB-001 only, including its real client-controlled-reward fault and deterministic repair.
-5. M4: make all ten cases executable, add hidden assertions, and compare model adapters.
+5. M4.0: define and test the provenance/visibility seam without running models or Studio.
+6. M4.1–M4.2: exercise a bounded tool-using builder and reusable Studio actions/observations on a small fixed subset.
+7. M4.3: make representative cases repeatedly executable with isolated hidden evaluators and controlled configuration comparisons.
+8. M4.4: test unseen-game generalization before expanding mechanic-specific fixtures.
 
 The first benchmark report should include failures and tool-health errors, not only a success percentage. “Could not run” is operationally different from “ran and failed.”
 

@@ -1,7 +1,7 @@
 # Lemonade Forge Roadmap
 
-Status: M1, M1.5, M2, M2.5, M3, M3.25, and M3.5 complete
-Principle: prove the semantic thesis before adding product surface or scale
+Status: M1, M1.5, M2, M2.5, M3, M3.25, M3.5, and M4.0 complete
+Principle: improve the model+harness+tools+environment through falsifiable evidence before adding scale
 
 ## Milestone map
 
@@ -15,9 +15,13 @@ Principle: prove the semantic thesis before adding product surface or scale
 | M3 — Forge Studio Plugin + StudioProof vertical slice ✅ | CollectFruit runs through the first-class plugin in real Studio with authoritative assertions; sell/upgrade remain contract-level follow-ons | Showcase evidence includes safe pass, fault rejection, exact rollback, repaired rerun, and interrupted incomplete run |
 | M3.25 — Prompt-to-proof generation ✅ | One OpenRouter proposal path produces a bounded CollectFruit candidate that must pass M1/M2 then the unchanged M3 StudioProof | model-authored repair -> sealed artifact -> typed PatchSet -> 7/7 real Studio assertions -> verified ProofBundle |
 | M3.5 — SellInventory generalization ✅ | A second model-authored mechanic extends the sealed CollectFruit loop through bounded PatchSet and combined StudioProof | fresh model-repaired candidate passed 14/14; payout fault rejected and rolled back |
-| M4 — CoreLoopBench and model comparison | Ten executable cases compare candidate implementations by verified outcome | benchmark results are reproducible, hidden assertions are supported, no LLM judge is primary |
-| M4.5 — Capability adaptation research | Compare fresh generation with re-verified capsule adaptation | adaptation never bypasses verification; evidence supports or rejects reuse |
-| M5 — Productization research | Decide whether Studio connector, creator UX, routing, and trajectory retention merit further work | evidence-based product decision; no automatic commitment to production scale |
+| M4.0 — Semantic authority / provenance pivot ✅ | Requirements state source, authority, visibility, enforcement, and evidence without a mechanic ontology | generic scope resolver and isolated M3.5 projection pass leakage/integrity tests |
+| M4.1 — Tool-using builder harness | One agent edits an observed project through bounded inspect/edit/test tools | fixed tasks produce complete traces and failures can be assigned to model, context, tool, harness, verifier, grader, environment, or task |
+| M4.2 — General Studio capabilities | Studio exposes reusable actions and observations rather than another mechanic harness | one unseen task is evaluated through correlated real-Studio evidence without arbitrary-code test interpretation |
+| M4.3 — Eval and regression infrastructure | Repeated fixed tasks separate builder-visible inputs from hidden evaluators and preserve promotions | representative trials are reproducible and every score links to immutable task/result evidence |
+| M4.4 — Unseen-game generalization | The harness attempts varied game changes without new mechanic-name hardcoding | outcome/security/runtime evidence distinguishes valid alternate implementations from real failures |
+| M4.5 — Long-horizon run | One bounded multi-step build is checkpointed, recoverable, and objectively measured | interruption, retry, rollback, cost, latency, and verified outcome are all recorded |
+| M4.6 — Hosted workers, if justified | Remote/parallel workers serve a demonstrated eval workload | local evidence shows isolation, persistence, or parallelism is a bottleneck before infrastructure is added |
 
 ## M0 — Design lock
 
@@ -358,44 +362,117 @@ candidate source, the follow-up is a new model-authored candidate from the
 unchanged seed and a new StudioProof—not a claim that the model repaired its
 own safe baseline.
 
-## M4 — CoreLoopBench and model comparison
+## M4.0 — Semantic authority / provenance pivot ✅
 
-Implementation plan:
+Delivered:
 
-- implement the 10 cases in `EVALS.md` as executable fixtures;
-- implement reviewed `BuildTrace -> CoreLoopBench` promotion and experiment result records;
-- split visible smoke assertions from hidden assertions;
-- measure verified success, first-pass rate, repair efficiency, exploit rejection, latency, and cost;
-- add model adapters only behind one proposal interface;
-- compare models by domain and verified outcome; do not hard-code a winner;
-- cache immutable verification results using source, dependency, tool, and rule hashes.
+- implementation-grounded audit of generation, context, PatchSet, verifier,
+  Studio, and proof gates;
+- accepted semantic-authority RFC with conflict and conceptual temporal rules;
+- runtime-validated Requirement, RequirementSet, AcceptanceSpec,
+  IntegrationConstraint, and RequirementView contracts;
+- canonical ordering, deterministic serialization/hashing, source-aligned
+  evidence, and immutable source/authority identity checks;
+- one production/benchmark build/evaluate scope resolver separating visibility
+  from enforcement;
+- isolated historical M3.5 projection with all fourteen assertion IDs and no
+  copied evaluator bodies/oracles;
+- positive, malformed, adversarial, leakage, alternate-greenfield-plan, and
+  historical hash/registry tests.
 
-Exit criteria: a model scorecard can say “not enough evidence” and every claimed pass links to a reproducible fixture/proof result.
+Exit criteria: the focused tests and full existing suite pass; M1–M3.5
+generation, verifier, Studio protocol, harness registry, plans, proofs, traces,
+candidates, and regressions remain unchanged; no model or Studio run is used.
+**Met.**
 
-## M4.5 — Capability adaptation research
+## M4.1 — Tool-using builder harness
 
-Implementation plan:
+Next smallest evidence-producing task:
 
-- compare fresh generation with adaptation from the first verified capsule on fixed CoreLoopBench cases;
-- measure verified completion, security regressions, repair attempts, latency, and cost independently;
-- require every adapted output to become a new candidate and pass the applicable static, semantic, preflight, and Studio tiers;
-- record evidence for or against capsule reuse without hard-coding a winner.
+- define a high-level BuildPlan/requirement consumer only after exercising the
+  M4.0 scope boundary;
+- give one builder bounded project search, inspection, structured editing,
+  verification, and checkpoint tools;
+- preserve ProjectSemanticMap as observation infrastructure and Context
+  Compiler as provenance/caching infrastructure without requiring a giant
+  precomputed prompt;
+- run a small fixed task set and retain complete tool/repair trajectories;
+- classify every failure among model, context, tool, harness, verifier,
+  grader/eval, environment/infrastructure, and task/specification.
 
-Exit criteria: the experiment can show whether verified capability reuse improves verified outcomes without weakening the evidence gate.
+Exit criteria: at least one useful greenfield change and one existing-project
+change are attempted without adding mechanic-name-specific compiler code, and
+their results are fully attributable.
 
-## M5 — Productization research
+## M4.2 — General Studio capabilities
 
-Candidate investigations, not commitments:
+- expose bounded project/runtime actions and observations such as finding an
+  instance, invoking a production interaction, moving a character, observing
+  attributes/UI/state, capturing screenshots, and attacking a RemoteEvent in
+  designated adversarial evaluation;
+- preserve correlation, exact project/snapshot binding, fail-closed lifecycle,
+  instrumentation cleanup, and server-return evidence;
+- do not build a universal arbitrary-code test interpreter;
+- keep Collect and Collect+Sell exact harnesses immutable.
 
-- interactive Studio connection and creator-facing proof cards;
-- risk-based verification depth;
-- model routing based on cost-adjusted verified success;
-- privacy-preserving trajectory retention;
-- production regression mining;
-- performance and MicroProfiler evidence;
-- monetization readiness only after a free loop is verified.
+Exit criteria: an M4.1 task that is not CollectFruit or SellInventory gains
+authoritative runtime evidence through reusable capabilities rather than a new
+mechanic harness.
 
-FirstDollar, Trajectory Lake, elaborate auth, and production-scale infrastructure remain out of scope until M3/M4 show that verification materially improves completed loops.
+## M4.3 — Eval and regression infrastructure
+
+- turn the ten CoreLoopBench concepts into representative agent tasks over
+  stable environments;
+- separate builder-visible requests, facts, policies, and outcomes from hidden
+  assertion bodies, benchmark oracles, grader code, and answer artifacts;
+- repeat trials and record verified success, first-pass success, deterministic
+  and runtime failure, repair/retry count, model/tool calls, cost, latency, and
+  rollback independently;
+- implement reviewed failure-to-regression promotion only when a real failure
+  and consumer justify it;
+- evaluate whether Harbor or a comparable runner is useful only after task and
+  environment contracts stabilize.
+
+Exit criteria: one controlled experiment can vary a single model/harness/tool
+dimension against fixed tasks and every result is reproducible or explicitly
+classified as infrastructure failure.
+
+## M4.4 — Unseen-game generalization
+
+- evaluate varied genres and task shapes that were not represented by the
+  Collect/Sell compiler;
+- include greenfield and existing-project tasks;
+- accept multiple safe implementations that satisfy observable creator
+  outcomes;
+- add deterministic checks only for honest language, platform, security,
+  project, or regression claims;
+- use evaluator/human signal for subjective quality without overriding failed
+  deterministic safety/runtime invariants.
+
+Exit criteria: Forge measures meaningful outcomes across unseen tasks without
+adding a per-mechanic schema or treating benchmark details as production law.
+
+## M4.5 — Long-horizon run
+
+- attempt one multi-step game build with bounded budgets and explicit
+  checkpoints;
+- exercise interruption, resumption, tool failure, rollback, and repair;
+- retain trace/proof linkage without rewriting earlier attempts;
+- measure outcome, attempts, cost, latency, and recovery behavior.
+
+Exit criteria: the run either verifies or fails with an evidence-backed root
+cause and a minimized next regression; duration alone is not success.
+
+## M4.6 — Hosted workers, only if evidence justifies them
+
+- add Docker, Harbor, Fly, queues, or remote Studio workers only for a measured
+  reproducibility, isolation, persistence, parallelism, or long-horizon need;
+- keep local and hosted task/evidence contracts equivalent;
+- fail closed on lost, stale, partial, or mismatched worker evidence.
+
+Exit criteria: a documented local bottleneck is improved by hosted execution
+without weakening proof integrity. If no such bottleneck exists, M4.6 remains
+deferred rather than manufacturing infrastructure.
 
 ## Review gates and kill criteria
 
