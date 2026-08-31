@@ -4,11 +4,12 @@ import { readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { ForgeNativeAgentRuntime, loadWorkspaceCandidateArtifact, runBoundedAgent } from "../../agent-runtime/src/index.js";
-import { contentHash, stableJson } from "../../contracts/src/index.js";
+import { FORGE_NATIVE_RUNTIME_IDENTITY, ForgeNativeAgentRuntime, loadWorkspaceCandidateArtifact, runBoundedAgent } from "../../agent-runtime/src/index.js";
+import { stableJson } from "../../contracts/src/index.js";
+import { assertExperimentRegistrationCurrent, assertRegisteredCandidate, loadExperimentRegistration, persistExperimentRegistration, registerExperiment, runRegisteredExperiment } from "../../experiments/src/index.js";
 import { defaultTraceDirectory, JsonFileTraceSink } from "../../flight-recorder/src/index.js";
-import { OpenRouterModelClient } from "../../model-client/src/index.js";
-import { assertAcceptanceSpec, assertAcceptanceSpecReferences, assertRequirementSet, resolveRequirementView, type AcceptanceSpec, type RequirementSet } from "../../semantic-authority/src/index.js";
+import { OPENROUTER_MODEL_CLIENT_DESCRIPTOR, OpenRouterModelClient } from "../../model-client/src/index.js";
+import { assertAcceptanceSpec, assertAcceptanceSpecReferences, assertRequirementSet, type AcceptanceSpec, type RequirementSet } from "../../semantic-authority/src/index.js";
 import { StudioBridgeClient, StudioBridgeServer, readStudioBridgeDiscovery, removeStudioBridgeDiscovery, writeStudioBridgeDiscovery } from "../../studio-bridge/src/index.js";
 import { STUDIO_CAPABILITY_SET, assertRuntimeEvalDefinition, assertRuntimeEvaluatorConfiguration, createRuntimeEvalPlan, createStudioExecutionPlan, type RuntimeEvalDefinition, type RuntimeEvaluatorConfiguration, type StudioCapabilityCall, type StudioExecutionBudget, type StudioRuntimeTarget } from "../../studio-capabilities/src/index.js";
 import { executeRuntimeEvaluation, executeStudioCapabilityCanary, requestFreshStudioSnapshot, type RuntimeEvaluationRun, type StudioCapabilityCanaryRun } from "../../studio-runtime/src/index.js";
@@ -20,7 +21,9 @@ const args = process.argv.slice(2);
 async function main(): Promise<void> {
   const [command, subcommand, ...rest] = args;
   if (command === "agent" && subcommand === "build") return agentBuild(rest[0], rest.slice(1));
-  if (command === "candidate" && subcommand === "evaluate") return candidateEvaluate(rest[0], rest.slice(1));
+  if (command === "experiment" && subcommand === "register") return experimentRegister(rest[0], rest.slice(1));
+  if (command === "experiment" && subcommand === "build") return experimentBuild(rest[0], rest.slice(1));
+  if (command === "experiment" && subcommand === "evaluate") return experimentEvaluate(rest[0], rest.slice(1));
   if (command === "studio" && subcommand === "canary") return studioCapabilityCanary(rest[0], rest.slice(1));
   if (command === "studio" && subcommand === "bridge") return studioBridge(rest);
   if (command === "verify") return verify(subcommand, rest);
@@ -48,30 +51,64 @@ async function agentBuild(projectPath: string | undefined, optionArgs: string[])
   }
 }
 
-async function candidateEvaluate(artifactPath: string | undefined, optionArgs: string[]): Promise<void> {
-  const options = parseCandidateEvaluateOptions(optionArgs);
-  if (!artifactPath || !options.valid || !options.definitionPath || !options.requirementsPath || !options.acceptancePath) {
-    process.stderr.write("Usage: forge candidate evaluate <workspace-candidate-artifact.json> --runtime-plan <runtime-eval-definition.json> --requirements <requirement-set.json> --acceptance <acceptance-spec.json> [--timeout-ms <ms>] [--run-dir <path>] [--trace-dir <path>] [--proof-dir <path>] [--format json]\n");
+async function experimentRegister(seedPath: string | undefined, optionArgs: string[]): Promise<void> {
+  const options = parseExperimentRegisterOptions(optionArgs);
+  if (!seedPath || !options.valid || !options.promptPath || !options.requirementsPath || !options.acceptancePath || !options.definitionPath || !options.model || !options.outputPath) {
+    process.stderr.write("Usage: forge experiment register <seed> --prompt-file <file> --requirements <requirement-set.json> --acceptance <acceptance-spec.json> --runtime-plan <runtime-eval-definition.json> --model <exact-model-id> --output <registration.json>\n");
+    process.exitCode = 2; return;
+  }
+  try {
+    const [creatorPrompt, requirementsValue, acceptanceValue, definitionValue, configurationValue] = await Promise.all([
+      readFile(resolve(options.promptPath), "utf8"), readJson(options.requirementsPath), readJson(options.acceptancePath), readJson(options.definitionPath), readJson(join(dirname(resolve(options.definitionPath)), "runtime-evaluator-configuration.json"))
+    ]);
+    assertRequirementSet(requirementsValue); assertAcceptanceSpec(acceptanceValue); assertAcceptanceSpecReferences(acceptanceValue, requirementsValue); assertRuntimeEvalDefinition(definitionValue); assertRuntimeEvaluatorConfiguration(configurationValue);
+    const registration = await registerExperiment({
+      repositoryRoot: process.cwd(), seedRoot: resolve(seedPath), name: options.name ?? "vertical-shuttle", hypothesis: options.hypothesis ?? "A registered source-root treatment can produce a locally eligible candidate and a separately graded Studio runtime outcome.", creatorPrompt: creatorPrompt.trim(),
+      requirementSet: requirementsValue as RequirementSet, acceptanceSpec: acceptanceValue as AcceptanceSpec, runtimeEvalDefinition: definitionValue as RuntimeEvalDefinition, runtimeEvaluatorConfiguration: configurationValue as RuntimeEvaluatorConfiguration,
+      runtime: { identity: FORGE_NATIVE_RUNTIME_IDENTITY, modelClientDescriptor: OPENROUTER_MODEL_CLIENT_DESCRIPTOR }, model: options.model
+    });
+    const persisted = await persistExperimentRegistration(registration, options.outputPath);
+    process.stdout.write(`${JSON.stringify({ kind: "ForgeExperimentRegistration", schemaVersion: 1, experimentRegistrationId: registration.id, experimentRegistrationHash: registration.hash, artifact: persisted.path, seedHash: registration.seed.hash, harnessConfigurationId: registration.expected.harnessConfigurationId, harnessConfigurationHash: registration.expected.harnessConfigurationHash }, null, 2)}\n`);
+  } catch (error) {
+    process.stderr.write(`Experiment registration did not complete: ${message(error)}\n`); process.exitCode = 2;
+  }
+}
+
+async function experimentBuild(seedPath: string | undefined, optionArgs: string[]): Promise<void> {
+  const options = parseExperimentBuildOptions(optionArgs);
+  if (!seedPath || !options.valid || !options.registrationPath) {
+    process.stderr.write("Usage: forge experiment build <seed> --registration <registration.json> [--run-dir <path>] [--trace-dir <path>] [--format json]\n");
+    process.exitCode = 2; return;
+  }
+  try {
+    const registration = await loadExperimentRegistration(options.registrationPath);
+    const apiKey = loadOpenRouterApiKey();
+    const runtime = new ForgeNativeAgentRuntime(new OpenRouterModelClient({ apiKey, model: registration.model.name }));
+    const result = await runRegisteredExperiment({ registration, repositoryRoot: process.cwd(), seedRoot: resolve(seedPath), runtime, runDirectory: resolve(options.runDirectory ?? join(".forge/experiment-runs", registration.id)), traceDirectory: resolve(options.traceDirectory ?? ".forge/flight-recorder") });
+    process.stdout.write(`${JSON.stringify({ kind: "ForgeExperimentBuildSummary", schemaVersion: 1, experimentRegistrationId: registration.id, experimentRegistrationHash: registration.hash, status: result.status, classification: result.classification, trialStarted: result.run.trialStarted, agentRunId: result.run.id, agentRunArtifact: result.persistence.path, ...(result.candidateArtifact ? { workspaceCandidateArtifactId: result.candidateArtifact.artifact.id, workspaceCandidateArtifact: result.candidateArtifact.persistence.path } : {}), buildTraceId: result.trace.id, finalVerifierTraceId: result.finalVerification.trace.id, finalGate: result.finalVerification.report.gate.status === "eligible" ? "locally_eligible" : result.finalVerification.report.gate.status, candidateRoot: result.candidateRoot, harnessConfigurationId: result.run.harnessConfigurationId, harnessConfigurationHash: result.run.harnessConfigurationHash, budgets: result.run.budgets }, null, 2)}\n`);
+    process.exitCode = result.status === "locally_eligible" ? 0 : result.status === "rejected" ? 1 : 2;
+  } catch (error) {
+    process.stderr.write(`Registered experiment build did not complete: ${message(error)}\n`); process.exitCode = 2;
+  }
+}
+
+async function experimentEvaluate(artifactPath: string | undefined, optionArgs: string[]): Promise<void> {
+  const options = parseExperimentEvaluateOptions(optionArgs);
+  if (!artifactPath || !options.valid || !options.registrationPath) {
+    process.stderr.write("Usage: forge experiment evaluate <workspace-candidate-artifact.json> --registration <registration.json> [--timeout-ms <ms>] [--run-dir <path>] [--trace-dir <path>] [--proof-dir <path>] [--format json]\n");
     process.exitCode = 2; return;
   }
   let bridge: StudioBridgeClient | undefined;
   try {
-    const [requirementsValue, acceptanceValue, definitionValue] = await Promise.all([readJson(options.requirementsPath), readJson(options.acceptancePath), readJson(options.definitionPath)]);
-    assertRequirementSet(requirementsValue); assertAcceptanceSpec(acceptanceValue); assertAcceptanceSpecReferences(acceptanceValue, requirementsValue); assertRuntimeEvalDefinition(definitionValue);
-    const requirements = requirementsValue as RequirementSet; const acceptance = acceptanceValue as AcceptanceSpec; const definition = definitionValue as RuntimeEvalDefinition;
-    if (definition.requirementSetId !== requirements.id || definition.acceptanceSpecId !== acceptance.id) throw new Error("Runtime evaluator definition does not bind the supplied requirement or acceptance artifacts");
-    if (definition.capabilitySetId !== STUDIO_CAPABILITY_SET.id || definition.capabilitySetHash !== STUDIO_CAPABILITY_SET.hash) throw new Error("Runtime evaluator definition does not bind the canonical Studio capability set");
-    const evaluatorView = resolveRequirementView(requirements, { phase: "evaluate", environment: "benchmark", audience: "evaluator" });
-    if (definition.evaluatorViewId !== evaluatorView.id || definition.evaluatorViewHash !== contentHash(stableJson(evaluatorView))) throw new Error("Runtime evaluator definition does not bind the resolved evaluator-only view");
-    const configurationValue = await readJson(join(dirname(resolve(options.definitionPath)), "runtime-evaluator-configuration.json"));
-    assertRuntimeEvaluatorConfiguration(configurationValue);
-    const configuration = configurationValue as RuntimeEvaluatorConfiguration;
-    if (configuration.runtimeEvalDefinitionId !== definition.id || configuration.runtimeEvalDefinitionHash !== definition.hash) throw new Error("Runtime evaluator configuration does not bind the supplied definition");
+    const registration = await loadExperimentRegistration(options.registrationPath);
     const loaded = await loadWorkspaceCandidateArtifact(resolve(artifactPath), options.traceDirectory);
-    if (loaded.artifact.requirementSetId !== requirements.id) throw new Error("Candidate artifact does not bind the supplied RequirementSet");
-    const runDirectory = resolve(options.runDirectory ?? ".forge/runtime-evaluations");
+    assertRegisteredCandidate(registration, loaded.artifact);
+    await assertExperimentRegistrationCurrent(registration, { repositoryRoot: process.cwd(), seedRoot: loaded.artifact.seedRoot, runtime: { identity: FORGE_NATIVE_RUNTIME_IDENTITY, modelClientDescriptor: OPENROUTER_MODEL_CLIENT_DESCRIPTOR } });
+    const definition = registration.artifacts.runtimeEvalDefinition;
+    const configuration = registration.artifacts.runtimeEvaluatorConfiguration;
+    const runDirectory = resolve(options.runDirectory ?? join(".forge/runtime-evaluations", registration.id));
     const placePath = await prepareRojoPlace(loaded.candidateRoot, runDirectory, `${loaded.artifact.id}.rbxlx`);
-    printStudioSteps("candidate runtime evaluation", placePath);
+    printStudioSteps("registered experiment runtime evaluation", placePath);
     const discovery = await readStudioBridgeDiscovery();
     bridge = new StudioBridgeClient({ host: discovery.host, port: discovery.port, controlToken: discovery.controlToken });
     const timeoutMs = options.timeoutMs ?? 120_000;
@@ -83,12 +120,12 @@ async function candidateEvaluate(artifactPath: string | undefined, optionArgs: s
     const runtimePlan = createRuntimeEvalPlan({ definitionId: definition.id, definitionHash: definition.hash, candidateArtifactId: loaded.artifact.id, candidateArtifactHash: loaded.artifact.artifactHash, agentRunId, workspaceDeltaId: loaded.artifact.workspaceDelta.id, candidateHash: loaded.artifact.candidateHash, executionPlan });
     const agentRun = await readJson(join(dirname(resolve(artifactPath)), `${agentRunId}.json`));
     if (!isRecord(agentRun) || typeof agentRun.creatorPromptHash !== "string") throw new Error("Runtime proof requires the sealed originating AgentRun beside its candidate artifact");
-    const outcome = await executeRuntimeEvaluation({ connection: bridge, session, runtimeEvalPlan: runtimePlan, definition, configuration, timeoutMs, ...(options.traceDirectory ? { traceDirectory: resolve(options.traceDirectory) } : {}), ...(options.proofDirectory ? { proofDirectory: resolve(options.proofDirectory) } : {}), proofInput: { creatorPromptHash: agentRun.creatorPromptHash, requirementSetId: requirements.id, requirementViewId: loaded.artifact.requirementViewId, evaluatorViewId: evaluatorView.id, harnessConfigurationId: loaded.artifact.harnessConfigurationId, harnessConfigurationHash: loaded.artifact.harnessConfigurationHash, agentRunId, workspaceCandidateArtifactId: loaded.artifact.id, workspaceCandidateArtifactHash: loaded.artifact.artifactHash, seedHash: loaded.artifact.seedHash, candidateHash: loaded.artifact.candidateHash, workspaceDeltaId: loaded.artifact.workspaceDelta.id, localVerificationReportHash: loaded.artifact.localGate.reportHash, localVerificationTraceId: loaded.artifact.localGate.traceId, runtimeEvalDefinitionId: definition.id, runtimeEvalDefinitionHash: definition.hash, runtimeEvalPlanId: runtimePlan.id, runtimeEvalPlanHash: runtimePlan.hash, studioCapabilitySetId: STUDIO_CAPABILITY_SET.id, studioCapabilitySetHash: STUDIO_CAPABILITY_SET.hash, runtimeEvaluatorConfigurationId: configuration.id, runtimeEvaluatorConfigurationHash: configuration.hash, scope: "exact_runtime_definition_capability_set_configuration_authoritative_run" } });
+    const outcome = await executeRuntimeEvaluation({ connection: bridge, session, runtimeEvalPlan: runtimePlan, definition, configuration, timeoutMs, ...(options.traceDirectory ? { traceDirectory: resolve(options.traceDirectory) } : {}), ...(options.proofDirectory ? { proofDirectory: resolve(options.proofDirectory) } : {}), proofInput: { creatorPromptHash: agentRun.creatorPromptHash, experimentRegistrationId: registration.id, experimentRegistrationHash: registration.hash, requirementSetId: registration.artifacts.requirementSet.id, requirementViewId: loaded.artifact.requirementViewId, evaluatorViewId: registration.artifacts.evaluatorViewId, harnessConfigurationId: loaded.artifact.harnessConfigurationId, harnessConfigurationHash: loaded.artifact.harnessConfigurationHash, agentRunId, workspaceCandidateArtifactId: loaded.artifact.id, workspaceCandidateArtifactHash: loaded.artifact.artifactHash, seedHash: loaded.artifact.seedHash, candidateHash: loaded.artifact.candidateHash, workspaceDeltaId: loaded.artifact.workspaceDelta.id, localVerificationReportHash: loaded.artifact.localGate.reportHash, localVerificationTraceId: loaded.artifact.localGate.traceId, runtimeEvalDefinitionId: definition.id, runtimeEvalDefinitionHash: definition.hash, runtimeEvalPlanId: runtimePlan.id, runtimeEvalPlanHash: runtimePlan.hash, studioCapabilitySetId: STUDIO_CAPABILITY_SET.id, studioCapabilitySetHash: STUDIO_CAPABILITY_SET.hash, runtimeEvaluatorConfigurationId: configuration.id, runtimeEvaluatorConfigurationHash: configuration.hash, scope: "exact_runtime_definition_capability_set_configuration_authoritative_run" } });
     await persistPrivateRun(outcome.run, runDirectory);
-    process.stdout.write(`${JSON.stringify({ kind: "ForgeCandidateRuntimeEvaluation", schemaVersion: 1, status: outcome.run.status, meaning: "runtime_verified means only that this exact candidate satisfied this exact RuntimeEvalDefinition under this exact StudioCapabilitySet and RuntimeEvaluatorConfiguration in this authoritative Studio run.", runtimeEvaluationRunId: outcome.run.id, runtimeEvalPlanId: runtimePlan.id, runtimeProofBundleId: outcome.proof?.id, traceId: outcome.trace.id }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ kind: "ForgeExperimentRuntimeEvaluation", schemaVersion: 1, experimentRegistrationId: registration.id, experimentRegistrationHash: registration.hash, status: outcome.run.status, meaning: "runtime_verified means only that this exact registered candidate satisfied this exact RuntimeEvalDefinition under this exact StudioCapabilitySet and RuntimeEvaluatorConfiguration in this authoritative Studio run.", runtimeEvaluationRunId: outcome.run.id, runtimeEvalPlanId: runtimePlan.id, runtimeProofBundleId: outcome.proof?.id, traceId: outcome.trace.id }, null, 2)}\n`);
     process.exitCode = outcome.run.status === "runtime_verified" ? 0 : outcome.run.status === "rejected" ? 1 : 2;
   } catch (error) {
-    process.stderr.write(`Runtime candidate evaluation did not complete: ${message(error)}\n`); process.exitCode = 2;
+    process.stderr.write(`Registered experiment evaluation did not complete: ${message(error)}\n`); process.exitCode = 2;
   } finally { await bridge?.close(); }
 }
 
@@ -165,9 +202,11 @@ function loadOpenRouterApiKey(): string {
 
 function parseSimpleTraceOptions(values: string[]): { valid: boolean; traceDirectory?: string } { let traceDirectory: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--format" && next === "json") { index += 1; continue; } if (option === "--trace-dir" && next) { traceDirectory = next; index += 1; continue; } return { valid: false }; } return { valid: true, ...(traceDirectory ? { traceDirectory } : {}) }; }
 function parseAgentBuildOptions(values: string[]): { valid: boolean; prompt?: string; requirementsPath?: string; environment?: "production" | "benchmark"; model?: string; runDirectory?: string; traceDirectory?: string } { let prompt: string | undefined; let requirementsPath: string | undefined; let environment: "production" | "benchmark" | undefined; let model: string | undefined; let runDirectory: string | undefined; let traceDirectory: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--prompt" && next) { prompt = next; index += 1; continue; } if (option === "--requirements" && next) { requirementsPath = next; index += 1; continue; } if (option === "--environment" && (next === "production" || next === "benchmark")) { environment = next; index += 1; continue; } if (option === "--model" && next) { model = next; index += 1; continue; } if (option === "--run-dir" && next) { runDirectory = next; index += 1; continue; } if (option === "--trace-dir" && next) { traceDirectory = next; index += 1; continue; } if (option === "--format" && next === "json") { index += 1; continue; } return { valid: false }; } return { valid: true, ...(prompt ? { prompt } : {}), ...(requirementsPath ? { requirementsPath } : {}), ...(environment ? { environment } : {}), ...(model ? { model } : {}), ...(runDirectory ? { runDirectory } : {}), ...(traceDirectory ? { traceDirectory } : {}) }; }
-function parseCandidateEvaluateOptions(values: string[]): { valid: boolean; definitionPath?: string; requirementsPath?: string; acceptancePath?: string; timeoutMs?: number; runDirectory?: string; traceDirectory?: string; proofDirectory?: string } { let definitionPath: string | undefined; let requirementsPath: string | undefined; let acceptancePath: string | undefined; let timeoutMs: number | undefined; let runDirectory: string | undefined; let traceDirectory: string | undefined; let proofDirectory: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--runtime-plan" && next) definitionPath = next; else if (option === "--requirements" && next) requirementsPath = next; else if (option === "--acceptance" && next) acceptancePath = next; else if (option === "--timeout-ms" && next && /^\d+$/.test(next)) timeoutMs = Number(next); else if (option === "--run-dir" && next) runDirectory = next; else if (option === "--trace-dir" && next) traceDirectory = next; else if (option === "--proof-dir" && next) proofDirectory = next; else if (option === "--format" && next === "json") { index += 1; continue; } else return { valid: false }; index += 1; } return { valid: true, ...(definitionPath ? { definitionPath } : {}), ...(requirementsPath ? { requirementsPath } : {}), ...(acceptancePath ? { acceptancePath } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(runDirectory ? { runDirectory } : {}), ...(traceDirectory ? { traceDirectory } : {}), ...(proofDirectory ? { proofDirectory } : {}) }; }
+function parseExperimentRegisterOptions(values: string[]): { valid: boolean; promptPath?: string; requirementsPath?: string; acceptancePath?: string; definitionPath?: string; model?: string; outputPath?: string; name?: string; hypothesis?: string } { let promptPath: string | undefined; let requirementsPath: string | undefined; let acceptancePath: string | undefined; let definitionPath: string | undefined; let model: string | undefined; let outputPath: string | undefined; let name: string | undefined; let hypothesis: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--prompt-file" && next) promptPath = next; else if (option === "--requirements" && next) requirementsPath = next; else if (option === "--acceptance" && next) acceptancePath = next; else if (option === "--runtime-plan" && next) definitionPath = next; else if (option === "--model" && next) model = next; else if (option === "--output" && next) outputPath = next; else if (option === "--name" && next) name = next; else if (option === "--hypothesis" && next) hypothesis = next; else return { valid: false }; index += 1; } return { valid: true, ...(promptPath ? { promptPath } : {}), ...(requirementsPath ? { requirementsPath } : {}), ...(acceptancePath ? { acceptancePath } : {}), ...(definitionPath ? { definitionPath } : {}), ...(model ? { model } : {}), ...(outputPath ? { outputPath } : {}), ...(name ? { name } : {}), ...(hypothesis ? { hypothesis } : {}) }; }
+function parseExperimentBuildOptions(values: string[]): { valid: boolean; registrationPath?: string; runDirectory?: string; traceDirectory?: string } { let registrationPath: string | undefined; let runDirectory: string | undefined; let traceDirectory: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--registration" && next) registrationPath = next; else if (option === "--run-dir" && next) runDirectory = next; else if (option === "--trace-dir" && next) traceDirectory = next; else if (option === "--format" && next === "json") { index += 1; continue; } else return { valid: false }; index += 1; } return { valid: true, ...(registrationPath ? { registrationPath } : {}), ...(runDirectory ? { runDirectory } : {}), ...(traceDirectory ? { traceDirectory } : {}) }; }
+function parseExperimentEvaluateOptions(values: string[]): { valid: boolean; registrationPath?: string; timeoutMs?: number; runDirectory?: string; traceDirectory?: string; proofDirectory?: string } { let registrationPath: string | undefined; let timeoutMs: number | undefined; let runDirectory: string | undefined; let traceDirectory: string | undefined; let proofDirectory: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--registration" && next) registrationPath = next; else if (option === "--timeout-ms" && next && /^\d+$/.test(next)) timeoutMs = Number(next); else if (option === "--run-dir" && next) runDirectory = next; else if (option === "--trace-dir" && next) traceDirectory = next; else if (option === "--proof-dir" && next) proofDirectory = next; else if (option === "--format" && next === "json") { index += 1; continue; } else return { valid: false }; index += 1; } return { valid: true, ...(registrationPath ? { registrationPath } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(runDirectory ? { runDirectory } : {}), ...(traceDirectory ? { traceDirectory } : {}), ...(proofDirectory ? { proofDirectory } : {}) }; }
 function parseStudioCanaryOptions(values: string[]): { valid: boolean; planPath?: string; timeoutMs?: number; runDirectory?: string } { let planPath: string | undefined; let timeoutMs: number | undefined; let runDirectory: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--plan" && next) planPath = next; else if (option === "--timeout-ms" && next && /^\d+$/.test(next)) timeoutMs = Number(next); else if (option === "--run-dir" && next) runDirectory = next; else if (option === "--format" && next === "json") { index += 1; continue; } else return { valid: false }; index += 1; } return { valid: true, ...(planPath ? { planPath } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(runDirectory ? { runDirectory } : {}) }; }
-function usage(): void { process.stdout.write("Forge commands:\n  forge agent build <project> --prompt <request> --requirements <file> --model <exact-model-id>\n  forge candidate evaluate <artifact> --runtime-plan <file> --requirements <file> --acceptance <file>\n  forge studio canary <seed> --plan <file>\n  forge studio bridge\n  forge verify <project>\n  forge trace show <trace-id>\n"); }
+function usage(): void { process.stdout.write("Forge commands:\n  forge agent build <project> --prompt <request> --requirements <file> --model <exact-model-id>\n  forge experiment register <seed> --prompt-file <file> --requirements <file> --acceptance <file> --runtime-plan <file> --model <exact-model-id> --output <registration.json>\n  forge experiment build <seed> --registration <registration.json>\n  forge experiment evaluate <artifact> --registration <registration.json>\n  forge studio canary <seed> --plan <file>\n  forge studio bridge\n  forge verify <project>\n  forge trace show <trace-id>\n"); }
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 

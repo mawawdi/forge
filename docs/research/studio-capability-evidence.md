@@ -1,6 +1,6 @@
 # Studio Capability Evidence
 
-Status: protocol v12/plugin 8.0.0 is the current implementation, but no protocol-v12 Studio canary has run. The records below are predecessor protocol-v11 characterization evidence only.
+Status: protocol v12/plugin 8.0.0 is the current implementation. Its bounded capability canary and one exact Vertical Shuttle runtime evaluation have completed; the records below remain predecessor protocol-v11 characterization evidence only.
 
 This ledger records actual Studio observations, not local-test claims. It preserves the failure progression that justified the current position-integrity canary while making no current runtime verdict.
 
@@ -18,6 +18,4 @@ None of these runs created a model candidate, `RuntimeEvalDefinition`, `RuntimeP
 
 ## Current relationship
 
-Protocol v12 removed the predecessor protocol union and mechanic-specific paths, changed the advertised surface, and introduced plugin 8.0.0 as a clean break. Consequently, P0.2 does not prove the current executor ready.
-
-The next evidence-producing action is one user-run protocol-v12 capability canary against the current MovingPlatform seed. It must establish pairing, correlation, finite typed observations, edit-mode/Play-Solo endpoint integrity, direct nonce-correlated return, bounds, and cleanup. Until it succeeds, there is no canonical Studio readiness claim and no model run should occur.
+Protocol v12 removed the predecessor protocol union and mechanic-specific paths, changed the advertised surface, and introduced plugin 8.0.0 as a clean break. Consequently, P0.2 does not prove the current executor ready. The current v12 canary established bounded transport and observation facts; separately, the exact registered Vertical Shuttle candidate produced `runtime_verified` as `runtime_evaluation_run_35b4ef7f3f9c482d82d498bc`. Neither result retroactively changes the predecessor records or creates a general capability or MovingPlatform claim.

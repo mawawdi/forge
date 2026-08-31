@@ -2,7 +2,7 @@
 
 Status: current architectural rationale. The implementation described here exists today, and one bounded real-model trial has been preserved.
 
-Current behavior is defined by [FORGE.md](FORGE.md), claim semantics by [EVALS.md](EVALS.md), and demonstrated status by [ROADMAP.md](ROADMAP.md).
+Current architecture is defined by [ARCHITECTURE.md](ARCHITECTURE.md), product invariants by [FORGE.md](FORGE.md), claim semantics by [EVALS.md](EVALS.md), and demonstrated status by [ROADMAP.md](ROADMAP.md).
 
 ## Decision
 
@@ -36,7 +36,7 @@ This boundary makes the harness measurable. Forge, rather than a provider SDK, o
 
 The OpenRouter adapter loads `OPENROUTER_API_KEY` only at the CLI/model boundary. The key is excluded from semantic identity, request hashes, `HarnessConfiguration`, `AgentRun`, and traces. A real build requires an explicit `--model`; provider/model versions are experiment configuration, never semantic authority.
 
-The canonical experiment uses `ai@7.0.85`, `@openrouter/ai-sdk-provider@3.0.0`, `openai/gpt-5.6-terra`, provider allowlist `openai`, disabled fallbacks, required-parameter routing, medium reasoning with reasoning output retained, usage accounting, zero SDK retries, and one generated step. The provider request omits `parallel_tool_calls`: OpenRouter's current OpenAI endpoint metadata does not advertise that parameter, so combining it with required-parameter routing filters every endpoint. Forge instead validates each returned tool-call batch atomically and dispatches a valid batch sequentially in its returned order. Public Forge tool names remain dotted; the adapter deterministically maps them to OpenAI-compatible underscore wire names and reverses the mapping on returned calls. Tools have schemas and descriptions but no SDK execution callbacks. Forge performs semantic argument validation.
+The canonical experiment uses `ai@7.0.85`, `@openrouter/ai-sdk-provider@3.0.0`, `openai/gpt-5.6-luna`, provider allowlist `openai`, disabled fallbacks, required-parameter routing, medium reasoning with reasoning output retained, usage accounting, zero SDK retries, and one generated step. The provider request omits `parallel_tool_calls`: OpenRouter's current OpenAI endpoint metadata does not advertise that parameter, so combining it with required-parameter routing filters every endpoint. Forge instead validates each returned tool-call batch atomically and dispatches a valid batch sequentially in its returned order. Public Forge tool names remain dotted; the adapter deterministically maps them to OpenAI-compatible underscore wire names and reverses the mapping on returned calls. Tools have schemas and descriptions but no SDK execution callbacks. Forge performs semantic argument validation.
 
 The adapter stores AI SDK `responseMessages` as `ModelContinuation { transport, payload, hash, bytes }`, limited to 256 KiB per turn. The raw payload—including reasoning/provider metadata—is replayed unchanged in memory and never enters `AgentRun` or `BuildTrace`; only its hash and size do.
 
@@ -72,6 +72,6 @@ Injected-fetch and fake-model tests demonstrate exact OpenRouter request policy,
 
 The user-run protocol-v12/plugin-8.0.0 capability canary completed before the model trial. Two subsequent provider requests remained pre-trial failures: required-parameter routing rejected the unadvertised `parallel_tool_calls` field with HTTP 404, then OpenAI rejected dotted public Forge tool names with HTTP 400. The corrected adapter omits the former and maps the latter deterministically at the provider boundary; both corrections passed the complete local suite before another request.
 
-The sole real trial, `agent_run_e7b303bf-5712-4cc5-9f0a-f15c17d22286`, used `openai/gpt-5.6-terra` and crossed `trialStarted`. It ended `incomplete / agent_failure` after seven turns because Forge enforced `src/server` without exposing that root to the model. The model inspected the empty project, created a coherent plan, attempted two plausible write paths, received `PATH_FORBIDDEN`, requested verifier feedback, and stopped. No source changed, no candidate was sealed, and Studio remained `not_run`.
+The sole real trial, `agent_run_e7b303bf-5712-4cc5-9f0a-f15c17d22286`, used `openai/gpt-5.6-luna` and crossed `trialStarted`. It ended `incomplete / agent_failure` after seven turns because Forge enforced `src/server` without exposing that root to the model. The model inspected the empty project, created a coherent plan, attempted two plausible write paths, received `PATH_FORBIDDEN`, requested verifier feedback, and stopped. No source changed, no candidate was sealed, and Studio remained `not_run`.
 
-This is evidence about the harness, not a model-quality or runtime verdict. The next engineering task is a regression and provider-visible source-root capability fact. The consumed MovingPlatform trial is not eligible for retry or prompt tuning.
+This is evidence about the harness, not a model-quality or runtime verdict. The provider-visible source-root correction is now covered by a deterministic empty-root regression; the consumed MovingPlatform trial remains ineligible for retry or prompt tuning.

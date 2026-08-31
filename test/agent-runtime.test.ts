@@ -13,13 +13,22 @@ import { createProjectSnapshot } from "../packages/semantic-map/src/index.js";
 const VULNERABLE = resolve("test/fixtures/client-controlled-authoritative-state");
 const SAFE = resolve("test/fixtures/authoritative-state-safe");
 const MOVING = resolve("examples/moving-platform/seed");
+const EMPTY_ROOT = resolve("test/fixtures/empty-declared-source-root");
 const CREATOR_PROMPT = "Keep authoritative state server-owned while preserving the existing request interface.";
+const EMPTY_ROOT_PROMPT = "Create a minimal server bootstrap script in the declared source root.";
 
 async function directory(): Promise<string> { return mkdtemp(join(tmpdir(), "forge-agent-runtime-")); }
 function requirements(): RequirementSet {
   return createRequirementSet([
     { kind: "Requirement", schemaVersion: 1, id: "creator-authority-outcome", statement: CREATOR_PROMPT, source: "creator", authority: "policy", visibility: "builder_visible", enforcement: "blocking", verificationModes: ["static"], evidence: [{ kind: "creator_request", id: "creator-evidence", intentId: "creator-intent", requestHash: contentHash(CREATOR_PROMPT) }] },
     { kind: "Requirement", schemaVersion: 1, id: "hidden-evaluator-sentinel", statement: "HIDDEN_EXPECTED_VALUE_999", source: "benchmark_oracle", authority: "evaluation_only", visibility: "evaluator_only", enforcement: "blocking", verificationModes: ["evaluator"], evidence: [{ kind: "benchmark_fixture", id: "hidden-evidence", benchmarkId: "authority", oracleId: "oracle", fixtureHash: contentHash("hidden") }] }
+  ]);
+}
+
+function emptyRootRequirements(): RequirementSet {
+  return createRequirementSet([
+    { kind: "Requirement", schemaVersion: 1, id: "creator-empty-root", statement: EMPTY_ROOT_PROMPT, source: "creator", authority: "policy", visibility: "builder_visible", enforcement: "blocking", verificationModes: ["static"], evidence: [{ kind: "creator_request", id: "creator-empty-root-evidence", intentId: "creator-empty-root-intent", requestHash: contentHash(EMPTY_ROOT_PROMPT) }] },
+    { kind: "Requirement", schemaVersion: 1, id: "hidden-empty-root-sentinel", statement: "HIDDEN_EMPTY_ROOT_EVALUATOR_999", source: "benchmark_oracle", authority: "evaluation_only", visibility: "evaluator_only", enforcement: "blocking", verificationModes: ["evaluator"], evidence: [{ kind: "benchmark_fixture", id: "hidden-empty-root-evidence", benchmarkId: "empty-root", oracleId: "oracle", fixtureHash: contentHash("hidden-empty-root") }] }
   ]);
 }
 
@@ -78,6 +87,50 @@ test("the independent final gate succeeds when the model never invokes forge.ver
   const runDirectory = await directory();
   const result = await runBoundedAgent({ seedRoot: VULNERABLE, creatorPrompt: CREATOR_PROMPT, requirementSet: requirements(), runtime: new ForgeNativeAgentRuntime(await repairingClient(false)), model: "fake/model", runDirectory, traceDirectory: join(runDirectory, "traces") });
   assert.equal(result.status, "locally_eligible"); assert.equal(result.run.toolCalls.some((call) => call.name === "forge.verify"), false); assert.equal(result.finalVerification.report.gate.status, "eligible");
+});
+
+test("an empty declared source root is visible before planning, supports creation, and seals a locally eligible candidate", async () => {
+  const runDirectory = await directory();
+  let orientationContentHash = "";
+  let toolDescriptionHash = "";
+  const client = new ScriptedModelClient([
+    (request) => {
+      const firstMessage = request.messages[0];
+      assert.equal(firstMessage?.role, "user");
+      const initial = JSON.parse(firstMessage!.role === "user" ? firstMessage.content : "{}") as { orientation: { content: { files: unknown[]; sourceRoots: string[] } } };
+      assert.deepEqual(initial.orientation.content.files, []);
+      assert.deepEqual(initial.orientation.content.sourceRoots, ["src/server"]);
+      assert.equal(firstMessage!.role === "user" && firstMessage.content.includes(runDirectory), false);
+      assert.doesNotMatch(firstMessage!.role === "user" ? firstMessage.content : "", /HIDDEN_EMPTY_ROOT_EVALUATOR_999/);
+      const write = request.tools.find((definition) => definition.name === "workspace.write");
+      assert.match(write?.description ?? "", /candidate-relative/);
+      assert.match(write?.description ?? "", /orientation\.content\.sourceRoots/);
+      orientationContentHash = contentHash(stableJson(initial.orientation.content));
+      toolDescriptionHash = contentHash(stableJson(request.tools.map(({ name, description }) => ({ name, description }))));
+      return assistant(1, [
+        { id: "plan", name: "plan.update", arguments: { goal: "Create the bootstrap script", steps: [{ id: "create", statement: "Create the server bootstrap script", status: "in_progress" }], expectedTouchedAreas: ["src/server/Bootstrap.server.luau"], verificationIntentions: ["Run the local verifier"], status: "active" } },
+        { id: "write", name: "workspace.write", arguments: { path: "src/server/Bootstrap.server.luau", precondition: { kind: "absent" }, content: "local initialized = true\n" } }
+      ])(request);
+    },
+    assistant(2, [{ id: "verify", name: "forge.verify", arguments: {} }]),
+    (request) => {
+      const verifierFeedback = request.messages.at(-1);
+      assert.equal(verifierFeedback?.role, "tool");
+      assert.match(verifierFeedback?.role === "tool" ? verifierFeedback.content : "", /locally_eligible/);
+      return assistant(3, [], "Bootstrap script created and locally verified.")(request);
+    }
+  ]);
+  const result = await runBoundedAgent({ seedRoot: EMPTY_ROOT, creatorPrompt: EMPTY_ROOT_PROMPT, requirementSet: emptyRootRequirements(), runtime: new ForgeNativeAgentRuntime(client), model: "fake/model", runDirectory, traceDirectory: join(runDirectory, "traces") });
+  assert.equal(result.status, "locally_eligible");
+  assert.equal(result.classification, "none");
+  assert.deepEqual(result.run.toolCalls.map((call) => call.name), ["plan.update", "workspace.write", "forge.verify"]);
+  assert.ok(result.candidateArtifact);
+  assert.deepEqual(result.run.workspaceDelta?.operations.map((operation) => operation.path), ["src/server/Bootstrap.server.luau"]);
+  assert.equal(await readFile(join(result.candidateRoot, "src/server/Bootstrap.server.luau"), "utf8"), "local initialized = true\n");
+  assert.equal(orientationContentHash, "292532c19fd966796c62c6af4ef0e4d6ebd298c9e3bd645ad197064424d1ffbd");
+  assert.equal(toolDescriptionHash, "b84ebc2580666fb7c8711d9d81ad08525b72b9b1ad2b29641d92ef9df0a72d8b");
+  assert.equal(result.run.harnessConfigurationId, "harness_configuration_9c8fa37507f13c2a7f8aa837");
+  assert.equal(result.run.harnessConfigurationHash, "9c8fa37507f13c2a7f8aa837167bf668ba5f48a9608a8229480de75028731f98");
 });
 
 test("mixed invalid tool batches execute nothing, return feedback for every call, and recover in-session", async () => {
@@ -193,17 +246,25 @@ test("builder orientation withholds benchmark bodies and HarnessConfiguration ha
   const workspace = await CandidateWorkspace.create(MOVING, await directory(), INITIAL_EXPERIMENT_BUDGETS);
   const map = await workspace.semanticMap();
   const view = resolveRequirementView(requirements(), { phase: "build", environment: "benchmark", audience: "builder" });
-  const orientation = compileAgentOrientation({ semanticMap: map, projectSnapshotHash: createProjectSnapshot(map).projectSemanticHash, requirementView: view });
+  const orientation = compileAgentOrientation({ semanticMap: map, projectSnapshotHash: createProjectSnapshot(map).projectSemanticHash, requirementView: view, sourceRoots: workspace.sourceRoots });
   assert.doesNotMatch(stableJson(orientation), /HIDDEN_EXPECTED_VALUE_999|hidden-evaluator-sentinel/);
+  assert.deepEqual(orientation.content.sourceRoots, ["src/server"]);
+  const sortedOrientation = compileAgentOrientation({ semanticMap: map, projectSnapshotHash: createProjectSnapshot(map).projectSemanticHash, requirementView: view, sourceRoots: ["src/shared", "src/server"] });
+  assert.deepEqual(sortedOrientation.content.sourceRoots, ["src/server", "src/shared"]);
+  for (const invalidRoots of [["src/server", "src/server"], ["./src/server"], ["src//server"], ["src/server/"], ["src\\server"], ["/src/server"], ["C:/src/server"], ["src/../server"]]) {
+    assert.throws(() => compileAgentOrientation({ semanticMap: map, projectSnapshotHash: createProjectSnapshot(map).projectSemanticHash, requirementView: view, sourceRoots: invalidRoots }));
+  }
   const input = { systemPrompt: "one", tools: [{ name: "project.read", description: "read", schema: { type: "object" } }, { name: "project.list", description: "list", schema: { type: "object" } }], capabilityPolicy: { sourceRoots: ["src"], blockedPathPrefixes: [".forge"], allowedExtensions: [".lua", ".luau"] }, orientation: { policy: orientation.policy, contentHash: orientation.contentHash }, requirementViewHash: contentHash("view"), budgets: INITIAL_EXPERIMENT_BUDGETS, runtime: { name: "forge-native", version: "1" }, model: { transport: "fake", name: "fake/model", clientVersion: "1", transportConfiguration: new ScriptedModelClient([]).descriptor.configuration } };
   const first = createHarnessConfiguration(input); const second = createHarnessConfiguration(input); const changed = createHarnessConfiguration({ ...input, tools: input.tools.map((item, index) => index === 0 ? { ...item, description: "different" } : item) }); const reordered = createHarnessConfiguration({ ...input, tools: [...input.tools].reverse() });
   assert.equal(first.hash, second.hash); assert.notEqual(first.hash, changed.hash); assert.notEqual(first.hash, reordered.hash); assert.throws(() => assertHarnessConfiguration({ ...first, hash: contentHash("tampered") }));
+  assert.throws(() => assertHarnessConfiguration({ ...first, schemaVersion: 3 }));
+  assert.throws(() => assertHarnessConfiguration({ ...first, orientation: { ...first.orientation, policy: "source_free_project_facts_v1" } }));
   assert.doesNotThrow(() => createHarnessConfiguration({ ...input, systemPrompt: "A reward, sell action, door, and fruit are ordinary domain words." }));
 });
 
 test("generic packages do not import deleted mechanics, adapters, fixtures, or Studio harness registries", async () => {
   const paths = [
-    "packages/agent-runtime/src/index.ts", "packages/cli/src/index.ts", "packages/context-compiler/src/agent-orientation.ts", "packages/context-compiler/src/index.ts",
+    "packages/agent-runtime/src/index.ts", "packages/cli/src/index.ts", "packages/context-compiler/src/agent-orientation.ts", "packages/context-compiler/src/index.ts", "packages/experiments/src/index.ts",
     "packages/contracts/src/index.ts", "packages/flight-recorder/src/index.ts", "packages/luau-toolchain/src/index.ts", "packages/model-client/src/contracts.ts", "packages/model-client/src/index.ts",
     "packages/proofs/src/index.ts", "packages/proofs/src/runtime.ts", "packages/semantic-authority/src/index.ts", "packages/semantic-authority/src/policies.ts",
     "packages/semantic-map/src/index.ts", "packages/studio-bridge/src/index.ts", "packages/studio-capabilities/src/index.ts", "packages/studio-protocol/src/index.ts",

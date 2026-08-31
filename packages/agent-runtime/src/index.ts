@@ -39,20 +39,20 @@ export interface HarnessConfigurationInput {
 }
 
 export interface HarnessConfiguration extends HarnessConfigurationInput {
-  kind: "HarnessConfiguration"; schemaVersion: 3; id: string; hash: string;
+  kind: "HarnessConfiguration"; schemaVersion: 4; id: string; hash: string;
 }
 
 export function createHarnessConfiguration(input: HarnessConfigurationInput): HarnessConfiguration {
   assertNonEmpty(input.systemPrompt, "HarnessConfiguration system prompt");
   const canonical = canonicalHarnessInput(input);
   const hash = contentHash(stableJson(canonical));
-  const configuration: HarnessConfiguration = { kind: "HarnessConfiguration", schemaVersion: 3, id: `harness_configuration_${hash.slice(0, 24)}`, hash, ...canonical };
+  const configuration: HarnessConfiguration = { kind: "HarnessConfiguration", schemaVersion: 4, id: `harness_configuration_${hash.slice(0, 24)}`, hash, ...canonical };
   assertHarnessConfiguration(configuration);
   return configuration;
 }
 
 export function assertHarnessConfiguration(value: unknown): asserts value is HarnessConfiguration {
-  if (!isRecord(value) || value.kind !== "HarnessConfiguration" || value.schemaVersion !== 3 || !isIdentifier(value.id) || !isHash(value.hash) || typeof value.systemPrompt !== "string" || !Array.isArray(value.tools) || !isRecord(value.capabilityPolicy) || !isRecord(value.orientation) || !isHash(value.requirementViewHash) || !isRecord(value.budgets) || !isRecord(value.runtime) || !isRecord(value.model) || !isRecord(value.model.transportConfiguration)) throw new Error("Invalid HarnessConfiguration");
+  if (!isRecord(value) || value.kind !== "HarnessConfiguration" || value.schemaVersion !== 4 || !isIdentifier(value.id) || !isHash(value.hash) || typeof value.systemPrompt !== "string" || !Array.isArray(value.tools) || !isRecord(value.capabilityPolicy) || !isRecord(value.orientation) || value.orientation.policy !== "source_free_project_capabilities_v2" || !isHash(value.orientation.contentHash) || !isHash(value.requirementViewHash) || !isRecord(value.budgets) || !isRecord(value.runtime) || !isRecord(value.model) || !isRecord(value.model.transportConfiguration)) throw new Error("Invalid HarnessConfiguration");
   const canonical = canonicalHarnessInput(value as unknown as HarnessConfigurationInput);
   const expectedHash = contentHash(stableJson(canonical));
   if (value.hash !== expectedHash || value.id !== `harness_configuration_${expectedHash.slice(0, 24)}`) throw new Error("Invalid HarnessConfiguration identity");
@@ -81,8 +81,8 @@ export interface WorkspaceDelta { kind: "WorkspaceDelta"; schemaVersion: 1; id: 
 export type WorkspaceWritePrecondition = { kind: "sha256"; hash: string } | { kind: "absent" };
 
 export interface WorkspaceCandidateArtifact {
-  kind: "WorkspaceCandidateArtifact"; schemaVersion: 1; id: string; artifactHash: string;
-  origin: { kind: "agent_run"; agentRunId: string };
+  kind: "WorkspaceCandidateArtifact"; schemaVersion: 2; id: string; artifactHash: string;
+  origin: { kind: "creator_build"; agentRunId: string } | { kind: "registered_experiment"; agentRunId: string; experimentRegistrationId: string; experimentRegistrationHash: string };
   createdAt: string; seedRoot: string; seedHash: string; candidateDirectory: string; candidateHash: string;
   workspaceDelta: WorkspaceDelta; requirementSetId: string; requirementViewId: string;
   harnessConfigurationId: string; harnessConfigurationHash: string;
@@ -113,8 +113,10 @@ export interface AgentRuntimeInput { systemPrompt: string; prompt: string; orien
 export interface AgentRuntimeResult { status: "completed" | "failed" | "budget_exhausted"; trialStarted: boolean; summary?: string; error?: string; failureKind?: "provider" | "model" | "tool" | "harness"; usage: RuntimeUsage; turns: AgentModelTurn[] }
 export interface AgentRuntime { readonly identity: { name: string; version: string }; readonly modelClientDescriptor: ModelClient["descriptor"]; run(input: AgentRuntimeInput): Promise<AgentRuntimeResult> }
 
+export const FORGE_NATIVE_RUNTIME_IDENTITY = { name: "forge-native-agent-runtime", version: "1.2.0" } as const;
+
 export class ForgeNativeAgentRuntime implements AgentRuntime {
-  readonly identity = { name: "forge-native-agent-runtime", version: "1.1.0" };
+  readonly identity = FORGE_NATIVE_RUNTIME_IDENTITY;
   readonly modelClientDescriptor: ModelClient["descriptor"];
   constructor(private readonly modelClient: ModelClient) { this.modelClientDescriptor = { ...modelClient.descriptor }; }
 
@@ -172,7 +174,8 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
 export interface BudgetConsumption { turns: number; toolCalls: number; writes: number; verifierCalls: number; changedFiles: number; addedLines: number; removedLines: number; changedSourceBytes: number; toolResultBytes: number; durationMs: number; inputTokens: number | null; outputTokens: number | null; costUsd: number | null }
 export interface AgentRunPersistence { path: string; artifactHash: string; mode: number }
 export interface AgentRun {
-  kind: "AgentRun"; schemaVersion: 3; id: string; createdAt: string; status: AgentRunStatus; classification: AgentFailureClassification; trialStarted: boolean;
+  kind: "AgentRun"; schemaVersion: 4; id: string; createdAt: string; status: AgentRunStatus; classification: AgentFailureClassification; trialStarted: boolean;
+  origin: { kind: "creator_build" } | { kind: "registered_experiment"; experimentRegistrationId: string; experimentRegistrationHash: string };
   creatorPromptHash: string; requirementSetId: string; requirementViewId: string; orientationId: string;
   harnessConfigurationId: string; harnessConfigurationHash: string; seedHash: string; workspaceDelta?: WorkspaceDelta;
   runtime: { name: string; version: string }; model: { transport: string; name: string; clientVersion: string; transportConfiguration: ModelClient["descriptor"]["configuration"] }; modelTurns: AgentModelTurn[];
@@ -180,16 +183,36 @@ export interface AgentRun {
   finalVerification: { gate: "eligible" | "rejected" | "incomplete"; reportHash: string; traceId: string };
   buildTraceId?: string; studio: "not_run"; summary?: string; error?: string;
 }
-export interface AgentBuildRequest { seedRoot: string; creatorPrompt: string; requirementSet: RequirementSet; runtime: AgentRuntime; model: string; runDirectory: string; traceDirectory: string; environment?: "production" | "benchmark"; budgets?: BudgetPolicy; systemPrompt?: string }
+export interface ExperimentRegistrationBinding {
+  id: string;
+  hash: string;
+  expected: {
+    seedHash: string;
+    sourceRoots: string[];
+    orientationId: string;
+    orientationContentHash: string;
+    toolDescriptionsHash: string;
+    harnessConfigurationId: string;
+    harnessConfigurationHash: string;
+  };
+}
+export interface AgentBuildRequest { seedRoot: string; creatorPrompt: string; requirementSet: RequirementSet; runtime: AgentRuntime; model: string; runDirectory: string; traceDirectory: string; environment?: "production" | "benchmark"; budgets?: BudgetPolicy; systemPrompt?: string; experiment?: ExperimentRegistrationBinding; beforeModelInvocation?: () => Promise<void> }
+export interface PreparedAgentBuild { creatorStatement: string; budgets: BudgetPolicy; requirementView: ReturnType<typeof resolveRequirementView>; workspace: CandidateWorkspace; orientation: AgentOrientation; toolHost: BoundedToolHost; systemPrompt: string; modelDescriptor: { transport: string; name: string; clientVersion: string; transportConfiguration: ModelClient["descriptor"]["configuration"] }; configuration: HarnessConfiguration }
 export interface AgentBuildResult { status: AgentRunStatus; classification: AgentFailureClassification; run: AgentRun; persistence: AgentRunPersistence; candidateRoot: string; candidateArtifact?: { artifact: WorkspaceCandidateArtifact; persistence: WorkspaceCandidateArtifactPersistence }; trace: BuildTrace; tracePersistence: TracePersistence; finalVerification: VerificationRun }
 
 export function assertBuildPlan(value: unknown): asserts value is BuildPlan { if (!isRecord(value) || value.kind !== "BuildPlan" || value.schemaVersion !== 1 || !isIdentifier(value.id) || !Number.isInteger(value.revision) || typeof value.goal !== "string" || !Array.isArray(value.steps) || value.source !== "agent_plan" || value.authority !== "hypothesis") throw new Error("Invalid BuildPlan"); }
 export function assertWorkspaceDelta(value: unknown): asserts value is WorkspaceDelta { if (!isRecord(value) || value.kind !== "WorkspaceDelta" || value.schemaVersion !== 1 || !isIdentifier(value.id) || !isHash(value.seedHash) || !isHash(value.candidateHash) || !Array.isArray(value.operations)) throw new Error("Invalid WorkspaceDelta"); }
-export function assertAgentRun(value: unknown): asserts value is AgentRun { if (!isRecord(value) || value.kind !== "AgentRun" || value.schemaVersion !== 3 || !isIdentifier(value.id) || typeof value.trialStarted !== "boolean" || !["locally_eligible", "rejected", "incomplete"].includes(String(value.status)) || !["none", "agent_failure", "tool_failure", "budget_exhausted", "verification_failure", "workspace_capability_violation", "provider_failure", "harness_failure", "incomplete"].includes(String(value.classification)) || value.studio !== "not_run" || !Array.isArray(value.modelTurns) || !isRecord(value.finalVerification) || !isRecord(value.model) || !isRecord(value.model.transportConfiguration)) throw new Error("Invalid AgentRun"); }
+export function assertAgentRun(value: unknown): asserts value is AgentRun {
+  if (!isRecord(value) || value.kind !== "AgentRun" || value.schemaVersion !== 4 || !isIdentifier(value.id) || typeof value.trialStarted !== "boolean" || !["locally_eligible", "rejected", "incomplete"].includes(String(value.status)) || !["none", "agent_failure", "tool_failure", "budget_exhausted", "verification_failure", "workspace_capability_violation", "provider_failure", "harness_failure", "incomplete"].includes(String(value.classification)) || value.studio !== "not_run" || !Array.isArray(value.modelTurns) || !isRecord(value.finalVerification) || !isRecord(value.model) || !isRecord(value.model.transportConfiguration) || !isRecord(value.origin)) throw new Error("Invalid AgentRun");
+  if (value.origin.kind === "creator_build") return;
+  if (value.origin.kind !== "registered_experiment" || !isIdentifier(value.origin.experimentRegistrationId) || !isHash(value.origin.experimentRegistrationHash)) throw new Error("Invalid AgentRun origin");
+}
 
 export function assertWorkspaceCandidateArtifact(value: unknown): asserts value is WorkspaceCandidateArtifact {
-  if (!isRecord(value) || value.kind !== "WorkspaceCandidateArtifact" || value.schemaVersion !== 1 || !isIdentifier(value.id) || !isHash(value.artifactHash) || !isString(value.createdAt) || !isString(value.seedRoot) || !isHash(value.seedHash) || !isSafeRelative(String(value.candidateDirectory)) || !isHash(value.candidateHash) || !isRecord(value.origin) || !isIdentifier(value.requirementSetId) || !isIdentifier(value.requirementViewId) || !isIdentifier(value.harnessConfigurationId) || !isHash(value.harnessConfigurationHash) || !Array.isArray(value.sourceFiles) || !isRecord(value.localGate)) throw new Error("Invalid WorkspaceCandidateArtifact");
-  if (value.origin.kind !== "agent_run" || !isIdentifier(value.origin.agentRunId)) throw new Error("Invalid WorkspaceCandidateArtifact origin");
+  if (!isRecord(value) || value.kind !== "WorkspaceCandidateArtifact" || value.schemaVersion !== 2 || !isIdentifier(value.id) || !isHash(value.artifactHash) || !isString(value.createdAt) || !isString(value.seedRoot) || !isHash(value.seedHash) || !isSafeRelative(String(value.candidateDirectory)) || !isHash(value.candidateHash) || !isRecord(value.origin) || !isIdentifier(value.requirementSetId) || !isIdentifier(value.requirementViewId) || !isIdentifier(value.harnessConfigurationId) || !isHash(value.harnessConfigurationHash) || !Array.isArray(value.sourceFiles) || !isRecord(value.localGate)) throw new Error("Invalid WorkspaceCandidateArtifact");
+  if (value.origin.kind === "creator_build") {
+    if (!isIdentifier(value.origin.agentRunId)) throw new Error("Invalid WorkspaceCandidateArtifact origin");
+  } else if (value.origin.kind !== "registered_experiment" || !isIdentifier(value.origin.agentRunId) || !isIdentifier(value.origin.experimentRegistrationId) || !isHash(value.origin.experimentRegistrationHash)) throw new Error("Invalid WorkspaceCandidateArtifact origin");
   assertWorkspaceDelta(value.workspaceDelta);
   if (value.workspaceDelta.seedHash !== value.seedHash || value.workspaceDelta.candidateHash !== value.candidateHash) throw new Error("WorkspaceCandidateArtifact delta hashes do not match");
   if (!(value.sourceFiles as unknown[]).every((file) => isRecord(file) && isSafeRelative(String(file.path)) && isHash(file.sourceHash) && ["server", "client", "shared", "unknown"].includes(String(file.executionContext)))) throw new Error("Invalid WorkspaceCandidateArtifact source manifest");
@@ -205,19 +228,17 @@ const BLOCKED_PREFIXES = [".forge", "runs", "proofs", "regressions", "patches", 
 const ALLOWED_EXTENSIONS = [".lua", ".luau"];
 const WORKSPACE_CAPABILITY_CODES = new Set(["PATH_FORBIDDEN", "PATH_NOT_REGULAR_FILE", "PATH_NOT_REGULAR_DIRECTORY", "PATH_ALREADY_EXISTS", "STALE_WRITE", "PLAN_REQUIRED", "WRITE_BUDGET_EXHAUSTED", "WRITE_SIZE_EXCEEDED", "DELTA_BUDGET_EXCEEDED"]);
 
-export async function runBoundedAgent(request: AgentBuildRequest): Promise<AgentBuildResult> {
+export async function prepareAgentBuild(request: AgentBuildRequest): Promise<PreparedAgentBuild> {
   assertRequirementSet(request.requirementSet);
   assertNonEmpty(request.creatorPrompt, "creator prompt");
   assertNonEmpty(request.model, "model");
   const creator = request.requirementSet.requirements.find((requirement) => requirement.source === "creator" && requirement.evidence.some((evidence) => evidence.kind === "creator_request" && evidence.requestHash === contentHash(request.creatorPrompt)));
   if (!creator) throw new Error("Creator prompt must have hash-matched creator requirement evidence");
   const budgets = { ...(request.budgets ?? INITIAL_EXPERIMENT_BUDGETS) };
-  const startedAt = Date.now();
-  const runId = `agent_run_${randomUUID()}`;
   const requirementView = resolveRequirementView(request.requirementSet, { phase: "build", environment: request.environment ?? "production", audience: "builder" });
   const workspace = await CandidateWorkspace.create(request.seedRoot, request.runDirectory, budgets, request.traceDirectory);
   const semanticMap = await workspace.semanticMap();
-  const orientation = compileAgentOrientation({ semanticMap, projectSnapshotHash: createProjectSnapshot(semanticMap).projectSemanticHash, requirementView });
+  const orientation = compileAgentOrientation({ semanticMap, projectSnapshotHash: createProjectSnapshot(semanticMap).projectSemanticHash, requirementView, sourceRoots: workspace.sourceRoots });
   const toolHost = new BoundedToolHost(workspace, budgets);
   const systemPrompt = request.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
   const modelDescriptor = { transport: request.runtime.modelClientDescriptor.transport, name: request.model, clientVersion: request.runtime.modelClientDescriptor.version, transportConfiguration: request.runtime.modelClientDescriptor.configuration };
@@ -229,56 +250,84 @@ export async function runBoundedAgent(request: AgentBuildRequest): Promise<Agent
     requirementViewHash: contentHash(stableJson(requirementView)), budgets,
     runtime: request.runtime.identity, model: modelDescriptor
   });
+  return { creatorStatement: creator.statement, budgets, requirementView, workspace, orientation, toolHost, systemPrompt, modelDescriptor, configuration };
+}
+
+export function orderedToolDescriptionsHash(tools: readonly Pick<AgentToolDefinition, "name" | "description">[]): string {
+  return contentHash(stableJson(tools.map((tool) => ({ name: tool.name, description: tool.description }))));
+}
+
+function assertExperimentPreparation(binding: ExperimentRegistrationBinding, prepared: PreparedAgentBuild): void {
+  if (!isIdentifier(binding.id) || !isHash(binding.hash) || !isHash(binding.expected.seedHash) || !Array.isArray(binding.expected.sourceRoots) || !isIdentifier(binding.expected.orientationId) || !isHash(binding.expected.orientationContentHash) || !isHash(binding.expected.toolDescriptionsHash) || !isIdentifier(binding.expected.harnessConfigurationId) || !isHash(binding.expected.harnessConfigurationHash)) throw new Error("Invalid ExperimentRegistration binding");
+  const actual = {
+    seedHash: prepared.workspace.seedTreeHash,
+    sourceRoots: prepared.workspace.sourceRoots,
+    orientationId: prepared.orientation.id,
+    orientationContentHash: prepared.orientation.contentHash,
+    toolDescriptionsHash: orderedToolDescriptionsHash(prepared.toolHost.definitions()),
+    harnessConfigurationId: prepared.configuration.id,
+    harnessConfigurationHash: prepared.configuration.hash
+  };
+  if (stableJson(actual) !== stableJson(binding.expected)) throw new Error("ExperimentRegistration drift detected before model invocation");
+}
+
+export async function runBoundedAgent(request: AgentBuildRequest): Promise<AgentBuildResult> {
+  const startedAt = Date.now();
+  const runId = `agent_run_${randomUUID()}`;
+  const prepared = await prepareAgentBuild(request);
+  if (request.experiment) assertExperimentPreparation(request.experiment, prepared);
+  await request.beforeModelInvocation?.();
 
   let runtimeResult: AgentRuntimeResult;
   try {
-    runtimeResult = await request.runtime.run({ systemPrompt, prompt: creator.statement, orientation, tools: toolHost, budgets, model: request.model });
+    runtimeResult = await request.runtime.run({ systemPrompt: prepared.systemPrompt, prompt: prepared.creatorStatement, orientation: prepared.orientation, tools: prepared.toolHost, budgets: prepared.budgets, model: request.model });
   } catch (error) {
     runtimeResult = { status: "failed", trialStarted: false, failureKind: "harness", error: error instanceof Error ? error.message : String(error), usage: emptyRuntimeUsage(), turns: [] };
   }
 
   let delta: WorkspaceDelta;
-  try { delta = await workspace.freezeDelta(); }
+  try { delta = await prepared.workspace.freezeDelta(); }
   catch (error) {
     runtimeResult = { ...runtimeResult, status: "failed", failureKind: "tool", error: error instanceof Error ? error.message : String(error) };
-    delta = await workspace.currentDeltaUnchecked();
+    delta = await prepared.workspace.currentDeltaUnchecked();
   }
-  const consumption = workspace.consumption(toolHost.records(), Date.now() - startedAt, runtimeResult.usage);
-  const exhausted = exhaustedBudgets(budgets, consumption);
-  const finalVerification = await verifyProject(workspace.candidateRoot, { traceDirectory: request.traceDirectory, traceReferences: { agentRunId: runId, requirementSetId: request.requirementSet.id, requirementViewId: requirementView.id, workspaceDeltaId: delta.id, harnessConfigurationId: configuration.id, harnessConfigurationHash: configuration.hash } });
-  await workspace.assertSeedUnchanged();
+  const consumption = prepared.workspace.consumption(prepared.toolHost.records(), Date.now() - startedAt, runtimeResult.usage);
+  const exhausted = exhaustedBudgets(prepared.budgets, consumption);
+  const finalVerification = await verifyProject(prepared.workspace.candidateRoot, { traceDirectory: request.traceDirectory, traceReferences: { agentRunId: runId, ...(request.experiment ? { experimentRegistrationId: request.experiment.id, experimentRegistrationHash: request.experiment.hash } : {}), requirementSetId: request.requirementSet.id, requirementViewId: prepared.requirementView.id, workspaceDeltaId: delta.id, harnessConfigurationId: prepared.configuration.id, harnessConfigurationHash: prepared.configuration.hash } });
+  await prepared.workspace.assertSeedUnchanged();
 
   let status: AgentRunStatus = "incomplete";
   let classification: AgentFailureClassification = "incomplete";
   if (runtimeResult.status === "budget_exhausted" || exhausted.length > 0) classification = "budget_exhausted";
   else if (runtimeResult.status === "failed") classification = runtimeResult.failureKind === "provider" ? "provider_failure" : runtimeResult.failureKind === "model" ? "agent_failure" : runtimeResult.failureKind === "tool" ? "tool_failure" : "harness_failure";
-  else if (toolHost.plans().length === 0 || delta.operations.length === 0) classification = "agent_failure";
+  else if (prepared.toolHost.plans().length === 0 || delta.operations.length === 0) classification = "agent_failure";
   else if (finalVerification.report.gate.status === "eligible") { status = "locally_eligible"; classification = "none"; }
   else if (finalVerification.report.gate.status === "rejected") {
     status = "rejected";
-    const failureCodes = toolHost.records().flatMap((record) => record.result.error?.code ? [record.result.error.code] : []);
+    const failureCodes = prepared.toolHost.records().flatMap((record) => record.result.error?.code ? [record.result.error.code] : []);
     classification = failureCodes.some((code) => WORKSPACE_CAPABILITY_CODES.has(code)) ? "workspace_capability_violation" : failureCodes.length > 0 ? "tool_failure" : "verification_failure";
   }
 
   const run: AgentRun = {
-    kind: "AgentRun", schemaVersion: 3, id: runId, createdAt: new Date().toISOString(), status, classification, trialStarted: runtimeResult.trialStarted,
-    creatorPromptHash: contentHash(request.creatorPrompt), requirementSetId: request.requirementSet.id, requirementViewId: requirementView.id,
-    orientationId: orientation.id, harnessConfigurationId: configuration.id, harnessConfigurationHash: configuration.hash, seedHash: workspace.seedTreeHash,
+    kind: "AgentRun", schemaVersion: 4, id: runId, createdAt: new Date().toISOString(), status, classification, trialStarted: runtimeResult.trialStarted,
+    origin: request.experiment ? { kind: "registered_experiment", experimentRegistrationId: request.experiment.id, experimentRegistrationHash: request.experiment.hash } : { kind: "creator_build" },
+    creatorPromptHash: contentHash(request.creatorPrompt), requirementSetId: request.requirementSet.id, requirementViewId: prepared.requirementView.id,
+    orientationId: prepared.orientation.id, harnessConfigurationId: prepared.configuration.id, harnessConfigurationHash: prepared.configuration.hash, seedHash: prepared.workspace.seedTreeHash,
     ...(delta.operations.length > 0 ? { workspaceDelta: delta } : {}),
-    runtime: { ...request.runtime.identity }, model: modelDescriptor, modelTurns: runtimeResult.turns,
-    plans: toolHost.plans(), toolCalls: [...toolHost.records()], budgets: { policy: budgets, consumed: consumption, exhausted },
+    runtime: { ...request.runtime.identity }, model: prepared.modelDescriptor, modelTurns: runtimeResult.turns,
+    plans: prepared.toolHost.plans(), toolCalls: [...prepared.toolHost.records()], budgets: { policy: prepared.budgets, consumed: consumption, exhausted },
     finalVerification: { gate: finalVerification.report.gate.status, reportHash: contentHash(stableJson(finalVerification.report)), traceId: finalVerification.trace.id },
     studio: "not_run", ...(runtimeResult.summary ? { summary: runtimeResult.summary } : {}), ...(runtimeResult.error ? { error: runtimeResult.error } : {})
   };
   assertAgentRun(run);
-  const trace = createAgentBuildTrace(run, configuration, finalVerification);
+  const trace = createAgentBuildTrace(run, prepared.configuration, finalVerification);
   const tracePersistence = await new JsonFileTraceSink(request.traceDirectory).persist(trace);
   run.buildTraceId = trace.id;
   const persistence = await persistAgentRun(run, request.runDirectory);
   const candidateArtifact = status === "locally_eligible" && run.workspaceDelta
-    ? await persistWorkspaceCandidateArtifact({ directory: request.runDirectory, workspace, run, delta: run.workspaceDelta, requirementSetId: request.requirementSet.id, requirementViewId: requirementView.id, configuration, verification: finalVerification })
+    ? await persistWorkspaceCandidateArtifact({ directory: request.runDirectory, workspace: prepared.workspace, run, delta: run.workspaceDelta, requirementSetId: request.requirementSet.id, requirementViewId: prepared.requirementView.id, configuration: prepared.configuration, verification: finalVerification })
     : undefined;
-  return { status, classification, run, persistence, candidateRoot: workspace.candidateRoot, ...(candidateArtifact ? { candidateArtifact } : {}), trace, tracePersistence, finalVerification };
+  return { status, classification, run, persistence, candidateRoot: prepared.workspace.candidateRoot, ...(candidateArtifact ? { candidateArtifact } : {}), trace, tracePersistence, finalVerification };
 }
 
 export class CandidateWorkspace {
@@ -474,7 +523,7 @@ const TOOL_DEFINITIONS: AgentToolDefinition[] = [
   definition("project.read", "Read a bounded range from one source file.", { path: z.string().min(1), startLine: z.number().int().positive().optional(), maxLines: z.number().int().positive().max(200).optional() }),
   definition("project.inspect", "Inspect sanitized project facts without exposing fixture expectations or hidden evaluator data.", {}),
   definition("plan.update", "Create or revise the agent-owned high-level BuildPlan. Call before the first write.", { goal: z.string().min(1), steps: z.array(z.object({ id: z.string().min(1), statement: z.string().min(1), status: z.enum(["pending", "in_progress", "completed"]) })).min(1), currentStepId: z.string().min(1).optional(), assumptions: z.array(z.string()).optional(), expectedTouchedAreas: z.array(z.string()).optional(), verificationIntentions: z.array(z.string()).optional(), status: z.enum(["draft", "active", "complete"]) }),
-  definition("workspace.write", "Create one new source file with an absent-file guard, or replace one existing source file with its current SHA-256 guard. A BuildPlan is required first.", { path: z.string().min(1), precondition: z.discriminatedUnion("kind", [z.object({ kind: z.literal("sha256"), hash: z.string().regex(/^[0-9a-f]{64}$/) }), z.object({ kind: z.literal("absent") })]), content: z.string() }),
+  definition("workspace.write", "Create one new source file with an absent-file guard, or replace one existing source file with its current SHA-256 guard. Paths are candidate-relative, must begin with a declared root in orientation.content.sourceRoots, and are not Roblox service or absolute host paths. A BuildPlan is required first.", { path: z.string().min(1), precondition: z.discriminatedUnion("kind", [z.object({ kind: z.literal("sha256"), hash: z.string().regex(/^[0-9a-f]{64}$/) }), z.object({ kind: z.literal("absent") })]), content: z.string() }),
   definition("workspace.diff", "Return a bounded summary of changed source files.", {}),
   definition("forge.verify", "Run the local static and semantic verifier and return sanitized diagnostics. This is optional; an independent final gate always runs.", {})
 ];
@@ -484,7 +533,7 @@ function definition(name: string, description: string, inputShape: ZodRawShape):
 function createAgentBuildTrace(run: AgentRun, configuration: HarnessConfiguration, verification: VerificationRun): BuildTrace {
   const recorder = new FlightRecorder({
     projectId: `project_${contentHash(run.seedHash).slice(0, 24)}`,
-    references: { agentRunId: run.id, requirementSetId: run.requirementSetId, requirementViewId: run.requirementViewId, ...(run.workspaceDelta ? { workspaceDeltaId: run.workspaceDelta.id } : {}), harnessConfigurationId: configuration.id, harnessConfigurationHash: configuration.hash },
+    references: { agentRunId: run.id, ...(run.origin.kind === "registered_experiment" ? { experimentRegistrationId: run.origin.experimentRegistrationId, experimentRegistrationHash: run.origin.experimentRegistrationHash } : {}), requirementSetId: run.requirementSetId, requirementViewId: run.requirementViewId, ...(run.workspaceDelta ? { workspaceDeltaId: run.workspaceDelta.id } : {}), harnessConfigurationId: configuration.id, harnessConfigurationHash: configuration.hash },
     components: { toolchain: [], verifiers: [], agent: { name: run.runtime.name, version: run.runtime.version, configHash: configuration.hash }, model: { provider: run.model.transport, name: run.model.name, version: run.model.clientVersion, configurationHash: configuration.hash } }
   });
   recorder.recordSpan("forge.agent.execute", run.classification === "none" ? "ok" : "error", { "forge.agent.run_id": run.id, "forge.harness.configuration_hash": configuration.hash, "forge.tool.call_count": run.toolCalls.length });
@@ -507,7 +556,7 @@ async function persistWorkspaceCandidateArtifact(input: { directory: string; wor
   const map = await input.workspace.semanticMap();
   const sourceFiles = map.files.map((file) => ({ path: file.path, sourceHash: contentHash(file.source), executionContext: file.executionContext })).sort((left, right) => left.path.localeCompare(right.path));
   const payload: Omit<WorkspaceCandidateArtifact, "id" | "artifactHash"> = {
-    kind: "WorkspaceCandidateArtifact", schemaVersion: 1, origin: { kind: "agent_run", agentRunId: input.run.id }, createdAt: new Date().toISOString(),
+    kind: "WorkspaceCandidateArtifact", schemaVersion: 2, origin: input.run.origin.kind === "registered_experiment" ? { kind: "registered_experiment", agentRunId: input.run.id, experimentRegistrationId: input.run.origin.experimentRegistrationId, experimentRegistrationHash: input.run.origin.experimentRegistrationHash } : { kind: "creator_build", agentRunId: input.run.id }, createdAt: new Date().toISOString(),
     seedRoot: input.workspace.seedRoot, seedHash: input.workspace.seedTreeHash, candidateDirectory, candidateHash: input.delta.candidateHash,
     workspaceDelta: input.delta, requirementSetId: input.requirementSetId, requirementViewId: input.requirementViewId,
     harnessConfigurationId: input.configuration.id, harnessConfigurationHash: input.configuration.hash, sourceFiles,
@@ -536,7 +585,7 @@ export async function loadWorkspaceCandidateArtifact(artifactPath: string, trace
   if (map.hashes.sourceHash !== candidateArtifact.candidateHash || candidateArtifact.workspaceDelta.candidateHash !== candidateArtifact.candidateHash) throw new Error("WorkspaceCandidateArtifact candidate source hash mismatch");
   const observedFiles = map.files.map((file) => ({ path: file.path, sourceHash: contentHash(file.source), executionContext: file.executionContext })).sort((left, right) => left.path.localeCompare(right.path));
   if (stableJson(observedFiles) !== stableJson(candidateArtifact.sourceFiles)) throw new Error("WorkspaceCandidateArtifact source manifest mismatch");
-  const verification = await verifyProject(candidateRoot, { ...(traceDirectory ? { traceDirectory } : {}), traceReferences: { agentRunId: candidateArtifact.origin.agentRunId, requirementSetId: candidateArtifact.requirementSetId, requirementViewId: candidateArtifact.requirementViewId, workspaceDeltaId: candidateArtifact.workspaceDelta.id, harnessConfigurationId: candidateArtifact.harnessConfigurationId, harnessConfigurationHash: candidateArtifact.harnessConfigurationHash } });
+  const verification = await verifyProject(candidateRoot, { ...(traceDirectory ? { traceDirectory } : {}), traceReferences: { agentRunId: candidateArtifact.origin.agentRunId, ...(candidateArtifact.origin.kind === "registered_experiment" ? { experimentRegistrationId: candidateArtifact.origin.experimentRegistrationId, experimentRegistrationHash: candidateArtifact.origin.experimentRegistrationHash } : {}), requirementSetId: candidateArtifact.requirementSetId, requirementViewId: candidateArtifact.requirementViewId, workspaceDeltaId: candidateArtifact.workspaceDelta.id, harnessConfigurationId: candidateArtifact.harnessConfigurationId, harnessConfigurationHash: candidateArtifact.harnessConfigurationHash } });
   if (verification.report.gate.status !== "eligible") throw new Error(`WorkspaceCandidateArtifact is no longer locally eligible: ${verification.report.gate.reasons.join(", ")}`);
   return { artifact: candidateArtifact, candidateRoot, verification };
 }

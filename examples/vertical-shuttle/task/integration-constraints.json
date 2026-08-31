@@ -1,0 +1,5 @@
+[
+  {"kind":"IntegrationConstraint","schemaVersion":1,"id":"integration_constraint_8668d07017a1f4881c8a05cf","requirementId":"observation-lower-stop","projectId":"project_04aac8cabcd6879dff095890","projectSnapshotHash":"2ae7c86d89f5df350bd38a6f17de5bd3f00bd892dc3e9ce920246ce31e27196f"},
+  {"kind":"IntegrationConstraint","schemaVersion":1,"id":"integration_constraint_65653e08bedf1b5bcddf486b","requirementId":"observation-shuttle","projectId":"project_04aac8cabcd6879dff095890","projectSnapshotHash":"2ae7c86d89f5df350bd38a6f17de5bd3f00bd892dc3e9ce920246ce31e27196f"},
+  {"kind":"IntegrationConstraint","schemaVersion":1,"id":"integration_constraint_47464141e4cd2f094c42ee51","requirementId":"observation-upper-stop","projectId":"project_04aac8cabcd6879dff095890","projectSnapshotHash":"2ae7c86d89f5df350bd38a6f17de5bd3f00bd892dc3e9ce920246ce31e27196f"}
+]

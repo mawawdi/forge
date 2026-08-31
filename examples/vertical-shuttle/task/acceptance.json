@@ -1,0 +1,9 @@
+{
+  "kind": "AcceptanceSpec",
+  "schemaVersion": 1,
+  "id": "acceptance_spec_653001f1637f23aaabf14cbe",
+  "requirementSetId": "requirement_set_f832c850c0f9b296545bac4d",
+  "requirementIds": ["evaluator-vertical-shuttle-motion", "observation-lower-stop", "observation-shuttle", "observation-upper-stop"],
+  "assertionIds": ["assert-distinct-positions", "assert-exists-lower-stop", "assert-exists-shuttle", "assert-exists-upper-stop", "assert-ordered-visits"],
+  "artifactIds": []
+}

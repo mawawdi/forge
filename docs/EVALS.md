@@ -1,6 +1,6 @@
 # Forge Evaluation Policy
 
-This document is the canonical policy for what Forge may claim from a build or evaluation. [FORGE.md](FORGE.md) defines the architecture; [ROADMAP.md](ROADMAP.md) records demonstrated status; [RESEARCH.md](RESEARCH.md) indexes the evidence and rationale behind those decisions.
+This document is the canonical policy for what Forge may claim from a build or evaluation. [ARCHITECTURE.md](ARCHITECTURE.md) defines the architecture; [FORGE.md](FORGE.md) defines thesis and invariants; [ROADMAP.md](ROADMAP.md) records demonstrated status; [RESEARCH.md](RESEARCH.md) indexes the evidence and rationale behind those decisions.
 
 ## Semantic authority
 
@@ -63,3 +63,13 @@ Local tests exercise provenance filtering, native multi-turn tool use, reasoning
 The protocol-v11 characterization in the [Studio capability evidence ledger](research/studio-capability-evidence.md) remains evidence only for that historical substrate. Protocol-v12/plugin-8.0.0 readiness is established separately by completed non-evaluative canary `studio_capability_canary_beef4ad696113cbf8b69de7e`, which returned six bounded factual observations. That canary establishes no candidate verdict or runtime proof.
 
 The sole real MovingPlatform trial, `agent_run_e7b303bf-5712-4cc5-9f0a-f15c17d22286`, crossed `trialStarted` and ended `incomplete / agent_failure` before producing a candidate. Its enforced `src/server` capability was absent from all provider-visible orientation and tool results, so two plausible writes were rejected with `PATH_FORBIDDEN`. This is classified as a harness/context defect. There is no sealed candidate, hidden Studio evaluation, `RuntimeProofBundle`, or `runtime_verified` MovingPlatform result. The trial must not be retried or reinterpreted as model or runtime failure.
+
+The source-root disclosure defect is now covered by a deterministic fake-provider regression using a dedicated empty-root fixture. That regression establishes only the corrected local harness behavior; it does not alter the preserved MovingPlatform outcome or create runtime evidence.
+
+## Registered experiments
+
+`ExperimentRegistration` v1 is the fixed treatment identity for a real benchmark run. It binds the seed and source roots, implementation snapshot, model transport, budgets, builder/evaluator views, evaluator configuration, Studio capability set, expected orientation/tool/harness identities, and admission policy. The registration is evaluator/orchestrator material: neither it nor its evaluator bodies reach the builder.
+
+Registration and treatment drift fail before a provider request. One valid provider assistant envelope consumes the registered build treatment; preserve the resulting `AgentRun` without retrying or tuning. A creator-triggered Studio setup may be repaired only before the exact runtime plan is sent; once sent, preserve the authoritative runtime outcome. The Vertical Shuttle registration is a new treatment and does not retry or revise MovingPlatform.
+
+The registered Vertical Shuttle treatment completed `runtime_verified` as runtime evaluation run `runtime_evaluation_run_35b4ef7f3f9c482d82d498bc`, bound to runtime plan `runtime_eval_plan_5d7c1c5236342ae56fe30ecf`, proof `runtime_proof_84e4e26fda34ee4dd937597e`, and trace `trace_2d563481-71d9-46ea-b425-bf776d6180a2`. This may be claimed only for that exact registration, sealed candidate, runtime definition, capability set, evaluator configuration, and authoritative Studio run.

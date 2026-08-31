@@ -1,6 +1,6 @@
 # Forge Research Index
 
-This index separates research rationale and evidence from normative documentation. [FORGE.md](FORGE.md), [EVALS.md](EVALS.md), and [ROADMAP.md](ROADMAP.md) define the current system. The smaller research set below retains only material that still explains a current architectural boundary or preserves unique runtime evidence.
+This index separates research rationale and evidence from normative documentation. [ARCHITECTURE.md](ARCHITECTURE.md), [FORGE.md](FORGE.md), [EVALS.md](EVALS.md), and [ROADMAP.md](ROADMAP.md) define the current system. The smaller research set below retains only material that still explains a current architectural boundary or preserves unique runtime evidence.
 
 | Document | Classification | Current relevance |
 | --- | --- | --- |

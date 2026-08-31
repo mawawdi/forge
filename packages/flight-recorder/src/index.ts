@@ -115,7 +115,7 @@ export class FlightRecorder {
     const buildKey = createBuildKey({ project: this.project, references: this.references, components: this.components });
     return {
       kind: "BuildTrace",
-      schemaVersion: 2,
+      schemaVersion: 3,
       id: this.traceId,
       buildKey,
       startedAt: this.startedAt.toISOString(),

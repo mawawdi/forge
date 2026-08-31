@@ -115,7 +115,7 @@ The sole real trial is permanently preserved:
 - BuildTrace record: [.forge/flight-recorder/trace_c762aefb-5e68-4372-85aa-529c88e44c81.json](.forge/flight-recorder/trace_c762aefb-5e68-4372-85aa-529c88e44c81.json)
 - Final-verifier trace: `trace_17bca836-76cf-4db4-ba1d-93fb3727a851`
 - Final-verifier trace record: [.forge/flight-recorder/trace_17bca836-76cf-4db4-ba1d-93fb3727a851.json](.forge/flight-recorder/trace_17bca836-76cf-4db4-ba1d-93fb3727a851.json)
-- Model: `openai/gpt-5.6-terra`, OpenAI-only routing, medium reasoning, no fallback
+- Model: `openai/gpt-5.6-luna`, OpenAI-only routing, medium reasoning, no fallback
 - Result: `incomplete / agent_failure`
 - `trialStarted: true`
 - Studio: `not_run`

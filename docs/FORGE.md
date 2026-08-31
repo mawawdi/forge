@@ -1,4 +1,4 @@
-# Forge
+# Forge Thesis and Invariants
 
 ## Thesis
 
@@ -8,7 +8,8 @@ The evaluated unit is the model, harness, tools, environment, and evaluator conf
 
 ## Documentation authority
 
-- This document defines the current architecture and product thesis.
+- [ARCHITECTURE.md](ARCHITECTURE.md) defines the current and target architecture.
+- This document defines the product thesis, non-goals, and architectural invariants.
 - [EVALS.md](EVALS.md) defines evaluation authority, evidence tiers, and status meanings.
 - [ROADMAP.md](ROADMAP.md) records demonstrated status and the next evidence-producing task.
 - [RESEARCH.md](RESEARCH.md) indexes foundational rationale and immutable historical evidence.
@@ -21,12 +22,14 @@ Forge does not compile a creator request into a universal game-mechanic ontology
 
 The current system deliberately excludes provider-owned agent loops, `ToolLoopAgent`, AI Gateway, multiple providers behind compatibility shims, swarms, hosted workers, asset generation, and mechanic-specific Studio harnesses. Vercel AI SDK Core is used only as the one-turn OpenRouter transport adapter.
 
-## Current flow
+## System summary
+
+The canonical diagrams, package inventory, source-root correction, and long-term target are in [ARCHITECTURE.md](ARCHITECTURE.md). The summary below explains the invariants that govern them.
 
 ```text
 creator request + RequirementSet
   -> builder-visible requirement view
-  -> source-free project orientation
+  -> source-free project orientation with canonical source-root capability facts
   -> ForgeNativeAgentRuntime
        -> one-turn ModelClient calls
             -> AI SDK Core generateText
@@ -74,13 +77,15 @@ The native builder exposes exactly these bounded operations:
 - `workspace.diff`
 - `forge.verify`
 
-The workspace is copied from a read-only seed. Reads and writes stay inside declared source roots. Writes require either the exact prior SHA-256 or an explicit `absent` precondition, accept only regular `.lua`/`.luau` files, reject traversal and symlink escape, and are bounded by file, line, byte, call, and duration budgets. A high-level agent-owned plan is required before the first write.
+The workspace is copied from a read-only seed. The initial orientation exposes only sorted canonical candidate-relative source roots; it never exposes host paths. Reads and writes stay inside those roots. Writes require either the exact prior SHA-256 or an explicit `absent` precondition, accept only regular `.lua`/`.luau` files, reject traversal and symlink escape, and are bounded by file, line, byte, call, and duration budgets. A high-level agent-owned plan is required before the first write.
 
 Tool descriptions and schemas are versioned harness behavior. `HarnessConfiguration` hashes the system prompt, full tool surface, capability policy, initial orientation identity, requirement-view hash, budget policy, native runtime version, transport version, and exact model configuration. `AgentRun` records normalized turn and tool-result hashes without persisting the API key.
 
 The current transport identity also covers the pinned AI SDK and OpenRouter adapter versions, provider allowlist, disabled fallbacks, required-parameter policy, reasoning effort, retry policy, one-step policy, ordered tool surface, provider wire-name encoding, timeout policy, per-turn output cap, and continuation limit. Dotted public Forge tool names are deterministically encoded as OpenAI-compatible underscore names only at the adapter boundary. The provider request omits `parallel_tool_calls` because current OpenRouter OpenAI endpoint metadata does not advertise that parameter under required-parameter routing. Forge remains authoritative: a model tool-call batch is validated atomically before execution, and a valid batch executes sequentially in returned order. An unknown tool, invalid arguments, empty ID, or ID reused anywhere in the run rejects the whole batch and executes zero tools. Bounded rejection feedback and its resource use remain part of the run evidence.
 
 `AgentRun.trialStarted` becomes true after the first valid provider assistant envelope, including one with a semantically invalid tool request. Authentication, configuration, pre-response timeout, and malformed HTTP failures leave it false. This boundary determines whether a transport defect may be corrected before the one permitted real trial.
+
+For benchmark work, `ExperimentRegistration` v1 fixes the complete treatment before that boundary: creator prompt, seed/source roots, implementation snapshot, model transport, budgets, requirement and evaluator artifacts, Studio identity, and the expected orientation/tool/harness hashes. The registration remains evaluator/orchestrator material and is never delivered to the builder. Registered experiment build and evaluation commands recompute those identities and fail closed on drift.
 
 ## Local eligibility
 
@@ -122,7 +127,7 @@ The builder receives the creator request, visible requirements, sanitized projec
 
 ## MovingPlatform experiment
 
-The only repository example is `examples/moving-platform`:
+`examples/moving-platform` is the consumed historical treatment:
 
 - `seed` contains an anchored `MovingPlatform`, `EndpointA`, `EndpointB`, and an empty server source root;
 - `task` contains creator and observation provenance plus an internal evaluator-isolation policy;
@@ -130,19 +135,23 @@ The only repository example is `examples/moving-platform`:
 
 The creator asks for continuous back-and-forth movement taking about two seconds each way while preserving the three world objects. The agent chooses its script name and implementation. Runtime endpoint coordinates come from authoritative `base_part.position@1` observations. Sample counts, tolerances, timing windows, and the `src/server` task restriction are evaluator constraints, not universal MovingPlatform semantics or platform policy.
 
+`examples/vertical-shuttle` is a distinct registered treatment. It uses a vertical `Shuttle`, `LowerStop`, and `UpperStop` with the same generic position-observation substrate but independent task, evaluator, and experiment identities. It is not a retry of MovingPlatform.
+
 ## Honest status
 
-The provider-neutral contracts, native multi-turn harness, one-step AI SDK Core/OpenRouter adapter, reasoning-safe continuation, atomic tool-batch enforcement, safe workspace, verifier, sealed candidate, protocol v12, generic capability executor, backend grading, proof linkage, and fake-transport tests are implemented. The current suite passes 39 Node tests plus plugin parsing, analysis, and module tests.
+The provider-neutral contracts, native multi-turn harness, one-step AI SDK Core/OpenRouter adapter, reasoning-safe continuation, atomic tool-batch enforcement, safe workspace, verifier, sealed candidate, hash-locked experiment registration, protocol v12, generic capability executor, backend grading, proof linkage, and fake-transport tests are implemented. The current suite passes 44 Node tests plus plugin parsing, analysis, and module tests.
 
 The user-run protocol-v12/plugin-8.0.0 capability canary completed as `studio_capability_canary_beef4ad696113cbf8b69de7e`, bound to `studio_execution_plan_7e138ef9465e5a60ab1aae3d`. It returned six bounded factual results and established only the generic Studio transport/capability substrate; it created no candidate verdict, runtime proof, or benchmark result.
 
 The sole MovingPlatform model trial is `agent_run_e7b303bf-5712-4cc5-9f0a-f15c17d22286` under `harness_configuration_bca40ea4ef667a18a61089e9`. It crossed `trialStarted`, used seven model turns, six tool calls, one requested verifier call, 16,217 input tokens, 1,817 output tokens, USD 0.0338551, and 26,880 ms. The run ended `incomplete / agent_failure`, with `studio: not_run`, no writes, no sealed candidate, and final local gate `incomplete`.
 
-The failure is classified as a harness/context defect. The allowed `src/server` root was present in private capability configuration but absent from provider-visible orientation and tool results. Because the seed contained no source files, `project.list` returned an empty list and `project.inspect` exposed world facts but no writable root. The model created a coherent plan, attempted `ServerScriptService/MovingPlatformController.server.lua` and `MovingPlatformController.server.lua`, received `PATH_FORBIDDEN` for both, invoked `forge.verify`, and stopped. This result is not evidence that the candidate failed at runtime: no candidate existed and Studio evaluation was not run.
+The failure is classified as a historical harness/context defect. At the time, the allowed `src/server` root was present in private capability configuration but absent from provider-visible orientation and tool results. Because the seed contained no source files, `project.list` returned an empty list and `project.inspect` exposed world facts but no writable root. The model created a coherent plan, attempted `ServerScriptService/MovingPlatformController.server.lua` and `MovingPlatformController.server.lua`, received `PATH_FORBIDDEN` for both, invoked `forge.verify`, and stopped. The correction now exposes canonical source roots through `AgentOrientation` v2 and is covered by a deterministic empty-root regression. The preserved result remains evidence only of the pre-fix harness: no candidate existed and Studio evaluation was not run.
 
-## Immediate next task
+The fresh Vertical Shuttle registration `experiment_registration_60857fefe801607baa1f6b7d` produced AgentRun `agent_run_ba3716f8-4ecc-4bf8-9689-45f41700f179`, sealed candidate `workspace_candidate_79937cb8767b18d553850b63`, and one user-triggered `runtime_verified` Studio evaluation `runtime_evaluation_run_35b4ef7f3f9c482d82d498bc`. Its runtime plan and proof are `runtime_eval_plan_5d7c1c5236342ae56fe30ecf` and `runtime_proof_84e4e26fda34ee4dd937597e`. This is a narrow exact-treatment result, not a general model-quality, harness-quality, or MovingPlatform claim.
 
-Minimize the missing-source-root disclosure into a deterministic harness regression, then expose declared writable roots through the provider-visible capability/orientation boundary without leaking host paths or evaluator data. Do not retry or tune the consumed MovingPlatform experiment. Any later real trial requires a separately reviewed experiment identity and task policy.
+## Current correction
+
+The provider-visible source-root correction is implemented in `AgentOrientation` v2. The builder receives sorted canonical candidate-relative roots before its first turn, and `workspace.write` explicitly points to that capability fact. A deterministic empty-root fake-provider regression proves plan-before-write, guarded creation, verifier feedback, and local candidate sealing. Historical MovingPlatform records remain unchanged; any real run requires a separately reviewed identity and authorization.
 
 ## Deferred
 

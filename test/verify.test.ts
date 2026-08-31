@@ -48,13 +48,13 @@ test("diagnostic identity retains columns for independent same-line errors", () 
   } finally { rmSync(temporaryRoot, { recursive: true, force: true }); }
 });
 
-test("CLI help exposes exactly the six canonical commands", () => {
+test("CLI help exposes the registered-experiment commands and no loose candidate evaluator", () => {
   const result = spawnSync(process.execPath, [cli, "--help"], { encoding: "utf8" });
   assert.equal(result.status, 0);
   const lines = result.stdout.split("\n").filter((line) => /^  forge /.test(line));
-  assert.equal(lines.length, 6);
-  assert.match(result.stdout, /forge agent build/); assert.match(result.stdout, /forge candidate evaluate/); assert.match(result.stdout, /forge studio canary/); assert.match(result.stdout, /forge studio bridge/); assert.match(result.stdout, /forge verify/); assert.match(result.stdout, /forge trace show/);
-  assert.doesNotMatch(result.stdout, /repair|reverify|studio verify|candidate studio/);
+  assert.equal(lines.length, 8);
+  assert.match(result.stdout, /forge agent build/); assert.match(result.stdout, /forge experiment register/); assert.match(result.stdout, /forge experiment build/); assert.match(result.stdout, /forge experiment evaluate/); assert.match(result.stdout, /forge studio canary/); assert.match(result.stdout, /forge studio bridge/); assert.match(result.stdout, /forge verify/); assert.match(result.stdout, /forge trace show/);
+  assert.doesNotMatch(result.stdout, /candidate evaluate|repair|reverify|studio verify|candidate studio/);
 });
 
 function runVerify(path: string, environment: Record<string, string> = {}): { status: number; report: TestReport } {

@@ -92,7 +92,7 @@ export interface BuildOutcome {
 
 export interface BuildTrace {
   kind: "BuildTrace";
-  schemaVersion: 2;
+  schemaVersion: 3;
   id: ID;
   buildKey: ID;
   startedAt: ISO8601;
@@ -109,6 +109,8 @@ export interface BuildTrace {
   };
   references: {
     agentRunId?: ID;
+    experimentRegistrationId?: ID;
+    experimentRegistrationHash?: Hash;
     requirementSetId?: ID;
     requirementViewId?: ID;
     workspaceDeltaId?: ID;
@@ -155,7 +157,7 @@ export function assertFixtureManifest(value: unknown): asserts value is ForgeFix
 }
 
 export function assertBuildTrace(value: unknown): asserts value is BuildTrace {
-  if (!isRecord(value) || value.kind !== "BuildTrace" || value.schemaVersion !== 2 || !isNonEmpty(value.id) || !isNonEmpty(value.buildKey) || !isNonEmpty(value.startedAt) || !isNonEmpty(value.endedAt) || !isRecord(value.project) || !isRecord(value.references) || !isRecord(value.components) || !Array.isArray(value.spans) || !Array.isArray(value.events) || !isRecord(value.outcome) || !isRecord(value.evidence) || !isRecord(value.replayability) || !isRecord(value.privacy)) throw new Error("Invalid BuildTrace");
+  if (!isRecord(value) || value.kind !== "BuildTrace" || value.schemaVersion !== 3 || !isNonEmpty(value.id) || !isNonEmpty(value.buildKey) || !isNonEmpty(value.startedAt) || !isNonEmpty(value.endedAt) || !isRecord(value.project) || !isRecord(value.references) || !isRecord(value.components) || !Array.isArray(value.spans) || !Array.isArray(value.events) || !isRecord(value.outcome) || !isRecord(value.evidence) || !isRecord(value.replayability) || !isRecord(value.privacy)) throw new Error("Invalid BuildTrace");
   if (!["locally_eligible", "runtime_verified", "rejected", "incomplete"].includes(String(value.outcome.status))) throw new Error("Invalid BuildTrace outcome");
 }
 

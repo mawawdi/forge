@@ -2,13 +2,14 @@
 
 Keep this file operational. Documentation authority is split deliberately:
 
-- `docs/FORGE.md` defines current architecture and product thesis.
+- `docs/ARCHITECTURE.md` defines current and target architecture.
+- `docs/FORGE.md` defines product thesis and invariants.
 - `docs/EVALS.md` defines evaluation policy and claim semantics.
 - `docs/ROADMAP.md` defines demonstrated status and next work.
 - `docs/RESEARCH.md` indexes foundational rationale and historical evidence.
 
 - Make clean breaks. Delete superseded schemas, commands, packages, and storage paths; do not add compatibility readers, migrations, deprecated aliases, or old/new fallbacks.
-- Inspect implementation and tests before changing architecture. If code and `docs/FORGE.md` disagree, investigate and update the authoritative side explicitly.
+- Inspect implementation and tests before changing architecture. If code and `docs/ARCHITECTURE.md` disagree, investigate and update the authoritative side explicitly.
 - Keep indexed research focused on current rationale or unique evidence. Preserve exact run identities and failure classifications when consolidating old material, and use `docs/RESEARCH.md` to distinguish predecessor evidence from current behavior.
 - Preserve the semantic-authority boundary: creator requests, observations, platform policies, agent hypotheses, evaluator criteria, and benchmark oracles are distinct. Never expose hidden evaluator material to the builder.
 - Keep generic harness packages independent of examples, evaluator fixtures, mechanic adapters, repair solutions, and Studio registries.

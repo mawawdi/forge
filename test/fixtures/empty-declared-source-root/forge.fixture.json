@@ -1,0 +1,7 @@
+{
+  "kind": "ForgeFixture",
+  "schemaVersion": 1,
+  "name": "empty-declared-source-root",
+  "luauRoots": ["src/server"],
+  "remoteFlows": []
+}

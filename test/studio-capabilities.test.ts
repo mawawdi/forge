@@ -162,6 +162,8 @@ test("fake transport proves same-session runtime success, rejection, and a proof
   const runtimePlan = createRuntimeEvalPlan({ definitionId: evaluator.id, definitionHash: evaluator.hash, candidateArtifactId: "workspace_candidate_runtime", candidateArtifactHash: HASH, agentRunId: "agent_run_runtime", workspaceDeltaId: "workspace_delta_runtime", candidateHash: HASH, executionPlan: plan });
   const proofInput = {
     creatorPromptHash: HASH,
+    experimentRegistrationId: "experiment_registration_runtime",
+    experimentRegistrationHash: HASH,
     requirementSetId: "requirement_set_runtime",
     requirementViewId: "requirement_view_builder",
     evaluatorViewId: "requirement_view_runtime",
@@ -191,9 +193,11 @@ test("fake transport proves same-session runtime success, rejection, and a proof
   });
   assert.equal(passing.run.status, "runtime_verified");
   assert.equal(passing.proof?.status, "runtime_verified");
+  assert.equal(passing.proof?.experimentRegistrationId, proofInput.experimentRegistrationId);
   assert.equal(passing.proof?.scope, "exact_runtime_definition_capability_set_configuration_authoritative_run");
   assert.equal(passing.trace.references.runtimeEvaluatorConfigurationHash, config.hash);
   assert.equal(passing.trace.references.runtimeProofId, passing.proof?.id);
+  assert.equal(passing.trace.references.experimentRegistrationHash, proofInput.experimentRegistrationHash);
   assert.equal(stableJson(passing.proof).includes('"position"'), false, "public proof must not embed raw runtime observations");
   const failing = await executeRuntimeEvaluation({ connection: new FakeRuntimeConnection({ motion: false }), session: SESSION, runtimeEvalPlan: runtimePlan, definition: evaluator, configuration: config, timeoutMs: 1_000 });
   assert.equal(failing.run.status, "rejected");
