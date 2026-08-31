@@ -513,11 +513,7 @@ export function createBackendMessage<T extends keyof BackendPayloadByType>(type:
 
 export type BackendPayloadByType = {
   RequestObservation: { requestId: string; reason: ProjectObservationReason };
-  ApplyPatchSet: import("../../studio-protocol/src/index.js").ApplyPatchSetPayload;
-  BeginTransaction: import("../../studio-protocol/src/index.js").TransactionPayload;
-  CommitTransaction: import("../../studio-protocol/src/index.js").TransactionPayload;
-  RollbackTransaction: import("../../studio-protocol/src/index.js").TransactionPayload;
-  ExecuteAssertionPlan: import("../../studio-protocol/src/index.js").ExecuteAssertionPlanPayload;
+  ExecuteRuntimeEvalPlan: import("../../studio-protocol/src/index.js").ExecuteRuntimeEvalPlanPayload;
 };
 
 async function readBody(request: IncomingMessage): Promise<string> {

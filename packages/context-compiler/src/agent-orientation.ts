@@ -2,10 +2,7 @@ import { contentHash, stableJson } from "../../contracts/src/index.js";
 import type { RequirementView } from "../../semantic-authority/src/index.js";
 import type { ProjectSemanticMap } from "../../semantic-map/src/index.js";
 
-/**
- * A deliberately source-free starting point for an M4.1 builder. Source text is
- * discovered through bounded tools instead of being preloaded into the prompt.
- */
+/** Source-free starting facts; source text is discovered through bounded tools. */
 export interface AgentOrientation {
   kind: "AgentOrientation";
   schemaVersion: 1;
@@ -17,8 +14,7 @@ export interface AgentOrientation {
     projectId: string;
     files: Array<{ path: string; executionContext: string; sourceHash: string }>;
     remotes: Array<{ path: string; className: string; direction: string; clientScript: string; serverScript: string }>;
-    persistentState: Array<{ field: string; type: string; owner: "server"; durability: "session" | "persistent" }>;
-    uiBindings: Array<{ path: string; sourceField: string; direction: "server_to_client" | "local" }>;
+    instances: Array<{ id: string; path: string; className: string; position?: { x: number; y: number; z: number } }>;
     visibleRequirements: Array<{ id: string; statement: string; enforcement: string; verificationModes: string[] }>;
   };
   contentHash: string;
@@ -38,8 +34,12 @@ export function compileAgentOrientation(input: { semanticMap: ProjectSemanticMap
     projectId: input.semanticMap.projectId,
     files: input.semanticMap.files.map((file) => ({ path: file.path, executionContext: file.executionContext, sourceHash: contentHash(file.source) })).sort((left, right) => left.path.localeCompare(right.path)),
     remotes: input.semanticMap.remotes.map((remote) => ({ path: remote.path, className: remote.className, direction: remote.direction, clientScript: remote.clientScript, serverScript: remote.serverScript })).sort((left, right) => left.path.localeCompare(right.path)),
-    persistentState: input.semanticMap.persistentState.map((state) => ({ ...state })).sort((left, right) => left.field.localeCompare(right.field)),
-    uiBindings: input.semanticMap.uiBindings.map((binding) => ({ ...binding })).sort((left, right) => left.path.localeCompare(right.path)),
+    instances: input.semanticMap.instances.map((instance) => ({
+      id: instance.id,
+      path: instance.path,
+      className: instance.className,
+      ...(instance.position ? { position: { ...instance.position } } : {})
+    })).sort((left, right) => left.path.localeCompare(right.path) || left.id.localeCompare(right.id)),
     visibleRequirements
   };
   const contentHashValue = contentHash(stableJson(content));

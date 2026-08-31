@@ -1,5 +1,7 @@
 # How Forge Can Signal the Strongest Possible Hire for Lemonade
 
+> Status: foundational transformation research. It explains why Forge moved toward an observable agent harness and evaluation system; it is not current API or protocol documentation. See [FORGE.md](FORGE.md), [EVALS.md](EVALS.md), and [ROADMAP.md](ROADMAP.md) for current behavior and status.
+
 ## Executive finding
 
 Your instinct about the semantics layer is correct.

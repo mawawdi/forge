@@ -1,91 +1,65 @@
 # Forge Evaluation Policy
 
-## What Forge measures
+This document is the canonical policy for what Forge may claim from a build or evaluation. [FORGE.md](FORGE.md) defines the architecture; [ROADMAP.md](ROADMAP.md) records demonstrated status; [RESEARCH.md](RESEARCH.md) indexes the evidence and rationale behind those decisions.
 
-Forge evaluates the combined system, not a model in isolation:
+## Semantic authority
 
-```text
-model + prompt/configuration + tools + workspace policy + verifier + environment
-```
+Every requirement that can influence generation, rejection, or grading records five independent dimensions:
 
-A run records outcome, failure class, model/tool calls, token and cost use,
-latency, changed source, verification result, and Studio/evaluator evidence
-when those tiers run. Do not collapse these into one invented score.
+- source: creator, project observation, platform policy, agent plan, evaluator, or benchmark oracle;
+- authority: fact, policy, hypothesis, or evaluation-only;
+- visibility: builder-visible, evaluator-only, or internal;
+- enforcement: informational, advisory, or blocking;
+- source-aligned evidence with a stable identity or hash.
+
+Creator requirements outrank agent design preferences. Platform policy cannot be overridden by creator or agent preference. Project observations describe the observed before-state; they require preservation only when an explicit, evidenced `IntegrationConstraint` says so. Evaluator criteria and benchmark oracles have authority only inside their declared evaluation scope.
 
 ## Evidence tiers
 
-| Tier | Honest claim |
-| --- | --- |
-| Schema | A supplied artifact has the expected shape. |
-| Luau / static | The loaded source passes modeled language and security checks. |
-| Preflight | A modeled non-engine execution behaved as expected. |
-| Studio | A correlated real Roblox session observed the runtime claim. |
-| Evaluator / human | A subjective outcome was assessed. |
+Forge interprets evidence in this order:
 
-Studio evidence is required for engine, replication, physics, and runtime-world
-claims. A static pass, tool success, or log line is not runtime proof.
+1. schema validation establishes data-shape truth;
+2. official Luau and Roblox-aware analysis establishes language and loaded-host facts;
+3. Forge static checks establish only explicitly modeled structural and trust properties;
+4. a sealed candidate and independent local verifier establish local eligibility;
+5. correlated real-Studio observations establish engine/runtime facts;
+6. backend assertions grade those observations under one exact evaluator configuration;
+7. independent evaluator or human judgment may assess subjective product quality.
 
-## Task information boundary
-
-Every executable task separates what the builder may learn from what an
-evaluator may use:
-
-```text
-builder:   creator goal, visible outcomes, observed project facts,
-           visible policy, bounded tools
-evaluator: evaluator-only requirements, hidden assertions/oracles,
-           adversarial inputs, grader implementation, answer artifacts
-```
-
-M4.0 `RequirementSet` and `resolveRequirementView` enforce the boundary.
-Requirements and `AcceptanceSpec` never embed hidden assertion bodies or
-expected values in builder-visible material.
+Later tiers do not retroactively strengthen earlier claims. A local pass is not Studio evidence, and an evaluator model cannot override a deterministic security or runtime failure.
 
 ## Status vocabulary
 
-- `locally_eligible`: M4.1’s independent static/semantic gate passed.
-- `verified`: only use when the required evidence tiers for that task passed;
-  a Studio-required task cannot be verified with `studio: not_run`.
-- `rejected`: an applicable deterministic gate failed.
-- `incomplete`: evidence, tools, provider, environment, or budget was missing
-  or interrupted.
+- `eligible`: the independent local verifier passed.
+- `locally_eligible`: an `AgentRun` produced a sealed candidate whose independent local gate passed.
+- `runtime_verified`: the exact candidate satisfied the exact `RuntimeEvalDefinition` under the exact `StudioCapabilitySet` and `RuntimeEvaluatorConfiguration` in one authoritative Studio run.
+- `rejected`: deterministic candidate or project behavior failed an applicable modeled requirement or runtime assertion.
+- `incomplete`: required provider, tool, project, protocol, Studio, environment, or evaluator evidence was insufficient.
+- `not_run`: the relevant gate was deliberately not executed.
 
-Failure classification distinguishes agent, tool, workspace capability,
-provider, verifier, harness, evaluation, environment, and task/specification
-causes. A low outcome is not automatically model failure.
+`runtime_verified` is not universal mechanic correctness, complete physics verification, subjective quality, fun, or general game quality.
 
-## CoreLoopBench direction
+## Hidden-evaluation boundary
 
-The ten historical CoreLoopBench concepts remain a useful coverage map:
-collection, conversion, progression, remote wiring, persistence, UI state,
-physics, cooldown/combat, repair, and composition. Their M1–M3.5 contracts,
-harnesses, constants, and assertions are historical fixture scope—not general
-production semantics.
+Builder inputs may contain the creator request, builder-visible requirements, sanitized project facts, universal policy outcomes, and bounded tool results. They must not contain hidden assertion bodies, expected observations, benchmark oracle values, evaluator implementation, successful answer-key source, Studio runner source, or private runtime observations.
 
-M4.3 will turn representative concepts into repeatable agent tasks with
-isolated hidden evaluators. Before that, Forge should prefer a small number of
-well-instrumented experiments over a synthetic leaderboard.
+`AcceptanceSpec` carries references only. Studio receives a redacted `StudioExecutionPlan` containing typed targets, calls, bounds, and correlation data—not assertions or expected values. The plugin reports factual observations; backend code performs grading.
 
-## Experiment rules
+## Experiment discipline
 
-Hold the task fixed while changing one material dimension where practical:
-model/version, system prompt, orientation, tool surface, capability policy,
-verifier/rule version, or evaluator configuration. Record the exact
-`HarnessConfiguration` and task/view identities.
+- Treat model, prompt, harness configuration, tool descriptions, budget policy, provider transport, runtime adapter, evaluator definition, capability set, and environment as explicit experimental variables.
+- Change one meaningful variable at a time when possible.
+- Preserve failures and classify them among model, context, tool, harness, verifier, grader/evaluator, environment, provider, and task specification.
+- Do not tune or retry around the single-run MovingPlatform experiment.
+- Promote a failure into a regression only after its cause and fixture have been reviewed.
+- Record tokens, cost, tool calls, verifier calls, changed files, latency, budget consumption, and exhaustion without inventing a composite score.
+- Treat `AgentRun.trialStarted` as the irreversible real-trial boundary. It becomes true only after a valid provider assistant envelope; provider authentication, configuration, malformed-envelope, and pre-response timeout failures remain transport setup failures.
+- Once `trialStarted` is true for the single MovingPlatform run, preserve the result without retrying, prompt tuning, or changing the model. A semantically invalid tool request still starts the trial.
 
-Initial M4.1 budgets are conservative experimental caps, not optimized
-thresholds. Retain configured value, consumption, and exhaustion reason.
-Preserve failed runs; promote a failure to regression only after diagnosis and
-review.
+## Current evidence boundary
 
-## Current M4.1 evidence
+Local tests exercise provenance filtering, native multi-turn tool use, reasoning-detail continuation, atomic invalid-batch rejection, verifier-feedback repair, provider and budget failures, workspace safety, protocol correlation, malicious payload containment, backend runtime grading, and scoped proof construction. Provider response facts are bounded and normalized; API keys, headers, raw reasoning bodies, and unsanitized provider pipeline data are not run or trace evidence.
 
-Fake-provider integration tests prove same-session verifier feedback and a
-mandatory independent final local gate. The sole reviewed Claude-adapter run
-used `claude-sonnet-5` with SDK `0.3.251` and stopped before any model call
-because `ANTHROPIC_API_KEY` was unavailable. It is `incomplete` /
-`provider_failure`, with zero tool calls and `studio: not_run`. No retry or
-tuning followed it.
+The protocol-v11 characterization in the [Studio capability evidence ledger](research/studio-capability-evidence.md) remains evidence only for that historical substrate. Protocol-v12/plugin-8.0.0 readiness is established separately by completed non-evaluative canary `studio_capability_canary_beef4ad696113cbf8b69de7e`, which returned six bounded factual observations. That canary establishes no candidate verdict or runtime proof.
 
-Detailed historical Studio runs, faults, and recovery evidence are retained in
-[research/m3-real-studio-runs.md](research/m3-real-studio-runs.md).
+The sole real MovingPlatform trial, `agent_run_e7b303bf-5712-4cc5-9f0a-f15c17d22286`, crossed `trialStarted` and ended `incomplete / agent_failure` before producing a candidate. Its enforced `src/server` capability was absent from all provider-visible orientation and tool results, so two plausible writes were rejected with `PATH_FORBIDDEN`. This is classified as a harness/context defect. There is no sealed candidate, hidden Studio evaluation, `RuntimeProofBundle`, or `runtime_verified` MovingPlatform result. The trial must not be retried or reinterpreted as model or runtime failure.

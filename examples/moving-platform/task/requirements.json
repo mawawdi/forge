@@ -1,0 +1,91 @@
+{
+  "kind": "RequirementSet",
+  "schemaVersion": 1,
+  "id": "requirement_set_7350568a947d71569e777c8f",
+  "requirements": [
+    {
+      "kind": "Requirement",
+      "schemaVersion": 1,
+      "id": "benchmark-oracle-moving-platform-hidden",
+      "statement": "Hidden benchmark oracle material is evaluator-only and cannot be exposed to the builder.",
+      "source": "benchmark_oracle",
+      "authority": "evaluation_only",
+      "visibility": "evaluator_only",
+      "enforcement": "blocking",
+      "verificationModes": ["evaluator"],
+      "evidence": [{"kind":"benchmark_fixture","id":"evidence-benchmark-oracle-moving-platform-hidden","benchmarkId":"moving-platform","oracleId":"hidden-runtime-oracle","fixtureHash":"60edab3b133f37c6ec71a112fb077cf42102203345afab67f8a94c8b2a42ba1b"}]
+    },
+    {
+      "kind": "Requirement",
+      "schemaVersion": 1,
+      "id": "creator-moving-platform-outcome",
+      "statement": "Make the existing MovingPlatform continuously move back and forth between EndpointA and EndpointB, taking about two seconds each way. Preserve the three existing world objects.",
+      "source": "creator",
+      "authority": "policy",
+      "visibility": "builder_visible",
+      "enforcement": "blocking",
+      "verificationModes": ["studio"],
+      "evidence": [{"kind":"creator_request","id":"evidence-creator-moving-platform","intentId":"intent-moving-platform","requestHash":"a19701f28ea32d1750f7af2353c7d64222939f292ac54207abfc8db8ebb1b0da"}]
+    },
+    {
+      "kind": "Requirement",
+      "schemaVersion": 1,
+      "id": "evaluator-moving-platform-motion",
+      "statement": "Evaluator-only runtime observation criteria gate this Moving Platform benchmark.",
+      "source": "evaluator",
+      "authority": "evaluation_only",
+      "visibility": "evaluator_only",
+      "enforcement": "blocking",
+      "verificationModes": ["studio"],
+      "evidence": [{"kind":"evaluation_spec","id":"evidence-evaluator-moving-platform-motion","evaluationId":"moving-platform-runtime-eval-1","criterionId":"motion-observation","specificationHash":"2836b60edff7a592790637a4a34435c905a1301f157be51cce23c7fe97063e87"}]
+    },
+    {
+      "kind": "Requirement",
+      "schemaVersion": 1,
+      "id": "observation-endpoint-a",
+      "statement": "Workspace/EndpointA is an observed existing BasePart to preserve.",
+      "source": "project_observation",
+      "authority": "fact",
+      "visibility": "builder_visible",
+      "enforcement": "blocking",
+      "verificationModes": ["schema", "studio"],
+      "evidence": [{"kind":"project_observation","id":"evidence-observation-endpoint-a","projectId":"project_32639b9bbdbc9b6086c0b849","projectSnapshotHash":"046ecb751fe97743901ab8e7d462ed132c4ff761a72fef7d4b63c87efc755a91","locator":"Workspace/EndpointA","observationHash":"9e7dc703ae7438f470de3a6e16e63e1774b2d9bea3148fbab02e4386681af944"}]
+    },
+    {
+      "kind": "Requirement",
+      "schemaVersion": 1,
+      "id": "observation-endpoint-b",
+      "statement": "Workspace/EndpointB is an observed existing BasePart to preserve.",
+      "source": "project_observation",
+      "authority": "fact",
+      "visibility": "builder_visible",
+      "enforcement": "blocking",
+      "verificationModes": ["schema", "studio"],
+      "evidence": [{"kind":"project_observation","id":"evidence-observation-endpoint-b","projectId":"project_32639b9bbdbc9b6086c0b849","projectSnapshotHash":"046ecb751fe97743901ab8e7d462ed132c4ff761a72fef7d4b63c87efc755a91","locator":"Workspace/EndpointB","observationHash":"50aeb422901c5556d91438b73dc2d4d9d09e1542185c905be31561a347e50935"}]
+    },
+    {
+      "kind": "Requirement",
+      "schemaVersion": 1,
+      "id": "observation-moving-platform",
+      "statement": "Workspace/MovingPlatform is an observed existing BasePart to preserve.",
+      "source": "project_observation",
+      "authority": "fact",
+      "visibility": "builder_visible",
+      "enforcement": "blocking",
+      "verificationModes": ["schema", "studio"],
+      "evidence": [{"kind":"project_observation","id":"evidence-observation-moving-platform","projectId":"project_32639b9bbdbc9b6086c0b849","projectSnapshotHash":"046ecb751fe97743901ab8e7d462ed132c4ff761a72fef7d4b63c87efc755a91","locator":"Workspace/MovingPlatform","observationHash":"204ca2dbd697286ce846238c6b68cc7b91453a85ca8348553213d540534d23c8"}]
+    },
+    {
+      "kind": "Requirement",
+      "schemaVersion": 1,
+      "id": "policy-no-evaluator-instrumentation",
+      "statement": "Production candidate source and builder-visible context must not depend on evaluator instrumentation, hidden assertions, benchmark oracles, or expected observations.",
+      "source": "platform_policy",
+      "authority": "policy",
+      "visibility": "internal",
+      "enforcement": "blocking",
+      "verificationModes": ["static"],
+      "evidence": [{"kind":"policy_reference","id":"evidence-policy-no-evaluator-instrumentation","policyId":"forge-evaluator-isolation","policyVersion":"1","locator":"code:packages/semantic-authority/src/policies.ts#EVALUATOR_ISOLATION_POLICY","documentHash":"b1060fd4e7e6871011c85f377da9d96f9805be3e8924d41b09d3a5cce721b119"}]
+    }
+  ]
+}

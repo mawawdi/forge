@@ -1,7 +1,0 @@
-{
-  "kind": "ForgeFixture",
-  "schemaVersion": 5,
-  "name": "path-traversal",
-  "luauRoots": ["../docs"],
-  "remoteFlows": []
-}

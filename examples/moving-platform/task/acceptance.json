@@ -1,0 +1,9 @@
+{
+  "kind": "AcceptanceSpec",
+  "schemaVersion": 1,
+  "id": "acceptance_spec_6f7124811f954628a3930436",
+  "requirementSetId": "requirement_set_7350568a947d71569e777c8f",
+  "requirementIds": ["evaluator-moving-platform-motion", "observation-endpoint-a", "observation-endpoint-b", "observation-moving-platform"],
+  "assertionIds": ["assert-distinct-positions", "assert-exists-endpoint-a", "assert-exists-endpoint-b", "assert-exists-moving-platform", "assert-ordered-visits"],
+  "artifactIds": []
+}

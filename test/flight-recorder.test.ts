@@ -10,8 +10,8 @@ import { verifyProject } from "../packages/verifier/src/index.js";
 
 const root = resolve(import.meta.dirname, "../..");
 const cli = resolve(root, "dist/packages/cli/src/index.js");
-const cleanFixture = resolve(root, "examples/clean-tycoon");
-const insecureFixture = resolve(root, "examples/insecure-tycoon");
+const cleanFixture = resolve(root, "test/fixtures/authoritative-state-safe");
+const insecureFixture = resolve(root, "test/fixtures/client-controlled-authoritative-state");
 
 test("build keys are deterministic while execution trace IDs remain distinct", () => {
   const context = {
@@ -37,12 +37,12 @@ test("local sink writes a versioned, privacy-minimized trace that trace show can
     const run = await verifyProject(insecureFixture, { traceDirectory });
     assert.equal(run.report.gate.status, "rejected");
     assert.equal(run.tracePersistence.status, "written");
-    assert.equal(run.trace.outcome.verified, false);
-    assert.equal(run.trace.outcome.studioPass, "not_run");
+    assert.equal(run.trace.outcome.localGate, "rejected");
+    assert.equal(run.trace.outcome.runtimeGate, "not_run");
     assert.deepEqual(run.trace.spans.map((span) => span.name), ["forge.project.snapshot", "forge.verify.luau", "forge.verify.replication"]);
     assert.ok(run.trace.events.some((event) => event.name === "forge.issue.detected"));
     assert.equal(run.trace.privacy.rawSourceStored, false);
-    assert.ok(!stableJson(run.trace).includes("Cash[player]"));
+    assert.ok(!stableJson(run.trace).includes("claimedAmount"));
 
     const loaded = await new JsonFileTraceSink(traceDirectory).read(run.trace.id);
     assert.deepEqual(loaded, run.trace);
@@ -62,13 +62,13 @@ test("trace persistence failures are explicit and never alter a verification dec
     }
   };
   const run = await verifyProject(cleanFixture, { traceSink: failingSink });
-  assert.equal(run.report.gate.status, "verified");
+  assert.equal(run.report.gate.status, "eligible");
   assert.equal(run.tracePersistence.status, "failed");
   assert.match(run.tracePersistence.error ?? "", /Trace persistence failed/);
 });
 
 test("trace boundary validation rejects an unversioned object", () => {
-  assert.throws(() => assertBuildTrace({ kind: "BuildTrace", schemaVersion: 0 }), /schemaVersion 1/);
+  assert.throws(() => assertBuildTrace({ kind: "BuildTrace", schemaVersion: 0 }), /Invalid BuildTrace/);
 });
 
 function fixedClock(): () => Date {
@@ -78,14 +78,9 @@ function fixedClock(): () => Date {
 
 function acceptedOutcome(): BuildOutcome {
   return {
-    status: "accepted",
-    verified: false,
-    staticPass: true,
-    semanticPass: true,
-    studioPass: "not_run",
-    attempts: 1,
-    deterministicRepairs: 0,
-    modelRepairs: 0,
+    status: "locally_eligible",
+    localGate: "eligible",
+    runtimeGate: "not_run",
     assertions: { total: 0, passed: 0 },
     modelUsage: { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
     latencyMs: { total: 0 },

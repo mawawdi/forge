@@ -1,0 +1,21 @@
+{
+  "kind": "StudioCapabilityCanaryTemplate",
+  "schemaVersion": 1,
+  "capabilitySetId": "studio_capability_set_c9d7b396c6b7fb433fa9835b",
+  "capabilitySetHash": "c9d7b396c6b7fb433fa9835b8e8101143b59092fdaefc9b834880ff0c7defb21",
+  "targets": [
+    {"id":"target-endpoint-a","path":"Workspace/EndpointA","expectedClass":"BasePart"},
+    {"id":"target-endpoint-b","path":"Workspace/EndpointB","expectedClass":"BasePart"},
+    {"id":"target-moving-platform","path":"Workspace/MovingPlatform","expectedClass":"BasePart"}
+  ],
+  "staticTargetIds": ["target-endpoint-a", "target-endpoint-b"],
+  "calls": [
+    {"id":"call-01-resolve-endpoint-a","capability":"instance.resolve","version":1,"targetId":"target-endpoint-a"},
+    {"id":"call-02-position-endpoint-a","capability":"base_part.position","version":1,"targetId":"target-endpoint-a"},
+    {"id":"call-03-resolve-endpoint-b","capability":"instance.resolve","version":1,"targetId":"target-endpoint-b"},
+    {"id":"call-04-position-endpoint-b","capability":"base_part.position","version":1,"targetId":"target-endpoint-b"},
+    {"id":"call-05-resolve-moving-platform","capability":"instance.resolve","version":1,"targetId":"target-moving-platform"},
+    {"id":"call-06-series-moving-platform","capability":"base_part.position_series","version":1,"targetId":"target-moving-platform","sampleCount":4,"intervalMs":250}
+  ],
+  "budget": {"maxExecutionMs":5000,"maxResultBytes":65536}
+}

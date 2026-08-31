@@ -1,75 +1,63 @@
 # Forge
 
-Forge is a Roblox-specific agent harness and evaluation system. It gives game
-building agents bounded tools and independently records what can actually be
-claimed about a candidate.
+Forge is a Roblox agent harness that lets a model inspect and edit a bounded project, independently verifies the resulting candidate, and evaluates factual runtime outcomes through a generic Roblox Studio capability boundary.
 
-The repository preserves the completed M1–M3.5 compiler/Studio vertical slice
-as historical regression evidence. Post-M3.5 work moves toward a tool-using
-builder over observed project state; it does not pre-design every mechanic.
+Documentation is divided by authority:
 
-Read [the research report](docs/deep-research-report.md) for the transformation
-direction, [the specification](docs/SPEC.md) for current claims, and
-[the roadmap](docs/ROADMAP.md) for milestone status.
+- [Architecture and thesis](docs/FORGE.md)
+- [Evaluation policy](docs/EVALS.md)
+- [Current roadmap and status](docs/ROADMAP.md)
+- [Research and evidence index](docs/RESEARCH.md)
 
-## Prerequisites
+## Setup
 
-- Node.js 22+
-- `luau-compile` on `PATH` (or `FORGE_LUAU_COMPILE`)
-- Rokit tools from `rokit.toml`, including `luau-lsp` and `rojo`
+Requirements: Node.js 22+, npm, `luau-compile`, `luau-analyze`, `luau-lsp`, Lune, Rojo, and Roblox Studio for user-run runtime checks.
 
-On macOS with Homebrew:
-
-```bash
-brew install luau
-rokit install
+```sh
 npm install
-```
-
-## Local verification
-
-```bash
 npm run build
-forge verify ./examples/insecure-tycoon
-forge verify ./examples/clean-tycoon
 ```
 
-The insecure control must reject. The clean control must pass local checks.
-Each invocation persists a privacy-minimized BuildTrace under
-`.forge/flight-recorder`; inspect it with:
-
-```bash
-forge trace show <trace-id>
-```
-
-Local verification is not Roblox runtime proof.
-
-## Bounded builder experiment
-
-M4.1 exposes a single-agent build command:
-
-```bash
-forge agent build <project> \
-  --prompt "<creator request>" \
-  --requirements <requirement-set.json> \
-  --format json
-```
-
-The agent sees only a source-free orientation and Forge-owned bounded tools.
-It edits an isolated candidate workspace, never the seed. The final local gate
-is always independent of the agent’s own verifier use. `locally_eligible` does
-not mean Studio-verified; M4.1 records `studio: not_run`.
-
-The current canonical requirement set is
-`tasks/m4.1-collect-authority.requirements.json`. A new real run requires a
-reviewed experiment configuration; the sole recorded Claude-adapter attempt
-stopped before a model call because credentials were unavailable.
+Real agent builds require `OPENROUTER_API_KEY` in the process environment or the repository-root `.env`, plus an explicit `--model`. Forge never persists the key or raw reasoning continuation. The consumed MovingPlatform experiment used `openai/gpt-5.6-terra`; any future real run requires a separately reviewed experiment.
 
 ## Tests
 
-```bash
+```sh
 npm test
 ```
 
-This runs Node and plugin tests. It does not launch Roblox Studio or call a
-model.
+This runs the TypeScript build, all Node tests, plugin parsing and analysis, and plugin module tests. It does not call a model or launch Studio.
+
+To build the plugin without writing a tracked bundle:
+
+```sh
+tmp_plugin="$(mktemp -d)/ForgeStudioPlugin.rbxmx"
+rojo build plugin/default.project.json -o "$tmp_plugin"
+```
+
+## Architecture
+
+```text
+RequirementSet -> native bounded builder -> sealed candidate
+                                      |-> independent local verifier
+                                      `-> Studio facts -> backend grader -> RuntimeProofBundle
+```
+
+The builder has eight Forge-owned tools, an agent-authored plan, deterministic budgets, and an isolated source workspace. Studio accepts only the three versioned capabilities `instance.resolve@1`, `base_part.position@1`, and `base_part.position_series@1`; it does not accept arbitrary Luau.
+
+## Demonstrated evidence
+
+The local suite covers semantic-authority leakage, native multi-turn tool use and verifier-feedback repair, provider/budget failures, safe source creation, candidate immutability, Roblox-aware verification, protocol-v12 correlation and malicious payloads, factual position grading, and scoped runtime proof construction.
+
+The user-run protocol-v12/plugin-8.0.0 capability canary completed and established the bounded Studio observation substrate only. The sole MovingPlatform model trial crossed its irreversible boundary but ended incomplete before producing a candidate because Forge did not expose its declared writable source root to the model. No hidden Studio evaluation or runtime verdict exists. The next task is the harness regression described in [docs/ROADMAP.md](docs/ROADMAP.md#immediate-next-task), not a retry.
+
+## CLI
+
+```text
+forge agent build
+forge candidate evaluate
+forge studio canary
+forge studio bridge
+forge verify
+forge trace show
+```

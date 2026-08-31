@@ -37,7 +37,6 @@ export class FlightRecorder {
   private project: BuildTrace["project"];
   private references: BuildTrace["references"];
   private components: BuildTrace["components"];
-  private context: BuildTrace["context"];
   private completed = false;
 
   constructor(context: FlightRecorderContext, options: FlightRecorderOptions = {}) {
@@ -50,17 +49,15 @@ export class FlightRecorder {
       ...withoutUndefined(context.project ?? {})
     };
     this.references = withoutUndefined(context.references ?? {});
-    const optionalComponents: Pick<BuildTrace["components"], "agent" | "model" | "repairPolicy" | "studio"> = {};
+    const optionalComponents: Pick<BuildTrace["components"], "agent" | "model" | "studio"> = {};
     if (context.components?.agent) optionalComponents.agent = context.components.agent;
     if (context.components?.model) optionalComponents.model = context.components.model;
-    if (context.components?.repairPolicy) optionalComponents.repairPolicy = context.components.repairPolicy;
     if (context.components?.studio) optionalComponents.studio = context.components.studio;
     this.components = {
       toolchain: context.components?.toolchain ?? [],
       verifiers: context.components?.verifiers ?? [],
       ...optionalComponents
     };
-    this.context = undefined;
   }
 
   setProject(project: Partial<BuildTrace["project"]>): void {
@@ -76,11 +73,6 @@ export class FlightRecorder {
   setComponents(components: Partial<BuildTrace["components"]>): void {
     this.assertOpen();
     this.components = { ...this.components, ...withoutUndefined(components) };
-  }
-
-  setContextSummary(context: NonNullable<BuildTrace["context"]>): void {
-    this.assertOpen();
-    this.context = { ...context };
   }
 
   startSpan(name: ForgeSpanName, attributes: Record<string, TraceAttributeValue> = {}): ActiveSpan {
@@ -117,13 +109,13 @@ export class FlightRecorder {
     if (this.activeSpans.size > 0) {
       for (const span of [...this.activeSpans.values()]) this.endSpan(span, "error", { "forge.instrumentation.error": "span_not_closed" });
     }
-    this.addEvent("forge.build.completed", { "forge.build.status": outcome.status, "forge.build.verified": outcome.verified, "forge.issue.count": Object.values(outcome.issueCounts).reduce((total, count) => total + count, 0) });
+    this.addEvent("forge.build.completed", { "forge.build.status": outcome.status, "forge.issue.count": Object.values(outcome.issueCounts).reduce((total, count) => total + count, 0) });
     this.completed = true;
     const endedAt = this.now();
     const buildKey = createBuildKey({ project: this.project, references: this.references, components: this.components });
     return {
       kind: "BuildTrace",
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: this.traceId,
       buildKey,
       startedAt: this.startedAt.toISOString(),
@@ -133,7 +125,6 @@ export class FlightRecorder {
       components: this.components,
       spans: [...this.spans].sort(bySequence),
       events: [...this.events].sort(bySequence),
-      ...(this.context ? { context: this.context } : {}),
       outcome,
       evidence,
       replayability,

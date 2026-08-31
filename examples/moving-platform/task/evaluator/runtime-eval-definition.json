@@ -1,0 +1,34 @@
+{
+  "kind": "RuntimeEvalDefinition",
+  "schemaVersion": 1,
+  "id": "runtime_eval_definition_7882f09aa379212e89b479d7",
+  "hash": "7882f09aa379212e89b479d7e0a102074e4893f7cb8dbb611ae823fd22412514",
+  "requirementSetId": "requirement_set_7350568a947d71569e777c8f",
+  "evaluatorViewId": "requirement_view_847f7d633c8d96181c875d68",
+  "evaluatorViewHash": "d8a85d3869a95d0c891fe26647fb1b8cb2a63e5e19dc85f720c6bc468e1eb67e",
+  "acceptanceSpecId": "acceptance_spec_6f7124811f954628a3930436",
+  "provenance": {"source":"evaluator","authority":"evaluation_only","visibility":"evaluator_only"},
+  "capabilitySetId": "studio_capability_set_c9d7b396c6b7fb433fa9835b",
+  "capabilitySetHash": "c9d7b396c6b7fb433fa9835b8e8101143b59092fdaefc9b834880ff0c7defb21",
+  "targets": [
+    {"id":"target-endpoint-a","path":"Workspace/EndpointA","expectedClass":"BasePart"},
+    {"id":"target-endpoint-b","path":"Workspace/EndpointB","expectedClass":"BasePart"},
+    {"id":"target-moving-platform","path":"Workspace/MovingPlatform","expectedClass":"BasePart"}
+  ],
+  "calls": [
+    {"id":"call-01-resolve-endpoint-a","capability":"instance.resolve","version":1,"targetId":"target-endpoint-a"},
+    {"id":"call-02-position-endpoint-a","capability":"base_part.position","version":1,"targetId":"target-endpoint-a"},
+    {"id":"call-03-resolve-endpoint-b","capability":"instance.resolve","version":1,"targetId":"target-endpoint-b"},
+    {"id":"call-04-position-endpoint-b","capability":"base_part.position","version":1,"targetId":"target-endpoint-b"},
+    {"id":"call-05-resolve-moving-platform","capability":"instance.resolve","version":1,"targetId":"target-moving-platform"},
+    {"id":"call-06-series-moving-platform","capability":"base_part.position_series","version":1,"targetId":"target-moving-platform","sampleCount":29,"intervalMs":250}
+  ],
+  "budget": {"maxExecutionMs":12000,"maxResultBytes":65536},
+  "assertions": [
+    {"id":"assert-distinct-positions","requirementId":"evaluator-moving-platform-motion","acceptanceAssertionId":"assert-distinct-positions","kind":"distinct_positions_at_least","observationId":"call-06-series-moving-platform","quantizationStuds":0.5,"minimumDistinctPositions":5},
+    {"id":"assert-exists-endpoint-a","requirementId":"observation-endpoint-a","acceptanceAssertionId":"assert-exists-endpoint-a","kind":"exists","observationId":"call-01-resolve-endpoint-a"},
+    {"id":"assert-exists-endpoint-b","requirementId":"observation-endpoint-b","acceptanceAssertionId":"assert-exists-endpoint-b","kind":"exists","observationId":"call-03-resolve-endpoint-b"},
+    {"id":"assert-exists-moving-platform","requirementId":"observation-moving-platform","acceptanceAssertionId":"assert-exists-moving-platform","kind":"exists","observationId":"call-05-resolve-moving-platform"},
+    {"id":"assert-ordered-visits","requirementId":"evaluator-moving-platform-motion","acceptanceAssertionId":"assert-ordered-visits","kind":"ordered_position_visits","seriesObservationId":"call-06-series-moving-platform","endpointAObservationId":"call-02-position-endpoint-a","endpointBObservationId":"call-04-position-endpoint-b","toleranceStuds":2,"minimumLegMs":1000,"maximumLegMs":3500,"acceptedOrders":[["A","B","A"],["B","A","B"]]}
+  ]
+}

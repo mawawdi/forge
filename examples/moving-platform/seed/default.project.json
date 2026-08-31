@@ -1,0 +1,14 @@
+{
+  "name": "ForgeMovingPlatform",
+  "tree": {
+    "$className": "DataModel",
+    "Workspace": {
+      "$className": "Workspace",
+      "Baseplate": { "$className": "Part", "$properties": { "Anchored": true, "CanCollide": true, "Size": [80.0, 1.0, 80.0], "CFrame": [0.0, -0.5, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0] } },
+      "EndpointA": { "$className": "Part", "$properties": { "Anchored": true, "CanCollide": false, "Transparency": 0.65, "Size": [2.0, 2.0, 2.0], "CFrame": [-12.0, 4.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0] } },
+      "EndpointB": { "$className": "Part", "$properties": { "Anchored": true, "CanCollide": false, "Transparency": 0.65, "Size": [2.0, 2.0, 2.0], "CFrame": [12.0, 4.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0] } },
+      "MovingPlatform": { "$className": "Part", "$properties": { "Anchored": true, "CanCollide": true, "Size": [8.0, 1.0, 8.0], "CFrame": [-12.0, 4.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0] } }
+    },
+    "ServerScriptService": { "$className": "ServerScriptService", "src": { "$path": "src/server" } }
+  }
+}

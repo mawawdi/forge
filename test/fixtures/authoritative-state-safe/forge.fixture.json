@@ -1,0 +1,17 @@
+{
+  "kind": "ForgeFixture",
+  "schemaVersion": 1,
+  "name": "authoritative-state-safe",
+  "luauRoots": ["src/client", "src/server"],
+  "remoteFlows": [{
+    "name": "ApplyAction",
+    "direction": "client_to_server",
+    "remote": { "stableId": "remote_apply_action", "path": "ReplicatedStorage/ApplyAction", "className": "RemoteEvent", "preserveExisting": true },
+    "clientScript": "src/client/ApplyAction.client.luau",
+    "serverScript": "src/server/ApplyAction.server.luau",
+    "clientInputs": [{ "position": 1, "role": "claimedAmount", "type": "number", "trust": "untrusted" }],
+    "serverArguments": [{ "position": 1, "role": "player", "type": "Player", "source": "roblox_server" }, { "position": 2, "role": "claimedAmount", "type": "number", "source": "client" }],
+    "validationRequirements": [{ "category": "type", "subjectRole": "claimedAmount", "applicability": "required", "rationale": "Untrusted payloads require a type guard." }],
+    "stateMutations": [{ "field": "Score", "sourceExpression": "serverDecision", "authority": "server", "operation": "increment" }]
+  }]
+}

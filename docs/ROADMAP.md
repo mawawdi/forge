@@ -1,74 +1,54 @@
 # Forge Roadmap
 
-## Status at a glance
+This document is the canonical status and next-work record. [FORGE.md](FORGE.md) defines the system, [EVALS.md](EVALS.md) defines claim semantics, and [RESEARCH.md](RESEARCH.md) indexes the evidence behind the direction.
 
-| Milestone | Status | Meaning |
-| --- | --- | --- |
-| M1–M2.5 | Complete, preserved | Local verifier, trace foundation, bounded patch loop, project semantics. |
-| M3–M3.5 | Complete, preserved | Correlated StudioProof and the historical Collect/Sell vertical slice. |
-| M4.0 | Complete | Requirement provenance, visibility, authority, and historical projection. |
-| M4.1 | Code seam complete; experiment incomplete | Bounded single-agent builder exists; sole real adapter run had no provider key. |
-| M4.2 | Next | General reusable Studio capabilities. |
-| M4.3–M4.6 | Deferred | Eval infrastructure, unseen-game work, long-horizon evidence, then hosting only if measured. |
+## Demonstrated foundation
 
-## Preserved history
+The repository currently contains:
 
-M1–M3.5 are immutable historical evidence, not templates for scaling a
-mechanic compiler. Their contracts, candidates, PatchSets, Studio harnesses,
-ProofBundles, traces, and regression fixtures remain runnable and inspectable.
+- provenance-aware requirements, visibility, enforcement, evidence, and scoped requirement views;
+- source-free project orientation and eight bounded Forge-owned builder tools;
+- a provider-neutral `AgentRuntime`, Forge-owned multi-turn loop, and isolated one-step AI SDK Core/OpenRouter `ModelClient` that preserves bounded opaque reasoning continuation;
+- atomic tool-call batch validation, run-wide unique call IDs, sequential Forge-owned dispatch, bounded response facts, and an explicit `trialStarted` boundary;
+- isolated candidate workspaces, agent-owned plans, deterministic harness configuration identity, budget accounting, independent local verification, and sealed candidate artifacts;
+- protocol v12/plugin 8.0.0 with the three generic Studio capabilities `instance.resolve@1`, `base_part.position@1`, and `base_part.position_series@1`;
+- candidate-independent runtime definitions, data-only Studio execution plans, backend grading, runtime runs, scoped runtime proofs, and privacy-minimized traces;
+- one unseen MovingPlatform seed/task/evaluator split with evaluator thresholds kept outside builder-visible inputs.
 
-The evidence record is intentionally not repeated here:
+The current local suite passes 39 Node tests plus plugin parsing, analysis, and module tests. The CLI exposes only the six canonical commands.
 
-- [M3 Studio acceptance runs](research/m3-real-studio-runs.md)
-- [M3.25 candidate diagnosis](research/m3.25-luna-candidate-diagnosis.md)
-- [M4.0 provenance audit](research/m4-semantic-authority-audit.md)
+## Demonstrated Studio substrate
 
-## M4.1 — bounded builder seam
+The user-run protocol-v12/plugin-8.0.0 non-evaluative canary completed as `studio_capability_canary_beef4ad696113cbf8b69de7e`, bound to `studio_execution_plan_7e138ef9465e5a60ab1aae3d`. It demonstrated:
 
-Delivered code:
+- successful pairing and correlated Start/Result/Stop lifecycle;
+- finite typed endpoint and platform observations;
+- static endpoint integrity across edit mode and Play Solo;
+- direct nonce-correlated `EndTest` return;
+- bounded output and cleanup.
 
-- a provider-neutral runtime plus isolated Claude adapter;
-- source-free orientation from the M4.0 builder view;
-- bounded list/search/read/inspect/plan/write/diff/verify tools over a copied
-  workspace;
-- deterministic HarnessConfiguration, private AgentRun, WorkspaceDelta, and
-  additive BuildTrace references;
-- an external Collect authority task and fake-agent iteration tests.
+The canary created no candidate verdict, `RuntimeEvalDefinition`, `RuntimeProofBundle`, or benchmark pass.
 
-The sole reviewed real attempt is
-`agent_run_5b51deb4-a2ea-4a31-bbde-786c91a26cb5`. It used
-`claude-agent-sdk@0.3.251` and `claude-sonnet-5`, but stopped as
-`incomplete` / `provider_failure` because `ANTHROPIC_API_KEY` was absent. It
-made zero model and tool calls; its unchanged candidate was locally rejected;
-Studio was not run. The result, `trace_44b27d1f-cac9-4363-b4ab-c45326619f1c`,
-and final verifier trace `trace_545bc6af-5a90-4a5c-ae6c-4f2babacadf4` are
-preserved. Do not retry or tune that task without a new reviewed experiment.
+## Single MovingPlatform trial
 
-## M4.2 — general Studio capabilities
+Two provider requests failed before `trialStarted` and remain preserved as transport evidence:
 
-Add small, typed actions and observations—such as locating an instance,
-executing a production interaction, moving a character, observing state/UI,
-and designated adversarial remote calls—while preserving correlation,
-snapshot binding, cleanup, and fail-closed lifecycle behavior. Do not build an
-arbitrary-code test interpreter or a new mechanic-specific harness per task.
+- `agent_run_abb6e8b4-a309-4a72-a62f-b863bb876490`: HTTP 404 under the initial required-parameter/`parallel_tool_calls` combination;
+- `agent_run_19908dfb-14b7-4476-88f3-3b20c68341c8`: HTTP 400 from dotted public Forge names sent directly as OpenAI function names.
 
-Exit evidence: one non-Collect/Sell M4.1-style task gains authoritative runtime
-evidence through reusable capabilities.
+After deterministic transport corrections and full-suite validation, the one permitted trial ran as `agent_run_e7b303bf-5712-4cc5-9f0a-f15c17d22286` under `harness_configuration_bca40ea4ef667a18a61089e9`. It crossed `trialStarted` and ended `incomplete / agent_failure`: seven model turns, six tool calls, one verifier request, zero writes, no exhausted budget, no sealed candidate, final local gate `incomplete`, and Studio `not_run`.
 
-## M4.3–M4.6
+The root cause is harness/context: `src/server` was enforced as the writable root but was not visible in orientation, `project.list`, `project.inspect`, or the write-tool description. The model could not infer the valid path from an empty source tree. Its two writes were rejected with `PATH_FORBIDDEN`. The consumed experiment will not be retried or tuned.
 
-- **M4.3:** representative repeatable tasks, isolated hidden evaluators, and
-  controlled configuration experiments.
-- **M4.4:** unseen-game and greenfield/existing-project generalization without
-  mechanic-specific compiler growth.
-- **M4.5:** one bounded long-horizon run with interruption/recovery evidence.
-- **M4.6:** Docker, Harbor, Fly, queues, or workers only for a measured
-  reproducibility, isolation, parallelism, or persistence need.
+## Immediate next task
 
-## Stop conditions
+Add a deterministic regression for an empty declared source root, then expose source-root capability facts to the builder without revealing absolute host paths, hidden evaluator data, or fixture internals. A future model run must be a separately reviewed experiment, not a retry of this MovingPlatform trial. There is no MovingPlatform runtime verdict.
 
-Pause expansion when project observation is incomplete, a benchmark does not
-correlate with runtime evidence, a deterministic rule produces false
-confidence, an artifact cannot be reproduced, or a model failure could instead
-be a harness/tool/environment/task problem. Improve evidence or narrow the
-claim before adding infrastructure or agents.
+## Deferred
+
+- broader generic Studio actions and observations justified by concrete evaluations;
+- repeated unseen-task trials and calibrated subjective evaluation;
+- reviewed failure-to-regression promotion;
+- optional third-party agent runtimes as experimental treatments;
+- remote workers, reproducible job infrastructure, or hosted execution only after local experiments demonstrate a measured need;
+- asset-provider tools and qualitative asset evaluation.
