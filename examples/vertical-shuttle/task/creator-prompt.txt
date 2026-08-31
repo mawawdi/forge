@@ -1,1 +1,0 @@
-Make the existing Shuttle continuously travel between LowerStop and UpperStop, taking about three seconds each way. Preserve the three existing world objects.

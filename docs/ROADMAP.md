@@ -43,20 +43,23 @@ The intended creator path needs the open Studio place and the prompt. It does no
 
 No solution is present. No task or evaluator package exists for the fixture.
 
+## Accepted live creator evidence
+
+The Status Beacon vertical slice completed successfully in session `creator_session_ad50593a-e0f1-4651-95f4-c88b3b5f6242`. Plan `creator_plan_ea7f9617b3c2c33933fc2bc6` and change set `creator_change_set_9a546962a40226a512c86a76` sealed without repair. Planner AgentRun `agent_run_789d36a5-25a8-447e-9d04-fb417991fc21` and builder AgentRun `agent_run_a62cb929-4d7d-4f98-a2cb-b47356991d03` were both `locally_eligible`. Studio verification `creator_verification_f6a9c0c5f1b07e5a6b57eeb9` passed with no failure facts, checkpoint `creator_checkpoint_cb96fdbafb2f14f8aeac1e5d` committed revision `360c3e26d94c868fa2441badad2be1282b82ffa13f1729f7d88a523045c6aff3`, and creator review `creator_review_4ac1d95c5f5a797d8bc8bba9` accepted the result.
+
+This establishes one complete prompt/plan/change/apply/check/review path. The final snapshot binds the exact Part properties and Script source. The creator observed the visual placement and one-second green/red alternation; those remain creator-review facts rather than machine-observed color-series facts.
+
 ## Next evidence-producing task
 
-After the user authorizes another live call, run exactly one fresh `openai/gpt-5.6-luna` prompt-only creator session on the Status Beacon place using the current connector artifact and exact advertised capability set. Do not retry or resume the consumed prior session.
+First make the successful evidence independently auditable:
 
-Before the call:
+1. persist the complete bounded Studio runtime observation and diagnostics material, not only their hashes;
+2. bind retrievable artifact locators into the creator verification record and session graph;
+3. support provider-free replay of grading from the persisted charter, execution plan, observation, and diagnostics;
+4. record real planner, builder, provider-turn, and tool-call timing rather than zero-duration spans;
+5. add regressions for missing verification evidence and impossible trace timing.
 
-1. preserve the completed automated validation results;
-2. build the Status Beacon place and plugin to explicit temporary output paths;
-3. start `forge creator serve --model openai/gpt-5.6-luna`;
-4. have the user open Studio, pair, and submit the fixed prompt.
-
-After a valid provider envelope, preserve the planner or builder outcome without retrying or changing the prompt. Before Studio mutation, setup errors may be corrected. After the plugin applies the approved change set, preserve the authoritative apply/verify/review outcome; do not tune or rerun it.
-
-The milestone succeeds as evidence even if the result is rejected or incomplete. Every started planner or builder phase must now preserve an AgentRun and trace; later Studio artifacts remain conditional on reaching their corresponding boundary.
+Then run one genuinely different prompt-only creator scenario. Do not rerun Status Beacon merely to accumulate a second success.
 
 ## Current registered-experiment path
 

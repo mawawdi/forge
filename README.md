@@ -51,15 +51,17 @@ Forge will treat those nodes as read-only. It does not provide dual Rojo/Studio 
 Benchmarks intentionally require more files because their hidden evaluator, thresholds, seed, budgets, model transport, exact connector capability set, and implementation snapshot must be preregistered. That is evaluation scaffolding, not creator UX.
 
 ```sh
-node bin/forge.js experiment register examples/vertical-shuttle/seed \
-  --prompt-file examples/vertical-shuttle/task/creator-prompt.txt \
-  --requirements examples/vertical-shuttle/task/requirements.json \
-  --acceptance examples/vertical-shuttle/task/acceptance.json \
-  --runtime-plan examples/vertical-shuttle/task/evaluator/runtime-eval-definition.json \
-  --runtime-configuration examples/vertical-shuttle/task/evaluator/runtime-evaluator-configuration.json \
+node bin/forge.js experiment register path/to/seed \
+  --prompt-file path/to/creator-prompt.txt \
+  --requirements path/to/requirements.json \
+  --acceptance path/to/acceptance.json \
+  --runtime-plan path/to/runtime-eval-definition.json \
+  --runtime-configuration path/to/runtime-evaluator-configuration.json \
   --model openai/gpt-5.6-luna \
-  --output /tmp/vertical-shuttle-registration.json
+  --output /tmp/experiment-registration.json
 ```
+
+Registered treatments are supplied outside `examples/`; the repository keeps only the prompt-only Status Beacon creator fixture. Synthetic tests construct benchmark material in memory so evaluator-isolation and registration coverage do not depend on a hand-authored product example.
 
 Forge has one current contract shape, distinguished by `kind` where a union needs a discriminator and bound by canonical content hashes where identity matters. Capability-set IDs and hashes establish connector compatibility. A shape change replaces the old reader outright. Historical evidence remains immutable bytes and is never relabeled as current.
 

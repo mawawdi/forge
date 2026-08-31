@@ -35,7 +35,7 @@ const VULNERABLE = resolve(
   "test/fixtures/client-controlled-authoritative-state",
 );
 const SAFE = resolve("test/fixtures/authoritative-state-safe");
-const MOVING = resolve("examples/moving-platform/seed");
+const GENERIC_SEED = resolve("test/fixtures/empty-declared-source-root");
 const EMPTY_ROOT = resolve("test/fixtures/empty-declared-source-root");
 const CREATOR_PROMPT =
   "Keep authoritative state server-owned while preserving the existing request interface.";
@@ -712,7 +712,7 @@ test("mixed invalid tool batches execute nothing, return feedback for every call
 test("runtime persists rejected atomic-batch evidence when a tool host only returns validation feedback", async () => {
   const runDirectory = await directory();
   const workspace = await CandidateWorkspace.create(
-    MOVING,
+    GENERIC_SEED,
     runDirectory,
     INITIAL_EXPERIMENT_BUDGETS,
   );
@@ -827,7 +827,7 @@ test("repeating a semantically identical rejected batch terminates before the tu
     ]),
   );
   const workspace = await CandidateWorkspace.create(
-    MOVING,
+    GENERIC_SEED,
     await directory(),
     INITIAL_EXPERIMENT_BUDGETS,
   );
@@ -876,7 +876,7 @@ test("varied consecutive all-failed tool batches terminate before the turn budge
     ]),
   );
   const workspace = await CandidateWorkspace.create(
-    MOVING,
+    GENERIC_SEED,
     await directory(),
     INITIAL_EXPERIMENT_BUDGETS,
   );
@@ -929,7 +929,7 @@ test("varied executed all-failed tool batches also terminate before the turn bud
     ]),
   );
   const workspace = await CandidateWorkspace.create(
-    MOVING,
+    GENERIC_SEED,
     await directory(),
     INITIAL_EXPERIMENT_BUDGETS,
   );
@@ -979,7 +979,7 @@ test("a successful read resets the consecutive all-failed tool-batch streak", as
     ]),
   );
   const workspace = await CandidateWorkspace.create(
-    MOVING,
+    GENERIC_SEED,
     await directory(),
     INITIAL_EXPERIMENT_BUDGETS,
   );
@@ -1023,7 +1023,7 @@ test("repeating an executed tool batch without semantic host progress terminates
     ]),
   );
   const workspace = await CandidateWorkspace.create(
-    MOVING,
+    GENERIC_SEED,
     await directory(),
     INITIAL_EXPERIMENT_BUDGETS,
   );
@@ -1157,7 +1157,7 @@ test("provider failures and model budget exhaustion normalize to incomplete outc
   ]);
   const failed = await runBoundedAgent({
     creatorSession: CREATOR_SESSION,
-    seedRoot: MOVING,
+    seedRoot: GENERIC_SEED,
     creatorPrompt: CREATOR_PROMPT,
     requirementSet: requirements(),
     runtime: new ForgeNativeAgentRuntime(failureClient),
@@ -1191,7 +1191,7 @@ test("provider failures and model budget exhaustion normalize to incomplete outc
   ]);
   const invalid = await runBoundedAgent({
     creatorSession: CREATOR_SESSION,
-    seedRoot: MOVING,
+    seedRoot: GENERIC_SEED,
     creatorPrompt: CREATOR_PROMPT,
     requirementSet: requirements(),
     runtime: new ForgeNativeAgentRuntime(invalidClient),
@@ -1226,7 +1226,7 @@ test("provider failures and model budget exhaustion normalize to incomplete outc
   ]);
   const postResponse = await runBoundedAgent({
     creatorSession: CREATOR_SESSION,
-    seedRoot: MOVING,
+    seedRoot: GENERIC_SEED,
     creatorPrompt: CREATOR_PROMPT,
     requirementSet: requirements(),
     runtime: new ForgeNativeAgentRuntime(postResponseFailure),
@@ -1260,7 +1260,7 @@ test("provider failures and model budget exhaustion normalize to incomplete outc
   ]);
   const exhausted = await runBoundedAgent({
     creatorSession: CREATOR_SESSION,
-    seedRoot: MOVING,
+    seedRoot: GENERIC_SEED,
     creatorPrompt: CREATOR_PROMPT,
     requirementSet: requirements(),
     runtime: new ForgeNativeAgentRuntime(budgetClient),
@@ -1309,7 +1309,7 @@ test("opaque model continuation is never persisted in AgentRun or BuildTrace", a
   ]);
   const result = await runBoundedAgent({
     creatorSession: CREATOR_SESSION,
-    seedRoot: MOVING,
+    seedRoot: GENERIC_SEED,
     creatorPrompt: CREATOR_PROMPT,
     requirementSet: requirements(),
     runtime: new ForgeNativeAgentRuntime(client),
@@ -1429,7 +1429,7 @@ test("workspace requires a plan, safe relative source paths, fresh hashes, and e
 
 test("builder orientation withholds benchmark bodies and HarnessConfiguration hashes tool behavior", async () => {
   const workspace = await CandidateWorkspace.create(
-    MOVING,
+    GENERIC_SEED,
     await directory(),
     INITIAL_EXPERIMENT_BUDGETS,
   );

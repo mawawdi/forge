@@ -98,7 +98,7 @@ async function experimentRegister(seedPath: string | undefined, optionArgs: stri
     ]);
     assertRequirementSet(requirementsValue); assertAcceptanceSpec(acceptanceValue); assertAcceptanceSpecReferences(acceptanceValue, requirementsValue); assertRuntimeEvalDefinition(definitionValue); assertRuntimeEvaluatorConfiguration(configurationValue);
     const registration = await registerExperiment({
-      repositoryRoot: process.cwd(), seedRoot: resolve(seedPath), name: options.name ?? "vertical-shuttle", hypothesis: options.hypothesis ?? "A registered source-root treatment can produce a locally eligible candidate and a separately graded Studio runtime outcome.", creatorPrompt: creatorPrompt.trim(),
+      repositoryRoot: process.cwd(), seedRoot: resolve(seedPath), name: options.name ?? "registered-experiment", hypothesis: options.hypothesis ?? "A preregistered treatment can produce a locally eligible candidate and a separately graded Studio runtime outcome.", creatorPrompt: creatorPrompt.trim(),
       requirementSet: requirementsValue as RequirementSet, acceptanceSpec: acceptanceValue as AcceptanceSpec, runtimeEvalDefinition: definitionValue as RuntimeEvalDefinition, runtimeEvaluatorConfiguration: configurationValue as RuntimeEvaluatorConfiguration,
       runtime: { identity: FORGE_NATIVE_RUNTIME_IDENTITY, modelClientDescriptor: OPENROUTER_MODEL_CLIENT_DESCRIPTOR }, model: options.model
     });

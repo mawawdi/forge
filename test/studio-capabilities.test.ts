@@ -9,16 +9,12 @@ import { contentHash, stableJson } from "../packages/contracts/src/index.js";
 import {
   STUDIO_CAPABILITY_SET,
   STUDIO_INSTANCE_RESOLUTION_ROOTS,
-  assertRuntimeEvalDefinition,
-  assertRuntimeEvaluatorConfiguration,
   assertStudioExecutionPlan,
   createRuntimeEvalDefinition,
   createRuntimeEvalPlan,
   createRuntimeEvaluatorConfiguration,
   createStudioExecutionPlan,
   gradeRuntimeObservations,
-  type RuntimeEvalDefinition,
-  type RuntimeEvaluatorConfiguration,
   type RuntimeObservationEnvelope,
   type StudioExecutionPlan,
 } from "../packages/studio-capabilities/src/index.js";
@@ -26,7 +22,6 @@ import { executeRuntimeEvaluation, executeStudioCapabilityCanary } from "../pack
 import type { StudioBridgeConnection, StudioBridgeSession } from "../packages/studio-bridge/src/index.js";
 import type { BackendToPluginMessage, PluginToBackendMessage } from "../packages/studio-protocol/src/index.js";
 import type { StudioSnapshotObservation } from "../packages/semantic-map/src/index.js";
-import { assertAcceptanceSpec, assertAcceptanceSpecReferences, assertIntegrationConstraint, assertIntegrationConstraintReferences, assertRequirementSet, resolveRequirementView, type AcceptanceSpec, type RequirementSet } from "../packages/semantic-authority/src/index.js";
 
 const execFile = promisify(execFileCallback);
 
@@ -237,62 +232,39 @@ test("fake transport proves same-session runtime success, rejection, and a proof
   assert.match(pluginFailure.failure?.detail ?? "", /Runtime capability runner did not return/);
 });
 
-test("Moving Platform seed persists part transforms through CFrame rather than derived Position", async () => {
-  const seed = resolve("examples/moving-platform/seed");
-  const project = JSON.parse(await readFile(resolve(seed, "default.project.json"), "utf8")) as { tree: { Workspace: Record<string, { $properties: Record<string, unknown> }> } };
-  for (const part of ["Baseplate", "EndpointA", "EndpointB", "MovingPlatform"]) {
-    const instance = project.tree.Workspace[part];
-    assert.ok(instance, `${part} must be declared in the Moving Platform seed`);
+test("Status Beacon seed persists part transforms through CFrame rather than derived Position", async () => {
+  const seed = resolve("examples/status-beacon");
+  const project = JSON.parse(await readFile(resolve(seed, "default.project.json"), "utf8")) as {
+    tree: {
+      Workspace: {
+        Generator: { $properties: Record<string, unknown> };
+        PreservedTree: {
+          Trunk: { $properties: Record<string, unknown> };
+          Crown: { $properties: Record<string, unknown> };
+        };
+      };
+    };
+  };
+  const parts = {
+    Generator: project.tree.Workspace.Generator,
+    Trunk: project.tree.Workspace.PreservedTree.Trunk,
+    Crown: project.tree.Workspace.PreservedTree.Crown,
+  };
+  for (const [name, instance] of Object.entries(parts)) {
     const properties = instance.$properties;
-    assert.equal(Array.isArray(properties.CFrame) && properties.CFrame.length, 12, `${part} must declare a full CFrame`);
-    assert.equal("Position" in properties, false, `${part} must not serialize the derived Position property`);
+    assert.equal(Array.isArray(properties.CFrame) && properties.CFrame.length, 12, `${name} must declare a full CFrame`);
+    assert.equal("Position" in properties, false, `${name} must not serialize the derived Position property`);
   }
-  const directory = await mkdtemp(join(tmpdir(), "forge-moving-platform-seed-"));
+  const directory = await mkdtemp(join(tmpdir(), "forge-status-beacon-seed-"));
   const output = join(directory, "seed.rbxlx");
   try {
     await execFile("rojo", ["build", resolve(seed, "default.project.json"), "-o", output]);
     const rbxlx = await readFile(output, "utf8");
-    assert.match(rbxlx, /<CoordinateFrame name="CFrame">\s*<X>-12<\/X>\s*<Y>4<\/Y>/);
-    assert.match(rbxlx, /<CoordinateFrame name="CFrame">\s*<X>12<\/X>\s*<Y>4<\/Y>/);
+    assert.match(rbxlx, /<CoordinateFrame name="CFrame">\s*<X>0<\/X>\s*<Y>4<\/Y>/);
+    assert.match(rbxlx, /<CoordinateFrame name="CFrame">\s*<X>16<\/X>\s*<Y>5<\/Y>/);
+    assert.match(rbxlx, /<CoordinateFrame name="CFrame">\s*<X>16<\/X>\s*<Y>11<\/Y>/);
     assert.doesNotMatch(rbxlx, /<Vector3 name="Position">/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-});
-
-test("Moving Platform task keeps hidden evaluator thresholds outside builder-visible artifacts", async () => {
-  const root = resolve("examples/moving-platform/task");
-  const requirements = JSON.parse(await readFile(resolve(root, "requirements.json"), "utf8")) as RequirementSet;
-  const acceptance = JSON.parse(await readFile(resolve(root, "acceptance.json"), "utf8")) as AcceptanceSpec;
-  const evaluatorDefinition = JSON.parse(await readFile(resolve(root, "evaluator/runtime-eval-definition.json"), "utf8")) as RuntimeEvalDefinition;
-  const evaluatorConfiguration = JSON.parse(await readFile(resolve(root, "evaluator/runtime-evaluator-configuration.json"), "utf8")) as RuntimeEvaluatorConfiguration;
-  const constraints = JSON.parse(await readFile(resolve(root, "integration-constraints.json"), "utf8")) as unknown[];
-  assertRequirementSet(requirements);
-  assertAcceptanceSpec(acceptance);
-  assertAcceptanceSpecReferences(acceptance, requirements);
-  assertRuntimeEvalDefinition(evaluatorDefinition);
-  assertRuntimeEvaluatorConfiguration(evaluatorConfiguration);
-  for (const constraint of constraints) { assertIntegrationConstraint(constraint); assertIntegrationConstraintReferences(constraint, requirements); }
-  const builder = resolveRequirementView(requirements, { phase: "build", environment: "benchmark", audience: "builder" });
-  const evaluator = resolveRequirementView(requirements, { phase: "evaluate", environment: "benchmark", audience: "evaluator" });
-  assert.equal(evaluatorDefinition.requirementSetId, requirements.id);
-  assert.equal(evaluatorDefinition.acceptanceSpecId, acceptance.id);
-  assert.equal(evaluatorDefinition.evaluatorViewId, evaluator.id);
-  assert.equal(evaluatorDefinition.evaluatorViewHash, contentHash(stableJson(evaluator)));
-  assert.equal(evaluatorDefinition.capabilitySetId, STUDIO_CAPABILITY_SET.id);
-  assert.equal(evaluatorDefinition.capabilitySetHash, STUDIO_CAPABILITY_SET.hash);
-  assert.equal(evaluatorConfiguration.runtimeEvalDefinitionId, evaluatorDefinition.id);
-  assert.equal(evaluatorConfiguration.runtimeEvalDefinitionHash, evaluatorDefinition.hash);
-  const builderJson = stableJson(builder);
-  assert.equal(builderJson.includes("2-stud"), false);
-  assert.equal(builderJson.includes("Hidden benchmark oracle"), false);
-  assert.equal(builderJson.includes("evaluator-moving-platform-motion"), false);
-  assert.equal(builderJson.includes("benchmark-oracle-moving-platform-hidden"), false);
-  assert.equal(builderJson.includes("Workspace/MovingPlatform"), true);
-  const platformPolicyText = requirements.requirements.filter((item) => item.source === "platform_policy").map((item) => item.statement).join("\n");
-  assert.doesNotMatch(platformPolicyText, /src\/server|29|250|2-stud|3500/);
-  assert.deepEqual(JSON.parse(await readFile(resolve("examples/moving-platform/seed/forge.fixture.json"), "utf8")).luauRoots, ["src/server"]);
-  assert.equal(evaluatorDefinition.provenance.authority, "evaluation_only");
-  const canaryTemplate = JSON.parse(await readFile(resolve(root, "capability-canary-template.json"), "utf8")) as { staticTargetIds?: unknown };
-  assert.deepEqual(canaryTemplate.staticTargetIds, ["target-endpoint-a", "target-endpoint-b"]);
 });
