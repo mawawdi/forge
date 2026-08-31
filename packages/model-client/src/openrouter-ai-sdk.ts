@@ -30,10 +30,9 @@ const TRANSPORT = "openrouter-ai-sdk-core"
 /** Public, secret-free transport identity used to preregister a treatment. */
 export const OPENROUTER_MODEL_CLIENT_DESCRIPTOR = {
 	transport: TRANSPORT,
-	version: "1.0.0",
 	configuration: {
-		aiSdk: { package: "ai", version: "7.0.85" },
-		providerAdapter: { package: "@openrouter/ai-sdk-provider", version: "3.0.0" },
+		aiSdk: { package: "ai" },
+		providerAdapter: { package: "@openrouter/ai-sdk-provider" },
 		routing: { only: ["openai"], allowFallbacks: false as const, requireParameters: true as const },
 		reasoning: { effort: "medium" as const, exclude: false as const },
 		request: {
@@ -41,7 +40,7 @@ export const OPENROUTER_MODEL_CLIENT_DESCRIPTOR = {
 			toolChoice: "auto" as const,
 			providerParallelToolCalls: "not_requested" as const,
 			toolBatchExecution: "atomic_validate_then_sequential" as const,
-			toolNameEncoding: "openai_function_slug_v1" as const,
+			toolNameEncoding: "openai_function_slug" as const,
 			maxRetries: 0 as const,
 			telemetry: false as const,
 			timeoutPolicy: "remaining_runtime_budget" as const,

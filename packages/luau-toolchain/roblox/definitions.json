@@ -1,8 +1,5 @@
 {
   "kind": "RobloxTypeDefinitions",
-  "schemaVersion": 1,
-  "source": "https://github.com/JohnnyMorganz/luau-lsp/blob/1.63.0/scripts/globalTypes.d.luau",
-  "sourceCommit": "76018b979a8103ab49803a894fb7795d701c82d7",
-  "luauLspVersion": "1.63.0",
+  "source": "https://github.com/JohnnyMorganz/luau-lsp/scripts/globalTypes.d.luau",
   "sha256": "0776cc69b63bc77f3f951f4843c15514f87ed844094e2afdc8e9a6547bbf974a"
 }

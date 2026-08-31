@@ -17,7 +17,7 @@ Keep this file operational. Documentation authority is split deliberately:
 - Keep workspace access bounded to declared roots, regular Luau source, hash-guarded replacement, explicit absent creation, and fail-closed path/symlink handling.
 - Use `eligible`, `rejected`, and `incomplete` for the local gate. Use `locally_eligible` only for an AgentRun/candidate outcome. Never describe a candidate as Studio-verified without an authoritative Studio evaluation.
 - Keep Studio plans canonical JSON data interpreted by fixed Forge runner source. Do not add arbitrary code, expressions, callbacks, generic property access, or mechanic-specific harnesses.
-- The user runs all Roblox Studio checks. Never launch or operate Studio. Provide the exact commands, generated place path, plugin version, and click sequence, then wait for the user's result.
+- The user runs all Roblox Studio checks. Never launch or operate Studio. Provide the exact commands, generated place path, connector artifact path, and click sequence, then wait for the user's result.
 - Use `apply_patch` for repository edits. Preserve unrelated dirty work. Avoid broad or destructive targets; create an external rollback snapshot before an authorized purge.
 - Run `git diff --check`, TypeScript build, current Node tests, plugin parse/analyze/module tests, and a temporary-output Rojo build before completion. Do not make model calls or Studio runs during tests.
 - Report what changed, commands actually run, exact test results, model/Studio calls actually made, unresolved claims, and the next smallest evidence-producing task.

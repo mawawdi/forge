@@ -1,6 +1,5 @@
 {
   "kind": "ForgeFixture",
-  "schemaVersion": 1,
   "name": "vertical-shuttle-seed",
   "luauRoots": ["src/server"],
   "instances": [

@@ -5,9 +5,9 @@ This index separates research rationale and evidence from normative documentatio
 | Document | Classification | Current relevance |
 | --- | --- | --- |
 | [Deep research report](deep-research-report.md) | Foundational transformation rationale | Source of truth for the move from mechanic compilation toward an observable Roblox agent harness and evaluation system. |
-| [Agent runtime report](agent-runtime-report.md) | Current architectural rationale | Explains why Forge owns the native agent loop and keeps model providers behind a one-turn boundary. The implementation has applied this recommendation; version-specific comparisons remain dated research. |
+| [Agent runtime report](agent-runtime-report.md) | Current architectural rationale | Explains why Forge owns the native agent loop and keeps model providers behind a one-turn boundary. Provider comparisons remain dated research rather than current identity. |
 | [Semantic-authority audit](research/semantic-authority-audit.md) | Current research rationale | Captures the failure patterns and authority rules behind the implemented provenance, visibility, enforcement, and leakage boundary. |
-| [Studio capability evidence](research/studio-capability-evidence.md) | Runtime evidence ledger | Preserves the protocol-v11 P0/P0.1/P0.2 observations and explains why they do not establish protocol-v12 readiness. |
+| [Studio capability evidence](research/studio-capability-evidence.md) | Runtime evidence ledger | Preserves earlier connector observations; they do not establish current authoring readiness. |
 
 ## Retention rules
 

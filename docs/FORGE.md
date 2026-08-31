@@ -2,160 +2,74 @@
 
 ## Thesis
 
-Forge is a Roblox-specific agent harness and runtime-evaluation system. A model may choose a design and implementation; Forge owns bounded project access, semantic authority, local verification, real-Studio observation, deterministic grading where the claim supports it, and evidence that makes a run inspectable.
+Forge is a Roblox-specific creator harness and evaluation system. The eventual product begins with the open Studio place and the creator's prompt—not a hand-authored task package. A model may propose a design and implementation; Forge owns factual context, bounded tools, approvals, Studio mutation, verification, stopping, recovery, and evidence.
 
-The evaluated unit is the model, harness, tools, environment, and evaluator configuration together. A low score is not automatically model failure, and a passing local check is not engine proof.
+Registered experiments are deliberately different. They bind evaluator-only criteria, a seed, model, budgets, implementation, and runtime configuration before execution so a benchmark result is inspectable. Their JSON files are not ordinary creator inputs.
 
-## Documentation authority
+## Product contract
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) defines the current and target architecture.
-- This document defines the product thesis, non-goals, and architectural invariants.
-- [EVALS.md](EVALS.md) defines evaluation authority, evidence tiers, and status meanings.
-- [ROADMAP.md](ROADMAP.md) records demonstrated status and the next evidence-producing task.
-- [RESEARCH.md](RESEARCH.md) indexes foundational rationale and immutable historical evidence.
+An ordinary creator session follows these principles:
 
-Research records explain how Forge reached the current design, but they do not override current contracts, protocol versions, or status claims.
-
-## Non-goals
-
-Forge does not compile a creator request into a universal game-mechanic ontology. It does not prescribe names, source layout, constants, or interaction architecture for greenfield work unless the creator, an observed integration constraint, or a universal Roblox policy requires them. It does not expose arbitrary code execution inside Studio, use model output as proof, or treat subjective game quality as deterministic.
-
-The current system deliberately excludes provider-owned agent loops, `ToolLoopAgent`, AI Gateway, multiple providers behind compatibility shims, swarms, hosted workers, asset generation, and mechanic-specific Studio harnesses. Vercel AI SDK Core is used only as the one-turn OpenRouter transport adapter.
-
-## System summary
-
-The canonical diagrams, package inventory, source-root correction, and long-term target are in [ARCHITECTURE.md](ARCHITECTURE.md). The summary below explains the invariants that govern them.
-
-```text
-creator request + RequirementSet
-  -> builder-visible requirement view
-  -> source-free project orientation with canonical source-root capability facts
-  -> ForgeNativeAgentRuntime
-       -> one-turn ModelClient calls
-            -> AI SDK Core generateText
-            -> OpenRouter
-       -> bounded Forge tools
-       -> agent-owned BuildPlan
-       -> isolated candidate workspace
-  -> frozen WorkspaceDelta
-  -> independent local verifier
-  -> sealed WorkspaceCandidateArtifact
-  -> generic Studio capability execution
-  -> factual runtime observations
-  -> backend-only grading
-  -> RuntimeProofBundle + BuildTrace
-```
-
-`ForgeNativeAgentRuntime` owns turns, budgets, tool dispatch, verifier feedback, stopping, workspace freezing, and the independent final gate. `ModelClient.complete` is intentionally a one-turn inference boundary. Its isolated OpenRouter adapter uses AI SDK Core `generateText` for exactly one step; it is not an agent runtime and owns no tool execution or iteration.
-
-The adapter preserves the AI SDK `responseMessages` from an assistant tool-call response as a bounded opaque continuation and replays them unchanged after Forge tool results. This retains OpenRouter reasoning details across tool turns without exposing AI SDK types outside the adapter. Continuation bodies are limited to 256 KiB and stay in memory; `AgentRun` and `BuildTrace` retain only continuation hashes and sizes.
+- the creator enters one prompt in Studio;
+- a read-only planner sees bounded project facts and exact authoring constraints; Forge derives the plan goal from the immutable creator prompt rather than accepting a model-authored substitute;
+- every planned step binds exact change IDs, every create or move declares its initialization contract, and every new script commits to complete source in its single create operation rather than deferring behavior to an unavailable later phase;
+- the plan is executable and verification-complete before review: each created or moved output has an exact class-aware existence check and every source-bearing change has a Luau syntax check;
+- the planner first inspects bounded exact-path facts, then declares the exact initial-snapshot `inspectionPaths` the builder needs for placement, integration, relationships, or preservation; Forge validates those paths before approval;
+- the creator approves that exact immutable plan hash;
+- Forge compiles that approval into a content-addressed, evidence-bound `CreatorBuildContract` that the separate builder can see; Forge fixes each operation's kind, path, parent, name, class, stable identity, precondition, and initialization mode while the builder supplies only allowlisted properties, attributes, explicit attribute removals, and source;
+- a separate builder may stage typed changes but cannot mutate the live place;
+- the creator sees exact source diffs, typed operation hashes, and the local gate before approval;
+- the fixed plugin admits the live budget and applies only the approved change set after independently recollecting and matching the exact Studio revision at prepare and again at apply inside one Studio ChangeHistory recording;
+- one creator-authorized check action starts the exact bound Play Solo plan and returns factual observations and bounded diagnostic hashes;
+- passing checks create a guarded checkpoint, after which creator acceptance remains a distinct product judgment;
+- failure cancels the recording or enters at most two visible-fact repairs;
+- rollback is allowed only when the exact committed Studio revision still matches.
 
 ## Semantic authority
 
-Every requirement records five independent axes:
+Forge keeps these sources distinct:
 
-- `source`: creator, project observation, platform policy, agent plan, evaluator, or benchmark oracle;
-- `authority`: fact, policy, hypothesis, or evaluation-only;
-- `visibility`: builder-visible, evaluator-only, or internal;
-- `enforcement`: informational, advisory, or blocking;
-- evidence: source-aligned provenance with a stable hash.
+- creator request: desired outcome and creator authority;
+- project observation: factual before-state;
+- platform policy: universal security or execution constraints;
+- agent plan: a hypothesis requiring creator approval;
+- creator charter: visible approved checks, still not an engine fact;
+- evaluator or benchmark oracle: evaluation-only authority inside one registered treatment.
 
-Policy resolves a view for a phase, environment, and audience. Visibility and enforceability are separate: an internal isolation policy can gate a candidate without revealing evaluator implementation. Benchmark oracles and evaluator-only bodies never enter builder context or tools. Project observations describe the before-state; only explicit `IntegrationConstraint` objects require preservation. Agent plans are hypotheses, not platform policy.
+Hidden evaluator bodies, expected observations, benchmark answers, successful source, private runtime observations, host paths, and secrets never enter creator planner or builder context. Studio receives typed data, never evaluator assertions.
 
-The current code-owned policy descriptor prohibits production candidate source and builder-visible context from depending on evaluator instrumentation, hidden assertions, benchmark oracles, or expected observations.
+## Ownership
 
-## Forge-owned tools
+Studio is the only persistent writer in a creator session. Forge does not need or implement dual Rojo/Studio ownership. Optional externally managed Rojo roots are read-only exclusion zones. This avoids concurrent-writer merge semantics while allowing Forge to operate safely around an existing workflow.
 
-The native builder exposes exactly these bounded operations:
+## Model and tool ownership
 
-- `project.list`
-- `project.search`
-- `project.read`
-- `project.inspect`
-- `plan.update`
-- `workspace.write`
-- `workspace.diff`
+`ForgeNativeAgentRuntime` owns turns, tool dispatch, budgets, feedback, and stopping. A provider adapter performs one replaceable inference turn. Provider SDK types do not enter runtime or evidence contracts.
+
+The planner has two read-only tools: bounded exact-path `studio.inspect` and `creator.propose_plan`. A declared builder inspection path must already have been inspected by the planner. The builder has five tools:
+
+- `studio.inspect`
+- `studio.read_source`
+- `studio.stage`
+- `studio.diff`
 - `forge.verify`
 
-The workspace is copied from a read-only seed. The initial orientation exposes only sorted canonical candidate-relative source roots; it never exposes host paths. Reads and writes stay inside those roots. Writes require either the exact prior SHA-256 or an explicit `absent` precondition, accept only regular `.lua`/`.luau` files, reject traversal and symlink escape, and are bounded by file, line, byte, call, and duration budgets. A high-level agent-owned plan is required before the first write.
+`studio.stage` records virtual operations only. Forge derives the approved operation's ID and structural fields from `CreatorBuildContract`; the builder may supply only the contract's allowlisted properties, primitive attributes, explicit `removedAttributes`, and required Script/LocalScript/ModuleScript source. The model uses natural JSON property values rather than Forge's internal tags: primitives remain primitives, vectors use `{x,y,z}`, colors use `{r,g,b}`, and CFrames use `{position,rotation}` with degree-based Euler rotation. Forge resolves them against the exact property policy, converts numeric components to Studio floats, converts colors to deterministic 8-bit channels, and presents those actual storage values for creator review. Only the resulting typed canonical operations cross into Studio, whose preflight rejects noncanonical color channels. A move can include property/attribute changes in the same atomic operation; source replacement can include attribute changes, so one stable target never needs conflicting operations. Property and UTF-8 bounds are enforced identically before staging and by Studio. A script created by the plan carries its complete initial source in that same create operation; source replacement is reserved for scripts observed in the initial snapshot, and `studio.read_source` exposes only the exact approved existing source. `studio.inspect` accepts only the planner-declared initial paths carried by the contract. Rejection feedback identifies exact invalid field paths, expected and received contract fields, and the precise applicable allowlist, while rejected batches, live budget-admission failures, identical no-progress submissions, and varied consecutive all-failed batches are retained as evidence. The plugin—not the model—interprets the final canonical change set. The allowlist excludes arbitrary code callbacks, generic property access, terrain, asset operations, and unbounded deletion.
 
-Tool descriptions and schemas are versioned harness behavior. `HarnessConfiguration` hashes the system prompt, full tool surface, capability policy, initial orientation identity, requirement-view hash, budget policy, native runtime version, transport version, and exact model configuration. `AgentRun` records normalized turn and tool-result hashes without persisting the API key.
+The coordinator depends on `CreatorAgentWorker`, not directly on the model runtime. The only current implementation is `LocalCreatorAgentWorker` (`local_process`, no isolation), backed by `ForgeNativeAgentRuntime`. Studio tokens and mutation authority never enter the worker boundary. A future isolated worker changes the bound descriptor and content identity.
 
-The current transport identity also covers the pinned AI SDK and OpenRouter adapter versions, provider allowlist, disabled fallbacks, required-parameter policy, reasoning effort, retry policy, one-step policy, ordered tool surface, provider wire-name encoding, timeout policy, per-turn output cap, and continuation limit. Dotted public Forge tool names are deterministically encoded as OpenAI-compatible underscore names only at the adapter boundary. The provider request omits `parallel_tool_calls` because current OpenRouter OpenAI endpoint metadata does not advertise that parameter under required-parameter routing. Forge remains authoritative: a model tool-call batch is validated atomically before execution, and a valid batch executes sequentially in returned order. An unknown tool, invalid arguments, empty ID, or ID reused anywhere in the run rejects the whole batch and executes zero tools. Bounded rejection feedback and its resource use remain part of the run evidence.
+`CreatorControlView` is the UI-independent workflow contract. Plan review includes the exact creator prompt and prompt hash, generated initialization commitments, output-check coverage, and separately labeled creator-review judgments. Change review includes the exact typed creative payload and source diffs, not only operation hashes. The CLI and temporary plugin consume the same exact view and may request only its current primary or secondary action. A terminal plugin screen displays content-bound AgentRun/trace references and returns the primary action to **Submit New Request**. The eventual web dashboard replaces the temporary review UI over this contract; the plugin remains the trusted Studio capability adapter.
 
-`AgentRun.trialStarted` becomes true after the first valid provider assistant envelope, including one with a semantically invalid tool request. Authentication, configuration, pre-response timeout, and malformed HTTP failures leave it false. This boundary determines whether a transport defect may be corrected before the one permitted real trial.
+The registered file-backed builder remains separate and exposes its eight bounded project/workspace tools for experiments.
 
-For benchmark work, `ExperimentRegistration` v1 fixes the complete treatment before that boundary: creator prompt, seed/source roots, implementation snapshot, model transport, budgets, requirement and evaluator artifacts, Studio identity, and the expected orientation/tool/harness hashes. The registration remains evaluator/orchestrator material and is never delivered to the builder. Registered experiment build and evaluation commands recompute those identities and fail closed on drift.
+## Non-goals
 
-## Local eligibility
+Forge does not compile prompts into a universal mechanic ontology, prescribe a greenfield source layout, use model output as proof, treat subjective quality as deterministic, expose arbitrary Studio execution, or maintain compatibility readers for predecessor contracts.
 
-The local verifier uses official Luau parsing and Roblox-aware analysis when available, plus explicit Forge checks for modeled structural and client/server authority properties. Its gate is:
+Provider-owned loops, swarms, hosted workers, broad asset generation, mechanic-specific Studio harnesses, PatchSets, and concurrent Rojo/Studio writers are not current architecture.
 
-- `eligible`: the independent local checks passed;
-- `rejected`: deterministic candidate behavior violated a modeled requirement;
-- `incomplete`: required tools or evidence were unavailable.
+## Identity discipline
 
-An `AgentRun` may become `locally_eligible`, `rejected`, or `incomplete`. `locally_eligible` never means Studio-verified. The sealed candidate binds its seed, source tree, delta, requirement view, harness configuration, AgentRun, and final local report.
+Forge has one current artifact and message shape. `kind` discriminates unions; canonical hashes and content-addressed IDs bind exact artifacts, policies, tools, workers, capability sets, and an authenticated evidence graph. A clean break replaces the prior reader and updates the code, fixtures, and tests that use it.
 
-## Studio runtime capabilities
-
-Protocol v12 and Forge Studio plugin 8.0.0 expose one generic data-only evaluator route. The capability set contains exactly:
-
-1. `instance.resolve@1` — resolve an explicit `Workspace` target as a `BasePart` family identity;
-2. `base_part.position@1` — observe one finite world position from a resolved part;
-3. `base_part.position_series@1` — observe a bounded timestamped position series.
-
-The backend sends one canonical JSON string and its SHA-256. Fixed trusted Forge runner source receives that payload through a tested single-string Luau encoder, decodes and validates it again, and returns only factual observations through a nonce-correlated direct `EndTest`. Plan fields never become Luau syntax, identifiers, expressions, callbacks, or arbitrary property access. Pairing, live project/source binding, correlation, bounds, timeout, cleanup, and result size fail closed.
-
-The plugin observes facts; the backend grades them. Evaluator assertions, thresholds, expected values, and rationale never cross into Studio. Studio execution is creator-triggered. Forge automation must print the exact place path and steps, then wait for the user to perform Studio actions.
-
-## Evidence objects
-
-- `RequirementSet`, `RequirementView`, `AcceptanceSpec`, and `IntegrationConstraint` establish authority and audience boundaries.
-- `HarnessConfiguration`, `BuildPlan`, `AgentRun`, and `WorkspaceDelta` describe the builder experiment.
-- `WorkspaceCandidateArtifact` immutably binds the candidate and its independent local gate.
-- `RuntimeEvalDefinition` precommits hidden evaluator semantics independently of a candidate.
-- `StudioExecutionPlan` is the redacted data-only runtime projection.
-- `RuntimeEvaluatorConfiguration` binds the exact capability set, assertion engine, protocol, plugin, execution policy, and definition.
-- `RuntimeEvaluationRun`, `RuntimeProofBundle`, and `BuildTrace` record authoritative observations, scoped grading, links, and privacy-minimized execution evidence.
-
-`runtime_verified` means only that one exact candidate satisfied one exact `RuntimeEvalDefinition` under one exact `StudioCapabilitySet` and `RuntimeEvaluatorConfiguration` in one authoritative Studio run. It is not universal mechanic correctness, complete physics verification, subjective quality, or general game quality.
-
-## Hidden-evaluation boundary
-
-The builder receives the creator request, visible requirements, sanitized project facts, universal policy outcomes, and bounded tools. It cannot read evaluator directories, benchmark oracle bodies, expected observations, fixture solutions, Studio runner source, secrets, or hidden thresholds. `AcceptanceSpec` carries only requirement, assertion, and artifact IDs. Private runtime observations remain outside public AgentRun and BuildTrace content.
-
-## MovingPlatform experiment
-
-`examples/moving-platform` is the consumed historical treatment:
-
-- `seed` contains an anchored `MovingPlatform`, `EndpointA`, `EndpointB`, and an empty server source root;
-- `task` contains creator and observation provenance plus an internal evaluator-isolation policy;
-- `task/evaluator` contains benchmark-scoped runtime assertions and configuration outside the seed.
-
-The creator asks for continuous back-and-forth movement taking about two seconds each way while preserving the three world objects. The agent chooses its script name and implementation. Runtime endpoint coordinates come from authoritative `base_part.position@1` observations. Sample counts, tolerances, timing windows, and the `src/server` task restriction are evaluator constraints, not universal MovingPlatform semantics or platform policy.
-
-`examples/vertical-shuttle` is a distinct registered treatment. It uses a vertical `Shuttle`, `LowerStop`, and `UpperStop` with the same generic position-observation substrate but independent task, evaluator, and experiment identities. It is not a retry of MovingPlatform.
-
-## Honest status
-
-The provider-neutral contracts, native multi-turn harness, one-step AI SDK Core/OpenRouter adapter, reasoning-safe continuation, atomic tool-batch enforcement, safe workspace, verifier, sealed candidate, hash-locked experiment registration, protocol v12, generic capability executor, backend grading, proof linkage, and fake-transport tests are implemented. The current suite passes 44 Node tests plus plugin parsing, analysis, and module tests.
-
-The user-run protocol-v12/plugin-8.0.0 capability canary completed as `studio_capability_canary_beef4ad696113cbf8b69de7e`, bound to `studio_execution_plan_7e138ef9465e5a60ab1aae3d`. It returned six bounded factual results and established only the generic Studio transport/capability substrate; it created no candidate verdict, runtime proof, or benchmark result.
-
-The sole MovingPlatform model trial is `agent_run_e7b303bf-5712-4cc5-9f0a-f15c17d22286` under `harness_configuration_bca40ea4ef667a18a61089e9`. It crossed `trialStarted`, used seven model turns, six tool calls, one requested verifier call, 16,217 input tokens, 1,817 output tokens, USD 0.0338551, and 26,880 ms. The run ended `incomplete / agent_failure`, with `studio: not_run`, no writes, no sealed candidate, and final local gate `incomplete`.
-
-The failure is classified as a historical harness/context defect. At the time, the allowed `src/server` root was present in private capability configuration but absent from provider-visible orientation and tool results. Because the seed contained no source files, `project.list` returned an empty list and `project.inspect` exposed world facts but no writable root. The model created a coherent plan, attempted `ServerScriptService/MovingPlatformController.server.lua` and `MovingPlatformController.server.lua`, received `PATH_FORBIDDEN` for both, invoked `forge.verify`, and stopped. The correction now exposes canonical source roots through `AgentOrientation` v2 and is covered by a deterministic empty-root regression. The preserved result remains evidence only of the pre-fix harness: no candidate existed and Studio evaluation was not run.
-
-The fresh Vertical Shuttle registration `experiment_registration_60857fefe801607baa1f6b7d` produced AgentRun `agent_run_ba3716f8-4ecc-4bf8-9689-45f41700f179`, sealed candidate `workspace_candidate_79937cb8767b18d553850b63`, and one user-triggered `runtime_verified` Studio evaluation `runtime_evaluation_run_35b4ef7f3f9c482d82d498bc`. Its runtime plan and proof are `runtime_eval_plan_5d7c1c5236342ae56fe30ecf` and `runtime_proof_84e4e26fda34ee4dd937597e`. This is a narrow exact-treatment result, not a general model-quality, harness-quality, or MovingPlatform claim.
-
-## Current correction
-
-The provider-visible source-root correction is implemented in `AgentOrientation` v2. The builder receives sorted canonical candidate-relative roots before its first turn, and `workspace.write` explicitly points to that capability fact. A deterministic empty-root fake-provider regression proves plan-before-write, guarded creation, verifier feedback, and local candidate sealing. Historical MovingPlatform records remain unchanged; any real run requires a separately reviewed identity and authorization.
-
-## Deferred
-
-- broader Studio actions and observations justified by concrete evals;
-- repeated unseen-task trials and calibrated subjective evaluation;
-- reviewed failure-to-regression promotion;
-- remote workers or reproducible job infrastructure only after local experiments create a measured need.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for diagrams and the package inventory, [EVALS.md](EVALS.md) for what each result means, and [ROADMAP.md](ROADMAP.md) for demonstrated evidence and the next live milestone.

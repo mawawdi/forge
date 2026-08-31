@@ -24,10 +24,7 @@ export interface LuauAnalysisResult {
 
 interface DefinitionMetadata {
   kind: "RobloxTypeDefinitions";
-  schemaVersion: 1;
   source: string;
-  sourceCommit: string;
-  luauLspVersion: string;
   sha256: string;
 }
 
@@ -60,8 +57,7 @@ function analyzeSyntax(root: string, files: string[]): { status: TierStatus; too
     const issue = toolIssue("LUAU_SYNTAX_TOOL_UNAVAILABLE", "Official luau-compile was not found. Install Luau or set FORGE_LUAU_COMPILE; no parser fallback is allowed.");
     return { status: "unavailable", tools: [], issues: [issue], stdout: "", stderr: "" };
   }
-  const version = `binary-sha256:${binaryHash(executable)}`;
-  const tools: ToolRecord[] = [{ name: "luau-compile", version, command: "luau-compile --only-parse <files>", configHash: hash("official-luau-syntax-v1") }];
+  const tools: ToolRecord[] = [{ name: "luau-compile", command: "luau-compile --only-parse <files>", configHash: hash(`${binaryHash(executable)}|official-luau-syntax`) }];
   const issues: VerificationIssue[] = [];
   let stdout = "";
   let stderr = "";
@@ -79,8 +75,8 @@ function analyzeSyntax(root: string, files: string[]): { status: TierStatus; too
 }
 
 function analyzeRobloxTypes(root: string, files: string[]): { status: TierStatus; tools: ToolRecord[]; issues: VerificationIssue[]; stdout: string; stderr: string } {
-  const executable = resolveExecutable("FORGE_LUAU_LSP", "luau-lsp", ["--version"]);
-  const rojo = resolveExecutable("FORGE_ROJO", "rojo", ["--version"]);
+  const executable = resolveExecutable("FORGE_LUAU_LSP", "luau-lsp");
+  const rojo = resolveExecutable("FORGE_ROJO", "rojo");
   const definitionPath = resolveDefinitionsPath();
   const metadataPath = resolveDefinitionMetadataPath();
   if (!executable || !rojo || !definitionPath || !metadataPath) {
@@ -95,7 +91,7 @@ function analyzeRobloxTypes(root: string, files: string[]): { status: TierStatus
     return unavailable("Pinned Roblox definition metadata is unreadable.");
   }
   const definitionsHash = hash(readFileSync(definitionPath));
-  if (metadata.kind !== "RobloxTypeDefinitions" || metadata.schemaVersion !== 1 || metadata.sha256 !== definitionsHash) {
+  if (metadata.kind !== "RobloxTypeDefinitions" || metadata.sha256 !== definitionsHash) {
     return unavailable(`Pinned Roblox definitions failed integrity validation (expected ${metadata.sha256}, observed ${definitionsHash}).`);
   }
 
@@ -129,13 +125,11 @@ function analyzeRobloxTypes(root: string, files: string[]): { status: TierStatus
     const issues = parseLspDiagnostics(`${stdout}${stderr}`, root);
     if (result.error) issues.push(toolIssue("ROBLOX_TYPE_ENV_UNAVAILABLE", `luau-lsp failed to start: ${result.error.message}`));
     if (result.status !== 0 && issues.length === 0) issues.push(toolIssue("ROBLOX_TYPE_TOOL_FAILURE", `luau-lsp exited with code ${result.status ?? "unknown"} without a parseable diagnostic.`));
-    const lspVersion = executableVersion(executable, ["--version"]);
-    const rojoVersion = executableVersion(rojo, ["--version"]);
-    const configHash = hash(JSON.stringify({ platform: "roblox", definitionsHash, sourcemapHash, luaurcHash: existsSync(configPath) ? hash(readFileSync(configPath)) : hash("no-config") }));
+    const configHash = hash(JSON.stringify({ platform: "roblox", executableHash: binaryHash(executable), definitionsHash, sourcemapHash, luaurcHash: existsSync(configPath) ? hash(readFileSync(configPath)) : hash("no-config") }));
     const tools: ToolRecord[] = [
-      { name: "luau-lsp-roblox", version: `${lspVersion}+binary-${binaryHash(executable).slice(0, 16)}`, command: "luau-lsp analyze --platform=roblox --definitions=@roblox --sourcemap=<generated> --formatter=gnu <files>", configHash },
-      { name: "roblox-global-types", version: `luau-lsp-${metadata.luauLspVersion}@${metadata.sourceCommit}`, command: metadata.source, configHash: definitionsHash },
-      { name: "rojo-sourcemap", version: `${rojoVersion}+binary-${binaryHash(rojo).slice(0, 16)}`, command: "rojo sourcemap <project> --output <temporary>", configHash: sourcemapHash }
+      { name: "luau-lsp-roblox", command: "luau-lsp analyze --platform=roblox --definitions=@roblox --sourcemap=<generated> --formatter=gnu <files>", configHash },
+      { name: "roblox-global-types", command: metadata.source, configHash: definitionsHash },
+      { name: "rojo-sourcemap", command: "rojo sourcemap <project> --output <temporary>", configHash: hash(`${binaryHash(rojo)}|${sourcemapHash}`) }
     ];
     return { status: issues.some((issue) => issue.category === "tooling") ? "unavailable" : result.status === 0 ? "pass" : "fail", tools, issues, stdout, stderr };
   } finally {
@@ -234,38 +228,25 @@ function parseLspDiagnostics(output: string, root: string): VerificationIssue[] 
 
 function diagnosticIssue(ruleId: string, severity: "warning" | "error", path: string, location: NonNullable<VerificationIssue["location"]>, message: string, statement: string): VerificationIssue {
   return {
-    kind: "VerificationIssue", schemaVersion: 1,
-    id: issueId(ruleId, path, location, message), ruleId, severity, category: "language", message, path, location,
+    kind: "VerificationIssue",     id: issueId(ruleId, path, location, message), ruleId, severity, category: "language", message, path, location,
     evidence: [{ type: "analyzer", statement }], authoritativeTier: "static"
   };
 }
 
 function toolIssue(ruleId: string, message: string): VerificationIssue {
-  return { kind: "VerificationIssue", schemaVersion: 1, id: issueId(ruleId, "", { line: 0, column: 0 }, message), ruleId, severity: "error", category: "tooling", message, evidence: [{ type: "analyzer", statement: message }], authoritativeTier: "static" };
+  return { kind: "VerificationIssue", id: issueId(ruleId, "", { line: 0, column: 0 }, message), ruleId, severity: "error", category: "tooling", message, evidence: [{ type: "analyzer", statement: message }], authoritativeTier: "static" };
 }
 
 function tier(name: LuauAnalysisTier["name"], status: TierStatus, issues: VerificationIssue[]): LuauAnalysisTier {
   return { name, status, issueIds: issues.map((issue) => issue.id) };
 }
 
-function resolveExecutable(environmentName: string, command: string, probeArgs: string[] = []): string | null {
+function resolveExecutable(environmentName: string, command: string): string | null {
   const configured = process.env[environmentName];
-  if (configured) return existsSync(configured) && executableWorks(configured, probeArgs) ? resolve(configured) : null;
+  if (configured) return existsSync(configured) ? resolve(configured) : null;
   const lookup = spawnSync("sh", ["-lc", `command -v ${command}`], { encoding: "utf8" });
   const candidate = lookup.status === 0 ? lookup.stdout.trim() : "";
-  return candidate && executableWorks(candidate, probeArgs) ? candidate : null;
-}
-
-function executableWorks(path: string, probeArgs: string[]): boolean {
-  if (probeArgs.length === 0) return existsSync(path);
-  const probe = spawnSync(path, probeArgs, { encoding: "utf8" });
-  return probe.status === 0;
-}
-
-function executableVersion(executable: string, args: string[]): string {
-  const result = spawnSync(executable, args, { encoding: "utf8" });
-  const value = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim().split(/\r?\n/)[0];
-  return value || "unknown";
+  return candidate && existsSync(candidate) ? candidate : null;
 }
 
 function binaryHash(executable: string): string {

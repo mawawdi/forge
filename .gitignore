@@ -8,3 +8,5 @@ target/
 *.rbxlx
 *.rbxm
 *.rbxmx
+
+reference-plugin/

@@ -8,7 +8,7 @@ Your instinct about the semantics layer is correct.
 
 After comparing the role description, Lemonade's public product, the Lemonade Studio plugin you inspected, current agent-evaluation practice, Anthropic's latest long-horizon harness work, Harbor, Fly's current agent infrastructure, and Roblox's own 2026 agentic tooling, I would **change Forge's architectural direction now**.
 
-The strongest version of Forge is **not**:
+The strongest form of Forge is **not**:
 
 > prompt → Forge recognizes a mechanic → Forge deterministically writes a detailed mechanic contract/ABI/constants → model fills in Luau → Forge proves it matches the handcrafted contract.
 

@@ -18,15 +18,14 @@ export type RequirementVerificationMode = "schema" | "static" | "preflight" | "s
 export type RequirementEvidence =
   | { kind: "creator_request"; id: string; intentId: string; requestHash: string }
   | { kind: "project_observation"; id: string; projectId: string; projectSnapshotHash: string; locator: string; observationHash: string }
-  | { kind: "policy_reference"; id: string; policyId: string; policyVersion: string; locator: string; documentHash: string }
+  | { kind: "policy_reference"; id: string; policyId: string; locator: string; documentHash: string }
   | { kind: "agent_decision"; id: string; planId: string; decisionId: string; decisionHash: string }
   | { kind: "evaluation_spec"; id: string; evaluationId: string; criterionId: string; specificationHash: string }
   | { kind: "benchmark_fixture"; id: string; benchmarkId: string; oracleId: string; fixtureHash: string };
 
 export interface Requirement {
   kind: "Requirement";
-  schemaVersion: 1;
-  id: string;
+    id: string;
   statement: string;
   source: RequirementSource;
   authority: RequirementAuthority;
@@ -38,15 +37,13 @@ export interface Requirement {
 
 export interface RequirementSet {
   kind: "RequirementSet";
-  schemaVersion: 1;
-  id: string;
+    id: string;
   requirements: Requirement[];
 }
 
 export interface AcceptanceSpec {
   kind: "AcceptanceSpec";
-  schemaVersion: 1;
-  id: string;
+    id: string;
   requirementSetId: string;
   requirementIds: string[];
   assertionIds: string[];
@@ -55,8 +52,7 @@ export interface AcceptanceSpec {
 
 export interface IntegrationConstraint {
   kind: "IntegrationConstraint";
-  schemaVersion: 1;
-  id: string;
+    id: string;
   requirementId: string;
   projectId: string;
   projectSnapshotHash: string;
@@ -84,8 +80,7 @@ export type RequirementViewDecision =
 
 export interface RequirementView {
   kind: "RequirementView";
-  schemaVersion: 1;
-  id: string;
+    id: string;
   requirementSetId: string;
   scope: RequirementScope;
   decisions: RequirementViewDecision[];
@@ -110,8 +105,7 @@ export function createRequirementSet(requirements: readonly Requirement[]): Requ
   const canonical = requirements.map(canonicalRequirement).sort((left, right) => compareStrings(left.id, right.id));
   const set: RequirementSet = {
     kind: "RequirementSet",
-    schemaVersion: 1,
-    id: requirementSetId(canonical),
+        id: requirementSetId(canonical),
     requirements: canonical
   };
   assertRequirementSet(set);
@@ -133,8 +127,7 @@ export function createAcceptanceSpec(input: {
   };
   const spec: AcceptanceSpec = {
     kind: "AcceptanceSpec",
-    schemaVersion: 1,
-    id: `acceptance_spec_${contentHash(stableJson(payload)).slice(0, 24)}`,
+        id: `acceptance_spec_${contentHash(stableJson(payload)).slice(0, 24)}`,
     ...payload
   };
   assertAcceptanceSpec(spec);
@@ -155,8 +148,7 @@ export function createIntegrationConstraint(input: {
   };
   const constraint: IntegrationConstraint = {
     kind: "IntegrationConstraint",
-    schemaVersion: 1,
-    id: `integration_constraint_${contentHash(stableJson(payload)).slice(0, 24)}`,
+        id: `integration_constraint_${contentHash(stableJson(payload)).slice(0, 24)}`,
     ...payload
   };
   assertIntegrationConstraint(constraint);
@@ -171,8 +163,7 @@ export function resolveRequirementView(requirementSet: RequirementSet, scope: Re
   const payload = { requirementSetId: requirementSet.id, scope, decisions };
   return {
     kind: "RequirementView",
-    schemaVersion: 1,
-    id: `requirement_view_${contentHash(stableJson(payload)).slice(0, 24)}`,
+        id: `requirement_view_${contentHash(stableJson(payload)).slice(0, 24)}`,
     ...payload
   };
 }
@@ -188,8 +179,8 @@ export function serializeRequirementSet(requirementSet: RequirementSet): string 
 }
 
 export function assertRequirement(value: unknown): asserts value is Requirement {
-  if (!isRecord(value) || !hasExactKeys(value, ["kind", "schemaVersion", "id", "statement", "source", "authority", "visibility", "enforcement", "verificationModes", "evidence"]) || value.kind !== "Requirement" || value.schemaVersion !== 1) {
-    throw new Error("Invalid Requirement: expected schemaVersion 1 and exact fields");
+  if (!isRecord(value) || !hasExactKeys(value, ["kind", "id", "statement", "source", "authority", "visibility", "enforcement", "verificationModes", "evidence"]) || value.kind !== "Requirement") {
+    throw new Error("Invalid Requirement: expected exact fields");
   }
   if (!isId(value.id) || !isNonEmptyString(value.statement) || value.statement !== value.statement.trim() || !includes(SOURCES, value.source) || !includes(AUTHORITIES, value.authority) || !includes(VISIBILITIES, value.visibility) || !includes(ENFORCEMENTS, value.enforcement)) {
     throw new Error("Invalid Requirement: invalid identity or authority axes");
@@ -220,8 +211,8 @@ export function assertRequirement(value: unknown): asserts value is Requirement 
 }
 
 export function assertRequirementSet(value: unknown): asserts value is RequirementSet {
-  if (!isRecord(value) || !hasExactKeys(value, ["kind", "schemaVersion", "id", "requirements"]) || value.kind !== "RequirementSet" || value.schemaVersion !== 1 || !isId(value.id) || !Array.isArray(value.requirements)) {
-    throw new Error("Invalid RequirementSet: expected schemaVersion 1");
+  if (!isRecord(value) || !hasExactKeys(value, ["kind", "id", "requirements"]) || value.kind !== "RequirementSet" || !isId(value.id) || !Array.isArray(value.requirements)) {
+    throw new Error("Invalid RequirementSet");
   }
   for (const requirement of value.requirements) assertRequirement(requirement);
   const requirements = value.requirements as Requirement[];
@@ -230,8 +221,8 @@ export function assertRequirementSet(value: unknown): asserts value is Requireme
 }
 
 export function assertAcceptanceSpec(value: unknown): asserts value is AcceptanceSpec {
-  if (!isRecord(value) || !hasExactKeys(value, ["kind", "schemaVersion", "id", "requirementSetId", "requirementIds", "assertionIds", "artifactIds"]) || value.kind !== "AcceptanceSpec" || value.schemaVersion !== 1 || !isId(value.id) || !isId(value.requirementSetId)) {
-    throw new Error("Invalid AcceptanceSpec: expected references-only schemaVersion 1");
+  if (!isRecord(value) || !hasExactKeys(value, ["kind", "id", "requirementSetId", "requirementIds", "assertionIds", "artifactIds"]) || value.kind !== "AcceptanceSpec" || !isId(value.id) || !isId(value.requirementSetId)) {
+    throw new Error("Invalid AcceptanceSpec: expected references-only fields");
   }
   for (const key of ["requirementIds", "assertionIds", "artifactIds"] as const) {
     if (!Array.isArray(value[key]) || !value[key].every(isId) || !isCanonicalUniqueStrings(value[key])) throw new Error(`Invalid AcceptanceSpec: ${key} must be unique canonical IDs`);
@@ -254,7 +245,7 @@ export function assertAcceptanceSpecReferences(spec: AcceptanceSpec, requirement
 }
 
 export function assertIntegrationConstraint(value: unknown): asserts value is IntegrationConstraint {
-  if (!isRecord(value) || !hasExactKeys(value, ["kind", "schemaVersion", "id", "requirementId", "projectId", "projectSnapshotHash"]) || value.kind !== "IntegrationConstraint" || value.schemaVersion !== 1 || !isId(value.id) || !isId(value.requirementId) || !isId(value.projectId) || !isHash(value.projectSnapshotHash)) {
+  if (!isRecord(value) || !hasExactKeys(value, ["kind", "id", "requirementId", "projectId", "projectSnapshotHash"]) || value.kind !== "IntegrationConstraint" || !isId(value.id) || !isId(value.requirementId) || !isId(value.projectId) || !isHash(value.projectSnapshotHash)) {
     throw new Error("Invalid IntegrationConstraint: expected project/snapshot reference");
   }
   const expectedId = `integration_constraint_${contentHash(stableJson({ requirementId: value.requirementId, projectId: value.projectId, projectSnapshotHash: value.projectSnapshotHash })).slice(0, 24)}`;
@@ -342,7 +333,7 @@ function assertRequirementEvidence(value: unknown): asserts value is Requirement
       if (!hasExactKeys(value, ["kind", "id", "projectId", "projectSnapshotHash", "locator", "observationHash"]) || !isId(value.projectId) || !isHash(value.projectSnapshotHash) || !isNonEmptyString(value.locator) || !isHash(value.observationHash)) throw new Error("Invalid project observation evidence");
       return;
     case "policy_reference":
-      if (!hasExactKeys(value, ["kind", "id", "policyId", "policyVersion", "locator", "documentHash"]) || !isId(value.policyId) || !isNonEmptyString(value.policyVersion) || !isNonEmptyString(value.locator) || !isHash(value.documentHash)) throw new Error("Invalid policy reference evidence");
+      if (!hasExactKeys(value, ["kind", "id", "policyId", "locator", "documentHash"]) || !isId(value.policyId) || !isNonEmptyString(value.locator) || !isHash(value.documentHash)) throw new Error("Invalid policy reference evidence");
       return;
     case "agent_decision":
       if (!hasExactKeys(value, ["kind", "id", "planId", "decisionId", "decisionHash"]) || !isId(value.planId) || !isId(value.decisionId) || !isHash(value.decisionHash)) throw new Error("Invalid agent decision evidence");

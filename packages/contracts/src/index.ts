@@ -22,8 +22,7 @@ export interface RemoteFlowDeclaration {
 
 export interface ForgeFixtureManifest {
   kind: "ForgeFixture";
-  schemaVersion: 1;
-  name: string;
+    name: string;
   luauRoots: RelativePath[];
   remoteFlows: RemoteFlowDeclaration[];
   instances?: Array<{
@@ -39,8 +38,7 @@ export interface ForgeFixtureManifest {
 
 export interface VerificationIssue {
   kind: "VerificationIssue";
-  schemaVersion: 1;
-  id: ID;
+    id: ID;
   ruleId: string;
   severity: "info" | "warning" | "error" | "critical";
   category: "language" | "tooling" | "replication" | "security" | "structure";
@@ -54,10 +52,9 @@ export interface VerificationIssue {
 
 export interface VerificationReport {
   kind: "VerificationReport";
-  schemaVersion: 2;
   projectPath: RelativePath;
   projectHash: Hash;
-  toolchain: Array<{ name: string; version: string; command: string; configHash: Hash }>;
+  toolchain: Array<{ name: string; command: string; configHash: Hash }>;
   issues: VerificationIssue[];
   checks: Array<{ name: string; status: VerificationStatus; issueIds: ID[] }>;
   gate: { status: "eligible" | "rejected" | "incomplete"; reasons: string[] };
@@ -75,13 +72,13 @@ export type ForgeSpanName =
   | "forge.studio.assert";
 export type ForgeEventName = "forge.issue.detected" | "forge.build.completed";
 
-export interface ComponentVersion { name: string; version: string; configHash?: Hash }
-export interface ModelConfiguration { provider: string; name: string; version?: string; configurationHash: Hash }
+export interface ComponentDescriptor { name: string; configHash?: Hash }
+export interface ModelConfiguration { provider: string; name: string; configurationHash: Hash }
 export interface BuildTraceSpan { id: ID; sequence: number; name: ForgeSpanName; startedAt: ISO8601; endedAt: ISO8601; durationMs: number; status: "ok" | "error"; attributes: Record<string, TraceAttributeValue> }
 export interface BuildTraceEvent { id: ID; sequence: number; name: ForgeEventName; occurredAt: ISO8601; attributes: Record<string, TraceAttributeValue> }
 
 export interface BuildOutcome {
-  status: "locally_eligible" | "runtime_verified" | "rejected" | "incomplete";
+  status: "locally_eligible" | "runtime_verified" | "creator_accepted" | "creator_rejected" | "recovery_required" | "rejected" | "incomplete";
   localGate: "eligible" | "rejected" | "incomplete";
   runtimeGate: "not_run" | "runtime_verified" | "rejected" | "incomplete";
   assertions: { total: number; passed: number };
@@ -92,8 +89,7 @@ export interface BuildOutcome {
 
 export interface BuildTrace {
   kind: "BuildTrace";
-  schemaVersion: 3;
-  id: ID;
+    id: ID;
   buildKey: ID;
   startedAt: ISO8601;
   endedAt: ISO8601;
@@ -109,6 +105,10 @@ export interface BuildTrace {
   };
   references: {
     agentRunId?: ID;
+    creatorSessionId?: ID;
+    creatorSessionHash?: Hash;
+    creatorBuildContractId?: ID;
+    creatorBuildContractHash?: Hash;
     experimentRegistrationId?: ID;
     experimentRegistrationHash?: Hash;
     requirementSetId?: ID;
@@ -127,7 +127,7 @@ export interface BuildTrace {
     runtimeEvaluationRunId?: ID;
     runtimeProofId?: ID;
   };
-  components: { toolchain: ComponentVersion[]; verifiers: ComponentVersion[]; agent?: ComponentVersion; model?: ModelConfiguration; studio?: ComponentVersion };
+  components: { toolchain: ComponentDescriptor[]; verifiers: ComponentDescriptor[]; agent?: ComponentDescriptor; model?: ModelConfiguration; studio?: ComponentDescriptor };
   spans: BuildTraceSpan[];
   events: BuildTraceEvent[];
   outcome: BuildOutcome;
@@ -138,8 +138,7 @@ export interface BuildTrace {
 
 export interface TracePersistence {
   kind: "TracePersistence";
-  schemaVersion: 1;
-  traceId: ID;
+    traceId: ID;
   buildKey: ID;
   status: "written" | "failed";
   artifactHash?: Hash;
@@ -151,14 +150,14 @@ export function contentHash(value: string): Hash { return createHash("sha256").u
 export function stableJson(value: unknown): string { return JSON.stringify(normalizeJson(value)); }
 
 export function assertFixtureManifest(value: unknown): asserts value is ForgeFixtureManifest {
-  if (!isRecord(value) || value.kind !== "ForgeFixture" || value.schemaVersion !== 1 || !isNonEmpty(value.name) || !Array.isArray(value.luauRoots) || !value.luauRoots.every(isSafeRelative) || !Array.isArray(value.remoteFlows)) throw new Error("Invalid ForgeFixture manifest");
+  if (!isRecord(value) || value.kind !== "ForgeFixture" || !isNonEmpty(value.name) || !Array.isArray(value.luauRoots) || !value.luauRoots.every(isSafeRelative) || !Array.isArray(value.remoteFlows)) throw new Error("Invalid ForgeFixture manifest");
   if (value.instances !== undefined && (!Array.isArray(value.instances) || !value.instances.every((entry) => isRecord(entry) && isNonEmpty(entry.path) && isNonEmpty(entry.className) && (entry.position === undefined || isVector3(entry.position))))) throw new Error("Invalid ForgeFixture instances");
   for (const flow of value.remoteFlows) assertRemoteFlow(flow);
 }
 
 export function assertBuildTrace(value: unknown): asserts value is BuildTrace {
-  if (!isRecord(value) || value.kind !== "BuildTrace" || value.schemaVersion !== 3 || !isNonEmpty(value.id) || !isNonEmpty(value.buildKey) || !isNonEmpty(value.startedAt) || !isNonEmpty(value.endedAt) || !isRecord(value.project) || !isRecord(value.references) || !isRecord(value.components) || !Array.isArray(value.spans) || !Array.isArray(value.events) || !isRecord(value.outcome) || !isRecord(value.evidence) || !isRecord(value.replayability) || !isRecord(value.privacy)) throw new Error("Invalid BuildTrace");
-  if (!["locally_eligible", "runtime_verified", "rejected", "incomplete"].includes(String(value.outcome.status))) throw new Error("Invalid BuildTrace outcome");
+  if (!isRecord(value) || value.kind !== "BuildTrace" || !isNonEmpty(value.id) || !isNonEmpty(value.buildKey) || !isNonEmpty(value.startedAt) || !isNonEmpty(value.endedAt) || !isRecord(value.project) || !isRecord(value.references) || !isRecord(value.components) || !Array.isArray(value.spans) || !Array.isArray(value.events) || !isRecord(value.outcome) || !isRecord(value.evidence) || !isRecord(value.replayability) || !isRecord(value.privacy)) throw new Error("Invalid BuildTrace");
+  if (!["locally_eligible", "runtime_verified", "creator_accepted", "creator_rejected", "recovery_required", "rejected", "incomplete"].includes(String(value.outcome.status))) throw new Error("Invalid BuildTrace outcome");
 }
 
 function assertRemoteFlow(value: unknown): asserts value is RemoteFlowDeclaration {

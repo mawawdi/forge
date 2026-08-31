@@ -1,31 +1,29 @@
 --!strict
 local HttpService = game:GetService("HttpService")
-local RunService = game:GetService("RunService")
 local StudioTestService = game:GetService("StudioTestService")
 local Constants = require(script.Parent.Constants)
+local CreatorUiState = require(script.Parent.CreatorUiState)
 local Hash = require(script.Parent.Hash)
 local IdentityRegistry = require(script.Parent.IdentityRegistry)
 local SnapshotCollector = require(script.Parent.SnapshotCollector)
 local RuntimeCapabilityExecutor = require(script.Parent.RuntimeCapabilityExecutor)
+local StudioAuthoring = require(script.Parent.StudioAuthoring)
 
 local Runtime = {}
 
 local function iso(): string return os.date("!%Y-%m-%dT%H:%M:%SZ") end
 local function messageId(prefix: string): string return prefix .. "_" .. HttpService:GenerateGUID(false) end
 local function identity() return { name = game.Name, placeId = game.PlaceId, universeId = game.GameId } end
-local function studioVersion(): string
-	local ok, clientGitHash = pcall(function() return RunService.ClientGitHash end)
-	return ok and typeof(clientGitHash) == "string" and clientGitHash ~= "" and clientGitHash or "unknown-studio-build"
-end
 local function capabilities()
-	return { "snapshot", "snapshot_chunks", "sha256", "stable_identity", "studio_play_mode", "http_polling", "bounded_diagnostics", "runtime_eval_v1" }
+	return { "snapshot", "snapshot_chunks", "sha256", "stable_identity", "studio_play_mode", "http_polling", "bounded_diagnostics", "runtime_eval", "studio_authoring", "creator_control" }
 end
 local function substrateAvailable(): boolean
 	return Hash.available() and typeof(StudioTestService.ExecutePlayModeAsync) == "function"
 end
 
 function Runtime.start(plugin: Plugin)
-	local bridgeUrl = plugin:GetSetting("forge.bridge.url.v12")
+	StudioAuthoring.reconcile(plugin)
+	local bridgeUrl = plugin:GetSetting("forge.bridge.url")
 	if typeof(bridgeUrl) ~= "string" or bridgeUrl == "" then bridgeUrl = Constants.BRIDGE_URL end
 	local sessionId: string? = nil
 	local projectId: string? = nil
@@ -39,10 +37,16 @@ function Runtime.start(plugin: Plugin)
 	local registry = IdentityRegistry.new()
 	local stopRegistry: (() -> ())? = nil
 	local collector = SnapshotCollector.new(registry)
+	local authoring = StudioAuthoring.new(plugin, registry)
 	local widgetStatus: TextLabel? = nil
 	local widgetDetail: TextLabel? = nil
 	local pairButton: TextButton? = nil
 	local runButton: TextButton? = nil
+	local promptBox: TextBox? = nil
+	local artifactBox: TextBox? = nil
+	local currentView: any = nil
+	local primaryButton: TextButton? = nil
+	local secondaryButton: TextButton? = nil
 
 	local function state(title: string, detail: string)
 		if widgetStatus then widgetStatus.Text = title end
@@ -73,10 +77,10 @@ function Runtime.start(plugin: Plugin)
 		return decoded, value, response.StatusCode
 	end
 	local function send(kind: string, payload: any, requestId: string?, suppliedId: string?): (boolean, any?, number)
-		local message = { kind = "StudioProtocolMessage", schemaVersion = Constants.PROTOCOL, direction = "plugin_to_backend", type = kind, messageId = suppliedId or messageId("msg"), sentAt = iso(), payload = payload }
+		local message = { kind = "StudioProtocolMessage", direction = "plugin_to_backend", type = kind, messageId = suppliedId or messageId("msg"), sentAt = iso(), payload = payload }
 		if sessionId then message.sessionId = sessionId end
 		if requestId then message.requestId = requestId end
-		return request("POST", "/v1/message", message)
+		return request("POST", "/message", message)
 	end
 	local function permanentBridgeRejection(status: any): boolean return typeof(status) == "number" and status >= 400 and status < 500 end
 	local function pluginError(code: string, detail: string, retryable: boolean, requestId: string?)
@@ -113,11 +117,32 @@ function Runtime.start(plugin: Plugin)
 		end
 		return true
 	end
+	local function requireFreshRevision(expectedRevision: string, boundary: string): string
+		local ok, snapshotOrError = pcall(function() return collector:collect() end)
+		if not ok then error(boundary .. " could not observe the current Studio state: " .. tostring(snapshotOrError)) end
+		local snapshot = snapshotOrError
+		revision = snapshot.revision.observationHash
+		if revision ~= expectedRevision then error(boundary .. " rejected a stale Studio revision") end
+		return revision :: string
+	end
+	local function startArmedRuntime()
+		if not sessionId or not runtimeCapabilities.active or runtimeCapabilities.active.phase ~= "armed" then state("NOT READY", "No exact Studio execution is armed."); return end
+		if runButton then runButton.Active = false; runButton.AutoButtonColor = false end
+		if not sendSnapshot("pre_play") then local requestId = runtimeCapabilities.active.requestId; runtimeCapabilities:abort(); pluginError("STUDIO_FAILURE", "Could not confirm the live Studio revision before Play Solo.", true, requestId); return end
+		if not runtimeCapabilities.active or runtimeCapabilities.active.plan.binding.projectSnapshotHash ~= revision then local requestId = runtimeCapabilities.active and runtimeCapabilities.active.requestId or nil; runtimeCapabilities:abort(); pluginError("STALE_SNAPSHOT", "Runtime plan snapshot no longer matches Studio.", false, requestId); return end
+		local started, failure = pcall(function() runtimeCapabilities:start() end)
+		if not started then pluginError("STUDIO_FAILURE", tostring(failure), false) end
+	end
 
 	local function unpair(notifyBridge: boolean?, reason: string?, disableAutoConnect: boolean?)
 		if disableAutoConnect then autoConnectEnabled = false end
 		runtimeCapabilities:abort()
-		if runButton then runButton.Active = false; runButton.AutoButtonColor = false end
+		if not authoring:abort() then state("RECOVERY REQUIRED", "Studio could not cancel the active Forge creator recording.") end
+		if runButton then runButton.Visible = false; runButton.Active = false; runButton.AutoButtonColor = false end
+		if artifactBox then artifactBox.Visible = true; artifactBox.Text = "" end
+		if primaryButton then primaryButton.Visible = true; primaryButton.Active = true; primaryButton.AutoButtonColor = true; primaryButton.Text = "Submit Prompt" end
+		if secondaryButton then secondaryButton.Visible = true; secondaryButton.Active = true; secondaryButton.AutoButtonColor = true; secondaryButton.Text = "Clear" end
+		currentView = nil
 		if notifyBridge and sessionId and sessionToken then send("UnpairProject", { reason = reason or "user" }) end
 		sessionId, projectId, sessionToken, revision = nil, nil, nil, nil
 		if stopRegistry then stopRegistry(); stopRegistry = nil end
@@ -131,9 +156,9 @@ function Runtime.start(plugin: Plugin)
 		if not substrateAvailable() then state("UNSUPPORTED STUDIO", "Forge requires SHA-256 and ExecutePlayModeAsync for bounded runtime evaluation."); return false end
 		pairing = true
 		state("CONNECTING", "Discovering the local Forge bridge and creating an authenticated session.")
-		local discovered, discovery = request("GET", "/v1/pairing")
+		local discovered, discovery = request("GET", "/pairing")
 		if not discovered or typeof(discovery) ~= "table" or typeof(discovery.pairing) ~= "table" or typeof(discovery.pairing.token) ~= "string" then pairing = false; state("WAITING FOR BRIDGE", "Start `forge studio bridge`; Forge will connect automatically."); return false end
-		local ok, response, status = request("POST", "/v1/message", { kind = "StudioProtocolMessage", schemaVersion = Constants.PROTOCOL, direction = "plugin_to_backend", type = "PairProject", messageId = messageId("pair"), sentAt = iso(), payload = { pairingToken = discovery.pairing.token, project = identity(), pluginVersion = Constants.VERSION, studioVersion = studioVersion(), protocolVersion = Constants.PROTOCOL, capabilities = capabilities() } })
+		local ok, response, status = request("POST", "/message", { kind = "StudioProtocolMessage", direction = "plugin_to_backend", type = "PairProject", messageId = messageId("pair"), sentAt = iso(), payload = { pairingToken = discovery.pairing.token, project = identity(), capabilities = capabilities() } })
 		pairing = false
 		if not ok then state(status == 0 and "WAITING FOR BRIDGE" or "CONNECTION REJECTED", string.sub(tostring(response), 1, Constants.MAX_DIAGNOSTIC_CHARS)); return false end
 		if typeof(response) ~= "table" or typeof(response.sessionId) ~= "string" or typeof(response.projectId) ~= "string" or typeof(response.sessionToken) ~= "string" then state("CONNECTION REJECTED", "Bridge returned an invalid pairing response."); return false end
@@ -145,7 +170,7 @@ function Runtime.start(plugin: Plugin)
 	end
 
 	local function handle(message)
-		if typeof(message) ~= "table" or message.kind ~= "StudioProtocolMessage" or message.schemaVersion ~= Constants.PROTOCOL or message.direction ~= "backend_to_plugin" or typeof(message.payload) ~= "table" or message.sessionId ~= sessionId then error("malformed or mismatched backend message") end
+		if typeof(message) ~= "table" or message.kind ~= "StudioProtocolMessage" or message.direction ~= "backend_to_plugin" or typeof(message.payload) ~= "table" or message.sessionId ~= sessionId then error("malformed or mismatched backend message") end
 		if message.type == "RequestObservation" then
 			if message.payload.reason ~= "pre_play" and message.payload.reason ~= "manual" then error("unsupported observation reason") end
 			sendSnapshot(message.payload.reason)
@@ -153,40 +178,99 @@ function Runtime.start(plugin: Plugin)
 			if message.payload.expectedRevision ~= revision then error("runtime execution requires the current observed Studio revision") end
 			if not sessionId or not projectId or not revision then error("runtime execution requires an active Studio session") end
 			runtimeCapabilities:arm(message.payload, message.requestId, { sessionId = sessionId, projectId = projectId, revision = revision, project = identity() })
-			if runButton then runButton.Active = true; runButton.AutoButtonColor = true end
+			if message.payload.startPolicy == "creator_action_already_authorized" then
+				if runButton then runButton.Visible = false end
+				task.defer(startArmedRuntime)
+			elseif runButton then runButton.Visible = true; runButton.Active = true; runButton.AutoButtonColor = true end
+		elseif message.type == "PresentCreatorControlView" then
+			if typeof(message.payload.viewJson) ~= "string" or typeof(message.payload.viewJsonHash) ~= "string" or Hash.sha256(message.payload.viewJson) ~= message.payload.viewJsonHash then error("creator control view transport hash mismatch") end
+			local decoded, view = pcall(function() return HttpService:JSONDecode(message.payload.viewJson) end)
+			if not decoded or typeof(view) ~= "table" or typeof(view.hash) ~= "string" then error("creator control view identity mismatch") end
+			local ui = CreatorUiState.fromView(view)
+			-- Terminal views intentionally have no coordinator action. Return the
+			-- connector to prompt-entry mode while retaining the terminal detail;
+			-- a new request starts a new immutable evidence identity.
+			currentView = if ui.primary ~= nil or ui.secondary ~= nil then view else nil
+			state(string.upper(ui.title), ui.detail .. "\nView: " .. string.sub(ui.viewHash, 1, 16))
+			if artifactBox then
+				local presentation = if view.artifact ~= nil then view.artifact.presentation else view.evidence
+				artifactBox.Visible = presentation ~= nil
+				artifactBox.Text = presentation and HttpService:JSONEncode(presentation) or ""
+			end
+			if primaryButton then primaryButton.Visible = true; primaryButton.Text = ui.primary and ui.primary.label or "Submit New Request"; primaryButton.Active = true; primaryButton.AutoButtonColor = true end
+			if secondaryButton then secondaryButton.Visible = true; secondaryButton.Text = ui.secondary and ui.secondary.label or "Clear"; secondaryButton.Active = true; secondaryButton.AutoButtonColor = true end
+			if runButton then runButton.Visible = false; runButton.Active = false; runButton.AutoButtonColor = false end
+		elseif message.type == "PrepareCreatorChangeSet" then
+			if not revision then error("creator change preparation requires a Studio revision") end
+			local currentRevision = requireFreshRevision(message.payload.expectedRevision, "creator change preparation")
+			local prepared = authoring:prepare(message.payload, currentRevision)
+			send("CreatorChangePrepared", prepared, message.requestId)
+		elseif message.type == "ApplyCreatorChangeSet" then
+			if not revision then error("creator change application requires a Studio revision") end
+			local beforeRevision = requireFreshRevision(message.payload.expectedRevision, "creator change application")
+			local recording = authoring:apply(message.payload.changeSetId, message.payload.changeSetHash, beforeRevision)
+			if not sendSnapshot("post_apply") then authoring:finalize(recording, "cancel"); error("could not publish the post-apply Studio snapshot") end
+			send("CreatorChangeApplied", { creatorSessionId = message.payload.creatorSessionId, changeSetId = message.payload.changeSetId, changeSetHash = message.payload.changeSetHash, recordingId = recording, beforeRevisionHash = beforeRevision, afterRevisionHash = revision, inverseMaterialHash = Hash.sha256(message.payload.changeSetHash .. ":" .. tostring(beforeRevision)), status = "applied" }, message.requestId)
+		elseif message.type == "FinalizeCreatorChangeSet" then
+			local prepared = authoring:finalize(message.payload.recordingId, message.payload.action)
+			if not sendSnapshot(message.payload.action == "commit" and "post_apply" or "post_rollback") then
+				if message.payload.action == "commit" then error("RECOVERY_REQUIRED: committed Studio change could not be bound to its resulting revision") end
+				error("could not publish cancelled Studio revision")
+			end
+			if message.payload.action == "commit" then authoring:bindCommittedRevision(message.payload.changeSetId, message.payload.changeSetHash, revision :: string) end
+			send("CreatorChangeFinalized", { creatorSessionId = message.payload.creatorSessionId, changeSetId = message.payload.changeSetId, changeSetHash = message.payload.changeSetHash, recordingId = message.payload.recordingId, beforeRevisionHash = prepared.beforeRevision, afterRevisionHash = revision, inverseMaterialHash = Hash.sha256(message.payload.changeSetHash .. ":" .. prepared.beforeRevision), action = message.payload.action, status = message.payload.action == "commit" and "committed" or "cancelled" }, message.requestId)
+		elseif message.type == "RollbackCreatorCheckpoint" then
+			if not revision or message.payload.expectedRevision ~= revision then error("creator rollback requires the exact committed Studio revision") end
+			local beforeRevision = revision
+			authoring:rollback(message.payload, revision)
+			if not sendSnapshot("post_rollback") then error("RECOVERY_REQUIRED: rolled-back Studio checkpoint could not be bound to its resulting revision") end
+			send("CreatorCheckpointRolledBack", { creatorSessionId = message.payload.creatorSessionId, checkpointId = message.payload.checkpointId, changeSetId = message.payload.changeSetId, changeSetHash = message.payload.changeSetHash, beforeRevisionHash = beforeRevision, afterRevisionHash = revision, status = "rolled_back" }, message.requestId)
 		else error("unsupported backend command") end
 	end
 
-	local info = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, true, false, 360, 220, 320, 200)
-	local widget = plugin:CreateDockWidgetPluginGuiAsync("ForgeStudioV12", info); widget.Title = "Forge Studio"
+	local info = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, true, false, 480, 590, 400, 520)
+	local widget = plugin:CreateDockWidgetPluginGuiAsync("ForgeStudio", info); widget.Title = "Forge Creator"
 	local frame = Instance.new("Frame"); frame.Size = UDim2.fromScale(1, 1); frame.BackgroundColor3 = Color3.fromRGB(17, 24, 39); frame.BorderSizePixel = 0; frame.Parent = widget
 	widgetStatus = Instance.new("TextLabel"); widgetStatus.Size = UDim2.new(1, -24, 0, 28); widgetStatus.Position = UDim2.fromOffset(12, 12); widgetStatus.BackgroundTransparency = 1; widgetStatus.TextColor3 = Color3.fromRGB(229, 231, 235); widgetStatus.Font = Enum.Font.GothamBold; widgetStatus.TextSize = 16; widgetStatus.TextXAlignment = Enum.TextXAlignment.Left; widgetStatus.Parent = frame
-	widgetDetail = Instance.new("TextLabel"); widgetDetail.Size = UDim2.new(1, -24, 0, 50); widgetDetail.Position = UDim2.fromOffset(12, 44); widgetDetail.BackgroundTransparency = 1; widgetDetail.TextColor3 = Color3.fromRGB(156, 163, 175); widgetDetail.Font = Enum.Font.Gotham; widgetDetail.TextSize = 12; widgetDetail.TextWrapped = true; widgetDetail.TextXAlignment = Enum.TextXAlignment.Left; widgetDetail.TextYAlignment = Enum.TextYAlignment.Top; widgetDetail.Parent = frame
-	local pair = Instance.new("TextButton"); pair.Size = UDim2.new(0.48, -12, 0, 32); pair.Position = UDim2.fromOffset(12, 105); pair.Text = "Connecting…"; pair.Parent = frame; pairButton = pair
-	local snapshotButton = Instance.new("TextButton"); snapshotButton.Size = UDim2.new(0.48, -12, 0, 32); snapshotButton.Position = UDim2.new(0.52, 0, 0, 105); snapshotButton.Text = "Snapshot"; snapshotButton.Parent = frame
-	local evaluateButton = Instance.new("TextButton"); evaluateButton.Size = UDim2.new(1, -24, 0, 36); evaluateButton.Position = UDim2.fromOffset(12, 149); evaluateButton.Text = "Evaluate in Studio"; evaluateButton.Active = false; evaluateButton.AutoButtonColor = false; evaluateButton.Parent = frame; runButton = evaluateButton
+	widgetDetail = Instance.new("TextLabel"); widgetDetail.Size = UDim2.new(1, -24, 0, 64); widgetDetail.Position = UDim2.fromOffset(12, 44); widgetDetail.BackgroundTransparency = 1; widgetDetail.TextColor3 = Color3.fromRGB(156, 163, 175); widgetDetail.Font = Enum.Font.Gotham; widgetDetail.TextSize = 12; widgetDetail.TextWrapped = true; widgetDetail.TextXAlignment = Enum.TextXAlignment.Left; widgetDetail.TextYAlignment = Enum.TextYAlignment.Top; widgetDetail.Parent = frame
+	promptBox = Instance.new("TextBox"); promptBox.Size = UDim2.new(1, -24, 0, 62); promptBox.Position = UDim2.fromOffset(12, 112); promptBox.PlaceholderText = "Describe what you want to add or change…"; promptBox.Text = ""; promptBox.ClearTextOnFocus = false; promptBox.MultiLine = true; promptBox.TextWrapped = true; promptBox.Parent = frame
+	artifactBox = Instance.new("TextBox"); artifactBox.Size = UDim2.new(1, -24, 0, 220); artifactBox.Position = UDim2.fromOffset(12, 184); artifactBox.PlaceholderText = "The exact bound plan or change set appears here for review."; artifactBox.Text = ""; artifactBox.TextEditable = false; artifactBox.ClearTextOnFocus = false; artifactBox.MultiLine = true; artifactBox.TextWrapped = false; artifactBox.TextXAlignment = Enum.TextXAlignment.Left; artifactBox.TextYAlignment = Enum.TextYAlignment.Top; artifactBox.TextSize = 11; artifactBox.Parent = frame
+	local primary = Instance.new("TextButton"); primary.Size = UDim2.new(0.62, -12, 0, 36); primary.Position = UDim2.fromOffset(12, 414); primary.Text = "Submit Prompt"; primary.Parent = frame; primaryButton = primary
+	local secondary = Instance.new("TextButton"); secondary.Size = UDim2.new(0.38, -12, 0, 36); secondary.Position = UDim2.new(0.62, 0, 0, 414); secondary.Text = "Clear"; secondary.Parent = frame; secondaryButton = secondary
+	local evaluateButton = Instance.new("TextButton"); evaluateButton.Size = UDim2.new(1, -24, 0, 32); evaluateButton.Position = UDim2.fromOffset(12, 458); evaluateButton.Text = "Evaluate Registered Run in Studio"; evaluateButton.Visible = false; evaluateButton.Active = false; evaluateButton.AutoButtonColor = false; evaluateButton.Parent = frame; runButton = evaluateButton
+	local pair = Instance.new("TextButton"); pair.Size = UDim2.new(1, -24, 0, 28); pair.Position = UDim2.fromOffset(12, 500); pair.Text = "Connecting…"; pair.Parent = frame; pairButton = pair
 	state("CONNECTING", "Start the local Forge bridge; this place will connect automatically.")
 	pair.MouseButton1Click:Connect(function() if sessionId then unpair(true, "user", true) else autoConnectEnabled = true; nextAutoPair = 0; pair.Text = "Connecting…" end end)
-	snapshotButton.MouseButton1Click:Connect(function() if not sendSnapshot("manual") then state("SNAPSHOT FAILED", "Pair first or resolve the bridge error.") end end)
+	primary.MouseButton1Click:Connect(function()
+		if currentView then send("CreatorControlActionRequested", CreatorUiState.actionPayload(currentView, "primary")); primary.Active = false; primary.AutoButtonColor = false; secondary.Active = false; secondary.AutoButtonColor = false; return end
+		if not sessionId or not promptBox or promptBox.Text == "" then state("PROMPT REQUIRED", "Pair Studio and enter a creator prompt first."); return end
+		send("CreatorPromptSubmitted", { prompt = promptBox.Text }); primary.Active = false; primary.AutoButtonColor = false
+		state("PLANNING", "Forge is generating a visible plan and verification charter. No Studio changes can occur yet.")
+	end)
+	secondary.MouseButton1Click:Connect(function()
+		if currentView then send("CreatorControlActionRequested", CreatorUiState.actionPayload(currentView, "secondary")); primary.Active = false; primary.AutoButtonColor = false; secondary.Active = false; secondary.AutoButtonColor = false
+		elseif promptBox then promptBox.Text = "" end
+	end)
 	evaluateButton.MouseButton1Click:Connect(function()
-		if not sessionId or not runtimeCapabilities.active or runtimeCapabilities.active.phase ~= "armed" then state("NOT READY", "Start a Forge canary or candidate evaluation first."); return end
-		evaluateButton.Active = false; evaluateButton.AutoButtonColor = false
-		if not sendSnapshot("pre_play") then local requestId = runtimeCapabilities.active.requestId; runtimeCapabilities:abort(); pluginError("STUDIO_FAILURE", "Could not confirm the live Studio revision before Play Solo.", true, requestId); return end
-		if not runtimeCapabilities.active or runtimeCapabilities.active.plan.binding.projectSnapshotHash ~= revision then local requestId = runtimeCapabilities.active and runtimeCapabilities.active.requestId or nil; runtimeCapabilities:abort(); pluginError("STALE_SNAPSHOT", "Runtime plan snapshot no longer matches Studio.", false, requestId); return end
-		local started, failure = pcall(function() runtimeCapabilities:start() end)
-		if not started then pluginError("STUDIO_FAILURE", tostring(failure), false) end
+		startArmedRuntime()
 	end)
 
 	task.spawn(function()
 		local idle = 0.25; local transportFailures = 0; local nextHeartbeat = 0
 		while running do
 			if sessionId and sessionToken then
-				local ok, response, statusCode = request("GET", "/v1/poll?sessionId=" .. HttpService:UrlEncode(sessionId))
+				local ok, response, statusCode = request("GET", "/poll?sessionId=" .. HttpService:UrlEncode(sessionId))
 				if ok and typeof(response) == "table" and typeof(response.messages) == "table" then
 					transportFailures = 0
-					if os.clock() >= nextHeartbeat then send("Heartbeat", { pluginVersion = Constants.VERSION, studioVersion = studioVersion(), project = identity(), currentSnapshotHash = revision }); nextHeartbeat = os.clock() + 15 end
+					if os.clock() >= nextHeartbeat then send("Heartbeat", { project = identity(), currentSnapshotHash = revision }); nextHeartbeat = os.clock() + 15 end
 					idle = runtimeCapabilities.active and 0.1 or (#response.messages == 0 and math.min(3, idle * 1.5) or 0.1)
-					for _, message in ipairs(response.messages) do local handled, failure = pcall(function() handle(message) end); if not handled then pluginError("SECURITY_REJECTION", tostring(failure), false, message.requestId) end end
+					for _, message in ipairs(response.messages) do
+						local handled, failure = pcall(function() handle(message) end)
+						if not handled then
+							local diagnostic = tostring(failure)
+							pluginError(string.find(diagnostic, "RECOVERY_REQUIRED", 1, true) and "RECOVERY_REQUIRED" or "SECURITY_REJECTION", diagnostic, false, message.requestId)
+						end
+					end
 					while #pending > 0 do local item = pending[1]; local sent, failure, status = send(item.kind, item.payload, item.requestId, item.messageId); if sent then table.remove(pending, 1) elseif permanentBridgeRejection(status) then table.remove(pending, 1); pluginError("STUDIO_FAILURE", "Bridge rejected queued " .. item.kind .. ": " .. tostring(failure), false, item.requestId) else break end end
 				else
 					transportFailures += 1

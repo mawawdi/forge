@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { contentHash, stableJson } from "../packages/contracts/src/index.js";
 import {
   STUDIO_CAPABILITY_SET,
+  STUDIO_INSTANCE_RESOLUTION_ROOTS,
   assertRuntimeEvalDefinition,
   assertRuntimeEvaluatorConfiguration,
   assertStudioExecutionPlan,
@@ -31,7 +32,7 @@ const execFile = promisify(execFileCallback);
 
 const HASH = contentHash("studio-capability-test");
 const SESSION: StudioBridgeSession = {
-  sessionId: "session_runtime", projectId: "project_runtime", project: { name: "MovingPlatform", placeId: 0, universeId: 0 }, pluginVersion: "forge-studio-plugin-8.0.0", studioVersion: "test", capabilities: ["snapshot", "snapshot_chunks", "sha256", "stable_identity", "studio_play_mode", "http_polling", "bounded_diagnostics", "runtime_eval_v1"], sessionToken: "private", connectedAt: "2026-08-30T00:00:00.000Z"
+  sessionId: "session_runtime", projectId: "project_runtime", project: { name: "MovingPlatform", placeId: 0, universeId: 0 }, capabilities: ["snapshot", "snapshot_chunks", "sha256", "stable_identity", "studio_play_mode", "http_polling", "bounded_diagnostics", "runtime_eval", "studio_authoring", "creator_control"], sessionToken: "private", connectedAt: "2026-08-30T00:00:00.000Z"
 };
 
 const TARGETS = [
@@ -40,18 +41,17 @@ const TARGETS = [
   { id: "target-platform", path: "Workspace/MovingPlatform", expectedClass: "BasePart" as const },
 ];
 const CALLS = [
-  { id: "call-01-resolve-a", capability: "instance.resolve" as const, version: 1 as const, targetId: "target-a" },
-  { id: "call-02-position-a", capability: "base_part.position" as const, version: 1 as const, targetId: "target-a" },
-  { id: "call-03-resolve-b", capability: "instance.resolve" as const, version: 1 as const, targetId: "target-b" },
-  { id: "call-04-position-b", capability: "base_part.position" as const, version: 1 as const, targetId: "target-b" },
-  { id: "call-05-resolve-platform", capability: "instance.resolve" as const, version: 1 as const, targetId: "target-platform" },
-  { id: "call-06-series-platform", capability: "base_part.position_series" as const, version: 1 as const, targetId: "target-platform", sampleCount: 9, intervalMs: 250 },
+  { id: "call-01-resolve-a", capability: "instance.resolve" as const, targetId: "target-a" },
+  { id: "call-02-position-a", capability: "base_part.position" as const, targetId: "target-a" },
+  { id: "call-03-resolve-b", capability: "instance.resolve" as const, targetId: "target-b" },
+  { id: "call-04-position-b", capability: "base_part.position" as const, targetId: "target-b" },
+  { id: "call-05-resolve-platform", capability: "instance.resolve" as const, targetId: "target-platform" },
+  { id: "call-06-series-platform", capability: "base_part.position_series" as const, targetId: "target-platform", sampleCount: 9, intervalMs: 250 },
 ];
 
 const PRE_PLAY_OBSERVATION: StudioSnapshotObservation = {
   kind: "StudioSnapshotObservation",
-  schemaVersion: 3,
-  project: SESSION.project,
+    project: SESSION.project,
   capturedAt: "2026-08-30T00:00:00.000Z",
   instances: [
     { stableId: "instance-a", path: "Workspace/EndpointA", className: "Part", position: { x: -12, y: 4, z: 0 }, properties: [], attributes: [], tags: [] },
@@ -89,9 +89,9 @@ function envelope(plan: StudioExecutionPlan, moving = true): RuntimeObservationE
   const nonce = "nonce_runtime_01234567890123456789";
   const values = moving ? [-12, -8, -4, 0, 4, 8, 12, 8, -12] : [-12, -12, -12, -12, -12, -12, -12, -12, -12];
   return {
-    kind: "RuntimeObservationEnvelope", schemaVersion: 1, executionPlanId: plan.id, executionPlanHash: plan.hash, binding: plan.binding, nonce, nonceCommitment: contentHash(nonce), authoritative: true,
+    kind: "RuntimeObservationEnvelope", executionPlanId: plan.id, executionPlanHash: plan.hash, binding: plan.binding, nonce, nonceCommitment: contentHash(nonce), authoritative: true,
     startedAt: "2026-08-30T00:00:00.000Z", endedAt: "2026-08-30T00:00:04.000Z", durationMs: 4_000,
-    results: [
+    diagnostics: { errors: 0, warnings: 0, messageHashes: [], truncated: false }, results: [
       { id: "call-01-resolve-a", capability: "instance.resolve", targetId: "target-a", status: "resolved", path: "Workspace/EndpointA", className: "Part" },
       { id: "call-02-position-a", capability: "base_part.position", targetId: "target-a", status: "ok", position: { x: -12, y: 4, z: 0 }, elapsedMs: 1 },
       { id: "call-03-resolve-b", capability: "instance.resolve", targetId: "target-b", status: "resolved", path: "Workspace/EndpointB", className: "Part" },
@@ -115,11 +115,12 @@ class FakeRuntimeConnection implements StudioBridgeConnection {
     const nonce = "nonce_runtime_01234567890123456789";
     const commitment = contentHash(nonce);
     const emit = async (type: PluginToBackendMessage["type"], payload: unknown) => {
-      const value = { kind: "StudioProtocolMessage", schemaVersion: 12, direction: "plugin_to_backend", type, messageId: `msg_${type}`, sessionId: SESSION.sessionId, requestId: message.requestId, sentAt: "2026-08-30T00:00:00.000Z", payload } as PluginToBackendMessage;
+      const value = { kind: "StudioProtocolMessage", direction: "plugin_to_backend", type, messageId: `msg_${type}`, sessionId: SESSION.sessionId, requestId: message.requestId, sentAt: "2026-08-30T00:00:00.000Z", payload } as PluginToBackendMessage;
       for (const handler of this.handlers) await handler(value, SESSION);
     };
     await emit("RuntimeEvalPlanAccepted", { executionPlanId: plan.id, executionPlanHash: plan.hash, binding: plan.binding, nonceCommitment: commitment, callCount: plan.calls.length, instruction: "armed" });
-    await emit("RuntimeEvalStarted", { executionPlanId: plan.id, executionPlanHash: plan.hash, binding: plan.binding, nonceCommitment: commitment, mode: "play_solo", playerCount: 1, control: "plugin_action" });
+    const control = message.payload.startPolicy === "creator_action_already_authorized" ? "creator_action" : "plugin_action";
+    await emit("RuntimeEvalStarted", { executionPlanId: plan.id, executionPlanHash: plan.hash, binding: plan.binding, nonceCommitment: commitment, mode: "play_solo", playerCount: 1, control });
     if (this.options.pluginFailure) {
       await emit("PluginError", { code: "STUDIO_FAILURE", message: "Runtime capability runner did not return an observation envelope", retryable: false });
       return;
@@ -132,7 +133,7 @@ class FakeRuntimeConnection implements StudioBridgeConnection {
     }
     await emit("RuntimeEvalResult", result);
     if (this.options.duplicateResult) await emit("RuntimeEvalResult", result);
-    await emit("RuntimeEvalStopped", { executionPlanId: plan.id, executionPlanHash: plan.hash, binding: plan.binding, nonceCommitment: commitment, mode: "play_solo", playerCount: 1, control: "plugin_action" });
+    await emit("RuntimeEvalStopped", { executionPlanId: plan.id, executionPlanHash: plan.hash, binding: plan.binding, nonceCommitment: commitment, mode: "play_solo", playerCount: 1, control });
   }
 }
 
@@ -148,6 +149,20 @@ test("capability contracts are deterministic and runtime endpoints originate in 
   assert.equal(stableJson(first).includes("EndpointA") && stableJson(first).includes("position"), true);
 });
 
+test("class-aware resolution admits service-root Scripts while position remains Workspace BasePart-only", () => {
+  const targets = [
+    { id: "part", path: "Workspace/Generator", expectedClass: "BasePart" as const },
+    { id: "model", path: "Workspace/PreservedTree", expectedClass: "Model" as const },
+    { id: "script", path: "ServerScriptService/StatusBeaconScript", expectedClass: "Script" as const }
+  ];
+  const plan = createStudioExecutionPlan({ purpose: "creator_verification", capabilitySetId: STUDIO_CAPABILITY_SET.id, capabilitySetHash: STUDIO_CAPABILITY_SET.hash, binding: { runId: "creator_class_run", correlationId: "creator_class_correlation", sessionId: SESSION.sessionId, projectId: SESSION.projectId, project: SESSION.project, projectSnapshotHash: HASH }, targets, calls: targets.map((target, index) => ({ id: `resolve-${index}`, capability: "instance.resolve" as const, targetId: target.id })), budget: { maxExecutionMs: 1_000, maxResultBytes: 4_096 } });
+  assert.deepEqual(Object.fromEntries(plan.targets.map((target) => [target.id, target.expectedClass])), { model: "Model", part: "BasePart", script: "Script" });
+  assert.deepEqual(STUDIO_CAPABILITY_SET.policy.allowedRoots, [...STUDIO_INSTANCE_RESOLUTION_ROOTS]);
+  assert.throws(() => createStudioExecutionPlan({ purpose: "creator_verification", capabilitySetId: STUDIO_CAPABILITY_SET.id, capabilitySetHash: STUDIO_CAPABILITY_SET.hash, binding: plan.binding, targets, calls: [{ id: "call-01-resolve-model", capability: "instance.resolve", targetId: "model" }, { id: "call-02-position-model", capability: "base_part.position", targetId: "model" }], budget: plan.budget }), /BasePart/);
+  const servicePartTargets = [{ id: "service-part", path: "ServerStorage/StoredPart", expectedClass: "BasePart" as const }];
+  assert.throws(() => createStudioExecutionPlan({ purpose: "creator_verification", capabilitySetId: STUDIO_CAPABILITY_SET.id, capabilitySetHash: STUDIO_CAPABILITY_SET.hash, binding: plan.binding, targets: servicePartTargets, calls: [{ id: "call-01-resolve-service-part", capability: "instance.resolve", targetId: "service-part" }, { id: "call-02-position-service-part", capability: "base_part.position", targetId: "service-part" }], budget: plan.budget }), /Workspace/);
+});
+
 test("trusted runner bounds observations without an unmodeled load delay or arbitrary code execution", async () => {
   const runner = await readFile(resolve("plugin/src/Forge/RuntimeCapabilityExecutor.luau"), "utf8");
   assert.doesNotMatch(runner, /game:IsLoaded\(\)/);
@@ -158,7 +173,7 @@ test("trusted runner bounds observations without an unmodeled load delay or arbi
 test("fake transport proves same-session runtime success, rejection, and a proof-free canary", async () => {
   const evaluator = definition();
   const plan = executionPlan();
-  const config = createRuntimeEvaluatorConfiguration({ capabilitySetId: STUDIO_CAPABILITY_SET.id, capabilitySetHash: STUDIO_CAPABILITY_SET.hash, assertionEngine: { name: "forge_runtime_assertions", version: "runtime-assertions-1" }, runtimeEvalDefinitionId: evaluator.id, runtimeEvalDefinitionHash: evaluator.hash, protocolVersion: 12, pluginVersion: "forge-studio-plugin-8.0.0", executionPolicy: "creator_triggered_play_solo_v1", bindingPolicy: "candidate_source_and_world_snapshot_v1", maxResultBytes: 64 * 1024 });
+  const config = createRuntimeEvaluatorConfiguration({ capabilitySetId: STUDIO_CAPABILITY_SET.id, capabilitySetHash: STUDIO_CAPABILITY_SET.hash, assertionEngine: { name: "forge_runtime_assertions" }, runtimeEvalDefinitionId: evaluator.id, runtimeEvalDefinitionHash: evaluator.hash, executionPolicy: "creator_triggered_play_solo", bindingPolicy: "candidate_source_and_world_snapshot", maxResultBytes: 64 * 1024 });
   const runtimePlan = createRuntimeEvalPlan({ definitionId: evaluator.id, definitionHash: evaluator.hash, candidateArtifactId: "workspace_candidate_runtime", candidateArtifactHash: HASH, agentRunId: "agent_run_runtime", workspaceDeltaId: "workspace_delta_runtime", candidateHash: HASH, executionPlan: plan });
   const proofInput = {
     creatorPromptHash: HASH,

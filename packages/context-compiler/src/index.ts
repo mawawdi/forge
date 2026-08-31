@@ -1,1 +1,1 @@
-export { compileAgentOrientation, type AgentOrientation } from "./agent-orientation.js";
+export { compileAgentOrientation, compileCreatorOrientation, type AgentOrientation, type CreatorOrientationContent, type ExperimentOrientationContent, type OrientationMode } from "./agent-orientation.js";

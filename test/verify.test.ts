@@ -39,7 +39,7 @@ test("missing Roblox-aware tooling is incomplete rather than source blame", () =
 test("diagnostic identity retains columns for independent same-line errors", () => {
   const temporaryRoot = mkdtempSync(resolve(tmpdir(), "forge-fake-lsp-"));
   const executable = resolve(temporaryRoot, "fake-luau-lsp");
-  writeFileSync(executable, `#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.63.0; exit 0; fi\necho "src/server/ApplyAction.server.luau:1.1-1.2: TypeError: first independent error" >&2\necho "src/server/ApplyAction.server.luau:1.3-1.4: TypeError: second independent error" >&2\nexit 1\n`);
+  writeFileSync(executable, `#!/bin/sh\necho "src/server/ApplyAction.server.luau:1.1-1.2: TypeError: first independent error" >&2\necho "src/server/ApplyAction.server.luau:1.3-1.4: TypeError: second independent error" >&2\nexit 1\n`);
   chmodSync(executable, 0o755);
   try {
     const result = runVerify(secure, { FORGE_LUAU_LSP: executable });
@@ -48,12 +48,13 @@ test("diagnostic identity retains columns for independent same-line errors", () 
   } finally { rmSync(temporaryRoot, { recursive: true, force: true }); }
 });
 
-test("CLI help exposes the registered-experiment commands and no loose candidate evaluator", () => {
+test("CLI help exposes prompt-only creator sessions and registered experiments with no loose creator build", () => {
   const result = spawnSync(process.execPath, [cli, "--help"], { encoding: "utf8" });
   assert.equal(result.status, 0);
   const lines = result.stdout.split("\n").filter((line) => /^  forge /.test(line));
-  assert.equal(lines.length, 8);
-  assert.match(result.stdout, /forge agent build/); assert.match(result.stdout, /forge experiment register/); assert.match(result.stdout, /forge experiment build/); assert.match(result.stdout, /forge experiment evaluate/); assert.match(result.stdout, /forge studio canary/); assert.match(result.stdout, /forge studio bridge/); assert.match(result.stdout, /forge verify/); assert.match(result.stdout, /forge trace show/);
+  assert.equal(lines.length, 14);
+  assert.match(result.stdout, /Forge commands/); assert.match(result.stdout, /forge creator serve/); assert.match(result.stdout, /forge creator start/); assert.match(result.stdout, /forge creator approve-plan/); assert.match(result.stdout, /forge creator approve-changes/); assert.match(result.stdout, /forge creator start-checks/); assert.match(result.stdout, /forge creator accept/); assert.match(result.stdout, /forge experiment register/); assert.match(result.stdout, /--runtime-configuration/); assert.match(result.stdout, /forge experiment build/); assert.match(result.stdout, /forge experiment evaluate/); assert.match(result.stdout, /forge studio canary/); assert.match(result.stdout, /forge studio bridge/); assert.match(result.stdout, /forge verify/); assert.match(result.stdout, /forge trace show/);
+  assert.doesNotMatch(result.stdout, /forge agent build/);
   assert.doesNotMatch(result.stdout, /candidate evaluate|repair|reverify|studio verify|candidate studio/);
 });
 

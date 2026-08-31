@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { assertPluginToBackendMessage, assertBackendToPluginMessage, MAX_PROTOCOL_MESSAGE_BYTES, STUDIO_PROTOCOL_VERSION, type BackendToPluginMessage, type PairingResponse, type PluginProjectIdentity, type PluginToBackendMessage, type ProjectObservationReason, type StudioCapability, type StudioTransport } from "../../studio-protocol/src/index.js";
+import { assertPluginToBackendMessage, assertBackendToPluginMessage, MAX_PROTOCOL_MESSAGE_BYTES, type BackendToPluginMessage, type PairingResponse, type PluginProjectIdentity, type PluginToBackendMessage, type ProjectObservationReason, type StudioCapability, type StudioTransport } from "../../studio-protocol/src/index.js";
 import type { StudioSnapshotObservation } from "../../semantic-map/src/index.js";
 
 export interface PairingCode {
@@ -18,12 +18,17 @@ export interface StudioBridgeOptions {
   /** Required to use backend control endpoints. Never sent to the Studio plugin. */
   controlToken?: string;
   maxRetainedEvents?: number;
+  controlHandler?: StudioBridgeControlHandler;
+}
+
+export interface StudioBridgeControlHandler {
+  action(value: unknown): Promise<unknown>;
+  state(query: URLSearchParams): Promise<unknown>;
 }
 
 export interface StudioBridgeDiscovery {
   kind: "ForgeStudioBridgeDiscovery";
-  schemaVersion: 1;
-  bridgeId: string;
+    bridgeId: string;
   host: "127.0.0.1";
   port: number;
   controlToken: string;
@@ -69,15 +74,13 @@ export async function removeStudioBridgeDiscovery(bridgeId: string, filePath: st
 function assertStudioBridgeDiscovery(value: unknown): asserts value is StudioBridgeDiscovery {
   if (!value || typeof value !== "object") throw new Error("Invalid Forge Studio bridge discovery state");
   const candidate = value as Record<string, unknown>;
-  if (candidate.kind !== "ForgeStudioBridgeDiscovery" || candidate.schemaVersion !== 1 || typeof candidate.bridgeId !== "string" || candidate.bridgeId.length < 8 || candidate.host !== "127.0.0.1" || typeof candidate.port !== "number" || !Number.isInteger(candidate.port) || candidate.port < 1 || candidate.port > 65_535 || typeof candidate.controlToken !== "string" || candidate.controlToken.length < 24 || typeof candidate.pid !== "number" || !Number.isInteger(candidate.pid) || candidate.pid < 1 || typeof candidate.startedAt !== "string") throw new Error("Invalid Forge Studio bridge discovery state");
+  if (candidate.kind !== "ForgeStudioBridgeDiscovery" || typeof candidate.bridgeId !== "string" || candidate.bridgeId.length < 8 || candidate.host !== "127.0.0.1" || typeof candidate.port !== "number" || !Number.isInteger(candidate.port) || candidate.port < 1 || candidate.port > 65_535 || typeof candidate.controlToken !== "string" || candidate.controlToken.length < 24 || typeof candidate.pid !== "number" || !Number.isInteger(candidate.pid) || candidate.pid < 1 || typeof candidate.startedAt !== "string") throw new Error("Invalid Forge Studio bridge discovery state");
 }
 
 export interface StudioBridgeSession {
   sessionId: string;
   projectId: string;
   project: PluginProjectIdentity;
-  pluginVersion: string;
-  studioVersion: string;
   capabilities: StudioCapability[];
   sessionToken: string;
   connectedAt: string;
@@ -98,6 +101,7 @@ export class StudioBridgeServer implements StudioTransport {
   private readonly now: () => Date;
   private readonly controlToken: string;
   private readonly maxRetainedEvents: number;
+  private controlHandler: StudioBridgeControlHandler | undefined;
   private readonly server: Server;
   private readonly handlers = new Set<MessageHandler>();
   private readonly sessions = new Map<string, StudioBridgeSession>();
@@ -115,6 +119,7 @@ export class StudioBridgeServer implements StudioTransport {
     this.now = options.now ?? (() => new Date());
     this.controlToken = options.controlToken ?? randomBytes(24).toString("base64url");
     this.maxRetainedEvents = options.maxRetainedEvents ?? 512;
+    this.controlHandler = options.controlHandler;
     this.server = createServer((request, response) => { void this.handle(request, response); });
   }
 
@@ -169,28 +174,31 @@ export class StudioBridgeServer implements StudioTransport {
   }
 
   getSessions(): StudioBridgeSession[] { return [...this.sessions.values()].map((session) => ({ ...session })); }
+  setControlHandler(handler: StudioBridgeControlHandler): void { this.controlHandler = handler; }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     response.setHeader("content-type", "application/json");
     response.setHeader("cache-control", "no-store");
     try {
-      if (request.method === "GET" && request.url === "/health") return writeJson(response, 200, { kind: "ForgeStudioBridgeHealth", schemaVersion: 1, status: "ok" });
-      if (request.method === "GET" && request.url === "/v1/pairing") return this.autoPairing(response);
-      if (request.method === "GET" && request.url === "/v1/sessions") { this.assertControl(request); return this.listSessions(response); }
-      if (request.method === "GET" && request.url?.startsWith("/v1/events")) { this.assertControl(request); return this.eventsFor(request, response); }
-      if (request.method === "POST" && request.url === "/v1/command") { this.assertControl(request); return await this.command(request, response); }
-      if (request.method === "GET" && request.url?.startsWith("/v1/poll")) return this.poll(request, response);
-      if (request.method === "POST" && request.url === "/v1/message") return await this.receive(request, response);
+      if (request.method === "GET" && request.url === "/health") return writeJson(response, 200, { kind: "ForgeStudioBridgeHealth", status: "ok" });
+      if (request.method === "GET" && request.url === "/pairing") return this.autoPairing(response);
+      if (request.method === "GET" && request.url === "/sessions") { this.assertControl(request); return this.listSessions(response); }
+      if (request.method === "GET" && request.url?.startsWith("/events")) { this.assertControl(request); return this.eventsFor(request, response); }
+      if (request.method === "POST" && request.url === "/command") { this.assertControl(request); return await this.command(request, response); }
+      if (request.method === "POST" && request.url === "/control/action") { this.assertControl(request); return await this.controlAction(request, response); }
+      if (request.method === "GET" && request.url?.startsWith("/control/state")) { this.assertControl(request); return await this.controlState(request, response); }
+      if (request.method === "GET" && request.url?.startsWith("/poll")) return this.poll(request, response);
+      if (request.method === "POST" && request.url === "/message") return await this.receive(request, response);
       writeJson(response, 404, { error: "not_found" });
     } catch (error) {
-      writeJson(response, error instanceof ProtocolHttpError ? error.status : 400, { kind: "ForgeStudioBridgeError", schemaVersion: 1, code: error instanceof Error ? error.name : "UnknownError", message: error instanceof Error ? error.message : String(error) });
+      writeJson(response, error instanceof ProtocolHttpError ? error.status : 400, { kind: "ForgeStudioBridgeError", code: error instanceof Error ? error.name : "UnknownError", message: error instanceof Error ? error.message : String(error) });
     }
   }
 
   private autoPairing(response: ServerResponse): void {
     // Each discovery request gets an independent one-use grant. Multiple open
     // Studio windows must never steal one global pairing slot from each other.
-    writeJson(response, 200, { kind: "ForgeStudioAutoPairing", schemaVersion: 1, pairing: this.createPairing() });
+    writeJson(response, 200, { kind: "ForgeStudioAutoPairing", pairing: this.createPairing() });
   }
 
   private poll(request: IncomingMessage, response: ServerResponse): void {
@@ -201,14 +209,13 @@ export class StudioBridgeServer implements StudioTransport {
     if (!session || typeof sessionToken !== "string" || session.sessionToken !== sessionToken) throw new ProtocolHttpError(401, "Invalid Studio session");
     const messages = this.outbound.get(sessionId) ?? [];
     this.outbound.set(sessionId, []);
-    writeJson(response, 200, { kind: "ForgeStudioPollResponse", schemaVersion: 1, sessionId, messages });
+    writeJson(response, 200, { kind: "ForgeStudioPollResponse", sessionId, messages });
   }
 
   private listSessions(response: ServerResponse): void {
     writeJson(response, 200, {
       kind: "ForgeStudioSessions",
-      schemaVersion: 1,
-      sessions: this.getSessions().map(({ sessionToken: _sessionToken, ...session }) => ({
+            sessions: this.getSessions().map(({ sessionToken: _sessionToken, ...session }) => ({
         ...session,
         eventCursor: this.eventCursor(session.sessionId),
       })),
@@ -224,7 +231,7 @@ export class StudioBridgeServer implements StudioTransport {
     if (after < retained.baseCursor) throw new ProtocolHttpError(409, "Studio event cursor expired; restart verification from a fresh paired session");
     const offset = after - retained.baseCursor;
     const messages = retained.messages.slice(offset, offset + 128);
-    writeJson(response, 200, { kind: "ForgeStudioEvents", schemaVersion: 1, sessionId, cursor: after + messages.length, messages });
+    writeJson(response, 200, { kind: "ForgeStudioEvents", sessionId, cursor: after + messages.length, messages });
   }
 
   private async command(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -233,7 +240,7 @@ export class StudioBridgeServer implements StudioTransport {
     const sessionId = message.sessionId;
     if (!sessionId || !this.sessions.has(sessionId)) throw new ProtocolHttpError(401, "Studio session is not connected");
     if (this.outboundMessageIds.get(sessionId)?.ids.has(message.messageId)) {
-      writeJson(response, 202, { kind: "ForgeStudioCommandAccepted", schemaVersion: 1, messageId: message.messageId, duplicate: true });
+      writeJson(response, 202, { kind: "ForgeStudioCommandAccepted", messageId: message.messageId, duplicate: true });
       return;
     }
     const queue = this.outbound.get(sessionId) ?? [];
@@ -241,7 +248,19 @@ export class StudioBridgeServer implements StudioTransport {
     this.rememberOutbound(sessionId, message.messageId);
     queue.push(message);
     this.outbound.set(sessionId, queue);
-    writeJson(response, 202, { kind: "ForgeStudioCommandAccepted", schemaVersion: 1, messageId: message.messageId });
+    writeJson(response, 202, { kind: "ForgeStudioCommandAccepted", messageId: message.messageId });
+  }
+
+  private async controlAction(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    if (!this.controlHandler) throw new ProtocolHttpError(404, "No Forge control service is attached");
+    const value = JSON.parse(await readBody(request)) as unknown;
+    writeJson(response, 200, await this.controlHandler.action(value));
+  }
+
+  private async controlState(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    if (!this.controlHandler) throw new ProtocolHttpError(404, "No Forge control service is attached");
+    const url = new URL(request.url ?? "/", "http://forge.local");
+    writeJson(response, 200, await this.controlHandler.state(url.searchParams));
   }
 
   private async receive(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -255,12 +274,12 @@ export class StudioBridgeServer implements StudioTransport {
     if (message.type === "UnpairProject") {
       await Promise.all([...this.handlers].map((handler) => handler(message, session)));
       this.dropSession(session.sessionId);
-      writeJson(response, 202, { kind: "ForgeStudioMessageAccepted", schemaVersion: 1, messageId: message.messageId });
+      writeJson(response, 202, { kind: "ForgeStudioMessageAccepted", messageId: message.messageId });
       return;
     }
     const received = this.receivedMessageIds.get(session.sessionId) ?? { ids: new Set<string>(), order: [] };
     if (received.ids.has(message.messageId)) {
-      writeJson(response, 202, { kind: "ForgeStudioMessageAccepted", schemaVersion: 1, messageId: message.messageId, duplicate: true });
+      writeJson(response, 202, { kind: "ForgeStudioMessageAccepted", messageId: message.messageId, duplicate: true });
       return;
     }
     received.ids.add(message.messageId);
@@ -279,7 +298,7 @@ export class StudioBridgeServer implements StudioTransport {
     }
     this.events.set(session.sessionId, retained);
     await Promise.all([...this.handlers].map((handler) => handler(message, session)));
-    writeJson(response, 202, { kind: "ForgeStudioMessageAccepted", schemaVersion: 1, messageId: message.messageId });
+    writeJson(response, 202, { kind: "ForgeStudioMessageAccepted", messageId: message.messageId });
   }
 
   private async pair(message: Extract<PluginToBackendMessage, { type: "PairProject" }>, response: ServerResponse): Promise<void> {
@@ -290,7 +309,7 @@ export class StudioBridgeServer implements StudioTransport {
     const sessionId = `studio_${randomUUID()}`;
     const sessionToken = randomBytes(24).toString("base64url");
     const projectId = studioProjectId(message.payload.project);
-    const session: StudioBridgeSession = { sessionId, projectId, project: message.payload.project, pluginVersion: message.payload.pluginVersion, studioVersion: message.payload.studioVersion, capabilities: [...message.payload.capabilities], sessionToken, connectedAt: this.now().toISOString() };
+    const session: StudioBridgeSession = { sessionId, projectId, project: message.payload.project, capabilities: [...message.payload.capabilities], sessionToken, connectedAt: this.now().toISOString() };
     for (const [existingId, existing] of this.sessions) {
       if (studioProjectKey(existing.project) === studioProjectKey(session.project)) {
         this.dropSession(existingId);
@@ -302,7 +321,7 @@ export class StudioBridgeServer implements StudioTransport {
     this.events.set(sessionId, { baseCursor: 0, messages: [] });
     this.receivedMessageIds.set(sessionId, { ids: new Set(), order: [] });
     const payload: PairingResponse = { sessionId, sessionToken, projectId, expiresAt: new Date(this.now().getTime() + this.pairingTtlMs).toISOString() };
-    writeJson(response, 200, { kind: "ForgeStudioPairAccepted", schemaVersion: 1, ...payload });
+    writeJson(response, 200, { kind: "ForgeStudioPairAccepted", ...payload });
     // Pairing has exactly one synchronous response path. It is never also
     // queued as a command, which prevents duplicate enrollment and snapshots.
     await Promise.all([...this.handlers].map((handler) => handler(message, session)));
@@ -352,7 +371,7 @@ export class StudioBridgeClient implements StudioBridgeConnection {
   private readonly baseUrl: string;
   private readonly handlers = new Set<MessageHandler>();
   private readonly cursors = new Map<string, number>();
-  private readonly snapshotChunks = new Map<string, { session: StudioBridgeSession; project: PluginProjectIdentity; revision: { kind: "StudioRevision"; schemaVersion: 1; observationHash: string; identityHash: string; capturedAt: string }; reason: ProjectObservationReason; total: number; chunks: Map<number, string> }>();
+  private readonly snapshotChunks = new Map<string, { session: StudioBridgeSession; project: PluginProjectIdentity; revision: { kind: "StudioRevision"; observationHash: string; identityHash: string; capturedAt: string }; reason: ProjectObservationReason; total: number; chunks: Map<number, string> }>();
   private sessions = new Map<string, StudioBridgeSession>();
   private polling = false;
   private pollPromise: Promise<void> = Promise.resolve();
@@ -392,7 +411,7 @@ export class StudioBridgeClient implements StudioBridgeConnection {
 
   async send(message: BackendToPluginMessage): Promise<void> {
     assertBackendToPluginMessage(message);
-    const response = await fetch(`${this.baseUrl}/v1/command`, {
+    const response = await fetch(`${this.baseUrl}/command`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-forge-control-token": this.controlToken },
       body: JSON.stringify(message),
@@ -426,7 +445,7 @@ export class StudioBridgeClient implements StudioBridgeConnection {
   }
 
   private async refreshSessions(): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/v1/sessions`, { headers: { "x-forge-control-token": this.controlToken }, signal: AbortSignal.timeout(5_000) });
+    const response = await fetch(`${this.baseUrl}/sessions`, { headers: { "x-forge-control-token": this.controlToken }, signal: AbortSignal.timeout(5_000) });
     if (!response.ok) throw new Error(`Forge bridge is unavailable (${response.status})`);
     const body = await response.json() as { sessions?: Array<StudioBridgeSession & { eventCursor: number }> };
     if (!Array.isArray(body.sessions)) throw new Error("Forge bridge returned an invalid session list");
@@ -445,7 +464,7 @@ export class StudioBridgeClient implements StudioBridgeConnection {
 
   private async readEvents(session: StudioBridgeSession): Promise<void> {
     const after = this.cursors.get(session.sessionId) ?? 0;
-    const response = await fetch(`${this.baseUrl}/v1/events?sessionId=${encodeURIComponent(session.sessionId)}&after=${after}`, { headers: { "x-forge-control-token": this.controlToken }, signal: AbortSignal.timeout(5_000) });
+    const response = await fetch(`${this.baseUrl}/events?sessionId=${encodeURIComponent(session.sessionId)}&after=${after}`, { headers: { "x-forge-control-token": this.controlToken }, signal: AbortSignal.timeout(5_000) });
     if (!response.ok) throw new Error(`Forge bridge event stream failed: ${response.status}`);
     const body = await response.json() as { cursor?: number; messages?: unknown[] };
     if (typeof body.cursor !== "number" || !Number.isInteger(body.cursor) || !Array.isArray(body.messages)) return;
@@ -483,7 +502,7 @@ export class StudioBridgeClient implements StudioBridgeConnection {
     const encoded = [...pending.chunks.entries()].sort(([left], [right]) => left - right).map(([, chunk]) => chunk).join("");
     const observation = JSON.parse(encoded) as unknown;
     const reconstructed = {
-      kind: "StudioProtocolMessage", schemaVersion: STUDIO_PROTOCOL_VERSION, direction: "plugin_to_backend", type: "ProjectObservation", messageId: `snapshot_${payload.snapshotId}`, sessionId: session.sessionId, sentAt: payload.revision.capturedAt,
+      kind: "StudioProtocolMessage", direction: "plugin_to_backend", type: "ProjectObservation", messageId: `snapshot_${payload.snapshotId}`, sessionId: session.sessionId, sentAt: payload.revision.capturedAt,
       payload: { project: payload.project, revision: payload.revision, reason: payload.reason, observation: observation as unknown as StudioSnapshotObservation }
     } as PluginToBackendMessage;
     assertPluginToBackendMessage(reconstructed);
@@ -506,7 +525,7 @@ function studioProjectId(project: PluginProjectIdentity): string {
 }
 
 export function createBackendMessage<T extends keyof BackendPayloadByType>(type: T, payload: BackendPayloadByType[T], sessionId: string, requestId?: string, now: () => Date = () => new Date()): BackendToPluginMessage {
-  const message = { kind: "StudioProtocolMessage", schemaVersion: STUDIO_PROTOCOL_VERSION, direction: "backend_to_plugin", type, messageId: `msg_${randomUUID()}`, ...(requestId ? { requestId } : {}), sessionId, sentAt: now().toISOString(), payload } as BackendToPluginMessage;
+  const message = { kind: "StudioProtocolMessage", direction: "backend_to_plugin", type, messageId: `msg_${randomUUID()}`, ...(requestId ? { requestId } : {}), sessionId, sentAt: now().toISOString(), payload } as BackendToPluginMessage;
   assertBackendToPluginMessage(message);
   return message;
 }
@@ -514,6 +533,11 @@ export function createBackendMessage<T extends keyof BackendPayloadByType>(type:
 export type BackendPayloadByType = {
   RequestObservation: { requestId: string; reason: ProjectObservationReason };
   ExecuteRuntimeEvalPlan: import("../../studio-protocol/src/index.js").ExecuteRuntimeEvalPlanPayload;
+  PresentCreatorControlView: import("../../studio-protocol/src/index.js").PresentCreatorControlViewPayload;
+  PrepareCreatorChangeSet: import("../../studio-protocol/src/index.js").PrepareCreatorChangeSetPayload;
+  ApplyCreatorChangeSet: import("../../studio-protocol/src/index.js").ApplyCreatorChangeSetPayload;
+  FinalizeCreatorChangeSet: import("../../studio-protocol/src/index.js").FinalizeCreatorChangeSetPayload;
+  RollbackCreatorCheckpoint: import("../../studio-protocol/src/index.js").RollbackCreatorCheckpointPayload;
 };
 
 async function readBody(request: IncomingMessage): Promise<string> {

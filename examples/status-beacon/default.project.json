@@ -1,0 +1,39 @@
+{
+  "name": "ForgeCreatorStatusBeacon",
+  "tree": {
+    "$className": "DataModel",
+    "Workspace": {
+      "$className": "Workspace",
+      "Generator": {
+        "$className": "Part",
+        "$properties": {
+          "Anchored": true,
+          "CFrame": [0, 4, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+          "Color": [0.18, 0.22, 0.29],
+          "Size": [8, 6, 8]
+        }
+      },
+      "PreservedTree": {
+        "$className": "Model",
+        "Trunk": {
+          "$className": "Part",
+          "$properties": {
+            "Anchored": true,
+            "CFrame": [16, 5, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "Color": [0.29, 0.16, 0.08],
+            "Size": [2, 10, 2]
+          }
+        },
+        "Crown": {
+          "$className": "Part",
+          "$properties": {
+            "Anchored": true,
+            "CFrame": [16, 11, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "Color": [0.1, 0.48, 0.18],
+            "Size": [8, 5, 8]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,75 +1,69 @@
-# Forge Evaluation Policy
+# Forge Evaluation and Claim Policy
 
-This document is the canonical policy for what Forge may claim from a build or evaluation. [ARCHITECTURE.md](ARCHITECTURE.md) defines the architecture; [FORGE.md](FORGE.md) defines thesis and invariants; [ROADMAP.md](ROADMAP.md) records demonstrated status; [RESEARCH.md](RESEARCH.md) indexes the evidence and rationale behind those decisions.
-
-## Semantic authority
-
-Every requirement that can influence generation, rejection, or grading records five independent dimensions:
-
-- source: creator, project observation, platform policy, agent plan, evaluator, or benchmark oracle;
-- authority: fact, policy, hypothesis, or evaluation-only;
-- visibility: builder-visible, evaluator-only, or internal;
-- enforcement: informational, advisory, or blocking;
-- source-aligned evidence with a stable identity or hash.
-
-Creator requirements outrank agent design preferences. Platform policy cannot be overridden by creator or agent preference. Project observations describe the observed before-state; they require preservation only when an explicit, evidenced `IntegrationConstraint` says so. Evaluator criteria and benchmark oracles have authority only inside their declared evaluation scope.
+This document defines what Forge may claim. [ARCHITECTURE.md](ARCHITECTURE.md) defines the system, [FORGE.md](FORGE.md) defines product invariants, [ROADMAP.md](ROADMAP.md) records demonstrated evidence, and [RESEARCH.md](RESEARCH.md) indexes history.
 
 ## Evidence tiers
 
 Forge interprets evidence in this order:
 
-1. schema validation establishes data-shape truth;
-2. official Luau and Roblox-aware analysis establishes language and loaded-host facts;
-3. Forge static checks establish only explicitly modeled structural and trust properties;
-4. a sealed candidate and independent local verifier establish local eligibility;
-5. correlated real-Studio observations establish engine/runtime facts;
-6. backend assertions grade those observations under one exact evaluator configuration;
-7. independent evaluator or human judgment may assess subjective product quality.
+1. artifact validation establishes data-shape truth;
+2. Luau and Roblox-aware analysis establishes language and loaded-host facts;
+3. Forge static rules establish only explicitly modeled structural or trust properties;
+4. correlated Studio snapshots establish observed edit-mode facts;
+5. correlated user-triggered Play Solo capabilities establish bounded runtime facts and diagnostic counts/hashes;
+6. a visible creator charter determines whether those facts pass the creator-approved machine checks;
+7. a private backend evaluator may grade facts only for its exact registered treatment;
+8. creator or independent human review assesses subjective product quality.
 
-Later tiers do not retroactively strengthen earlier claims. A local pass is not Studio evidence, and an evaluator model cannot override a deterministic security or runtime failure.
+Later tiers do not retroactively strengthen earlier ones. A local pass is not Studio proof; a zero-error diagnostic count is not proof of intended gameplay; a creator acceptance is a product outcome, not a universal engine fact.
 
-## Status vocabulary
+## Creator-session outcomes
 
-- `eligible`: the independent local verifier passed.
-- `locally_eligible`: an `AgentRun` produced a sealed candidate whose independent local gate passed.
-- `runtime_verified`: the exact candidate satisfied the exact `RuntimeEvalDefinition` under the exact `StudioCapabilitySet` and `RuntimeEvaluatorConfiguration` in one authoritative Studio run.
-- `rejected`: deterministic candidate or project behavior failed an applicable modeled requirement or runtime assertion.
-- `incomplete`: required provider, tool, project, protocol, Studio, environment, or evaluator evidence was insufficient.
-- `not_run`: the relevant gate was deliberately not executed.
+- `eligible`: a local check passed its implemented rules.
+- `locally_eligible`: an `AgentRun` completed its bounded local phase; for a workspace build, this additionally requires a sealed locally eligible candidate.
+- `awaiting_review`: every visible machine check passed and Studio committed the exact change recording, but the creator has not accepted it.
+- `creator_accepted`: the creator accepted the exact reviewed result.
+- `creator_rejected`: the creator rejected a plan, change set, uncommitted result, or final reviewed result.
+- `rolled_back`: the plugin undid the exact Forge checkpoint while the current Studio revision still matched.
+- `recovery_required`: Forge could not safely prove commit or cancellation state and refuses to continue.
+- `incomplete`: required provider, tool, connector, Studio, or environment evidence was insufficient.
 
-`runtime_verified` is not universal mechanic correctness, complete physics verification, subjective quality, fun, or general game quality.
+A `CreatorPlan` and its `VerificationCharter` are creator-visible agent hypotheses. Forge binds the plan goal to the immutable creator prompt and requires structural closure before presentation: exact step-to-change coverage, explicit bounded initial-snapshot `inspectionPaths` that the planner actually inspected, executable create initialization, an exact class-aware existence check for every created or moved output, and a Luau syntax check for every source-bearing change. Those rules establish that the plan can be staged and that its declared outputs are checked; they do not prove the requested runtime behavior or subjective quality. Approval grants authority to proceed with the exact hash; it does not turn the plan into project fact. Likewise, `CreatorChangeSet` approval grants authority for the fixed plugin to apply those exact operations at the bound revision.
 
-## Hidden-evaluation boundary
+## Registered-experiment outcomes
 
-Builder inputs may contain the creator request, builder-visible requirements, sanitized project facts, universal policy outcomes, and bounded tool results. They must not contain hidden assertion bodies, expected observations, benchmark oracle values, evaluator implementation, successful answer-key source, Studio runner source, or private runtime observations.
+- `runtime_verified`: the exact sealed candidate satisfied the exact runtime definition, capability set, and evaluator configuration in one authoritative Studio run.
+- `rejected`: an applicable deterministic local rule or registered runtime assertion failed.
+- `not_run`: the relevant gate deliberately did not execute.
 
-`AcceptanceSpec` carries references only. Studio receives a redacted `StudioExecutionPlan` containing typed targets, calls, bounds, and correlation data—not assertions or expected values. The plugin reports factual observations; backend code performs grading.
+`runtime_verified` is not universal mechanic correctness, subjective quality, fun, or general model quality.
+
+## Visibility boundary
+
+Creator agents may receive the prompt, sanitized Studio facts, ownership, allowlisted capabilities, approved plan, visible failure facts, and bounded tool results. The planner can inspect bounded properties, attributes, positions, ownership, and source hashes for exact initial paths, but not source bodies. A builder additionally receives the content-addressed `CreatorBuildContract`: the exact approved change IDs, planner-declared inspection paths, Forge-derived structural fields, approved initialization requirements, and the exact allowable property, attribute, explicit removal, source, and UTF-8 bounds. It may read a source body only when that exact existing script is already an approved `write_source` target. It does not guess or re-specify operation kind, destination path, parent, name, class, stable ID, or precondition. The contract is hash-bound in the builder `AgentRun`, trace, and creator-session history. They may not receive evaluator bodies, hidden thresholds, expected benchmark observations, answer-key source, raw reasoning bodies, secrets, or host paths.
+
+Stage rejection is factual feedback, not an opaque prompt hint. Forge returns the failed contract field(s), expected value(s), received value(s), and applicable allowlist; it records rejected batches, live budget-admission failures, repeated identical no-progress submissions, and three varied consecutive all-failed batches as incomplete harness/model-interface outcomes. A successful read resets the varied-failure streak. This does not weaken the fixed approved plan or disclose evaluator material.
+
+The prompt-only path has no hidden evaluator. Every automated criterion, tolerance, sample count, interval, and diagnostic threshold must appear in the creator-visible charter before plan approval. Forge derives machine-check prose from typed fields; the model authors prose only for `creator_review`. Class-aware existence may resolve only exact allowlisted Studio service roots, while position and series observations remain limited to `Workspace` `BasePart` targets. `subtree_unchanged` compares one bounded edit-mode snapshot digest and does not establish visual equivalence. Diagnostic bounds count the whole approved playtest and are never attributed to one change. Unsupported visual or gameplay judgments belong in final creator review.
+
+Registered experiments are different: their `AcceptanceSpec` carries references while the redacted `StudioExecutionPlan` carries only typed targets, calls, bounds, and correlation. The plugin returns facts. Backend code alone receives evaluator assertions and grades them.
+
+## Approval and mutation evidence
+
+An approval records creator authority, artifact ID and hash, decision, and time. Before mutation, Forge re-observes the project and fails closed on revision drift. The plugin recollects the whole bounded snapshot at prepare and again at apply; each must independently equal the approved revision. It also revalidates the change-set transport hash, authenticated session, stable identity, class/path preconditions, property and UTF-8 bounds, attributes and explicit removals, source bounds, and deletion bound.
+
+Applied state is observed again before verification. Verification failure cancels the open ChangeHistory recording. Verification success commits a checkpoint. Post-commit rollback requires the exact current checkpoint revision and invokes only Studio Change History undo; any intervening edit makes the rollback ineligible.
 
 ## Experiment discipline
 
-- Treat model, prompt, harness configuration, tool descriptions, budget policy, provider transport, runtime adapter, evaluator definition, capability set, and environment as explicit experimental variables.
-- Change one meaningful variable at a time when possible.
-- Preserve failures and classify them among model, context, tool, harness, verifier, grader/evaluator, environment, provider, and task specification.
-- Do not tune or retry around the single-run MovingPlatform experiment.
-- Promote a failure into a regression only after its cause and fixture have been reviewed.
-- Record tokens, cost, tool calls, verifier calls, changed files, latency, budget consumption, and exhaustion without inventing a composite score.
-- Treat `AgentRun.trialStarted` as the irreversible real-trial boundary. It becomes true only after a valid provider assistant envelope; provider authentication, configuration, malformed-envelope, and pre-response timeout failures remain transport setup failures.
-- Once `trialStarted` is true for the single MovingPlatform run, preserve the result without retrying, prompt tuning, or changing the model. A semantically invalid tool request still starts the trial.
+- Treat model, prompt, orientation, tools, budgets, provider transport, connector capability set, environment, and evaluator configuration as variables.
+- Preserve provider and Studio outcomes after their declared irreversible boundary; do not tune around a consumed single-run treatment.
+- Keep model/context/tool/harness/verifier/grader/environment/provider/task-spec failures distinct.
+- Promote a failure into a regression only after review.
+- Record tokens, cost, calls, changed state, latency, budgets, artifact hashes, and trace links without inventing a composite score.
 
-## Current evidence boundary
+## Historical evidence
 
-Local tests exercise provenance filtering, native multi-turn tool use, reasoning-detail continuation, atomic invalid-batch rejection, verifier-feedback repair, provider and budget failures, workspace safety, protocol correlation, malicious payload containment, backend runtime grading, and scoped proof construction. Provider response facts are bounded and normalized; API keys, headers, raw reasoning bodies, and unsanitized provider pipeline data are not run or trace evidence.
+The earlier capability canary and Vertical Shuttle run remain immutable predecessor evidence. Vertical Shuttle's exact historical evaluation was `runtime_verified`; it does not establish current creator authoring. The MovingPlatform trial remains `incomplete / agent_failure` because its historical builder lacked provider-visible writable roots; it produced no candidate or Studio verdict. The consumed Status Beacon builder run `agent_run_20b5f04f-8f3e-4602-931c-6679998b41e8` is `incomplete / RUNTIME_BUDGET_EXHAUSTED` and is classified as a harness/model-interface failure: it was not shown the approved plan or build contract, had to guess IDs/path/class, lacked a visible property allowlist, and received vague rejection feedback. It is not evidence of current validation or general model quality.
 
-The protocol-v11 characterization in the [Studio capability evidence ledger](research/studio-capability-evidence.md) remains evidence only for that historical substrate. Protocol-v12/plugin-8.0.0 readiness is established separately by completed non-evaluative canary `studio_capability_canary_beef4ad696113cbf8b69de7e`, which returned six bounded factual observations. That canary establishes no candidate verdict or runtime proof.
-
-The sole real MovingPlatform trial, `agent_run_e7b303bf-5712-4cc5-9f0a-f15c17d22286`, crossed `trialStarted` and ended `incomplete / agent_failure` before producing a candidate. Its enforced `src/server` capability was absent from all provider-visible orientation and tool results, so two plausible writes were rejected with `PATH_FORBIDDEN`. This is classified as a harness/context defect. There is no sealed candidate, hidden Studio evaluation, `RuntimeProofBundle`, or `runtime_verified` MovingPlatform result. The trial must not be retried or reinterpreted as model or runtime failure.
-
-The source-root disclosure defect is now covered by a deterministic fake-provider regression using a dedicated empty-root fixture. That regression establishes only the corrected local harness behavior; it does not alter the preserved MovingPlatform outcome or create runtime evidence.
-
-## Registered experiments
-
-`ExperimentRegistration` v1 is the fixed treatment identity for a real benchmark run. It binds the seed and source roots, implementation snapshot, model transport, budgets, builder/evaluator views, evaluator configuration, Studio capability set, expected orientation/tool/harness identities, and admission policy. The registration is evaluator/orchestrator material: neither it nor its evaluator bodies reach the builder.
-
-Registration and treatment drift fail before a provider request. One valid provider assistant envelope consumes the registered build treatment; preserve the resulting `AgentRun` without retrying or tuning. A creator-triggered Studio setup may be repaired only before the exact runtime plan is sent; once sent, preserve the authoritative runtime outcome. The Vertical Shuttle registration is a new treatment and does not retry or revise MovingPlatform.
-
-The registered Vertical Shuttle treatment completed `runtime_verified` as runtime evaluation run `runtime_evaluation_run_35b4ef7f3f9c482d82d498bc`, bound to runtime plan `runtime_eval_plan_5d7c1c5236342ae56fe30ecf`, proof `runtime_proof_84e4e26fda34ee4dd937597e`, and trace `trace_2d563481-71d9-46ea-b425-bf776d6180a2`. This may be claimed only for that exact registration, sealed candidate, runtime definition, capability set, evaluator configuration, and authoritative Studio run.
+Exact hashes bind the orientation, ordered tools, harness, worker descriptor, connector capability set, evaluator configuration, candidates, proof artifacts, and authenticated evidence links. Creator bundles retain bounded revision-to-observation history and re-materialize plans, contracts, and change sets from the exact recorded facts; AgentRun and trace locators carry persisted content hashes and the trace build key. A creator phase is `locally_eligible` only when its reviewed artifact is sealed; an `end_turn`, provider failure, rejected tool sequence, incomplete plan coverage, missing local gate, unaffordable tool batch, or no-progress streak is an `incomplete` phase with an unsealed outcome. Historical artifacts are not relabeled as current.

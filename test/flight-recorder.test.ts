@@ -17,7 +17,7 @@ test("build keys are deterministic while execution trace IDs remain distinct", (
   const context = {
     project: { id: "project_test", startingSnapshotHash: "snapshot_a", resultingSnapshotHash: "snapshot_a", manifestHash: "manifest_a", snapshotRetention: "not_retained" as const },
     references: {},
-    components: { toolchain: [{ name: "luau-analyze", version: "binary_a" }], verifiers: [{ name: "forge", version: "rules_a" }] }
+    components: { toolchain: [{ name: "luau-analyze", configHash: "a".repeat(64) }], verifiers: [{ name: "forge", configHash: "b".repeat(64) }] }
   };
   assert.equal(createBuildKey(context), createBuildKey(context));
 
@@ -31,7 +31,7 @@ test("build keys are deterministic while execution trace IDs remain distinct", (
   assert.notEqual(traceOne.id, traceTwo.id);
 });
 
-test("local sink writes a versioned, privacy-minimized trace that trace show can read", async () => {
+test("local sink writes a content-addressed, privacy-minimized trace that trace show can read", async () => {
   const traceDirectory = await mkdtemp(resolve(tmpdir(), "forge-flight-recorder-"));
   try {
     const run = await verifyProject(insecureFixture, { traceDirectory });
@@ -65,10 +65,6 @@ test("trace persistence failures are explicit and never alter a verification dec
   assert.equal(run.report.gate.status, "eligible");
   assert.equal(run.tracePersistence.status, "failed");
   assert.match(run.tracePersistence.error ?? "", /Trace persistence failed/);
-});
-
-test("trace boundary validation rejects an unversioned object", () => {
-  assert.throws(() => assertBuildTrace({ kind: "BuildTrace", schemaVersion: 0 }), /Invalid BuildTrace/);
 });
 
 function fixedClock(): () => Date {

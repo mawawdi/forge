@@ -10,8 +10,7 @@ export interface SemanticRemoteFlow { declaration: RemoteFlowDeclaration; client
 
 export interface ProjectSemanticMap {
   kind: "ProjectSemanticMap";
-  schemaVersion: 2;
-  projectId: string;
+    projectId: string;
   root: string;
   files: SourceFile[];
   scripts: SemanticScript[];
@@ -24,8 +23,7 @@ export interface ProjectSemanticMap {
 
 export interface ProjectSnapshot {
   kind: "ProjectSnapshot";
-  schemaVersion: 2;
-  projectId: string;
+    projectId: string;
   sourceHash: string;
   structureHash: string;
   projectSemanticHash: string;
@@ -35,8 +33,7 @@ export interface ProjectSnapshot {
 export interface StudioPrimitiveEntry { name: string; value: string | number | boolean }
 export interface StudioSnapshotObservation {
   kind: "StudioSnapshotObservation";
-  schemaVersion: 3;
-  project: { name: string; placeId: number; universeId: number };
+    project: { name: string; placeId: number; universeId: number };
   capturedAt: string;
   instances: Array<{ stableId: string; path: string; className: string; position?: { x: number; y: number; z: number }; properties: StudioPrimitiveEntry[]; attributes: StudioPrimitiveEntry[]; tags: string[] }>;
   scripts: Array<{ stableId: string; path: string; executionContext: SourceFile["executionContext"]; sourceHash: string; source?: string }>;
@@ -72,7 +69,7 @@ export async function buildSemanticMap(root: string, manifest: ForgeFixtureManif
     ...scripts.flatMap((script) => script.dependencies.map((dependency) => ({ from: script.path, to: dependency, kind: "source" as const }))),
     ...remotes.flatMap((remote) => [{ from: remote.clientScript, to: remote.id, kind: "remote" as const }, { from: remote.serverScript, to: remote.id, kind: "remote" as const }])
   ].sort((left, right) => `${left.from}|${left.to}`.localeCompare(`${right.from}|${right.to}`));
-  const partial: Omit<ProjectSemanticMap, "hashes"> = { kind: "ProjectSemanticMap", schemaVersion: 2, projectId: stableId("project", manifest.name), root: canonicalRoot, files, scripts, instances, remotes, remoteFlows, dependencies };
+  const partial: Omit<ProjectSemanticMap, "hashes"> = { kind: "ProjectSemanticMap", projectId: stableId("project", manifest.name), root: canonicalRoot, files, scripts, instances, remotes, remoteFlows, dependencies };
   return { ...partial, hashes: projectHashes(partial) };
 }
 
@@ -80,7 +77,7 @@ export function createProjectSnapshot(map: ProjectSemanticMap): ProjectSnapshot 
   assertProjectSemanticMap(map);
   const semanticMapHash = contentHash(stableJson(canonicalProjectSemanticMap(map)));
   const projectSemanticHash = contentHash(stableJson({ sourceHash: map.hashes.sourceHash, structureHash: map.hashes.structureHash, semanticHash: map.hashes.semanticHash }));
-  return { kind: "ProjectSnapshot", schemaVersion: 2, projectId: map.projectId, sourceHash: map.hashes.sourceHash, structureHash: map.hashes.structureHash, projectSemanticHash, semanticMapHash };
+  return { kind: "ProjectSnapshot", projectId: map.projectId, sourceHash: map.hashes.sourceHash, structureHash: map.hashes.structureHash, projectSemanticHash, semanticMapHash };
 }
 
 export function mergeStudioObservation(map: ProjectSemanticMap, observation: StudioSnapshotObservation): ProjectSemanticMap {
@@ -103,8 +100,7 @@ export function mergeStudioObservation(map: ProjectSemanticMap, observation: Stu
 export function canonicalProjectSemanticMap(map: ProjectSemanticMap): Record<string, unknown> {
   return {
     kind: map.kind,
-    schemaVersion: map.schemaVersion,
-    projectId: map.projectId,
+        projectId: map.projectId,
     files: map.files.map((file) => ({ path: file.path, executionContext: file.executionContext, sourceHash: contentHash(file.source) })).sort(byPath),
     scripts: map.scripts.map((script) => ({ ...script, dependencies: [...script.dependencies].sort() })).sort(byPath),
     instances: map.instances.map((instance) => ({ ...instance, properties: sorted(instance.properties), attributes: sorted(instance.attributes), tags: [...instance.tags].sort() })).sort(byPath),
@@ -116,12 +112,12 @@ export function canonicalProjectSemanticMap(map: ProjectSemanticMap): Record<str
 }
 
 export function assertStudioSnapshotObservation(value: unknown): asserts value is StudioSnapshotObservation {
-  if (!isRecord(value) || value.kind !== "StudioSnapshotObservation" || value.schemaVersion !== 3 || !isRecord(value.project) || typeof value.capturedAt !== "string" || !Array.isArray(value.instances) || !Array.isArray(value.scripts) || !Array.isArray(value.remotes)) throw new Error("Invalid StudioSnapshotObservation");
+  if (!isRecord(value) || value.kind !== "StudioSnapshotObservation" || !isRecord(value.project) || typeof value.capturedAt !== "string" || !Array.isArray(value.instances) || !Array.isArray(value.scripts) || !Array.isArray(value.remotes)) throw new Error("Invalid StudioSnapshotObservation");
   if (!value.instances.every((entry) => isRecord(entry) && typeof entry.stableId === "string" && typeof entry.path === "string" && typeof entry.className === "string" && Array.isArray(entry.properties) && Array.isArray(entry.attributes) && Array.isArray(entry.tags) && (entry.position === undefined || isVector3(entry.position)))) throw new Error("Invalid Studio instance observation");
 }
 
-export function assertProjectSemanticMap(value: unknown): asserts value is ProjectSemanticMap { if (!isRecord(value) || value.kind !== "ProjectSemanticMap" || value.schemaVersion !== 2 || typeof value.projectId !== "string" || !Array.isArray(value.files) || !Array.isArray(value.instances) || !Array.isArray(value.remoteFlows) || !isRecord(value.hashes)) throw new Error("Invalid ProjectSemanticMap"); }
-export function assertProjectSnapshot(value: unknown): asserts value is ProjectSnapshot { if (!isRecord(value) || value.kind !== "ProjectSnapshot" || value.schemaVersion !== 2 || typeof value.projectId !== "string" || !isHash(value.sourceHash) || !isHash(value.structureHash) || !isHash(value.projectSemanticHash) || !isHash(value.semanticMapHash)) throw new Error("Invalid ProjectSnapshot"); }
+export function assertProjectSemanticMap(value: unknown): asserts value is ProjectSemanticMap { if (!isRecord(value) || value.kind !== "ProjectSemanticMap" || typeof value.projectId !== "string" || !Array.isArray(value.files) || !Array.isArray(value.instances) || !Array.isArray(value.remoteFlows) || !isRecord(value.hashes)) throw new Error("Invalid ProjectSemanticMap"); }
+export function assertProjectSnapshot(value: unknown): asserts value is ProjectSnapshot { if (!isRecord(value) || value.kind !== "ProjectSnapshot" || typeof value.projectId !== "string" || !isHash(value.sourceHash) || !isHash(value.structureHash) || !isHash(value.projectSemanticHash) || !isHash(value.semanticMapHash)) throw new Error("Invalid ProjectSnapshot"); }
 
 async function collectLuauFiles(root: string, relativeRoot: string, output: SourceFile[]): Promise<void> {
   const absoluteRoot = inside(root, relativeRoot);

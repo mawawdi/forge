@@ -5,7 +5,7 @@ import { contentHash, stableJson, type BuildTrace, type TracePersistence } from 
 import { JsonFileTraceSink, FlightRecorder } from "../../flight-recorder/src/index.js";
 import { createRuntimeProofBundle, type RuntimeProofBundle } from "../../proofs/src/index.js";
 import { createBackendMessage, type StudioBridgeConnection, type StudioBridgeSession } from "../../studio-bridge/src/index.js";
-import { STUDIO_PLUGIN_VERSION, type PluginToBackendMessage } from "../../studio-protocol/src/index.js";
+import type { PluginToBackendMessage } from "../../studio-protocol/src/index.js";
 import type { StudioSnapshotObservation } from "../../semantic-map/src/index.js";
 import {
   assertRuntimeEvalDefinition,
@@ -30,15 +30,14 @@ import {
  */
 export interface RuntimeEvaluationRun {
   kind: "RuntimeEvaluationRun";
-  schemaVersion: 1;
-  id: string;
+    id: string;
   hash: string;
   status: "runtime_verified" | "rejected" | "incomplete";
   runtimeEvalPlanId: string;
   runtimeEvalPlanHash: string;
   runtimeEvaluatorConfigurationId: string;
   runtimeEvaluatorConfigurationHash: string;
-  session: { id: string; projectId: string; pluginVersion: string; studioVersion: string };
+  session: { id: string; projectId: string };
   acceptedAt?: string;
   startedAt?: string;
   endedAt?: string;
@@ -71,19 +70,18 @@ export interface RuntimeExecutionRequest {
   timeoutMs: number;
   traceDirectory?: string;
   proofDirectory?: string;
-  proofInput?: Omit<RuntimeProofBundle, "kind" | "schemaVersion" | "id" | "hash" | "status" | "runtimeEvaluationRunId" | "runtimeEvaluationRunHash" | "assertionResults" | "pluginVersion" | "studioVersion">;
+  proofInput?: Omit<RuntimeProofBundle, "kind" | "id" | "hash" | "status" | "runtimeEvaluationRunId" | "runtimeEvaluationRunHash" | "assertionResults">;
 }
 
 /** A non-evaluative capability transport characterization. It never produces proof. */
 export interface StudioCapabilityCanaryRun {
   kind: "StudioCapabilityCanaryRun";
-  schemaVersion: 1;
-  id: string;
+    id: string;
   hash: string;
   status: "completed" | "incomplete";
   executionPlanId: string;
   executionPlanHash: string;
-  session: { id: string; projectId: string; pluginVersion: string; studioVersion: string };
+  session: { id: string; projectId: string };
   observation?: RuntimeObservationEnvelope;
   failure?: { classification: Exclude<RuntimeFailureClassification, "candidate_behavior">; detail: string };
 }
@@ -99,6 +97,22 @@ export interface StudioCapabilityCanaryRequest {
   prePlayObservation: StudioSnapshotObservation;
   /** Explicit static target identities declared by the task-owned canary. */
   staticTargetIds: string[];
+  timeoutMs: number;
+}
+
+export interface CreatorVerificationRun {
+  kind: "CreatorVerificationRun";
+    status: "completed" | "incomplete";
+  executionPlanId: string;
+  executionPlanHash: string;
+  observation?: RuntimeObservationEnvelope;
+  failure?: { classification: Exclude<RuntimeFailureClassification, "candidate_behavior">; detail: string };
+}
+
+export interface CreatorVerificationRequest {
+  connection: StudioBridgeConnection;
+  session: StudioBridgeSession;
+  executionPlan: StudioExecutionPlan;
   timeoutMs: number;
 }
 
@@ -122,11 +136,8 @@ export async function executeRuntimeEvaluation(request: RuntimeExecutionRequest)
   assertRuntimeEvalPlan(request.runtimeEvalPlan);
   assertRuntimeEvalDefinition(request.definition);
   assertRuntimeEvaluatorConfiguration(request.configuration);
-  if (request.session.pluginVersion !== STUDIO_PLUGIN_VERSION) {
-    return completeRuntime(request, incompleteRun(request, "environment", `Expected ${STUDIO_PLUGIN_VERSION}; connected plugin is ${request.session.pluginVersion}`));
-  }
-  if (!request.session.capabilities.includes("runtime_eval_v1")) {
-    return completeRuntime(request, incompleteRun(request, "capability", "Connected Studio plugin does not advertise runtime_eval_v1"));
+  if (!request.session.capabilities.includes("runtime_eval")) {
+    return completeRuntime(request, incompleteRun(request, "capability", "Connected Studio plugin does not advertise runtime_eval"));
   }
   if (request.runtimeEvalPlan.definitionId !== request.definition.id || request.runtimeEvalPlan.definitionHash !== request.definition.hash) {
     return completeRuntime(request, incompleteRun(request, "protocol", "RuntimeEvalPlan does not bind the supplied RuntimeEvalDefinition"));
@@ -160,10 +171,8 @@ export async function executeStudioCapabilityCanary(request: StudioCapabilityCan
   if (request.executionPlan.purpose !== "capability_canary") throw new Error("Studio capability canary requires a capability_canary execution plan");
   if (!Array.isArray(request.staticTargetIds) || request.staticTargetIds.length === 0 || new Set(request.staticTargetIds).size !== request.staticTargetIds.length || request.staticTargetIds.some((id) => typeof id !== "string" || id.length === 0)) throw new Error("Studio capability canary requires distinct static target IDs");
   let canary: StudioCapabilityCanaryRun;
-  if (request.session.pluginVersion !== STUDIO_PLUGIN_VERSION) {
-    canary = createStudioCapabilityCanaryRun({ status: "incomplete", executionPlanId: request.executionPlan.id, executionPlanHash: request.executionPlan.hash, session: sessionSummary(request.session), failure: { classification: "environment", detail: `Expected ${STUDIO_PLUGIN_VERSION}; connected plugin is ${request.session.pluginVersion}` } });
-  } else if (!request.session.capabilities.includes("runtime_eval_v1")) {
-    canary = createStudioCapabilityCanaryRun({ status: "incomplete", executionPlanId: request.executionPlan.id, executionPlanHash: request.executionPlan.hash, session: sessionSummary(request.session), failure: { classification: "capability", detail: "Connected Studio plugin does not advertise runtime_eval_v1" } });
+  if (!request.session.capabilities.includes("runtime_eval")) {
+    canary = createStudioCapabilityCanaryRun({ status: "incomplete", executionPlanId: request.executionPlan.id, executionPlanHash: request.executionPlan.hash, session: sessionSummary(request.session), failure: { classification: "capability", detail: "Connected Studio plugin does not advertise runtime_eval" } });
   } else {
     const observed = await executePlan({ connection: request.connection, session: request.session, executionPlan: request.executionPlan, timeoutMs: request.timeoutMs });
     canary = observed.kind === "failure"
@@ -176,6 +185,17 @@ export async function executeStudioCapabilityCanary(request: StudioCapabilityCan
       })();
   }
   return canary;
+}
+
+/** Executes creator-visible factual checks without evaluator assertions or a proof claim. */
+export async function executeCreatorVerificationPlan(request: CreatorVerificationRequest): Promise<CreatorVerificationRun> {
+  assertStudioExecutionPlan(request.executionPlan);
+  if (request.executionPlan.purpose !== "creator_verification") throw new Error("Creator verification requires a creator_verification capability plan");
+  if (!request.session.capabilities.includes("runtime_eval")) return { kind: "CreatorVerificationRun", status: "incomplete", executionPlanId: request.executionPlan.id, executionPlanHash: request.executionPlan.hash, failure: { classification: "capability", detail: "Connected Studio plugin does not advertise runtime_eval" } };
+  const observed = await executePlan(request);
+  return observed.kind === "success"
+    ? { kind: "CreatorVerificationRun", status: "completed", executionPlanId: request.executionPlan.id, executionPlanHash: request.executionPlan.hash, observation: observed.envelope }
+    : { kind: "CreatorVerificationRun", status: "incomplete", executionPlanId: request.executionPlan.id, executionPlanHash: request.executionPlan.hash, failure: { classification: observed.classification, detail: observed.detail } };
 }
 
 /**
@@ -217,11 +237,13 @@ async function executePlan(input: { connection: StudioBridgeConnection; session:
   try {
     const requestId = `runtime_request_${randomUUID()}`;
     const executionPlanJson = serializeStudioExecutionPlan(executionPlan);
-    await connection.send(createBackendMessage("ExecuteRuntimeEvalPlan", { requestId, expectedRevision: executionPlan.binding.projectSnapshotHash, executionPlanJson, executionPlanJsonHash: contentHash(executionPlanJson) }, session.sessionId, requestId));
+    const startPolicy = executionPlan.purpose === "creator_verification" ? "creator_action_already_authorized" as const : "explicit_plugin_action" as const;
+    await connection.send(createBackendMessage("ExecuteRuntimeEvalPlan", { requestId, expectedRevision: executionPlan.binding.projectSnapshotHash, executionPlanJson, executionPlanJsonHash: contentHash(executionPlanJson), startPolicy }, session.sessionId, requestId));
     const accepted = await waitFor(messages, (message): message is Extract<PluginToBackendMessage, { type: "RuntimeEvalPlanAccepted" }> => message.type === "RuntimeEvalPlanAccepted" && sameRuntimeMessage(message, executionPlan, session), input.timeoutMs, "runtime plan acceptance");
     if (accepted.payload.callCount !== executionPlan.calls.length) return { kind: "failure", classification: "protocol", detail: "Studio accepted a different runtime call count" };
     const started = await waitFor(messages, (message): message is Extract<PluginToBackendMessage, { type: "RuntimeEvalStarted" }> => message.type === "RuntimeEvalStarted" && sameRuntimeMessage(message, executionPlan, session) && message.payload.nonceCommitment === accepted.payload.nonceCommitment, input.timeoutMs, "runtime start");
-    if (started.payload.control !== "plugin_action" || started.payload.mode !== "play_solo") return { kind: "failure", classification: "protocol", detail: "Studio runtime execution did not use plugin-owned Play Solo" };
+    const expectedControl = executionPlan.purpose === "creator_verification" ? "creator_action" : "plugin_action";
+    if (started.payload.control !== expectedControl || started.payload.mode !== "play_solo") return { kind: "failure", classification: "protocol", detail: "Studio runtime execution used the wrong creator-control boundary" };
     const terminal = await waitFor(messages, (message): message is Extract<PluginToBackendMessage, { type: "RuntimeEvalResult" | "PluginError" }> =>
       (message.type === "RuntimeEvalResult" && sameRuntimeMessage(message, executionPlan, session))
       || (message.type === "PluginError" && message.requestId === requestId), input.timeoutMs, "runtime result");
@@ -266,12 +288,12 @@ function incompleteRun(request: RuntimeExecutionRequest, classification: Exclude
 
 async function completeRuntime(request: RuntimeExecutionRequest, run: RuntimeEvaluationRun): Promise<RuntimeExecutionOutcome> {
   const proof = request.proofInput
-    ? createRuntimeProofBundle({ ...request.proofInput, status: run.status, runtimeEvaluationRunId: run.id, runtimeEvaluationRunHash: run.hash, pluginVersion: request.session.pluginVersion, studioVersion: request.session.studioVersion, assertionResults: (run.assertionResults ?? []).map((result) => ({ id: result.id, status: result.status, evidenceHash: result.observedHash })) })
+    ? createRuntimeProofBundle({ ...request.proofInput, status: run.status, runtimeEvaluationRunId: run.id, runtimeEvaluationRunHash: run.hash, assertionResults: (run.assertionResults ?? []).map((result) => ({ id: result.id, status: result.status, evidenceHash: result.observedHash })) })
     : undefined;
   const recorder = new FlightRecorder({ projectId: run.session.projectId, references: {
     ...(request.proofInput ? { agentRunId: request.proofInput.agentRunId, experimentRegistrationId: request.proofInput.experimentRegistrationId, experimentRegistrationHash: request.proofInput.experimentRegistrationHash, requirementSetId: request.proofInput.requirementSetId, requirementViewId: request.proofInput.requirementViewId, workspaceDeltaId: request.proofInput.workspaceDeltaId, harnessConfigurationId: request.proofInput.harnessConfigurationId, harnessConfigurationHash: request.proofInput.harnessConfigurationHash, workspaceCandidateArtifactId: request.proofInput.workspaceCandidateArtifactId, workspaceCandidateArtifactHash: request.proofInput.workspaceCandidateArtifactHash } : {}),
     runtimeEvalPlanId: request.runtimeEvalPlan.id, runtimeEvalPlanHash: request.runtimeEvalPlan.hash, studioCapabilitySetId: request.configuration.capabilitySetId, studioCapabilitySetHash: request.configuration.capabilitySetHash, runtimeEvaluatorConfigurationId: request.configuration.id, runtimeEvaluatorConfigurationHash: request.configuration.hash, runtimeEvaluationRunId: run.id, ...(proof ? { runtimeProofId: proof.id } : {})
-  }, components: { studio: { name: "forge-studio-plugin", version: request.session.pluginVersion }, toolchain: [], verifiers: [] } });
+  }, components: { studio: { name: "forge-studio-plugin", configHash: request.configuration.capabilitySetHash }, toolchain: [], verifiers: [] } });
   recorder.recordSpan("forge.studio.assert", run.status === "incomplete" ? "error" : "ok", { "forge.runtime.status": run.status });
   const passed = run.assertionResults?.filter((result) => result.status === "pass").length ?? 0;
   const total = run.assertionResults?.length ?? 0;
@@ -285,30 +307,30 @@ async function completeRuntime(request: RuntimeExecutionRequest, run: RuntimeEva
   return { run, ...(proof ? { proof } : {}), trace, ...(tracePersistence ? { tracePersistence } : {}) };
 }
 
-export function createRuntimeEvaluationRun(input: Omit<RuntimeEvaluationRun, "kind" | "schemaVersion" | "id" | "hash">): RuntimeEvaluationRun {
+export function createRuntimeEvaluationRun(input: Omit<RuntimeEvaluationRun, "kind" | "id" | "hash">): RuntimeEvaluationRun {
   const canonical = canonicalRun(input);
   const hash = contentHash(stableJson(canonical));
-  const run: RuntimeEvaluationRun = { kind: "RuntimeEvaluationRun", schemaVersion: 1, id: `runtime_evaluation_run_${hash.slice(0, 24)}`, hash, ...canonical };
+  const run: RuntimeEvaluationRun = { kind: "RuntimeEvaluationRun", id: `runtime_evaluation_run_${hash.slice(0, 24)}`, hash, ...canonical };
   assertRuntimeEvaluationRun(run);
   return run;
 }
 
 export function assertRuntimeEvaluationRun(value: unknown): asserts value is RuntimeEvaluationRun {
-  if (!isRecord(value) || value.kind !== "RuntimeEvaluationRun" || value.schemaVersion !== 1 || !isId(value.id) || !isHash(value.hash) || !["runtime_verified", "rejected", "incomplete"].includes(String(value.status)) || !isId(value.runtimeEvalPlanId) || !isHash(value.runtimeEvalPlanHash) || !isId(value.runtimeEvaluatorConfigurationId) || !isHash(value.runtimeEvaluatorConfigurationHash) || !isSessionSummary(value.session)) throw new Error("Invalid RuntimeEvaluationRun");
+  if (!isRecord(value) || value.kind !== "RuntimeEvaluationRun" || !isId(value.id) || !isHash(value.hash) || !["runtime_verified", "rejected", "incomplete"].includes(String(value.status)) || !isId(value.runtimeEvalPlanId) || !isHash(value.runtimeEvalPlanHash) || !isId(value.runtimeEvaluatorConfigurationId) || !isHash(value.runtimeEvaluatorConfigurationHash) || !isSessionSummary(value.session)) throw new Error("Invalid RuntimeEvaluationRun");
   if (value.observation !== undefined) assertRuntimeObservationEnvelope(value.observation);
   if (value.assertionResults !== undefined && (!Array.isArray(value.assertionResults) || !value.assertionResults.every(isAssertionResult))) throw new Error("Invalid RuntimeEvaluationRun assertion results");
   if (value.status === "runtime_verified" && (!value.observation || !value.assertionResults || value.assertionResults.some((result) => result.status !== "pass"))) throw new Error("runtime_verified requires complete passing factual observations");
   if (value.status === "rejected" && (!value.observation || !value.assertionResults || !value.assertionResults.some((result) => result.status === "fail"))) throw new Error("rejected requires an authoritative failed assertion");
   if (value.status === "incomplete" && (!isRecord(value.failure) || !["protocol", "capability", "studio", "timeout", "environment"].includes(String(value.failure.classification)) || !isString(value.failure.detail))) throw new Error("incomplete requires a precise non-candidate failure");
-  const { kind: _kind, schemaVersion: _schemaVersion, id: _id, hash: _hash, ...payload } = value;
-  const expected = contentHash(stableJson(canonicalRun(payload as Omit<RuntimeEvaluationRun, "kind" | "schemaVersion" | "id" | "hash">)));
+  const { kind: _kind, id: _id, hash: _hash, ...payload } = value;
+  const expected = contentHash(stableJson(canonicalRun(payload as Omit<RuntimeEvaluationRun, "kind" | "id" | "hash">)));
   if (value.hash !== expected || value.id !== `runtime_evaluation_run_${expected.slice(0, 24)}`) throw new Error("Invalid RuntimeEvaluationRun identity");
 }
 
-export function createStudioCapabilityCanaryRun(input: Omit<StudioCapabilityCanaryRun, "kind" | "schemaVersion" | "id" | "hash">): StudioCapabilityCanaryRun {
+export function createStudioCapabilityCanaryRun(input: Omit<StudioCapabilityCanaryRun, "kind" | "id" | "hash">): StudioCapabilityCanaryRun {
   const canonical = { ...input, session: { ...input.session } };
   const hash = contentHash(stableJson(canonical));
-  const run: StudioCapabilityCanaryRun = { kind: "StudioCapabilityCanaryRun", schemaVersion: 1, id: `studio_capability_canary_${hash.slice(0, 24)}`, hash, ...canonical };
+  const run: StudioCapabilityCanaryRun = { kind: "StudioCapabilityCanaryRun", id: `studio_capability_canary_${hash.slice(0, 24)}`, hash, ...canonical };
   if (run.status === "completed" && !run.observation) throw new Error("Completed Studio capability canary requires observations");
   if (run.status === "incomplete" && !run.failure) throw new Error("Incomplete Studio capability canary requires a precise failure");
   return run;
@@ -322,7 +344,7 @@ async function persistRuntimeProof(proof: RuntimeProofBundle, directory: string)
   await rename(temporary, destination);
 }
 
-function canonicalRun(input: Omit<RuntimeEvaluationRun, "kind" | "schemaVersion" | "id" | "hash">): Omit<RuntimeEvaluationRun, "kind" | "schemaVersion" | "id" | "hash"> {
+function canonicalRun(input: Omit<RuntimeEvaluationRun, "kind" | "id" | "hash">): Omit<RuntimeEvaluationRun, "kind" | "id" | "hash"> {
   return {
     ...input,
     session: { ...input.session },
@@ -332,12 +354,12 @@ function canonicalRun(input: Omit<RuntimeEvaluationRun, "kind" | "schemaVersion"
   };
 }
 
-function sessionSummary(session: StudioBridgeSession): RuntimeEvaluationRun["session"] { return { id: session.sessionId, projectId: session.projectId, pluginVersion: session.pluginVersion, studioVersion: session.studioVersion }; }
+function sessionSummary(session: StudioBridgeSession): RuntimeEvaluationRun["session"] { return { id: session.sessionId, projectId: session.projectId }; }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function isString(value: unknown): value is string { return typeof value === "string"; }
 function isId(value: unknown): value is string { return isString(value) && value.length > 0 && !/\s/.test(value); }
 function isHash(value: unknown): value is string { return isString(value) && /^[0-9a-f]{64}$/.test(value); }
-function isSessionSummary(value: unknown): boolean { return isRecord(value) && isId(value.id) && isId(value.projectId) && isString(value.pluginVersion) && isString(value.studioVersion); }
+function isSessionSummary(value: unknown): boolean { return isRecord(value) && isId(value.id) && isId(value.projectId); }
 function isAssertionResult(value: unknown): value is RuntimeAssertionResult { return isRecord(value) && isId(value.id) && isId(value.requirementId) && isId(value.acceptanceAssertionId) && (value.status === "pass" || value.status === "fail") && isHash(value.observedHash); }
 
 async function waitFor<T extends PluginToBackendMessage>(messages: PluginToBackendMessage[], predicate: (message: PluginToBackendMessage) => message is T, timeoutMs: number, label: string): Promise<T> {

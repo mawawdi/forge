@@ -4,11 +4,10 @@ local HttpService = game:GetService("HttpService")
 local Constants = require(script.Parent.Constants)
 local Hash = require(script.Parent.Hash)
 local ObservationRevision = require(script.Parent.ObservationRevision)
+local StudioInstancePolicy = require(script.Parent.StudioInstancePolicy)
 
 local SnapshotCollector = {}
 SnapshotCollector.__index = SnapshotCollector
-
-local ROOTS = { "Workspace", "ReplicatedStorage", "ServerScriptService", "ServerStorage", "StarterPlayer", "StarterGui", "StarterPack", "ReplicatedFirst", "Lighting", "SoundService", "Teams" }
 
 local function project()
 	return { name = game.Name, placeId = game.PlaceId, universeId = game.GameId }
@@ -26,6 +25,15 @@ local function primitive(instance: Instance): {{name: string, value: string | nu
 		local ok, value = pcall(function() return (instance :: any)[property] end)
 		if ok and (typeof(value) == "string" or typeof(value) == "number" or typeof(value) == "boolean") then table.insert(result, { name = property, value = value }) end
 	end
+	if instance:IsA("BasePart") then
+		local size = instance.Size; local color = instance.Color
+		local components = { instance.CFrame:GetComponents() }
+		table.insert(result, { name = "Material", value = instance.Material.Name })
+		table.insert(result, { name = "Size", value = table.concat({ tostring(size.X), tostring(size.Y), tostring(size.Z) }, ",") })
+		table.insert(result, { name = "Color", value = table.concat({ tostring(color.R), tostring(color.G), tostring(color.B) }, ",") })
+		local serialized = {} :: {string}; for _, component in ipairs(components) do table.insert(serialized, tostring(component)) end
+		table.insert(result, { name = "CFrame", value = table.concat(serialized, ",") })
+	end
 	table.sort(result, function(left, right) return left.name < right.name end)
 	return result
 end
@@ -42,10 +50,6 @@ local function primitiveAttributes(instance: Instance): {{name: string, value: s
 	table.sort(result, function(left, right) return left.name < right.name end)
 	return result
 end
-local function relevant(instance: Instance): boolean
-	return instance:IsA("BasePart") or instance:IsA("ProximityPrompt") or instance:IsA("Folder") or instance:IsA("Model") or instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction") or instance:IsA("LuaSourceContainer") or instance:IsA("GuiObject")
-end
-
 local function position(instance: Instance): {x: number, y: number, z: number}?
 	if not instance:IsA("BasePart") then return nil end
 	return { x = instance.Position.X, y = instance.Position.Y, z = instance.Position.Z }
@@ -57,12 +61,16 @@ end
 
 function SnapshotCollector:collect()
 	local instances, scripts, remotes = {}, {}, {}
-	for _, rootName in ipairs(ROOTS) do
+	for _, rootName in ipairs(StudioInstancePolicy.rootNames()) do
 		local root = game:FindFirstChild(rootName)
 		if root then
+			-- Service roots are explicit parent facts. They are not authoring
+			-- targets, so they use stable synthetic identities and do not need a
+			-- Forge attribute or registry entry.
+			table.insert(instances, { stableId = "forge_service_root_" .. rootName, path = rootName, className = root.ClassName, properties = {}, attributes = {}, tags = {} })
 			local descendants = root:GetDescendants()
 			for _, instance in ipairs(descendants) do
-				if relevant(instance) then self.registry:enrollInstance(instance) end
+				if StudioInstancePolicy.shouldHaveStableIdentity(instance) then self.registry:enrollInstance(instance) end
 			end
 			table.sort(descendants, function(a, b)
 				local left, right = pathOf(a), pathOf(b)
@@ -71,9 +79,9 @@ function SnapshotCollector:collect()
 				return tostring(a:GetAttribute(Constants.IDENTITY_ATTRIBUTE)) < tostring(b:GetAttribute(Constants.IDENTITY_ATTRIBUTE))
 			end)
 			for _, instance in ipairs(descendants) do
-				if relevant(instance) then
+				if StudioInstancePolicy.shouldHaveStableIdentity(instance) then
 					local stableId = instance:GetAttribute(Constants.IDENTITY_ATTRIBUTE)
-					if typeof(stableId) ~= "string" then error("Forge stable identity enrollment failed") end
+					if typeof(stableId) ~= "string" then error("Forge stable identity enrollment failed for " .. pathOf(instance) .. " (" .. instance.ClassName .. ")") end
 					local attributes = primitiveAttributes(instance)
 					local tags = CollectionService:GetTags(instance)
 					table.sort(tags)
@@ -95,12 +103,12 @@ function SnapshotCollector:collect()
 	table.sort(instances, function(a, b) return a.path < b.path or (a.path == b.path and (a.className < b.className or (a.className == b.className and a.stableId < b.stableId))) end)
 	table.sort(scripts, function(a, b) return a.path < b.path or (a.path == b.path and a.stableId < b.stableId) end)
 	table.sort(remotes, function(a, b) return a.path < b.path or (a.path == b.path and a.className < b.className) end)
-	local observation = { kind = "StudioSnapshotObservation", schemaVersion = 3, project = project(), capturedAt = iso(), instances = instances, scripts = scripts, remotes = remotes }
+	local observation = { kind = "StudioSnapshotObservation", project = project(), capturedAt = iso(), instances = instances, scripts = scripts, remotes = remotes }
 	local encoded = HttpService:JSONEncode(observation)
 	local observationHash = Hash.sha256(ObservationRevision.material(observation))
 	return {
 		project = project(),
-		revision = { kind = "StudioRevision", schemaVersion = 1, observationHash = observationHash, identityHash = Hash.sha256(ObservationRevision.identityMaterial(observation)), capturedAt = observation.capturedAt },
+		revision = { kind = "StudioRevision", observationHash = observationHash, identityHash = Hash.sha256(ObservationRevision.identityMaterial(observation)), capturedAt = observation.capturedAt },
 		observation = observation,
 		encoded = encoded,
 	}

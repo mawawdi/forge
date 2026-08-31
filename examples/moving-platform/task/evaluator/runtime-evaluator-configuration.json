@@ -1,16 +1,15 @@
 {
   "kind": "RuntimeEvaluatorConfiguration",
-  "schemaVersion": 1,
-  "id": "runtime_evaluator_configuration_0219439adee16af5d8134974",
-  "hash": "0219439adee16af5d813497460c7c0f1b38703a1322a2844c787c43ef56f6c8a",
-  "capabilitySetId": "studio_capability_set_c9d7b396c6b7fb433fa9835b",
-  "capabilitySetHash": "c9d7b396c6b7fb433fa9835b8e8101143b59092fdaefc9b834880ff0c7defb21",
-  "assertionEngine": {"name":"forge_runtime_assertions","version":"runtime-assertions-1"},
-  "runtimeEvalDefinitionId": "runtime_eval_definition_7882f09aa379212e89b479d7",
-  "runtimeEvalDefinitionHash": "7882f09aa379212e89b479d7e0a102074e4893f7cb8dbb611ae823fd22412514",
-  "protocolVersion": 12,
-  "pluginVersion": "forge-studio-plugin-8.0.0",
-  "executionPolicy": "creator_triggered_play_solo_v1",
-  "bindingPolicy": "candidate_source_and_world_snapshot_v1",
+  "id": "runtime_evaluator_configuration_9451e896add3a2512b146059",
+  "hash": "9451e896add3a2512b1460598f56ee9894f7ace4dc058725bc3ece11318d7536",
+  "capabilitySetId": "studio_capability_set_b998ca9552434b51389e3f8f",
+  "capabilitySetHash": "b998ca9552434b51389e3f8fbe37e919dbb174ee6b1a206cba4c2b01ca0b5356",
+  "assertionEngine": {
+    "name": "forge_runtime_assertions"
+  },
+  "runtimeEvalDefinitionId": "runtime_eval_definition_950a39e11656ecfc88aa9ea1",
+  "runtimeEvalDefinitionHash": "950a39e11656ecfc88aa9ea14d12046a478e4af326714caf50a71eb151783c25",
+  "executionPolicy": "creator_triggered_play_solo",
+  "bindingPolicy": "candidate_source_and_world_snapshot",
   "maxResultBytes": 65536
 }

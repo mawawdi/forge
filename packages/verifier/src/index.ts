@@ -5,7 +5,7 @@ import { FilesystemProjectSourceAdapter, type ProjectSemanticMap, type SemanticR
 import { analyzeWithRobloxLuau } from "../../luau-toolchain/src/index.js";
 import { assertFixtureManifest, contentHash, stableJson, type BuildOutcome, type BuildTrace, type ForgeFixtureManifest, type ForgeSpanName, type TracePersistence, type VerificationIssue, type VerificationReport } from "../../contracts/src/index.js";
 
-const RULE_SET = "forge-generic-roblox-security-1";
+const RULE_SET_HASH = contentHash(stableJson(["client_authority", "remote_binding", "source_structure"]));
 
 export interface VerificationRun { report: VerificationReport; trace: BuildTrace; tracePersistence: TracePersistence }
 export interface VerificationRunOptions {
@@ -19,7 +19,7 @@ export interface VerificationRunOptions {
 export async function verifyProject(projectPath: string, options: VerificationRunOptions = {}): Promise<VerificationRun> {
   const root = resolve(projectPath);
   const projectId = `project_${contentHash(root).slice(0, 24)}`;
-  const recorder = new FlightRecorder({ projectId, ...(options.traceReferences ? { references: options.traceReferences } : {}), components: { toolchain: [], verifiers: [{ name: "forge-verifier", version: RULE_SET }], ...options.traceComponents } });
+  const recorder = new FlightRecorder({ projectId, ...(options.traceReferences ? { references: options.traceReferences } : {}), components: { toolchain: [], verifiers: [{ name: "forge-verifier", configHash: RULE_SET_HASH }], ...options.traceComponents } });
   for (const span of options.tracePreludeSpans ?? []) recorder.recordSpan(span.name, span.status, span.attributes, span.durationMs);
   let projectHash = contentHash(`unavailable:${root}`);
 
@@ -35,10 +35,10 @@ export async function verifyProject(projectPath: string, options: VerificationRu
 
     const luauSpan = recorder.startSpan("forge.verify.luau", { "forge.verifier.name": "official-luau-plus-roblox-host" });
     const luau = analyzeWithRobloxLuau(root, map.files.map((file) => file.path));
-    const luauLatency = recorder.endSpan(luauSpan, luau.tiers.every((tier) => tier.status === "pass") ? "ok" : "error", { "forge.verifier.version": luau.tools.map((tool) => `${tool.name}@${tool.version}`).join(","), "forge.issue.count": luau.issues.length });
-    recorder.setComponents({ toolchain: luau.tools.map((tool) => ({ name: tool.name, version: tool.version, configHash: tool.configHash })) });
+    const luauLatency = recorder.endSpan(luauSpan, luau.tiers.every((tier) => tier.status === "pass") ? "ok" : "error", { "forge.verifier.tools": luau.tools.map((tool) => tool.name).join(","), "forge.issue.count": luau.issues.length });
+    recorder.setComponents({ toolchain: luau.tools.map((tool) => ({ name: tool.name, configHash: tool.configHash })) });
 
-    const securitySpan = recorder.startSpan("forge.verify.replication", { "forge.verifier.name": "forge-generic-security", "forge.verifier.version": RULE_SET });
+    const securitySpan = recorder.startSpan("forge.verify.replication", { "forge.verifier.name": "forge-generic-security", "forge.verifier.config_hash": RULE_SET_HASH });
     const semantic = semanticIssues(map);
     const securityLatency = recorder.endSpan(securitySpan, semantic.some(isBlockingIssue) ? "error" : "ok", { "forge.issue.count": semantic.length });
     const issues = canonicalIssues([...luau.issues, ...semantic]);
@@ -98,8 +98,7 @@ function createReport(root: string, manifest: ForgeFixtureManifest, map: Project
   const toolingUnavailable = issues.some((candidate) => candidate.category === "tooling");
   return {
     kind: "VerificationReport",
-    schemaVersion: 2,
-    projectPath: root.replaceAll("\\", "/"),
+        projectPath: root.replaceAll("\\", "/"),
     projectHash: map.hashes.semanticHash,
     toolchain: tools,
     issues,
@@ -108,11 +107,11 @@ function createReport(root: string, manifest: ForgeFixtureManifest, map: Project
       { name: "replication_and_authority", status: issues.some((candidate) => ["replication", "security", "structure"].includes(candidate.category)) ? "fail" : "pass", issueIds: issues.filter((candidate) => ["replication", "security", "structure"].includes(candidate.category)).map((candidate) => candidate.id) }
     ],
     gate: toolingUnavailable ? { status: "incomplete", reasons: issues.filter((candidate) => candidate.category === "tooling").map((candidate) => candidate.ruleId) } : blocking.length > 0 ? { status: "rejected", reasons: blocking.map((candidate) => candidate.ruleId) } : { status: "eligible", reasons: ["No blocking local verification issues"] },
-    reproducibility: { inputHash: contentHash(stableJson({ manifest, files: map.files.map((file) => ({ path: file.path, source: file.source })) })), dependencyHash: contentHash(stableJson(tools)), ruleSetHash: contentHash(RULE_SET), deterministic: !toolingUnavailable }
+    reproducibility: { inputHash: contentHash(stableJson({ manifest, files: map.files.map((file) => ({ path: file.path, source: file.source })) })), dependencyHash: contentHash(stableJson(tools)), ruleSetHash: RULE_SET_HASH, deterministic: !toolingUnavailable }
   };
 }
 
-function incompleteReport(root: string, projectHash: string, error: unknown): VerificationReport { return { kind: "VerificationReport", schemaVersion: 2, projectPath: root.replaceAll("\\", "/"), projectHash, toolchain: [], issues: [], checks: [], gate: { status: "incomplete", reasons: [error instanceof Error ? error.message : String(error)] }, reproducibility: { inputHash: projectHash, dependencyHash: contentHash("unavailable"), ruleSetHash: contentHash(RULE_SET), deterministic: false } }; }
+function incompleteReport(root: string, projectHash: string, error: unknown): VerificationReport { return { kind: "VerificationReport", projectPath: root.replaceAll("\\", "/"), projectHash, toolchain: [], issues: [], checks: [], gate: { status: "incomplete", reasons: [error instanceof Error ? error.message : String(error)] }, reproducibility: { inputHash: projectHash, dependencyHash: contentHash("unavailable"), ruleSetHash: RULE_SET_HASH, deterministic: false } }; }
 
 function outcome(report: VerificationReport, latencyMs: BuildOutcome["latencyMs"]): BuildOutcome {
   const counts: BuildOutcome["issueCounts"] = { info: 0, warning: 0, error: 0, critical: 0 };
@@ -124,11 +123,11 @@ async function persist(report: VerificationReport, recorder: FlightRecorder, opt
   const trace = recorder.complete(buildOutcome, { verificationReportHash: contentHash(stableJson(report)), issues: report.issues.map((candidate) => ({ id: candidate.id, ruleId: candidate.ruleId, severity: candidate.severity, category: candidate.category, evidenceHash: contentHash(stableJson(candidate.evidence)) })) }, { level: report.reproducibility.deterministic ? "semantic_reproduction" : "none", reasons: report.reproducibility.deterministic ? ["Inputs, toolchain, rule set, and local results are content-addressed."] : ["Local verification did not reach a reproducible state."], randomSeeds: {} });
   const sink = options.traceSink ?? new JsonFileTraceSink(options.traceDirectory ?? defaultTraceDirectory());
   try { return { report, trace, tracePersistence: await sink.persist(trace) }; }
-  catch (error) { return { report, trace, tracePersistence: { kind: "TracePersistence", schemaVersion: 1, traceId: trace.id, buildKey: trace.buildKey, status: "failed", error: `Trace persistence failed (${error instanceof Error ? error.name : "UnknownError"})` } }; }
+  catch (error) { return { report, trace, tracePersistence: { kind: "TracePersistence", traceId: trace.id, buildKey: trace.buildKey, status: "failed", error: `Trace persistence failed (${error instanceof Error ? error.name : "UnknownError"})` } }; }
 }
 
 async function loadManifest(root: string): Promise<ForgeFixtureManifest> { const value = JSON.parse(await readFile(resolve(root, "forge.fixture.json"), "utf8")) as unknown; assertFixtureManifest(value); return value; }
-function issue(ruleId: string, severity: VerificationIssue["severity"], category: VerificationIssue["category"], message: string, path: string, statement: string): VerificationIssue { return { kind: "VerificationIssue", schemaVersion: 1, id: `${ruleId}:${contentHash(`${ruleId}|${path}|${message}`).slice(0, 16)}`, ruleId, severity, category, message, path, evidence: [{ type: "semantic_graph", statement }], remediation: { kind: "deterministic", steps: ["Keep authoritative state values server-owned.", "Validate untrusted request data before use.", "Run Forge verification again."] }, authoritativeTier: "static" }; }
+function issue(ruleId: string, severity: VerificationIssue["severity"], category: VerificationIssue["category"], message: string, path: string, statement: string): VerificationIssue { return { kind: "VerificationIssue", id: `${ruleId}:${contentHash(`${ruleId}|${path}|${message}`).slice(0, 16)}`, ruleId, severity, category, message, path, evidence: [{ type: "semantic_graph", statement }], remediation: { kind: "deterministic", steps: ["Keep authoritative state values server-owned.", "Validate untrusted request data before use.", "Run Forge verification again."] }, authoritativeTier: "static" }; }
 function canonicalIssues(values: VerificationIssue[]): VerificationIssue[] { return [...new Map(values.map((value) => [value.id, value])).values()].sort((left, right) => left.id.localeCompare(right.id)); }
 function isBlockingIssue(candidate: VerificationIssue): boolean { return candidate.severity === "error" || candidate.severity === "critical"; }
 function escapeRegExp(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }

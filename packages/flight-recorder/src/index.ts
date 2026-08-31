@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { basename, join, relative, resolve } from "node:path";
-import { assertBuildTrace, contentHash, stableJson, type BuildOutcome, type BuildTrace, type BuildTraceEvent, type BuildTraceSpan, type ComponentVersion, type ForgeEventName, type ForgeSpanName, type Hash, type ID, type ModelConfiguration, type TraceAttributeValue, type TracePersistence } from "../../contracts/src/index.js";
+import { assertBuildTrace, contentHash, stableJson, type BuildOutcome, type BuildTrace, type BuildTraceEvent, type BuildTraceSpan, type ComponentDescriptor, type ForgeEventName, type ForgeSpanName, type Hash, type ID, type ModelConfiguration, type TraceAttributeValue, type TracePersistence } from "../../contracts/src/index.js";
 
 export interface FlightRecorderContext {
   projectId: ID;
@@ -115,8 +115,7 @@ export class FlightRecorder {
     const buildKey = createBuildKey({ project: this.project, references: this.references, components: this.components });
     return {
       kind: "BuildTrace",
-      schemaVersion: 3,
-      id: this.traceId,
+            id: this.traceId,
       buildKey,
       startedAt: this.startedAt.toISOString(),
       endedAt: endedAt.toISOString(),
@@ -158,7 +157,7 @@ export class JsonFileTraceSink implements TraceSink {
     const serialized = `${stableJson(trace)}\n`;
     await writeFile(temporary, serialized, { encoding: "utf8", mode: 0o600 });
     await rename(temporary, destination);
-    return { kind: "TracePersistence", schemaVersion: 1, traceId: trace.id, buildKey: trace.buildKey, status: "written", artifactHash: contentHash(serialized), locator: relative(process.cwd(), destination) || basename(destination) };
+    return { kind: "TracePersistence", traceId: trace.id, buildKey: trace.buildKey, status: "written", artifactHash: contentHash(serialized), locator: relative(process.cwd(), destination) || basename(destination) };
   }
 
   async read(traceId: ID): Promise<BuildTrace> {
@@ -194,4 +193,4 @@ function bySequence<T extends { sequence: number }>(left: T, right: T): number {
   return left.sequence - right.sequence;
 }
 
-export type { ComponentVersion, ModelConfiguration };
+export type { ComponentDescriptor, ModelConfiguration };

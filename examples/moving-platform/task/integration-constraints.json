@@ -1,5 +1,5 @@
 [
-  {"kind":"IntegrationConstraint","schemaVersion":1,"id":"integration_constraint_448456cafba5474720562bab","requirementId":"observation-moving-platform","projectId":"project_32639b9bbdbc9b6086c0b849","projectSnapshotHash":"046ecb751fe97743901ab8e7d462ed132c4ff761a72fef7d4b63c87efc755a91"},
-  {"kind":"IntegrationConstraint","schemaVersion":1,"id":"integration_constraint_84524a0bdc3f6c25617524a3","requirementId":"observation-endpoint-a","projectId":"project_32639b9bbdbc9b6086c0b849","projectSnapshotHash":"046ecb751fe97743901ab8e7d462ed132c4ff761a72fef7d4b63c87efc755a91"},
-  {"kind":"IntegrationConstraint","schemaVersion":1,"id":"integration_constraint_8b2f83ab32965da8bd6e8864","requirementId":"observation-endpoint-b","projectId":"project_32639b9bbdbc9b6086c0b849","projectSnapshotHash":"046ecb751fe97743901ab8e7d462ed132c4ff761a72fef7d4b63c87efc755a91"}
+  {"kind":"IntegrationConstraint","id":"integration_constraint_448456cafba5474720562bab","requirementId":"observation-moving-platform","projectId":"project_32639b9bbdbc9b6086c0b849","projectSnapshotHash":"046ecb751fe97743901ab8e7d462ed132c4ff761a72fef7d4b63c87efc755a91"},
+  {"kind":"IntegrationConstraint","id":"integration_constraint_84524a0bdc3f6c25617524a3","requirementId":"observation-endpoint-a","projectId":"project_32639b9bbdbc9b6086c0b849","projectSnapshotHash":"046ecb751fe97743901ab8e7d462ed132c4ff761a72fef7d4b63c87efc755a91"},
+  {"kind":"IntegrationConstraint","id":"integration_constraint_8b2f83ab32965da8bd6e8864","requirementId":"observation-endpoint-b","projectId":"project_32639b9bbdbc9b6086c0b849","projectSnapshotHash":"046ecb751fe97743901ab8e7d462ed132c4ff761a72fef7d4b63c87efc755a91"}
 ]

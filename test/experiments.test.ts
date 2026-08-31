@@ -18,12 +18,14 @@ async function taskArtifacts() {
   const [creatorPrompt, requirementsValue, acceptanceValue, definitionValue, configurationValue] = await Promise.all([
     readFile(join(TASK, "creator-prompt.txt"), "utf8"), readFile(join(TASK, "requirements.json"), "utf8"), readFile(join(TASK, "acceptance.json"), "utf8"), readFile(join(TASK, "evaluator/runtime-eval-definition.json"), "utf8"), readFile(join(TASK, "evaluator/runtime-evaluator-configuration.json"), "utf8")
   ]);
+  const runtimeEvalDefinition = JSON.parse(definitionValue) as RuntimeEvalDefinition;
+  const runtimeEvaluatorConfiguration = JSON.parse(configurationValue) as RuntimeEvaluatorConfiguration;
   return {
     creatorPrompt: creatorPrompt.trim(),
     requirementSet: JSON.parse(requirementsValue) as RequirementSet,
     acceptanceSpec: JSON.parse(acceptanceValue) as AcceptanceSpec,
-    runtimeEvalDefinition: JSON.parse(definitionValue) as RuntimeEvalDefinition,
-    runtimeEvaluatorConfiguration: JSON.parse(configurationValue) as RuntimeEvaluatorConfiguration
+    runtimeEvalDefinition,
+    runtimeEvaluatorConfiguration
   };
 }
 
@@ -60,7 +62,7 @@ test("ExperimentRegistration is deterministic, secret-free, and rejects a change
   assert.throws(() => assertExperimentRegistration({ ...first, budgets: { ...first.budgets, maxTurns: first.budgets.maxTurns + 1 } }));
   assert.throws(() => assertExperimentRegistration({ ...first, artifacts: { ...first.artifacts, requirementSetHash: contentHash("changed") } }));
   assert.throws(() => assertExperimentRegistration({ ...first, expected: { ...first.expected, sourceRoots: ["src/shared"] } }));
-  assert.throws(() => assertExperimentRegistration({ ...first, studio: { ...first.studio, pluginVersion: "forge-studio-plugin-7.0.0" } }));
+  assert.throws(() => assertExperimentRegistration({ ...first, studio: { ...first.studio, capabilitySetHash: "0".repeat(64) } }));
 });
 
 test("registered execution exposes only builder facts, propagates registration evidence, and fails closed before a drifted seed reaches a runtime", async () => {
@@ -101,7 +103,7 @@ test("Vertical Shuttle evaluator grades an authoritative moving envelope and rej
   const { runtimeEvalDefinition: definition } = await taskArtifacts();
   const plan = createStudioExecutionPlan({ purpose: "runtime_evaluation", capabilitySetId: STUDIO_CAPABILITY_SET.id, capabilitySetHash: STUDIO_CAPABILITY_SET.hash, binding: { runId: "runtime_run_vertical", correlationId: "runtime_correlation_vertical", sessionId: "session_vertical", projectId: "project_vertical", project: { name: "Vertical Shuttle", placeId: 0, universeId: 0 }, projectSnapshotHash: "a".repeat(64), candidateHash: "b".repeat(64) }, targets: definition.targets, calls: definition.calls, budget: definition.budget });
   const envelope = (moving: boolean): RuntimeObservationEnvelope => ({
-    kind: "RuntimeObservationEnvelope", schemaVersion: 1, executionPlanId: plan.id, executionPlanHash: plan.hash, binding: plan.binding, nonce: "vertical_shuttle_nonce_0123456789", nonceCommitment: contentHash("vertical_shuttle_nonce_0123456789"), authoritative: true, startedAt: "2026-08-31T00:00:00.000Z", endedAt: "2026-08-31T00:00:08.000Z", durationMs: 8_000,
+    kind: "RuntimeObservationEnvelope", executionPlanId: plan.id, executionPlanHash: plan.hash, binding: plan.binding, nonce: "vertical_shuttle_nonce_0123456789", nonceCommitment: contentHash("vertical_shuttle_nonce_0123456789"), authoritative: true, startedAt: "2026-08-31T00:00:00.000Z", endedAt: "2026-08-31T00:00:08.000Z", durationMs: 8_000, diagnostics: { errors: 0, warnings: 0, messageHashes: [], truncated: false },
     results: [
       { id: "call-01-resolve-lower-stop", capability: "instance.resolve", targetId: "target-lower-stop", status: "resolved", path: "Workspace/LowerStop", className: "Part" },
       { id: "call-02-position-lower-stop", capability: "base_part.position", targetId: "target-lower-stop", status: "ok", position: { x: 0, y: 2, z: 0 }, elapsedMs: 1 },

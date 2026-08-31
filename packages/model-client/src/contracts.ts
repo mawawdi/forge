@@ -67,13 +67,12 @@ export type ModelTurnResult =
 
 export interface ModelClientDescriptor {
   transport: string;
-  version: string;
   configuration: {
-    aiSdk: { package: string; version: string };
-    providerAdapter: { package: string; version: string };
+    aiSdk: { package: string };
+    providerAdapter: { package: string };
     routing: { only: string[]; allowFallbacks: false; requireParameters: true };
     reasoning: { effort: "medium"; exclude: false };
-    request: { steps: 1; toolChoice: "auto"; providerParallelToolCalls: "not_requested"; toolBatchExecution: "atomic_validate_then_sequential"; toolNameEncoding: "openai_function_slug_v1"; maxRetries: 0; telemetry: false; timeoutPolicy: "remaining_runtime_budget"; maxOutputTokensPerTurn: number };
+    request: { steps: 1; toolChoice: "auto"; providerParallelToolCalls: "not_requested"; toolBatchExecution: "atomic_validate_then_sequential"; toolNameEncoding: "openai_function_slug"; maxRetries: 0; telemetry: false; timeoutPolicy: "remaining_runtime_budget"; maxOutputTokensPerTurn: number };
     continuation: { maxBytes: number };
   };
 }

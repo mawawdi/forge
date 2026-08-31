@@ -77,11 +77,11 @@ test("AI SDK Core sends one locked-down OpenRouter step and replays opaque reaso
 
   const otherKey = await new OpenRouterModelClient({ apiKey: "different-secret", fetchImpl: async () => response({ content: null, reasoning_details: [REASONING_DETAIL], tool_calls: [{ id: "call-1", type: "function", function: { name: "project_list", arguments: "{}" } }] }, "tool_calls", "response-other-key") }).complete(REQUEST);
   assert.equal(otherKey.requestHash, first.requestHash);
-  assert.equal(client.descriptor.configuration.aiSdk.version, "7.0.85");
+  assert.equal(client.descriptor.configuration.aiSdk.package, "ai");
   assert.equal(client.descriptor.configuration.request.providerParallelToolCalls, "not_requested");
   assert.equal(client.descriptor.configuration.request.toolBatchExecution, "atomic_validate_then_sequential");
-  assert.equal(client.descriptor.configuration.request.toolNameEncoding, "openai_function_slug_v1");
-  assert.equal(client.descriptor.configuration.providerAdapter.version, "3.0.0");
+  assert.equal(client.descriptor.configuration.request.toolNameEncoding, "openai_function_slug");
+  assert.equal(client.descriptor.configuration.providerAdapter.package, "@openrouter/ai-sdk-provider");
 });
 
 test("AI SDK Core performs one HTTP attempt and normalizes bounded provider errors", async () => {

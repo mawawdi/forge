@@ -11,8 +11,7 @@ type ScriptObservation = { stableId: string, path: string, executionContext: str
 type RemoteObservation = { path: string, name: string, className: string, direction: string }
 type Observation = {
 	kind: string,
-	schemaVersion: number,
-	project: { name: string, placeId: number, universeId: number },
+		project: { name: string, placeId: number, universeId: number },
 	instances: {InstanceObservation},
 	scripts: {ScriptObservation},
 	remotes: {RemoteObservation},
@@ -37,7 +36,6 @@ end
 function ObservationRevision.material(observation: Observation): string
 	local parts = {}
 	append(parts, observation.kind)
-	append(parts, observation.schemaVersion)
 	append(parts, observation.project.name)
 	append(parts, observation.project.placeId)
 	append(parts, observation.project.universeId)
