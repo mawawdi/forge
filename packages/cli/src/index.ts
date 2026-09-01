@@ -201,7 +201,7 @@ async function experimentEvaluate(artifactPath: string | undefined, optionArgs: 
     printStudioSteps("registered experiment runtime evaluation", placePath);
     const discovery = await readStudioBridgeDiscovery();
     bridge = new StudioBridgeClient({ host: discovery.host, port: discovery.port, controlToken: discovery.controlToken });
-    const timeoutMs = options.timeoutMs ?? 120_000;
+    const timeoutMs = options.timeoutMs ?? 360_000;
     const session = await bridge.waitForSession(timeoutMs);
     const fresh = await requestFreshStudioEvidence(bridge, session, timeoutMs, "pre_play");
     assertCandidateLiveBinding(loaded.artifact.sourceFiles, fresh.state, definition.targets);
@@ -243,7 +243,7 @@ async function studioApiStatus(optionArgs: string[]): Promise<void> {
 async function studioCapabilities(optionArgs: string[]): Promise<void> {
   const options = parseStudioCapabilitiesOptions(optionArgs);
   if (!options.valid) {
-    process.stderr.write("Usage: forge studio capabilities [--class <RobloxClass>]\n");
+    process.stderr.write("Usage: forge studio capabilities [--class <RobloxClass>] [--query <text>]\n");
     process.exitCode = 2;
     return;
   }
@@ -253,6 +253,7 @@ async function studioCapabilities(optionArgs: string[]): Promise<void> {
     do {
       const page = studioCapabilityExplorerPage({
         ...(options.className ? { className: options.className } : {}),
+        ...(options.query ? { query: options.query } : {}),
         cursor,
         limit: 100,
       });
@@ -266,7 +267,10 @@ async function studioCapabilities(optionArgs: string[]): Promise<void> {
       catalog: summary.catalog,
       coverage: summary.coverage,
       manifest: summary.manifest,
-      selection: options.className ? { className: options.className } : {},
+      selection: {
+        ...(options.className ? { className: options.className } : {}),
+        ...(options.query ? { query: options.query } : {}),
+      },
       entries,
     }, null, 2)}\n`);
   } catch (error) {
@@ -292,7 +296,7 @@ async function studioCapabilityCanary(seedPath: string | undefined, optionArgs: 
     printStudioSteps("non-evaluative capability canary", placePath);
     const discovery = await readStudioBridgeDiscovery();
     bridge = new StudioBridgeClient({ host: discovery.host, port: discovery.port, controlToken: discovery.controlToken });
-    const timeoutMs = options.timeoutMs ?? 120_000;
+    const timeoutMs = options.timeoutMs ?? 360_000;
     const session = await bridge.waitForSession(timeoutMs);
     const fresh = await requestFreshStudioEvidence(bridge, session, timeoutMs, "pre_play");
     const plan = createStudioExecutionPlan({ purpose: "capability_canary", binding: { runId: `capability_canary_${randomUUID()}`, correlationId: `canary_correlation_${randomUUID()}`, sessionId: session.sessionId, projectId: session.projectId, project: session.project, projectStateRevisionHash: fresh.revision.stateHash }, targets, calls, budget, observationWindowMs: 0 });
@@ -359,9 +363,29 @@ async function readStdin(): Promise<string> { const chunks: Buffer[] = []; for a
 function parseExperimentRegisterOptions(values: string[]): { valid: boolean; promptPath?: string; requirementsPath?: string; acceptancePath?: string; definitionPath?: string; configurationPath?: string; model?: string; outputPath?: string; name?: string; hypothesis?: string } { let promptPath: string | undefined; let requirementsPath: string | undefined; let acceptancePath: string | undefined; let definitionPath: string | undefined; let configurationPath: string | undefined; let model: string | undefined; let outputPath: string | undefined; let name: string | undefined; let hypothesis: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--prompt-file" && next) promptPath = next; else if (option === "--requirements" && next) requirementsPath = next; else if (option === "--acceptance" && next) acceptancePath = next; else if (option === "--runtime-plan" && next) definitionPath = next; else if (option === "--runtime-configuration" && next) configurationPath = next; else if (option === "--model" && next) model = next; else if (option === "--output" && next) outputPath = next; else if (option === "--name" && next) name = next; else if (option === "--hypothesis" && next) hypothesis = next; else return { valid: false }; index += 1; } return { valid: true, ...(promptPath ? { promptPath } : {}), ...(requirementsPath ? { requirementsPath } : {}), ...(acceptancePath ? { acceptancePath } : {}), ...(definitionPath ? { definitionPath } : {}), ...(configurationPath ? { configurationPath } : {}), ...(model ? { model } : {}), ...(outputPath ? { outputPath } : {}), ...(name ? { name } : {}), ...(hypothesis ? { hypothesis } : {}) }; }
 function parseExperimentBuildOptions(values: string[]): { valid: boolean; registrationPath?: string; runDirectory?: string; traceDirectory?: string } { let registrationPath: string | undefined; let runDirectory: string | undefined; let traceDirectory: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--registration" && next) registrationPath = next; else if (option === "--run-dir" && next) runDirectory = next; else if (option === "--trace-dir" && next) traceDirectory = next; else if (option === "--format" && next === "json") { index += 1; continue; } else return { valid: false }; index += 1; } return { valid: true, ...(registrationPath ? { registrationPath } : {}), ...(runDirectory ? { runDirectory } : {}), ...(traceDirectory ? { traceDirectory } : {}) }; }
 function parseExperimentEvaluateOptions(values: string[]): { valid: boolean; registrationPath?: string; timeoutMs?: number; runDirectory?: string; traceDirectory?: string; proofDirectory?: string } { let registrationPath: string | undefined; let timeoutMs: number | undefined; let runDirectory: string | undefined; let traceDirectory: string | undefined; let proofDirectory: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--registration" && next) registrationPath = next; else if (option === "--timeout-ms" && next && /^\d+$/.test(next)) timeoutMs = Number(next); else if (option === "--run-dir" && next) runDirectory = next; else if (option === "--trace-dir" && next) traceDirectory = next; else if (option === "--proof-dir" && next) proofDirectory = next; else if (option === "--format" && next === "json") { index += 1; continue; } else return { valid: false }; index += 1; } return { valid: true, ...(registrationPath ? { registrationPath } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(runDirectory ? { runDirectory } : {}), ...(traceDirectory ? { traceDirectory } : {}), ...(proofDirectory ? { proofDirectory } : {}) }; }
-function parseStudioCapabilitiesOptions(values: string[]): { valid: boolean; className?: string } { if (values.length === 0) return { valid: true }; if (values.length !== 2 || values[0] !== "--class" || !values[1]) return { valid: false }; return { valid: true, className: values[1] }; }
+function parseStudioCapabilitiesOptions(values: string[]): { valid: boolean; className?: string; query?: string } {
+  let className: string | undefined;
+  let query: string | undefined;
+  for (let index = 0; index < values.length; index += 2) {
+    const flag = values[index];
+    const value = values[index + 1];
+    if (!value || (flag !== "--class" && flag !== "--query")) return { valid: false };
+    if (flag === "--class") {
+      if (className !== undefined) return { valid: false };
+      className = value;
+    } else {
+      if (query !== undefined) return { valid: false };
+      query = value;
+    }
+  }
+  return {
+    valid: true,
+    ...(className !== undefined ? { className } : {}),
+    ...(query !== undefined ? { query } : {}),
+  };
+}
 function parseStudioCanaryOptions(values: string[]): { valid: boolean; planPath?: string; timeoutMs?: number; runDirectory?: string } { let planPath: string | undefined; let timeoutMs: number | undefined; let runDirectory: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--plan" && next) planPath = next; else if (option === "--timeout-ms" && next && /^\d+$/.test(next)) timeoutMs = Number(next); else if (option === "--run-dir" && next) runDirectory = next; else if (option === "--format" && next === "json") { index += 1; continue; } else return { valid: false }; index += 1; } return { valid: true, ...(planPath ? { planPath } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(runDirectory ? { runDirectory } : {}) }; }
-function usage(): void { process.stdout.write(`Forge commands:\n  forge creator serve --model <exact-model-id>\n  forge creator start (--prompt <request> | --prompt-file <file-or->)\n  forge creator status [session-id]\n  forge creator replay-verification <session-id> [--verification <id>] [--session-dir <path>]\n  forge creator replay-mutation <session-id> [--attempt <id>] [--session-dir <path>]\n  forge creator approve-plan|reject-plan <session-id>\n  forge creator approve-changes|reject-changes <session-id>\n  forge creator start-checks|cancel-changes <session-id>\n  forge creator accept|reject-result <session-id> --report <text>\n  forge experiment register <seed> --prompt-file <file> --requirements <file> --acceptance <file> --runtime-plan <file> --runtime-configuration <file> --model <exact-model-id> --output <registration.json>\n  forge experiment build <seed> --registration <registration.json>\n  forge experiment evaluate <artifact> --registration <registration.json>\n  forge studio api-status\n  forge studio capabilities [--class <RobloxClass>]\n  forge studio canary <seed> --plan <file>\n  forge studio bridge\n  forge verify <project>\n  forge trace show <trace-id>\n`); }
+function usage(): void { process.stdout.write(`Forge commands:\n  forge creator serve --model <exact-model-id>\n  forge creator start (--prompt <request> | --prompt-file <file-or->)\n  forge creator status [session-id]\n  forge creator replay-verification <session-id> [--verification <id>] [--session-dir <path>]\n  forge creator replay-mutation <session-id> [--attempt <id>] [--session-dir <path>]\n  forge creator approve-plan|reject-plan <session-id>\n  forge creator approve-changes|reject-changes <session-id>\n  forge creator start-checks|cancel-changes <session-id>\n  forge creator accept|reject-result <session-id> --report <text>\n  forge experiment register <seed> --prompt-file <file> --requirements <file> --acceptance <file> --runtime-plan <file> --runtime-configuration <file> --model <exact-model-id> --output <registration.json>\n  forge experiment build <seed> --registration <registration.json>\n  forge experiment evaluate <artifact> --registration <registration.json>\n  forge studio api-status\n  forge studio capabilities [--class <RobloxClass>] [--query <text>]\n  forge studio canary <seed> --plan <file>\n  forge studio bridge\n  forge verify <project>\n  forge trace show <trace-id>\n`); }
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 

@@ -82,22 +82,22 @@ export interface BudgetPolicy {
   maxOutputTokens: number;
 }
 
-export const INITIAL_EXPERIMENT_BUDGETS: BudgetPolicy = {
-  maxTurns: 12,
-  maxToolCalls: 48,
-  maxWrites: 12,
-  maxVerifierCalls: 4,
-  maxChangedFiles: 6,
-  maxAddedLines: 520,
-  maxRemovedLines: 140,
-  maxBytesPerFile: 48_000,
-  maxChangedSourceBytes: 96_000,
-  maxToolResultBytes: 256 * 1024,
-  maxDurationMs: 8 * 60_000,
-  maxBudgetUsd: 2,
-  maxInputTokens: 100_000,
-  maxOutputTokens: 20_000,
-};
+export const DEFAULT_AGENT_BUDGETS: BudgetPolicy = Object.freeze({
+  maxTurns: 32,
+  maxToolCalls: 256,
+  maxWrites: 128,
+  maxVerifierCalls: 16,
+  maxChangedFiles: 32,
+  maxAddedLines: 5_000,
+  maxRemovedLines: 2_000,
+  maxBytesPerFile: 128_000,
+  maxChangedSourceBytes: 1024 * 1024,
+  maxToolResultBytes: 4 * 1024 * 1024,
+  maxDurationMs: 30 * 60_000,
+  maxBudgetUsd: 10,
+  maxInputTokens: 1_000_000,
+  maxOutputTokens: 128_000,
+});
 
 export interface HarnessConfigurationInput {
   systemPrompt: string;
@@ -1236,7 +1236,7 @@ export async function prepareAgentBuild(
     throw new Error(
       "Creator prompt must have hash-matched creator requirement evidence",
     );
-  const budgets = { ...(request.budgets ?? INITIAL_EXPERIMENT_BUDGETS) };
+  const budgets = { ...(request.budgets ?? DEFAULT_AGENT_BUDGETS) };
   const requirementView = resolveRequirementView(request.requirementSet, {
     phase: "build",
     environment: request.environment ?? "production",

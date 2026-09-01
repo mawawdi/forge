@@ -1,0 +1,237 @@
+{
+  "name": "ForgeCreatorOrbitalFreightAirlock",
+  "tree": {
+    "$className": "DataModel",
+    "Workspace": {
+      "$className": "Workspace",
+      "OrbitalFreightAirlock": {
+        "$className": "Model",
+        "$attributes": {
+          "_forgeStableId": "orbital-airlock-system"
+        },
+        "ChamberFloor": {
+          "$className": "Part",
+          "$attributes": {
+            "_forgeStableId": "orbital-airlock-chamber-floor"
+          },
+          "$properties": {
+            "Anchored": true,
+            "CFrame": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "Color": [0.16, 0.2, 0.25],
+            "Size": [24, 1, 24]
+          }
+        },
+        "OuterDoor": {
+          "$className": "Part",
+          "$attributes": {
+            "_forgeStableId": "orbital-airlock-outer-door"
+          },
+          "$properties": {
+            "Anchored": true,
+            "CFrame": [0, 12, -10, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "Color": [0.22, 0.3, 0.38],
+            "Size": [10, 8, 1]
+          }
+        },
+        "InnerDoor": {
+          "$className": "Part",
+          "$attributes": {
+            "_forgeStableId": "orbital-airlock-inner-door"
+          },
+          "$properties": {
+            "Anchored": true,
+            "CFrame": [0, 4, 10, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "Color": [0.22, 0.3, 0.38],
+            "Size": [10, 8, 1]
+          }
+        },
+        "PowerConsole": {
+          "$className": "Part",
+          "$attributes": {
+            "_forgeStableId": "orbital-airlock-power-console"
+          },
+          "$properties": {
+            "Anchored": true,
+            "CFrame": [-6, 2, -4, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "Color": [0.18, 0.24, 0.31],
+            "Size": [3, 3, 2]
+          }
+        },
+        "CoolantValve": {
+          "$className": "Part",
+          "$attributes": {
+            "_forgeStableId": "orbital-airlock-coolant-valve"
+          },
+          "$properties": {
+            "Anchored": true,
+            "CFrame": [0, 2, -4, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "Color": [0.12, 0.42, 0.56],
+            "Size": [3, 3, 2]
+          }
+        },
+        "CargoScanner": {
+          "$className": "Part",
+          "$attributes": {
+            "_forgeStableId": "orbital-airlock-cargo-scanner"
+          },
+          "$properties": {
+            "Anchored": true,
+            "CFrame": [6, 2, -4, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "Color": [0.46, 0.28, 0.62],
+            "Size": [3, 3, 2]
+          }
+        },
+        "EmergencyConsole": {
+          "$className": "Part",
+          "$attributes": {
+            "_forgeStableId": "orbital-airlock-emergency-console"
+          },
+          "$properties": {
+            "Anchored": true,
+            "CFrame": [0, 2, 5, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "Color": [0.7, 0.12, 0.16],
+            "Size": [3, 3, 2]
+          }
+        },
+        "CargoCrate": {
+          "$className": "Part",
+          "$attributes": {
+            "_forgeStableId": "orbital-airlock-cargo-crate"
+          },
+          "$properties": {
+            "Anchored": true,
+            "CFrame": [0, 2, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "Color": [0.72, 0.42, 0.14],
+            "Size": [4, 3, 4]
+          }
+        },
+        "Indicators": {
+          "$className": "Model",
+          "$attributes": {
+            "_forgeStableId": "orbital-airlock-indicators"
+          },
+          "Power": {
+            "$className": "Part",
+            "$attributes": {
+              "_forgeStableId": "orbital-airlock-indicator-power"
+            },
+            "$properties": {
+              "Anchored": true,
+              "CFrame": [-4, 7, 8, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+              "Color": [0.16, 0.18, 0.2],
+              "Size": [2, 2, 1]
+            }
+          },
+          "Pressure": {
+            "$className": "Part",
+            "$attributes": {
+              "_forgeStableId": "orbital-airlock-indicator-pressure"
+            },
+            "$properties": {
+              "Anchored": true,
+              "CFrame": [0, 7, 8, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+              "Color": [0.16, 0.18, 0.2],
+              "Size": [2, 2, 1]
+            }
+          },
+          "Clearance": {
+            "$className": "Part",
+            "$attributes": {
+              "_forgeStableId": "orbital-airlock-indicator-clearance"
+            },
+            "$properties": {
+              "Anchored": true,
+              "CFrame": [4, 7, 8, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+              "Color": [0.16, 0.18, 0.2],
+              "Size": [2, 2, 1]
+            }
+          }
+        },
+        "DoorFrames": {
+          "$className": "Model",
+          "$attributes": {
+            "_forgeStableId": "orbital-airlock-door-frames"
+          },
+          "OuterHeader": {
+            "$className": "Part",
+            "$attributes": {
+              "_forgeStableId": "orbital-airlock-outer-header"
+            },
+            "$properties": {
+              "Anchored": true,
+              "CFrame": [0, 9, -10.5, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+              "Color": [0.08, 0.11, 0.15],
+              "Size": [14, 2, 2]
+            }
+          },
+          "InnerHeader": {
+            "$className": "Part",
+            "$attributes": {
+              "_forgeStableId": "orbital-airlock-inner-header"
+            },
+            "$properties": {
+              "Anchored": true,
+              "CFrame": [0, 9, 10.5, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+              "Color": [0.08, 0.11, 0.15],
+              "Size": [14, 2, 2]
+            }
+          }
+        }
+      },
+      "PreservedScenery": {
+        "$className": "Model",
+        "$attributes": {
+          "_forgeStableId": "orbital-airlock-preserved-scenery"
+        },
+        "ObservationDeck": {
+          "$className": "Part",
+          "$attributes": {
+            "_forgeStableId": "orbital-airlock-observation-deck"
+          },
+          "$properties": {
+            "Anchored": true,
+            "CFrame": [20, 2, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "Color": [0.1, 0.2, 0.32],
+            "Size": [12, 1, 16]
+          }
+        },
+        "NavigationBeacon": {
+          "$className": "Part",
+          "$attributes": {
+            "_forgeStableId": "orbital-airlock-navigation-beacon"
+          },
+          "$properties": {
+            "Anchored": true,
+            "CFrame": [20, 8, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "Color": [0.12, 0.32, 0.58],
+            "Size": [2, 12, 2]
+          }
+        }
+      }
+    },
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "AirlockSystem": {
+        "$className": "Folder",
+        "$attributes": {
+          "_forgeStableId": "orbital-airlock-network-root"
+        }
+      }
+    },
+    "StarterGui": {
+      "$className": "StarterGui",
+      "AirlockHUD": {
+        "$className": "ScreenGui",
+        "$attributes": {
+          "_forgeStableId": "orbital-airlock-hud"
+        },
+        "Panel": {
+          "$className": "Frame",
+          "$attributes": {
+            "_forgeStableId": "orbital-airlock-hud-panel"
+          }
+        }
+      }
+    }
+  }
+}

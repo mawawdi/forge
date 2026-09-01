@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { INITIAL_EXPERIMENT_BUDGETS } from "../../agent-runtime/src/index.js";
+import { DEFAULT_AGENT_BUDGETS } from "../../agent-runtime/src/index.js";
 import {
   ImmutableJsonArtifactStore,
   type ArtifactReference,
@@ -39,6 +39,7 @@ import {
 import {
   advanceSession,
   assertCreatorControlActionBinding,
+  assertCreatorRequestArtifact,
   assertCreatorVerificationRecord,
   createCreatorControlView,
   createCreatorApproval,
@@ -47,7 +48,6 @@ import {
   createStudioOwnershipMap,
   loadCreatorBundle,
   persistCreatorBundle,
-  persistCreatorPrompt,
   serializeCreatorChangeSet,
   type CreatorChangeSet,
   type CreatorCheckpoint,
@@ -291,7 +291,7 @@ export class CreatorSessionCoordinator {
         id: bundle.session.id,
         hash: bundle.session.hash,
         projectId: bundle.session.projectId,
-        prompt: await this.prompt(bundle.session.id),
+        prompt: await this.prompt(bundle),
         promptHash: bundle.session.promptHash,
         status: bundle.session.status,
         createdAt: bundle.session.createdAt,
@@ -775,8 +775,15 @@ export class CreatorSessionCoordinator {
         revisionHash: fresh.revision.stateHash,
         ownership,
       });
+      const creatorRequest = await this.artifactStore.write({
+        kind: "CreatorRequest",
+        sessionId: session.id,
+        promptHash: session.promptHash,
+        text: canonicalPrompt,
+      });
       let bundle: CreatorSessionBundle = {
         session,
+        creatorRequest,
         ownership,
         observation: fresh.state,
         observationHistory: [
@@ -793,11 +800,6 @@ export class CreatorSessionCoordinator {
         agentRuns: [],
       };
       this.bundles.set(session.id, bundle);
-      await persistCreatorPrompt(
-        session,
-        canonicalPrompt,
-        this.input.directory,
-      );
       await this.persist(bundle);
       await this.publishView(
         bundle,
@@ -809,7 +811,7 @@ export class CreatorSessionCoordinator {
           ownership,
           observation: fresh.state,
           prompt: canonicalPrompt,
-          budgets: INITIAL_EXPERIMENT_BUDGETS,
+          budgets: DEFAULT_AGENT_BUDGETS,
         });
         bundle = {
           ...bundle,
@@ -899,7 +901,7 @@ export class CreatorSessionCoordinator {
       bundle,
       "Building a virtual Studio change set. The live place remains unchanged.",
     );
-    const prompt = await this.prompt(session.id);
+    const prompt = await this.prompt(bundle);
     try {
       const built = await this.input.worker.build({
         session,
@@ -908,7 +910,7 @@ export class CreatorSessionCoordinator {
         prompt,
         plan,
         planApproval: approval,
-        budgets: INITIAL_EXPERIMENT_BUDGETS,
+        budgets: DEFAULT_AGENT_BUDGETS,
       });
       bundle = {
         ...bundle,
@@ -1032,7 +1034,10 @@ export class CreatorSessionCoordinator {
       },
       targets: charterExecution.targets,
       calls: charterExecution.calls,
-      budget: { maxExecutionMs: 20_000, maxResultBytes: 64 * 1024 },
+      budget: {
+        maxExecutionMs: STUDIO_CAPABILITY_MANIFEST.limits.maximumRuntimeMs,
+        maxResultBytes: STUDIO_CAPABILITY_MANIFEST.limits.maximumRuntimeResultBytes,
+      },
       observationWindowMs: CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS,
     });
     const beforeProjection = compileProjectStateProjection({
@@ -1410,7 +1415,10 @@ export class CreatorSessionCoordinator {
         },
         targets: charterExecution.targets,
         calls: charterExecution.calls,
-        budget: { maxExecutionMs: 20_000, maxResultBytes: 64 * 1024 },
+        budget: {
+          maxExecutionMs: STUDIO_CAPABILITY_MANIFEST.limits.maximumRuntimeMs,
+          maxResultBytes: STUDIO_CAPABILITY_MANIFEST.limits.maximumRuntimeResultBytes,
+        },
         observationWindowMs: CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS,
       });
       const executionPlanArtifact = await this.artifactStore.write(executionPlan);
@@ -2048,7 +2056,7 @@ export class CreatorSessionCoordinator {
     );
     if (!planApproval)
       throw new Error("Repair requires the original plan approval");
-    const prompt = await this.prompt(bundle.session.id);
+    const prompt = await this.prompt(bundle);
     if (
       verification.status !== "failed" ||
       verification.failureFacts.length === 0 ||
@@ -2070,7 +2078,7 @@ export class CreatorSessionCoordinator {
       verificationFeedback: verification.failureFacts.map(
         (fact) => fact.statement,
       ),
-      budgets: INITIAL_EXPERIMENT_BUDGETS,
+      budgets: DEFAULT_AGENT_BUDGETS,
     });
     bundle = {
       ...bundle,
@@ -2908,29 +2916,29 @@ export class CreatorSessionCoordinator {
     );
   }
   private timeout(): number {
-    return this.input.timeoutMs ?? 180_000;
+    return this.input.timeoutMs ?? 360_000;
   }
-  private async prompt(sessionId: string): Promise<string> {
-    return readFile(
-      join(resolve(this.input.directory), `${sessionId}.prompt.txt`),
-      "utf8",
+  private async prompt(bundle: CreatorSessionBundle): Promise<string> {
+    const request = await this.artifactStore.read(
+      bundle.creatorRequest,
+      assertCreatorRequestArtifact,
     );
+    if (
+      request.sessionId !== bundle.session.id ||
+      request.promptHash !== bundle.session.promptHash
+    )
+      throw new Error("Creator request artifact does not bind its session");
+    return request.text;
   }
   private async view(
     bundle: CreatorSessionBundle,
     detailValue: string,
   ): Promise<CreatorControlView> {
-    const prompt = await this.prompt(bundle.session.id);
+    const prompt = await this.prompt(bundle);
     const changeSet = activeChangeSet(bundle);
     const verification = bundle.verifications.at(-1);
-    const [promptArtifact, planArtifact, changeSetArtifact, verificationArtifact] =
+    const [planArtifact, changeSetArtifact, verificationArtifact] =
       await Promise.all([
-        this.artifactStore.write({
-          kind: "CreatorPrompt",
-          sessionId: bundle.session.id,
-          promptHash: bundle.session.promptHash,
-          text: prompt,
-        }),
         bundle.plan ? this.artifactStore.write(bundle.plan) : undefined,
         changeSet ? this.artifactStore.write(changeSet) : undefined,
         verification ? this.artifactStore.write(verification) : undefined,
@@ -2949,7 +2957,7 @@ export class CreatorSessionCoordinator {
       activeMutation,
     );
     const artifacts = {
-      prompt: promptArtifact,
+      prompt: bundle.creatorRequest,
       ...(planArtifact ? { plan: planArtifact } : {}),
       ...(changeSetArtifact ? { changeSet: changeSetArtifact } : {}),
       ...(verification?.executionPlan

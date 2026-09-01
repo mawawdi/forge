@@ -23,8 +23,9 @@ import {
   STUDIO_CAPABILITY_MANIFEST,
   STUDIO_CAPABILITY_MANIFEST_HASH,
   STUDIO_CONNECTOR_BUILD_HASH,
+  getRobloxApiCatalogLookupEntry,
   type RobloxApiCatalogCounts,
-  type RobloxApiCatalogEntryKind,
+  type RobloxApiCatalogLookupEntry,
   type StudioCapabilityDisposition,
   type StudioCapabilityReason,
 } from "../../studio-evidence/src/index.js";
@@ -80,16 +81,8 @@ export interface StudioCatalogSummaryView {
   };
 }
 
-export interface StudioCapabilityExplorerEntryView {
-  readonly catalogEntryId: string;
-  readonly entryKind: RobloxApiCatalogEntryKind;
-  readonly owner?: string;
-  readonly name: string;
-  readonly disposition: StudioCapabilityDisposition;
-  readonly reason: StudioCapabilityReason;
-  readonly authoringGroup?: string;
-  readonly codec?: string;
-  readonly inheritedBy?: readonly string[];
+export interface StudioCapabilityExplorerEntryView
+  extends RobloxApiCatalogLookupEntry {
   /** The explicit manifest proof route, present only for authorable properties. */
   readonly proofObligations?: readonly string[];
 }
@@ -503,23 +496,18 @@ export function studioCapabilityExplorerPage(
 function capabilityExplorerEntry(
   entry: (typeof STUDIO_CAPABILITY_COVERAGE_REPORT.entries)[number],
 ): StudioCapabilityExplorerEntryView {
+  const catalogEntry = getRobloxApiCatalogLookupEntry(entry.catalogEntryId);
+  if (!catalogEntry)
+    throw new Error(
+      `Pinned Roblox API metadata is missing for ${entry.catalogEntryId}`,
+    );
   const proofObligations = manifestProofObligations(
     entry.owner,
     entry.name,
     entry.inheritedBy,
   );
   return {
-    catalogEntryId: entry.catalogEntryId,
-    entryKind: entry.entryKind,
-    ...(entry.owner !== undefined ? { owner: entry.owner } : {}),
-    name: entry.name,
-    disposition: entry.disposition,
-    reason: entry.reason,
-    ...(entry.authoringGroup !== undefined
-      ? { authoringGroup: entry.authoringGroup }
-      : {}),
-    ...(entry.codec !== undefined ? { codec: entry.codec } : {}),
-    ...(entry.inheritedBy !== undefined ? { inheritedBy: entry.inheritedBy } : {}),
+    ...catalogEntry,
     ...(proofObligations !== undefined ? { proofObligations } : {}),
   };
 }

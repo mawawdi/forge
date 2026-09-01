@@ -18,13 +18,15 @@ rather than scraping rendered pages.
 The source was freshly resolved on 2026-09-01:
 
 - repository: `https://github.com/Roblox/creator-docs.git`;
-- commit: `529a24ff2aa9896dad50fc12268717210ba3127d`;
+- commit: `d025c96bdb1c81570221997092fbe0ad94b5337c`;
 - engine reference root: `content/en-us/reference/engine`;
 - tagged sorted-path-and-bytes SHA-256:
-  `b62066ef0fa92c4be5f8a6e0681cd899b4a88a30571a410900a75de98a987315`;
-- 638 class files, 48 datatype files, and 518 enum files;
+  `6df2b67ba4e5fdc4d24f245ee159a64a6575d7eea37f0819107141dfc9716d04`;
+- 638 class files, 48 datatype files, 518 enum files, 2 global-scope files,
+  and 11 standard-library files;
 - 2,864 class properties, 1,562 class methods, 393 class events, 13 class
-  callbacks, 410 datatype member occurrences, and 3,003 enum items.
+  callbacks, 410 datatype member occurrences, 3,003 enum items, 50 globals,
+  and 175 standard-library members.
 
 The checked-in source descriptor, normalized catalog, and content hashes make
 this an inspectable input. Ordinary generation and tests are offline. Updating
@@ -35,15 +37,29 @@ together.
 ## Implemented identities and coverage
 
 The normalized catalog has content hash
-`e4d89b5a42f7587f0740d9ee5833e5ecfbb06ef2b212eba1aa4ee037e595af5b`.
-It contains 1,204 type entries and 8,245 member occurrences. The generated
-coverage report classifies all 9,449 exactly once and has content hash
-`a9e2363ed8578edbf42ae81f811fc83add294e9d3ec640ae9b2228ab6b926a1d`.
+`142406530e50b9c65fee0d7792e48aa22001e8697399820b43382dc5fdfe490e`.
+It contains 1,215 class/datatype/enum/library entries and 8,470 member/global
+occurrences. The generated coverage report classifies all 9,685 exactly once
+and has content hash
+`0edebaf18174ae59ef01595340d0c461021084a3cc0b281de61ec23af39cdd5e`.
 Its current proof-closed manifest has hash
-`b27c84c59df3ca520dc0247360d2e0d00282ed76bc4378e97fb11e0ceb54fc2f`
+`6a190dc414c6ed537e462118c46ae3f3e146494c75599f3578ca32a2ff47636f`
 and enables 33 classes with 183 distinct writable properties. Inherited
 applicability produces 209 authorable coverage rows; it does not create 209
 separate manifest grants.
+
+The exhaustive partition is 209 `authorable`, 16 `observable_only`, 7,986
+`source_only`, and 1,474 `unsupported`. Source-only rows are nondeprecated and
+script-accessible according to the pinned official metadata; creator agents can
+query their exact signature, security/capability context, and YAML provenance
+for bounded Luau authoring. This does not create a typed Studio writer or an
+engine-behavior proof. Unsupported rows are retained and searchable with
+specific deprecated, hidden/NotScriptable, or security-gated reasons.
+For classes specifically, the partition is 33 proof-closed direct-authoring
+classes, 554 current source-API classes, and 51 classes that Roblox marks
+deprecated. Abstract classes and service roots are source APIs rather than being
+misreported as unsupported merely because Forge cannot create them with a
+transactional `Instance.new` operation.
 
 The current policy groups containers, scripts, remotes, value objects, 3D
 instances, UI, and effects/audio. It adds bounded compound codecs and stable
@@ -52,6 +68,16 @@ disabled. Five fixed runtime capabilities cover resolution, point position,
 position series, manifest-property observation, and manifest-property series.
 The CLI and dashboard expose the full accountability record without turning it
 into an alternate authoring interface.
+
+Capacity is deliberately generic rather than curated per class, fixture, or
+mechanic. The tracked policy sets one Studio ceiling for every creator run,
+registered evaluation, canary, evidence collection, and fixed runner: 128
+operations, 16,384 projected facts, 64 runtime targets, 128 runtime calls,
+five minutes, 512 KiB of runtime results, 128 samples per series, 2,048
+project-state instances, and 8 MiB of state evidence. The creator product
+reserves 90 seconds within that ceiling when human interaction is required.
+These bounds contain the trust boundary; they are not a claim-specific
+capability allowlist or a fixture-selected budget.
 
 Offline checks recompute the catalog, coverage, manifest, generated
 TypeScript/Luau dispatch, and canonical vectors. Refresh is a distinct explicit

@@ -46,7 +46,8 @@ The repository now implements the product-shaped vertical slice plus the closed 
 - a React evidence workbench with session history, five coordinator-produced stages, exact artifacts, Studio pairing and consent, required final report, explicit error/recovery states, keyboard-visible controls, reduced motion, and responsive stacking;
 - a thin Studio connector with creator workflow controls and protocol messages removed while pairing, observation, typed mutation, Play Solo, diagnostics, commit/cancel, and guarded undo remain;
 - approve-and-apply and one-click creator-authorized Play Solo initiation, while retaining the distinct consent boundaries;
-- pre-mutation compilation of dependency-ordered runtime proof programs, persisted revision-bound execution plans, and a 15-second creator-interaction observation window inside the 20-second Studio budget;
+- pre-mutation compilation of dependency-ordered runtime proof programs, persisted revision-bound execution plans, and a 90-second creator-interaction observation window inside the common generated five-minute Studio ceiling;
+- one non-curated default agent budget for creator planning/building/repair and unoverridden registered runs, plus one generated Studio limit policy shared by creator checks, registered evaluation, canaries, evidence collection, and the fixed runner;
 - connector build identity over the manifest, protocol, plugin project, and all authored plugin source, so runtime-executor changes cannot pair as the old build;
 - one current clean-break artifact shape throughout Forge, with tagged canonical hashes and generated manifest identity.
 
@@ -56,11 +57,11 @@ The automated suite covers the corrected invalid proposal, bounded planner inspe
 
 The intended creator path needs the open Studio place and the prompt. It does not need `requirements.json`, `acceptance.json`, evaluator JSON, a prepared data plan, or a source-root manifest.
 
-`examples/status-beacon` remains the historical accepted live-session seed. `examples/door-control` is the distinct current seed. Its JSON exists only to reproducibly build a place containing `Workspace/DoorAssembly/Door`, `ControlPanel`, and `Workspace/PreservedScenery`; both Rojo seeds carry deterministic `_forgeStableId` attributes so complete state evidence never mutates a place merely to establish identity. Once opened, Forge consumes the Studio evidence envelope plus this exact prompt:
+`examples/status-beacon` remains the historical accepted live-session seed. `examples/door-control` is the distinct completed closed-evidence seed. Its JSON exists only to reproducibly build a place containing `Workspace/DoorAssembly/Door`, `ControlPanel`, and `Workspace/PreservedScenery`; both Rojo seeds carry deterministic `_forgeStableId` attributes so complete state evidence never mutates a place merely to establish identity. Once opened, Forge consumes the Studio evidence envelope plus this exact prompt:
 
 > Add a ProximityPrompt to Workspace/DoorAssembly/ControlPanel labeled “Toggle Door”. Each time a player uses it, move Workspace/DoorAssembly/Door straight up 8 studs to open or back to its starting position to close. Use server-authoritative code, keep the door anchored, and preserve Workspace/PreservedScenery.
 
-No solution is present. No task or evaluator package exists for the fixture.
+No solution is present. No task or evaluator package exists for the fixture. `examples/orbital-freight-airlock` is the separate next seed: an interconnected physical airlock, empty networking folder, and empty HUD panel with no prompts, remotes, source, controls, evaluator, or prepared behavior. Its exact prompt and creator-run sequence live in [the fixture README](../examples/orbital-freight-airlock/README.md).
 
 ## Accepted live creator evidence
 
@@ -119,15 +120,15 @@ The machine evidence recorded at the time proved the exact approved mutation, co
 
 The offline capability-accountability milestone is implemented against the freshly pinned official source:
 
-- official `Roblox/creator-docs` commit `529a24ff2aa9896dad50fc12268717210ba3127d`, exact engine-reference tree hash `b62066ef0fa92c4be5f8a6e0681cd899b4a88a30571a410900a75de98a987315`;
-- normalized catalog hash `e4d89b5a42f7587f0740d9ee5833e5ecfbb06ef2b212eba1aa4ee037e595af5b`, covering 638 classes, 48 datatypes, 518 enums, and their complete documented members/items;
-- coverage hash `a9e2363ed8578edbf42ae81f811fc83add294e9d3ec640ae9b2228ab6b926a1d`, with exactly 9,449 unique classified entries: 1,204 types and 8,245 member occurrences;
-- current manifest hash `b27c84c59df3ca520dc0247360d2e0d00282ed76bc4378e97fb11e0ceb54fc2f`, enabling 33 coherent classes and 183 distinct proof-closed writable properties. Inheritance expands those properties to 209 authorable catalog rows without duplicating the manifest authority;
+- official `Roblox/creator-docs` commit `d025c96bdb1c81570221997092fbe0ad94b5337c`, exact five-directory engine-reference tree hash `6df2b67ba4e5fdc4d24f245ee159a64a6575d7eea37f0819107141dfc9716d04`;
+- normalized catalog hash `142406530e50b9c65fee0d7792e48aa22001e8697399820b43382dc5fdfe490e`, covering all 638 classes, 48 datatypes, 518 enums, 50 globals, 11 standard libraries, and their complete documented members/items;
+- coverage hash `0edebaf18174ae59ef01595340d0c461021084a3cc0b281de61ec23af39cdd5e`, with exactly 9,685 unique classified entries: 209 direct-authoring rows, 16 observable codec rows, 7,986 nondeprecated source-API rows, and 1,474 deprecated, hidden/NotScriptable, or security-gated restricted rows;
+- current manifest hash `6a190dc414c6ed537e462118c46ae3f3e146494c75599f3578ca32a2ff47636f`, enabling 33 coherent classes and 183 distinct proof-closed writable properties. Inheritance expands those properties to 209 authorable catalog rows without duplicating the manifest authority;
 - class-aware catalog/member resolution, 25 canonical codec tags with cross-language TypeScript/Luau vectors, stable class-constrained Instance references with an explicit class-bound nil value, and fixed `instance.property` / `instance.property_series` runtime evidence alongside resolution and position observations;
-- authenticated CLI/control/dashboard catalog exploration with source, coverage, manifest, connector, attestation, inheritance, codec, disposition, reason, and proof-route visibility;
+- bounded pinned-catalog lookup available to both creator agents, plus authenticated CLI/control/dashboard exploration with official signatures, security/capability metadata, YAML provenance, source, coverage, manifest, connector, attestation, inheritance, codec, disposition, reason, and proof-route visibility;
 - offline generation failure for source/catalog/coverage drift, duplicate or unclassified entries, stale output, and missing authoring proof legs.
 
-The closure audit rejected two false-positive routes before this milestone was accepted: official `Datatype.Font` is no longer confused with the distinct `Enum.Font`, and unset Instance-valued properties are now canonical observed values instead of read errors. The current connector build hash `a84be536e51194fcaadb1036dcdd585f6f1b8d70f8db3de1f75fd5600fab91f5` also binds the evidence generator and TypeScript evidence contract as well as the manifest, protocol, plugin project, and authored Luau runtime, so a codec-semantics change cannot retain an old connector identity.
+The closure audit rejected two false-positive routes before this milestone was accepted: official `Datatype.Font` is no longer confused with the distinct `Enum.Font`, and unset Instance-valued properties are now canonical observed values instead of read errors. The current connector build hash `1a1f14113d1a80d447b4d9c3df6082dd067e0867e3603283214ac119000754ec` also binds the evidence generator and TypeScript evidence contract as well as the manifest, protocol, plugin project, and authored Luau runtime, so a codec-semantics change cannot retain an old connector identity.
 
 During integration, the broader current policy initially made the accepted Door Control bundle unreadable because build-contract and mutation replay validators compared stored evidence to the new global manifest. That was an evidence-lifetime defect. Current live contracts are still a clean break, but immutable attempts now validate their own sealed build policy and manifest artifact and recompile against that exact manifest. New authoring uses only the current generated manifest. After this correction, the accepted Door mutation and verification again replay exactly with exit `0`; no stored ledger byte was changed.
 
@@ -201,26 +202,33 @@ The sixth consumed Status Beacon session is preserved unchanged: session `creato
 
 ## Next live evidence task
 
-Install the rebuilt connector, open the solution-free Door Control seed, and
-pair it with a fresh `creator serve` process. Before submitting any prompt, the
-dashboard must report the current connector and manifest identities, 183
-required/observed attestation facts, zero missing/unavailable/read-error/
-mismatched facts, and a `verified` result. Inspect the raw attestation artifact
-and confirm class-reference, enum, datatype-alias, and numeric rows retain their
-distinct engine/storage and Luau script dimensions. This pairing check makes no
-provider call and no Studio mutation.
+Build and open the separate solution-free Orbital Freight Airlock seed described
+in [its README](../examples/orbital-freight-airlock/README.md), install the
+rebuilt connector, and pair it with a fresh `creator serve` process. Before a
+model call, the dashboard must show connector hash
+`1a1f14113d1a80d447b4d9c3df6082dd067e0867e3603283214ac119000754ec`,
+manifest hash
+`6a190dc414c6ed537e462118c46ae3f3e146494c75599f3578ca32a2ff47636f`,
+all 183 required capability facts observed, no findings, and `verified`
+attestation. This pairing check makes no provider call and no Studio mutation.
 
-After that evidence and explicit model-call authorization, repeat the Door
-Control prompt through the complete fresh-store transaction:
+After explicit model-call authorization, submit the fixture's exact airlock
+prompt. It deliberately requires a server-owned state machine, prompts,
+client/server remotes, initial synchronization, replay-resistant request IDs,
+rate and proximity validation, generation-safe cancellation, two coordinated
+doors, pressure progression, indicators, a technical HUD, and preservation.
+The larger run receives no special profile: it uses the same default 32-turn
+agent policy and the same generated Studio ceilings as every ordinary creator
+session. The plan must expose only claims supported by the fixed evidence
+algebra; the denied dispatch, HUD behavior, causal ordering, emergency sequence,
+and visual quality remain explicit creator-review observations unless an
+approved runtime projection directly observes a fact.
 
-> Add a ProximityPrompt to Workspace/DoorAssembly/ControlPanel labeled “Toggle Door”. Each time a player uses it, move Workspace/DoorAssembly/Door straight up 8 studs to open or back to its starting position to close. Use server-authoritative code, keep the door anchored, and preserve Workspace/PreservedScenery.
-
-The visible plan must bind exact prompt/script existence, source syntax,
-preservation, direct mutation readback, complete state delta, bounded
-diagnostics, and creator review. During the approved Play Solo window, the
-creator triggers the prompt twice and records the observed open/close behavior
-in the required report. The run is new evidence under the corrected manifest;
-the documentary predecessor ledger is not reused or migrated.
+During the approved 90-second Play Solo window, follow the README sequence:
+attempt an early dispatch, complete the three prerequisites in any order,
+dispatch the airlock, then trigger emergency reset. Record only observed facts
+in the required final report. This will be the first live evidence for the
+interconnected fixture; no implementation or gameplay claim exists yet.
 
 After that evidence, choose the next increment from the observed boundary:
 

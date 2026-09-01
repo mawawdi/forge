@@ -18,11 +18,12 @@ const root = resolve(new URL("..", import.meta.url).pathname);
 const sourceContractPath = resolve(root, "packages/studio-evidence/catalog/roblox-api-source.json");
 const catalogPath = resolve(root, "packages/studio-evidence/catalog/roblox-api-catalog.json");
 const generatedPath = resolve(root, "packages/studio-evidence/src/roblox-api-catalog.generated.ts");
-const sourceDirectories = ["classes", "datatypes", "enums"];
+const sourceDirectories = ["classes", "datatypes", "enums", "globals", "libraries"];
 const countKeys = [
   "classes", "datatypes", "enums", "classProperties", "classMethods", "classEvents", "classCallbacks",
   "datatypeConstants", "datatypeConstructors", "datatypeFunctions", "datatypeMathOperations", "datatypeMethods",
-  "datatypeProperties", "enumItems",
+  "datatypeProperties", "enumItems", "globalProperties", "globalFunctions",
+  "libraries", "libraryProperties", "libraryFunctions",
 ];
 
 const args = process.argv.slice(2);
@@ -110,8 +111,10 @@ async function compileCatalog(sourceRoot, source) {
   const classes = (documentsByDirectory.get("classes") ?? []).map(({ sourceFile, sourceFileHash, yaml }) => normalizeClass(yaml, sourceFile, sourceFileHash)).sort(byName);
   const datatypes = (documentsByDirectory.get("datatypes") ?? []).map(({ sourceFile, sourceFileHash, yaml }) => normalizeDatatype(yaml, sourceFile, sourceFileHash)).sort(byName);
   const enums = (documentsByDirectory.get("enums") ?? []).map(({ sourceFile, sourceFileHash, yaml }) => normalizeEnum(yaml, sourceFile, sourceFileHash)).sort(byName);
-  const counts = countCatalog({ classes, datatypes, enums });
-  const withoutHash = { kind: "RobloxApiCatalog", source, classes, datatypes, enums, counts };
+  const globalMembers = (documentsByDirectory.get("globals") ?? []).flatMap(({ sourceFile, sourceFileHash, yaml }) => normalizeGlobalMembers(yaml, sourceFile, sourceFileHash)).sort(byMember);
+  const libraries = (documentsByDirectory.get("libraries") ?? []).map(({ sourceFile, sourceFileHash, yaml }) => normalizeLibrary(yaml, sourceFile, sourceFileHash)).sort(byName);
+  const counts = countCatalog({ classes, datatypes, enums, globalMembers, libraries });
+  const withoutHash = { kind: "RobloxApiCatalog", source, classes, datatypes, enums, globalMembers, libraries, counts };
   return { ...withoutHash, contentHash: sha256(stableJson(withoutHash)) };
 }
 
@@ -243,6 +246,82 @@ function normalizeEnum(value, sourceFile, sourceFileHash) {
   };
 }
 
+function normalizeGlobalMembers(value, sourceFile, sourceFileHash) {
+  const document = object(value, `global scope ${sourceFile}`);
+  const scope = requiredString(document.name, `global scope name in ${sourceFile}`);
+  if (document.type !== "global") throw new Error(`Expected global document: ${sourceFile}`);
+  return [
+    ...normalizeGlobalMemberKind(document.properties, "property", scope, sourceFile, sourceFileHash),
+    ...normalizeGlobalMemberKind(document.functions, "function", scope, sourceFile, sourceFileHash),
+  ].sort(byMember);
+}
+
+function normalizeGlobalMemberKind(value, kind, scope, sourceFile, sourceFileHash) {
+  const entries = array(value, `${kind} members for ${scope}`);
+  const normalized = entries.map((entry, index) => {
+    const member = object(entry, `${kind} member ${scope}[${index}]`);
+    const name = requiredString(member.name, `${kind} member name for ${scope}`);
+    return compact({
+      id: "",
+      kind,
+      name,
+      declaringScope: scope,
+      valueType: kind === "property" ? requiredString(member.type, `global property type for ${name}`) : undefined,
+      parameters: member.parameters === undefined ? undefined : normalizeParameters(member.parameters, name),
+      returns: member.returns === undefined ? undefined : normalizeReturns(member.returns, name),
+      tags: normalizedTags(member.tags, `tags for global ${name}`),
+      deprecated: deprecated(member),
+      sourceFile,
+      sourceFileHash,
+    });
+  });
+  return withOrdinals(normalized, (entry) => `global_member:${scope}:${kind}:${entry.name}`);
+}
+
+function normalizeLibrary(value, sourceFile, sourceFileHash) {
+  const document = object(value, `library ${sourceFile}`);
+  const name = requiredString(document.name, `library name in ${sourceFile}`);
+  if (document.type !== "library") throw new Error(`Expected library document: ${sourceFile}`);
+  const members = [
+    ...normalizeLibraryMemberKind(document.properties, "property", name, sourceFile, sourceFileHash),
+    ...normalizeLibraryMemberKind(document.functions, "function", name, sourceFile, sourceFileHash),
+  ].sort(byMember);
+  return {
+    id: `library:${name}`,
+    name,
+    tags: normalizedTags(document.tags, `tags for library ${name}`),
+    deprecated: deprecated(document),
+    members,
+    sourceFile,
+    sourceFileHash,
+  };
+}
+
+function normalizeLibraryMemberKind(value, kind, libraryName, sourceFile, sourceFileHash) {
+  const entries = array(value, `${kind} members for library ${libraryName}`);
+  const normalized = entries.map((entry, index) => {
+    const member = object(entry, `${kind} member ${libraryName}[${index}]`);
+    const sourceName = requiredString(member.name, `${kind} member name for library ${libraryName}`);
+    const prefix = `${libraryName}.`;
+    if (!sourceName.startsWith(prefix) || sourceName.length === prefix.length) throw new Error(`Invalid library member name: ${sourceName}`);
+    const name = sourceName.slice(prefix.length);
+    return compact({
+      id: "",
+      kind,
+      name,
+      declaringLibrary: libraryName,
+      valueType: kind === "property" ? requiredString(member.type, `library property type for ${sourceName}`) : undefined,
+      parameters: member.parameters === undefined ? undefined : normalizeParameters(member.parameters, sourceName),
+      returns: member.returns === undefined ? undefined : normalizeReturns(member.returns, sourceName),
+      tags: normalizedTags(member.tags, `tags for ${sourceName}`),
+      deprecated: deprecated(member),
+      sourceFile,
+      sourceFileHash,
+    });
+  });
+  return withOrdinals(normalized, (entry) => `library_member:${libraryName}:${kind}:${entry.name}`);
+}
+
 function withOrdinals(entries, baseId) {
   const byBaseId = new Map();
   for (const entry of entries) {
@@ -306,7 +385,7 @@ function datatypeMemberName(value, datatypeName, kind) {
   return value.slice(prefix.length);
 }
 
-function countCatalog({ classes, datatypes, enums }) {
+function countCatalog({ classes, datatypes, enums, globalMembers, libraries }) {
   const counts = Object.fromEntries(countKeys.map((key) => [key, 0]));
   counts.classes = classes.length;
   counts.datatypes = datatypes.length;
@@ -326,6 +405,15 @@ function countCatalog({ classes, datatypes, enums }) {
     else counts.datatypeProperties += 1;
   }
   for (const entry of enums) counts.enumItems += entry.items.length;
+  for (const entry of globalMembers) {
+    if (entry.kind === "property") counts.globalProperties += 1;
+    else counts.globalFunctions += 1;
+  }
+  counts.libraries = libraries.length;
+  for (const entry of libraries) for (const member of entry.members) {
+    if (member.kind === "property") counts.libraryProperties += 1;
+    else counts.libraryFunctions += 1;
+  }
   return counts;
 }
 
@@ -338,25 +426,31 @@ function validateSourceContract(value) {
 
 function validateCatalog(value, sourceContract) {
   const catalog = object(value, "Roblox API catalog");
-  exactKeys(catalog, ["kind", "source", "classes", "datatypes", "enums", "counts", "contentHash"], "Roblox API catalog");
+  exactKeys(catalog, ["kind", "source", "classes", "datatypes", "enums", "globalMembers", "libraries", "counts", "contentHash"], "Roblox API catalog");
   if (catalog.kind !== "RobloxApiCatalog") throw new Error("Catalog kind must be RobloxApiCatalog");
   if (stableJson(catalog.source) !== stableJson(sourceContract)) throw new Error("Catalog source pin/count/hash drift from roblox-api-source.json");
   validateCounts(catalog.counts, "Roblox API catalog");
   const classes = array(catalog.classes, "catalog classes");
   const datatypes = array(catalog.datatypes, "catalog datatypes");
   const enums = array(catalog.enums, "catalog enums");
+  const globalMembers = array(catalog.globalMembers, "catalog global members");
+  const libraries = array(catalog.libraries, "catalog libraries");
   validateSortedUnique(classes.map((entry) => requiredString(object(entry, "catalog class").name, "catalog class name")), "catalog classes");
   validateSortedUnique(datatypes.map((entry) => requiredString(object(entry, "catalog datatype").name, "catalog datatype name")), "catalog datatypes");
   validateSortedUnique(enums.map((entry) => requiredString(object(entry, "catalog enum").name, "catalog enum name")), "catalog enums");
+  validateSortedUnique(globalMembers.map((entry) => requiredString(object(entry, "catalog global member").id, "catalog global member id")), "catalog global members");
+  validateSortedUnique(libraries.map((entry) => requiredString(object(entry, "catalog library").name, "catalog library name")), "catalog libraries");
   const classNames = new Set(classes.map((entry) => entry.name));
   const ids = new Set();
   for (const entry of classes) validateCatalogClass(object(entry, "catalog class"), classNames, ids);
   for (const entry of datatypes) validateCatalogDatatype(object(entry, "catalog datatype"), ids);
   for (const entry of enums) validateCatalogEnum(object(entry, "catalog enum"), ids);
-  const actualCounts = countCatalog({ classes, datatypes, enums });
+  for (const entry of globalMembers) validateCatalogGlobalMember(object(entry, "catalog global member"), ids);
+  for (const entry of libraries) validateCatalogLibrary(object(entry, "catalog library"), ids);
+  const actualCounts = countCatalog({ classes, datatypes, enums, globalMembers, libraries });
   if (stableJson(actualCounts) !== stableJson(catalog.counts) || stableJson(actualCounts) !== stableJson(sourceContract.counts)) throw new Error("Catalog member counts drift from source contract");
   assertNoInheritanceCycles(classes, classNames);
-  const material = { kind: catalog.kind, source: catalog.source, classes, datatypes, enums, counts: catalog.counts };
+  const material = { kind: catalog.kind, source: catalog.source, classes, datatypes, enums, globalMembers, libraries, counts: catalog.counts };
   if (!isHash(catalog.contentHash) || sha256(stableJson(material)) !== catalog.contentHash) throw new Error("Catalog content hash does not match its normalized content");
 }
 
@@ -412,6 +506,35 @@ function validateCatalogEnum(entry, ids) {
     if (parsed.id !== `enum_item:${entry.name}:${parsed.name}` || !isNonEmptyString(parsed.name) || !Number.isSafeInteger(parsed.value) || typeof parsed.deprecated !== "boolean") throw new Error(`Malformed catalog enum item: ${entry.name}`);
     validateTags(parsed.tags, `catalog enum item tags for ${parsed.id}`); addId(ids, parsed.id);
   }
+}
+
+function validateCatalogGlobalMember(entry, ids) {
+  const optional = [entry.valueType === undefined ? [] : ["valueType"], entry.parameters === undefined ? [] : ["parameters"], entry.returns === undefined ? [] : ["returns"]].flat();
+  exactKeys(entry, ["id", "kind", "name", "declaringScope", ...optional, "tags", "deprecated", "sourceFile", "sourceFileHash"], "catalog global member");
+  if (!isGlobalMemberKind(entry.kind) || !isNonEmptyString(entry.name) || !isNonEmptyString(entry.declaringScope) || typeof entry.deprecated !== "boolean") throw new Error(`Malformed global member: ${String(entry.name)}`);
+  const base = `global_member:${entry.declaringScope}:${entry.kind}:${entry.name}`;
+  if (!matchesMemberId(entry.id, base)) throw new Error(`Malformed global member id: ${entry.id}`);
+  if ((entry.kind === "property") !== isNonEmptyString(entry.valueType)) throw new Error(`Malformed global member payload: ${entry.id}`);
+  validateTags(entry.tags, `catalog global member tags for ${entry.id}`); validateOptionalMembers(entry, `catalog global member ${entry.id}`); validateSourceFile(entry.sourceFile, entry.sourceFileHash, `catalog global member ${entry.id}`); addId(ids, entry.id);
+}
+
+function validateCatalogLibrary(entry, ids) {
+  exactKeys(entry, ["id", "name", "tags", "deprecated", "members", "sourceFile", "sourceFileHash"], "catalog library");
+  if (entry.id !== `library:${entry.name}` || !isNonEmptyString(entry.name) || typeof entry.deprecated !== "boolean") throw new Error(`Malformed catalog library: ${String(entry.name)}`);
+  validateTags(entry.tags, `catalog library tags for ${entry.name}`); validateSourceFile(entry.sourceFile, entry.sourceFileHash, `catalog library ${entry.name}`); if (entry.sourceFile !== `libraries/${entry.name}.yaml`) throw new Error(`Catalog library source path mismatch: ${entry.name}`); addId(ids, entry.id);
+  const members = array(entry.members, `members for library ${entry.name}`);
+  validateSortedUnique(members.map((member) => requiredString(object(member, "catalog library member").id, "catalog library member id")), `members for library ${entry.name}`);
+  for (const member of members) validateCatalogLibraryMember(object(member, "catalog library member"), entry.name, ids);
+}
+
+function validateCatalogLibraryMember(entry, libraryName, ids) {
+  const optional = [entry.valueType === undefined ? [] : ["valueType"], entry.parameters === undefined ? [] : ["parameters"], entry.returns === undefined ? [] : ["returns"]].flat();
+  exactKeys(entry, ["id", "kind", "name", "declaringLibrary", ...optional, "tags", "deprecated", "sourceFile", "sourceFileHash"], "catalog library member");
+  if (!isLibraryMemberKind(entry.kind) || !isNonEmptyString(entry.name) || entry.declaringLibrary !== libraryName || typeof entry.deprecated !== "boolean") throw new Error(`Malformed library member for ${libraryName}`);
+  const base = `library_member:${libraryName}:${entry.kind}:${entry.name}`;
+  if (!matchesMemberId(entry.id, base)) throw new Error(`Malformed library member id: ${entry.id}`);
+  if ((entry.kind === "property") !== isNonEmptyString(entry.valueType)) throw new Error(`Malformed library member payload: ${entry.id}`);
+  validateTags(entry.tags, `catalog library member tags for ${entry.id}`); validateOptionalMembers(entry, `catalog library member ${entry.id}`); validateSourceFile(entry.sourceFile, entry.sourceFileHash, `catalog library member ${entry.id}`); addId(ids, entry.id);
 }
 
 function validateOptionalMembers(entry, label) {
@@ -489,6 +612,8 @@ function matchesMemberId(value, base) { return value === base || new RegExp(`^${
 function escapeRegExp(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function isClassMemberKind(value) { return value === "property" || value === "method" || value === "event" || value === "callback"; }
 function isDatatypeMemberKind(value) { return value === "constant" || value === "constructor" || value === "function" || value === "math_operation" || value === "method" || value === "property"; }
+function isGlobalMemberKind(value) { return value === "property" || value === "function"; }
+function isLibraryMemberKind(value) { return value === "property" || value === "function"; }
 function isHash(value) { return typeof value === "string" && /^[a-f0-9]{64}$/.test(value); }
 function isCommit(value) { return typeof value === "string" && /^[a-f0-9]{40}$/.test(value); }
 function isNonEmptyString(value) { return typeof value === "string" && value.length > 0; }

@@ -18,6 +18,8 @@ test("catalog exploration is pinned, bounded, and preserves class inheritance co
   assert.equal(page.page.limit, 1);
   assert.ok(page.entries.length <= 1);
   assert.ok(page.page.total > 0);
+  assert.ok(page.entries.every((entry) => entry.sourceFile.endsWith(".yaml")));
+  assert.ok(page.entries.every((entry) => /^[a-f0-9]{64}$/.test(entry.sourceFileHash)));
   assert.ok(
     page.entries.every(
       (entry) =>

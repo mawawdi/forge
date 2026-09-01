@@ -112327,7 +112327,7 @@ export const ROBLOX_API_CATALOG: RobloxApiCatalog = {
             "read": "None"
           },
           "sourceFile": "classes/TextChannel.yaml",
-          "sourceFileHash": "c4652a5302327736249eff5cfffe76a3e097056c5d82a54ce09ab6f2147a2c4b",
+          "sourceFileHash": "e0f6a686ba1232e37dd5d6a9bef0560d0c58ebd8627b1a3ecff2132d031a0779",
           "tags": [],
           "threadSafety": "Unsafe"
         },
@@ -112359,7 +112359,7 @@ export const ROBLOX_API_CATALOG: RobloxApiCatalog = {
             "read": "None"
           },
           "sourceFile": "classes/TextChannel.yaml",
-          "sourceFileHash": "c4652a5302327736249eff5cfffe76a3e097056c5d82a54ce09ab6f2147a2c4b",
+          "sourceFileHash": "e0f6a686ba1232e37dd5d6a9bef0560d0c58ebd8627b1a3ecff2132d031a0779",
           "tags": [],
           "threadSafety": "Unsafe"
         },
@@ -112382,7 +112382,7 @@ export const ROBLOX_API_CATALOG: RobloxApiCatalog = {
             "read": "None"
           },
           "sourceFile": "classes/TextChannel.yaml",
-          "sourceFileHash": "c4652a5302327736249eff5cfffe76a3e097056c5d82a54ce09ab6f2147a2c4b",
+          "sourceFileHash": "e0f6a686ba1232e37dd5d6a9bef0560d0c58ebd8627b1a3ecff2132d031a0779",
           "tags": []
         },
         {
@@ -112409,7 +112409,7 @@ export const ROBLOX_API_CATALOG: RobloxApiCatalog = {
             "read": "None"
           },
           "sourceFile": "classes/TextChannel.yaml",
-          "sourceFileHash": "c4652a5302327736249eff5cfffe76a3e097056c5d82a54ce09ab6f2147a2c4b",
+          "sourceFileHash": "e0f6a686ba1232e37dd5d6a9bef0560d0c58ebd8627b1a3ecff2132d031a0779",
           "tags": [
             "Yields"
           ],
@@ -112443,7 +112443,7 @@ export const ROBLOX_API_CATALOG: RobloxApiCatalog = {
             "read": "None"
           },
           "sourceFile": "classes/TextChannel.yaml",
-          "sourceFileHash": "c4652a5302327736249eff5cfffe76a3e097056c5d82a54ce09ab6f2147a2c4b",
+          "sourceFileHash": "e0f6a686ba1232e37dd5d6a9bef0560d0c58ebd8627b1a3ecff2132d031a0779",
           "tags": [],
           "threadSafety": "Unsafe"
         },
@@ -112475,7 +112475,7 @@ export const ROBLOX_API_CATALOG: RobloxApiCatalog = {
             "read": "None"
           },
           "sourceFile": "classes/TextChannel.yaml",
-          "sourceFileHash": "c4652a5302327736249eff5cfffe76a3e097056c5d82a54ce09ab6f2147a2c4b",
+          "sourceFileHash": "e0f6a686ba1232e37dd5d6a9bef0560d0c58ebd8627b1a3ecff2132d031a0779",
           "tags": [
             "Yields"
           ],
@@ -112505,7 +112505,7 @@ export const ROBLOX_API_CATALOG: RobloxApiCatalog = {
             "read": "None"
           },
           "sourceFile": "classes/TextChannel.yaml",
-          "sourceFileHash": "c4652a5302327736249eff5cfffe76a3e097056c5d82a54ce09ab6f2147a2c4b",
+          "sourceFileHash": "e0f6a686ba1232e37dd5d6a9bef0560d0c58ebd8627b1a3ecff2132d031a0779",
           "tags": [],
           "threadSafety": "Unsafe"
         },
@@ -112527,7 +112527,7 @@ export const ROBLOX_API_CATALOG: RobloxApiCatalog = {
             "canSave": true
           },
           "sourceFile": "classes/TextChannel.yaml",
-          "sourceFileHash": "c4652a5302327736249eff5cfffe76a3e097056c5d82a54ce09ab6f2147a2c4b",
+          "sourceFileHash": "e0f6a686ba1232e37dd5d6a9bef0560d0c58ebd8627b1a3ecff2132d031a0779",
           "tags": [
             "NotReplicated",
             "ReadOnly"
@@ -112538,7 +112538,7 @@ export const ROBLOX_API_CATALOG: RobloxApiCatalog = {
       ],
       "name": "TextChannel",
       "sourceFile": "classes/TextChannel.yaml",
-      "sourceFileHash": "c4652a5302327736249eff5cfffe76a3e097056c5d82a54ce09ab6f2147a2c4b",
+      "sourceFileHash": "e0f6a686ba1232e37dd5d6a9bef0560d0c58ebd8627b1a3ecff2132d031a0779",
       "superclass": "Instance",
       "tags": []
     },
@@ -130049,7 +130049,7 @@ export const ROBLOX_API_CATALOG: RobloxApiCatalog = {
       "tags": []
     }
   ],
-  "contentHash": "e4d89b5a42f7587f0740d9ee5833e5ecfbb06ef2b212eba1aa4ee037e595af5b",
+  "contentHash": "142406530e50b9c65fee0d7792e48aa22001e8697399820b43382dc5fdfe490e",
   "counts": {
     "classCallbacks": 13,
     "classEvents": 393,
@@ -130064,7 +130064,12 @@ export const ROBLOX_API_CATALOG: RobloxApiCatalog = {
     "datatypeProperties": 175,
     "datatypes": 48,
     "enumItems": 3003,
-    "enums": 518
+    "enums": 518,
+    "globalFunctions": 42,
+    "globalProperties": 8,
+    "libraries": 11,
+    "libraryFunctions": 165,
+    "libraryProperties": 10
   },
   "datatypes": [
     {
@@ -163540,9 +163545,5330 @@ export const ROBLOX_API_CATALOG: RobloxApiCatalog = {
       "tags": []
     }
   ],
+  "globalMembers": [
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:assert",
+      "kind": "function",
+      "name": "assert",
+      "parameters": [
+        {
+          "name": "value",
+          "type": "Variant"
+        },
+        {
+          "default": "assertion failed!",
+          "name": "errorMessage",
+          "type": "string"
+        }
+      ],
+      "returns": [
+        {
+          "type": "Variant"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": true,
+      "id": "global_member:Luau globals:function:collectgarbage",
+      "kind": "function",
+      "name": "collectgarbage",
+      "parameters": [
+        {
+          "name": "operation",
+          "type": "string"
+        }
+      ],
+      "returns": [
+        {
+          "type": "Variant"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": [
+        "Deprecated"
+      ]
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:error",
+      "kind": "function",
+      "name": "error",
+      "parameters": [
+        {
+          "name": "message",
+          "type": "Variant"
+        },
+        {
+          "default": 1,
+          "name": "level",
+          "type": "int"
+        }
+      ],
+      "returns": [
+        {
+          "type": "()"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:gcinfo",
+      "kind": "function",
+      "name": "gcinfo",
+      "parameters": [],
+      "returns": [
+        {
+          "type": "number"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": true,
+      "id": "global_member:Luau globals:function:getfenv",
+      "kind": "function",
+      "name": "getfenv",
+      "parameters": [
+        {
+          "default": 1,
+          "name": "stack",
+          "type": "Variant"
+        }
+      ],
+      "returns": [
+        {
+          "type": "table"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": [
+        "Deprecated"
+      ]
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:getmetatable",
+      "kind": "function",
+      "name": "getmetatable",
+      "parameters": [
+        {
+          "name": "t",
+          "type": "Variant"
+        }
+      ],
+      "returns": [
+        {
+          "type": "Variant"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:ipairs",
+      "kind": "function",
+      "name": "ipairs",
+      "parameters": [
+        {
+          "name": "t",
+          "type": "Array"
+        }
+      ],
+      "returns": [
+        {
+          "type": "function"
+        },
+        {
+          "type": "Array"
+        },
+        {
+          "type": "int"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:loadstring",
+      "kind": "function",
+      "name": "loadstring",
+      "parameters": [
+        {
+          "name": "contents",
+          "type": "string"
+        },
+        {
+          "name": "chunkname",
+          "type": "string"
+        }
+      ],
+      "returns": [
+        {
+          "type": "Variant"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:newproxy",
+      "kind": "function",
+      "name": "newproxy",
+      "parameters": [
+        {
+          "default": false,
+          "name": "addMetatable",
+          "type": "bool"
+        }
+      ],
+      "returns": [
+        {
+          "type": "userdata"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:next",
+      "kind": "function",
+      "name": "next",
+      "parameters": [
+        {
+          "name": "t",
+          "type": "table"
+        },
+        {
+          "default": "nil",
+          "name": "lastKey",
+          "type": "Variant"
+        }
+      ],
+      "returns": [
+        {
+          "type": "Variant"
+        },
+        {
+          "type": "Variant"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:pairs",
+      "kind": "function",
+      "name": "pairs",
+      "parameters": [
+        {
+          "name": "t",
+          "type": "table"
+        }
+      ],
+      "returns": [
+        {
+          "type": "function"
+        },
+        {
+          "type": "table"
+        },
+        {
+          "type": "Variant"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:pcall",
+      "kind": "function",
+      "name": "pcall",
+      "parameters": [
+        {
+          "name": "func",
+          "type": "function"
+        },
+        {
+          "name": "args",
+          "type": "Tuple"
+        }
+      ],
+      "returns": [
+        {
+          "type": "bool"
+        },
+        {
+          "type": "Variant"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:print",
+      "kind": "function",
+      "name": "print",
+      "parameters": [
+        {
+          "name": "params",
+          "type": "Tuple"
+        }
+      ],
+      "returns": [
+        {
+          "type": "()"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:rawequal",
+      "kind": "function",
+      "name": "rawequal",
+      "parameters": [
+        {
+          "name": "v1",
+          "type": "Variant"
+        },
+        {
+          "name": "v2",
+          "type": "Variant"
+        }
+      ],
+      "returns": [
+        {
+          "type": "bool"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:rawget",
+      "kind": "function",
+      "name": "rawget",
+      "parameters": [
+        {
+          "name": "t",
+          "type": "table"
+        },
+        {
+          "name": "index",
+          "type": "Variant"
+        }
+      ],
+      "returns": [
+        {
+          "type": "Variant"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:rawlen",
+      "kind": "function",
+      "name": "rawlen",
+      "parameters": [
+        {
+          "name": "t",
+          "type": "table"
+        }
+      ],
+      "returns": [
+        {
+          "type": "number"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:rawset",
+      "kind": "function",
+      "name": "rawset",
+      "parameters": [
+        {
+          "name": "t",
+          "type": "table"
+        },
+        {
+          "name": "index",
+          "type": "Variant"
+        },
+        {
+          "name": "value",
+          "type": "Variant"
+        }
+      ],
+      "returns": [
+        {
+          "type": "table"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:require",
+      "kind": "function",
+      "name": "require",
+      "parameters": [
+        {
+          "name": "module",
+          "type": "ModuleScript | string | number"
+        }
+      ],
+      "returns": [
+        {
+          "type": "Variant"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:select",
+      "kind": "function",
+      "name": "select",
+      "parameters": [
+        {
+          "name": "index",
+          "type": "Variant"
+        },
+        {
+          "name": "args",
+          "type": "Tuple"
+        }
+      ],
+      "returns": [
+        {
+          "type": "Tuple"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": true,
+      "id": "global_member:Luau globals:function:setfenv",
+      "kind": "function",
+      "name": "setfenv",
+      "parameters": [
+        {
+          "name": "f",
+          "type": "Variant"
+        },
+        {
+          "name": "fenv",
+          "type": "table"
+        }
+      ],
+      "returns": [
+        {
+          "type": "Variant"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": [
+        "Deprecated"
+      ]
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:setmetatable",
+      "kind": "function",
+      "name": "setmetatable",
+      "parameters": [
+        {
+          "name": "t",
+          "type": "table"
+        },
+        {
+          "name": "newMeta",
+          "type": "Variant"
+        }
+      ],
+      "returns": [
+        {
+          "type": "table"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:tonumber",
+      "kind": "function",
+      "name": "tonumber",
+      "parameters": [
+        {
+          "name": "arg",
+          "type": "Variant"
+        },
+        {
+          "default": 10,
+          "name": "base",
+          "type": "int"
+        }
+      ],
+      "returns": [
+        {
+          "type": "Variant"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:tostring",
+      "kind": "function",
+      "name": "tostring",
+      "parameters": [
+        {
+          "name": "e",
+          "type": "Variant"
+        }
+      ],
+      "returns": [
+        {
+          "type": "string"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:type",
+      "kind": "function",
+      "name": "type",
+      "parameters": [
+        {
+          "name": "v",
+          "type": "Variant"
+        }
+      ],
+      "returns": [
+        {
+          "type": "string"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:unpack",
+      "kind": "function",
+      "name": "unpack",
+      "parameters": [
+        {
+          "name": "list",
+          "type": "table"
+        },
+        {
+          "default": 1,
+          "name": "i",
+          "type": "int"
+        },
+        {
+          "default": "#list",
+          "name": "j",
+          "type": "int"
+        }
+      ],
+      "returns": [
+        {
+          "type": "Variant"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:function:xpcall",
+      "kind": "function",
+      "name": "xpcall",
+      "parameters": [
+        {
+          "name": "f",
+          "type": "function"
+        },
+        {
+          "name": "err",
+          "type": "function"
+        },
+        {
+          "name": "args",
+          "type": "Tuple"
+        }
+      ],
+      "returns": [
+        {
+          "type": "bool"
+        },
+        {
+          "type": "Variant"
+        }
+      ],
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": []
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:property:_G",
+      "kind": "property",
+      "name": "_G",
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": [],
+      "valueType": "Array"
+    },
+    {
+      "declaringScope": "Luau globals",
+      "deprecated": false,
+      "id": "global_member:Luau globals:property:_VERSION",
+      "kind": "property",
+      "name": "_VERSION",
+      "sourceFile": "globals/LuaGlobals.yaml",
+      "sourceFileHash": "a711128ed76de78ce4edf9ea37d59308ff05cb3650368d859e8847b58881670d",
+      "tags": [],
+      "valueType": "string"
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": true,
+      "id": "global_member:Roblox globals:function:DebuggerManager",
+      "kind": "function",
+      "name": "DebuggerManager",
+      "parameters": [],
+      "returns": [
+        {
+          "type": "DebuggerManager"
+        }
+      ],
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": [
+        "Deprecated"
+      ]
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": false,
+      "id": "global_member:Roblox globals:function:PluginManager",
+      "kind": "function",
+      "name": "PluginManager",
+      "parameters": [],
+      "returns": [
+        {
+          "type": "PluginManager"
+        }
+      ],
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": []
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": false,
+      "id": "global_member:Roblox globals:function:UserSettings",
+      "kind": "function",
+      "name": "UserSettings",
+      "parameters": [],
+      "returns": [
+        {
+          "type": "UserSettings"
+        }
+      ],
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": []
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": true,
+      "id": "global_member:Roblox globals:function:delay",
+      "kind": "function",
+      "name": "delay",
+      "parameters": [
+        {
+          "name": "delayTime",
+          "type": "number"
+        },
+        {
+          "name": "callback",
+          "type": "function"
+        }
+      ],
+      "returns": [
+        {
+          "type": "()"
+        }
+      ],
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": [
+        "Deprecated"
+      ]
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": true,
+      "id": "global_member:Roblox globals:function:elapsedTime",
+      "kind": "function",
+      "name": "elapsedTime",
+      "parameters": [],
+      "returns": [
+        {
+          "type": "number"
+        }
+      ],
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": [
+        "Deprecated"
+      ]
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": true,
+      "id": "global_member:Roblox globals:function:printidentity",
+      "kind": "function",
+      "name": "printidentity",
+      "parameters": [
+        {
+          "default": "Current identity is",
+          "name": "prefix",
+          "type": "string"
+        }
+      ],
+      "returns": [
+        {
+          "type": "()"
+        }
+      ],
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": [
+        "Deprecated"
+      ]
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": false,
+      "id": "global_member:Roblox globals:function:settings",
+      "kind": "function",
+      "name": "settings",
+      "parameters": [],
+      "returns": [
+        {
+          "type": "GlobalSettings"
+        }
+      ],
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": []
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": true,
+      "id": "global_member:Roblox globals:function:spawn",
+      "kind": "function",
+      "name": "spawn",
+      "parameters": [
+        {
+          "name": "callback",
+          "type": "function"
+        }
+      ],
+      "returns": [
+        {
+          "type": "()"
+        }
+      ],
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": [
+        "Deprecated"
+      ]
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": true,
+      "id": "global_member:Roblox globals:function:stats",
+      "kind": "function",
+      "name": "stats",
+      "parameters": [],
+      "returns": [
+        {
+          "type": "Stats"
+        }
+      ],
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": [
+        "Deprecated"
+      ]
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": false,
+      "id": "global_member:Roblox globals:function:tick",
+      "kind": "function",
+      "name": "tick",
+      "parameters": [],
+      "returns": [
+        {
+          "type": "number"
+        }
+      ],
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": []
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": false,
+      "id": "global_member:Roblox globals:function:time",
+      "kind": "function",
+      "name": "time",
+      "parameters": [],
+      "returns": [
+        {
+          "type": "number"
+        }
+      ],
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": []
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": false,
+      "id": "global_member:Roblox globals:function:typeof",
+      "kind": "function",
+      "name": "typeof",
+      "parameters": [
+        {
+          "name": "object",
+          "type": "Variant"
+        }
+      ],
+      "returns": [
+        {
+          "type": "string"
+        }
+      ],
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": []
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": true,
+      "id": "global_member:Roblox globals:function:version",
+      "kind": "function",
+      "name": "version",
+      "parameters": [],
+      "returns": [
+        {
+          "type": "string"
+        }
+      ],
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": [
+        "Deprecated"
+      ]
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": true,
+      "id": "global_member:Roblox globals:function:wait",
+      "kind": "function",
+      "name": "wait",
+      "parameters": [
+        {
+          "default": 0.03,
+          "name": "seconds",
+          "type": "number"
+        }
+      ],
+      "returns": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": [
+        "Deprecated"
+      ]
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": false,
+      "id": "global_member:Roblox globals:function:warn",
+      "kind": "function",
+      "name": "warn",
+      "parameters": [
+        {
+          "name": "params",
+          "type": "Tuple"
+        }
+      ],
+      "returns": [
+        {
+          "type": "()"
+        }
+      ],
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": []
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": true,
+      "id": "global_member:Roblox globals:function:ypcall",
+      "kind": "function",
+      "name": "ypcall",
+      "parameters": [
+        {
+          "name": "f",
+          "type": "function"
+        },
+        {
+          "name": "args",
+          "type": "Tuple"
+        }
+      ],
+      "returns": [
+        {
+          "type": "bool"
+        },
+        {
+          "type": "Variant"
+        }
+      ],
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": [
+        "Deprecated"
+      ]
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": false,
+      "id": "global_member:Roblox globals:property:Enum",
+      "kind": "property",
+      "name": "Enum",
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": [],
+      "valueType": "Enums"
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": false,
+      "id": "global_member:Roblox globals:property:game",
+      "kind": "property",
+      "name": "game",
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": [],
+      "valueType": "DataModel"
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": false,
+      "id": "global_member:Roblox globals:property:plugin",
+      "kind": "property",
+      "name": "plugin",
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": [],
+      "valueType": "Plugin"
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": false,
+      "id": "global_member:Roblox globals:property:script",
+      "kind": "property",
+      "name": "script",
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": [],
+      "valueType": "LuaSourceContainer"
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": false,
+      "id": "global_member:Roblox globals:property:shared",
+      "kind": "property",
+      "name": "shared",
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": [],
+      "valueType": "Array"
+    },
+    {
+      "declaringScope": "Roblox globals",
+      "deprecated": false,
+      "id": "global_member:Roblox globals:property:workspace",
+      "kind": "property",
+      "name": "workspace",
+      "sourceFile": "globals/RobloxGlobals.yaml",
+      "sourceFileHash": "57175b669700cc86192fee6603961bcadd40b6408f06d6db9ed38e6bdde4bb82",
+      "tags": [],
+      "valueType": "Workspace"
+    }
+  ],
   "kind": "RobloxApiCatalog",
+  "libraries": [
+    {
+      "deprecated": false,
+      "id": "library:bit32",
+      "members": [
+        {
+          "declaringLibrary": "bit32",
+          "deprecated": false,
+          "id": "library_member:bit32:function:arshift",
+          "kind": "function",
+          "name": "arshift",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            },
+            {
+              "name": "disp",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/bit32.yaml",
+          "sourceFileHash": "c8db8c7c6266b97e54147b8093ed4bf0903f3dc3dad18c958b5c9a98e5772b6a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "bit32",
+          "deprecated": false,
+          "id": "library_member:bit32:function:band",
+          "kind": "function",
+          "name": "band",
+          "parameters": [
+            {
+              "name": "numbers",
+              "type": "Tuple"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/bit32.yaml",
+          "sourceFileHash": "c8db8c7c6266b97e54147b8093ed4bf0903f3dc3dad18c958b5c9a98e5772b6a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "bit32",
+          "deprecated": false,
+          "id": "library_member:bit32:function:bnot",
+          "kind": "function",
+          "name": "bnot",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/bit32.yaml",
+          "sourceFileHash": "c8db8c7c6266b97e54147b8093ed4bf0903f3dc3dad18c958b5c9a98e5772b6a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "bit32",
+          "deprecated": false,
+          "id": "library_member:bit32:function:bor",
+          "kind": "function",
+          "name": "bor",
+          "parameters": [
+            {
+              "name": "numbers",
+              "type": "Tuple"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/bit32.yaml",
+          "sourceFileHash": "c8db8c7c6266b97e54147b8093ed4bf0903f3dc3dad18c958b5c9a98e5772b6a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "bit32",
+          "deprecated": false,
+          "id": "library_member:bit32:function:btest",
+          "kind": "function",
+          "name": "btest",
+          "parameters": [
+            {
+              "name": "numbers",
+              "type": "Tuple"
+            }
+          ],
+          "returns": [
+            {
+              "type": "bool"
+            }
+          ],
+          "sourceFile": "libraries/bit32.yaml",
+          "sourceFileHash": "c8db8c7c6266b97e54147b8093ed4bf0903f3dc3dad18c958b5c9a98e5772b6a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "bit32",
+          "deprecated": false,
+          "id": "library_member:bit32:function:bxor",
+          "kind": "function",
+          "name": "bxor",
+          "parameters": [
+            {
+              "name": "numbers",
+              "type": "Tuple"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/bit32.yaml",
+          "sourceFileHash": "c8db8c7c6266b97e54147b8093ed4bf0903f3dc3dad18c958b5c9a98e5772b6a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "bit32",
+          "deprecated": false,
+          "id": "library_member:bit32:function:byteswap",
+          "kind": "function",
+          "name": "byteswap",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/bit32.yaml",
+          "sourceFileHash": "c8db8c7c6266b97e54147b8093ed4bf0903f3dc3dad18c958b5c9a98e5772b6a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "bit32",
+          "deprecated": false,
+          "id": "library_member:bit32:function:countlz",
+          "kind": "function",
+          "name": "countlz",
+          "parameters": [
+            {
+              "name": "n",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/bit32.yaml",
+          "sourceFileHash": "c8db8c7c6266b97e54147b8093ed4bf0903f3dc3dad18c958b5c9a98e5772b6a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "bit32",
+          "deprecated": false,
+          "id": "library_member:bit32:function:countrz",
+          "kind": "function",
+          "name": "countrz",
+          "parameters": [
+            {
+              "name": "n",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/bit32.yaml",
+          "sourceFileHash": "c8db8c7c6266b97e54147b8093ed4bf0903f3dc3dad18c958b5c9a98e5772b6a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "bit32",
+          "deprecated": false,
+          "id": "library_member:bit32:function:extract",
+          "kind": "function",
+          "name": "extract",
+          "parameters": [
+            {
+              "name": "n",
+              "type": "number"
+            },
+            {
+              "name": "field",
+              "type": "number"
+            },
+            {
+              "default": 1,
+              "name": "width",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/bit32.yaml",
+          "sourceFileHash": "c8db8c7c6266b97e54147b8093ed4bf0903f3dc3dad18c958b5c9a98e5772b6a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "bit32",
+          "deprecated": false,
+          "id": "library_member:bit32:function:lrotate",
+          "kind": "function",
+          "name": "lrotate",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            },
+            {
+              "name": "disp",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/bit32.yaml",
+          "sourceFileHash": "c8db8c7c6266b97e54147b8093ed4bf0903f3dc3dad18c958b5c9a98e5772b6a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "bit32",
+          "deprecated": false,
+          "id": "library_member:bit32:function:lshift",
+          "kind": "function",
+          "name": "lshift",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            },
+            {
+              "name": "disp",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/bit32.yaml",
+          "sourceFileHash": "c8db8c7c6266b97e54147b8093ed4bf0903f3dc3dad18c958b5c9a98e5772b6a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "bit32",
+          "deprecated": false,
+          "id": "library_member:bit32:function:replace",
+          "kind": "function",
+          "name": "replace",
+          "parameters": [
+            {
+              "name": "n",
+              "type": "number"
+            },
+            {
+              "name": "v",
+              "type": "number"
+            },
+            {
+              "name": "field",
+              "type": "number"
+            },
+            {
+              "default": 1,
+              "name": "width",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/bit32.yaml",
+          "sourceFileHash": "c8db8c7c6266b97e54147b8093ed4bf0903f3dc3dad18c958b5c9a98e5772b6a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "bit32",
+          "deprecated": false,
+          "id": "library_member:bit32:function:rrotate",
+          "kind": "function",
+          "name": "rrotate",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            },
+            {
+              "name": "disp",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/bit32.yaml",
+          "sourceFileHash": "c8db8c7c6266b97e54147b8093ed4bf0903f3dc3dad18c958b5c9a98e5772b6a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "bit32",
+          "deprecated": false,
+          "id": "library_member:bit32:function:rshift",
+          "kind": "function",
+          "name": "rshift",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            },
+            {
+              "name": "disp",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/bit32.yaml",
+          "sourceFileHash": "c8db8c7c6266b97e54147b8093ed4bf0903f3dc3dad18c958b5c9a98e5772b6a",
+          "tags": []
+        }
+      ],
+      "name": "bit32",
+      "sourceFile": "libraries/bit32.yaml",
+      "sourceFileHash": "c8db8c7c6266b97e54147b8093ed4bf0903f3dc3dad18c958b5c9a98e5772b6a",
+      "tags": []
+    },
+    {
+      "deprecated": false,
+      "id": "library:buffer",
+      "members": [
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:copy",
+          "kind": "function",
+          "name": "copy",
+          "parameters": [
+            {
+              "name": "target",
+              "type": "buffer"
+            },
+            {
+              "name": "targetOffset",
+              "type": "number"
+            },
+            {
+              "name": "source",
+              "type": "buffer"
+            },
+            {
+              "default": 0,
+              "name": "sourceOffset",
+              "type": "number?"
+            },
+            {
+              "name": "count",
+              "type": "number?"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:create",
+          "kind": "function",
+          "name": "create",
+          "parameters": [
+            {
+              "name": "size",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "buffer"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:fill",
+          "kind": "function",
+          "name": "fill",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            },
+            {
+              "name": "value",
+              "type": "number"
+            },
+            {
+              "name": "count",
+              "type": "number?"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:fromstring",
+          "kind": "function",
+          "name": "fromstring",
+          "parameters": [
+            {
+              "name": "str",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "buffer"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:len",
+          "kind": "function",
+          "name": "len",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:readbits",
+          "kind": "function",
+          "name": "readbits",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "bitOffset",
+              "type": "number"
+            },
+            {
+              "name": "bitCount",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:readf32",
+          "kind": "function",
+          "name": "readf32",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:readf64",
+          "kind": "function",
+          "name": "readf64",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:readi16",
+          "kind": "function",
+          "name": "readi16",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:readi32",
+          "kind": "function",
+          "name": "readi32",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:readi8",
+          "kind": "function",
+          "name": "readi8",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:readstring",
+          "kind": "function",
+          "name": "readstring",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            },
+            {
+              "name": "count",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:readu16",
+          "kind": "function",
+          "name": "readu16",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:readu32",
+          "kind": "function",
+          "name": "readu32",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:readu8",
+          "kind": "function",
+          "name": "readu8",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:tostring",
+          "kind": "function",
+          "name": "tostring",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:writebits",
+          "kind": "function",
+          "name": "writebits",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "bitOffset",
+              "type": "number"
+            },
+            {
+              "name": "bitCount",
+              "type": "number"
+            },
+            {
+              "name": "value",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:writef32",
+          "kind": "function",
+          "name": "writef32",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            },
+            {
+              "name": "value",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:writef64",
+          "kind": "function",
+          "name": "writef64",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            },
+            {
+              "name": "value",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:writei16",
+          "kind": "function",
+          "name": "writei16",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            },
+            {
+              "name": "value",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:writei32",
+          "kind": "function",
+          "name": "writei32",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            },
+            {
+              "name": "value",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:writei8",
+          "kind": "function",
+          "name": "writei8",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            },
+            {
+              "name": "value",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:writestring",
+          "kind": "function",
+          "name": "writestring",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            },
+            {
+              "name": "value",
+              "type": "string"
+            },
+            {
+              "name": "count",
+              "type": "number?"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:writeu16",
+          "kind": "function",
+          "name": "writeu16",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            },
+            {
+              "name": "value",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:writeu32",
+          "kind": "function",
+          "name": "writeu32",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            },
+            {
+              "name": "value",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "buffer",
+          "deprecated": false,
+          "id": "library_member:buffer:function:writeu8",
+          "kind": "function",
+          "name": "writeu8",
+          "parameters": [
+            {
+              "name": "b",
+              "type": "buffer"
+            },
+            {
+              "name": "offset",
+              "type": "number"
+            },
+            {
+              "name": "value",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/buffer.yaml",
+          "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+          "tags": []
+        }
+      ],
+      "name": "buffer",
+      "sourceFile": "libraries/buffer.yaml",
+      "sourceFileHash": "bb6ec48b6068c30d5876d2efacbe6318ac676521ae186c602f6658045084db8a",
+      "tags": []
+    },
+    {
+      "deprecated": false,
+      "id": "library:coroutine",
+      "members": [
+        {
+          "declaringLibrary": "coroutine",
+          "deprecated": false,
+          "id": "library_member:coroutine:function:close",
+          "kind": "function",
+          "name": "close",
+          "parameters": [
+            {
+              "name": "co",
+              "type": "thread"
+            }
+          ],
+          "returns": [
+            {
+              "type": "bool"
+            },
+            {
+              "type": "Variant<string, void>"
+            }
+          ],
+          "sourceFile": "libraries/coroutine.yaml",
+          "sourceFileHash": "2bc211391a3c2202f2f559889849265267548e4359b94301af9688d55fce7e36",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "coroutine",
+          "deprecated": false,
+          "id": "library_member:coroutine:function:create",
+          "kind": "function",
+          "name": "create",
+          "parameters": [
+            {
+              "name": "f",
+              "type": "function"
+            }
+          ],
+          "returns": [
+            {
+              "type": "thread"
+            }
+          ],
+          "sourceFile": "libraries/coroutine.yaml",
+          "sourceFileHash": "2bc211391a3c2202f2f559889849265267548e4359b94301af9688d55fce7e36",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "coroutine",
+          "deprecated": false,
+          "id": "library_member:coroutine:function:isyieldable",
+          "kind": "function",
+          "name": "isyieldable",
+          "parameters": [],
+          "returns": [
+            {
+              "type": "bool"
+            }
+          ],
+          "sourceFile": "libraries/coroutine.yaml",
+          "sourceFileHash": "2bc211391a3c2202f2f559889849265267548e4359b94301af9688d55fce7e36",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "coroutine",
+          "deprecated": false,
+          "id": "library_member:coroutine:function:resume",
+          "kind": "function",
+          "name": "resume",
+          "parameters": [
+            {
+              "name": "co",
+              "type": "thread"
+            },
+            {
+              "name": "...",
+              "type": "Variant"
+            }
+          ],
+          "returns": [
+            {
+              "type": "bool"
+            },
+            {
+              "type": "Variant<Tuple, string>"
+            }
+          ],
+          "sourceFile": "libraries/coroutine.yaml",
+          "sourceFileHash": "2bc211391a3c2202f2f559889849265267548e4359b94301af9688d55fce7e36",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "coroutine",
+          "deprecated": false,
+          "id": "library_member:coroutine:function:running",
+          "kind": "function",
+          "name": "running",
+          "parameters": [],
+          "returns": [
+            {
+              "type": "thread"
+            }
+          ],
+          "sourceFile": "libraries/coroutine.yaml",
+          "sourceFileHash": "2bc211391a3c2202f2f559889849265267548e4359b94301af9688d55fce7e36",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "coroutine",
+          "deprecated": false,
+          "id": "library_member:coroutine:function:status",
+          "kind": "function",
+          "name": "status",
+          "parameters": [
+            {
+              "name": "co",
+              "type": "thread"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/coroutine.yaml",
+          "sourceFileHash": "2bc211391a3c2202f2f559889849265267548e4359b94301af9688d55fce7e36",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "coroutine",
+          "deprecated": false,
+          "id": "library_member:coroutine:function:wrap",
+          "kind": "function",
+          "name": "wrap",
+          "parameters": [
+            {
+              "name": "f",
+              "type": "function"
+            }
+          ],
+          "returns": [
+            {
+              "type": "function"
+            }
+          ],
+          "sourceFile": "libraries/coroutine.yaml",
+          "sourceFileHash": "2bc211391a3c2202f2f559889849265267548e4359b94301af9688d55fce7e36",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "coroutine",
+          "deprecated": false,
+          "id": "library_member:coroutine:function:yield",
+          "kind": "function",
+          "name": "yield",
+          "parameters": [
+            {
+              "name": "...",
+              "type": "Tuple"
+            }
+          ],
+          "returns": [
+            {
+              "type": "Tuple<Variant>"
+            }
+          ],
+          "sourceFile": "libraries/coroutine.yaml",
+          "sourceFileHash": "2bc211391a3c2202f2f559889849265267548e4359b94301af9688d55fce7e36",
+          "tags": []
+        }
+      ],
+      "name": "coroutine",
+      "sourceFile": "libraries/coroutine.yaml",
+      "sourceFileHash": "2bc211391a3c2202f2f559889849265267548e4359b94301af9688d55fce7e36",
+      "tags": []
+    },
+    {
+      "deprecated": false,
+      "id": "library:debug",
+      "members": [
+        {
+          "declaringLibrary": "debug",
+          "deprecated": false,
+          "id": "library_member:debug:function:dumpcodesize",
+          "kind": "function",
+          "name": "dumpcodesize",
+          "parameters": [],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/debug.yaml",
+          "sourceFileHash": "b227a8b7d7ced3bbc19c0d0783ef66d70718d2d59a96ecb5763220939ed75554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "debug",
+          "deprecated": false,
+          "id": "library_member:debug:function:getmemorycategory",
+          "kind": "function",
+          "name": "getmemorycategory",
+          "parameters": [],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/debug.yaml",
+          "sourceFileHash": "b227a8b7d7ced3bbc19c0d0783ef66d70718d2d59a96ecb5763220939ed75554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "debug",
+          "deprecated": false,
+          "id": "library_member:debug:function:info:1",
+          "kind": "function",
+          "name": "info",
+          "parameters": [
+            {
+              "name": "function",
+              "type": "function"
+            },
+            {
+              "name": "options",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "Tuple"
+            }
+          ],
+          "sourceFile": "libraries/debug.yaml",
+          "sourceFileHash": "b227a8b7d7ced3bbc19c0d0783ef66d70718d2d59a96ecb5763220939ed75554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "debug",
+          "deprecated": false,
+          "id": "library_member:debug:function:info:2",
+          "kind": "function",
+          "name": "info",
+          "parameters": [
+            {
+              "name": "level",
+              "type": "number"
+            },
+            {
+              "name": "options",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "Tuple"
+            }
+          ],
+          "sourceFile": "libraries/debug.yaml",
+          "sourceFileHash": "b227a8b7d7ced3bbc19c0d0783ef66d70718d2d59a96ecb5763220939ed75554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "debug",
+          "deprecated": false,
+          "id": "library_member:debug:function:info:3",
+          "kind": "function",
+          "name": "info",
+          "parameters": [
+            {
+              "name": "thread",
+              "type": "thread"
+            },
+            {
+              "name": "level",
+              "type": "number"
+            },
+            {
+              "name": "options",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "Tuple"
+            }
+          ],
+          "sourceFile": "libraries/debug.yaml",
+          "sourceFileHash": "b227a8b7d7ced3bbc19c0d0783ef66d70718d2d59a96ecb5763220939ed75554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "debug",
+          "deprecated": false,
+          "id": "library_member:debug:function:profilebegin",
+          "kind": "function",
+          "name": "profilebegin",
+          "parameters": [
+            {
+              "name": "label",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/debug.yaml",
+          "sourceFileHash": "b227a8b7d7ced3bbc19c0d0783ef66d70718d2d59a96ecb5763220939ed75554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "debug",
+          "deprecated": false,
+          "id": "library_member:debug:function:profileend",
+          "kind": "function",
+          "name": "profileend",
+          "parameters": [],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/debug.yaml",
+          "sourceFileHash": "b227a8b7d7ced3bbc19c0d0783ef66d70718d2d59a96ecb5763220939ed75554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "debug",
+          "deprecated": false,
+          "id": "library_member:debug:function:resetmemorycategory",
+          "kind": "function",
+          "name": "resetmemorycategory",
+          "parameters": [],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/debug.yaml",
+          "sourceFileHash": "b227a8b7d7ced3bbc19c0d0783ef66d70718d2d59a96ecb5763220939ed75554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "debug",
+          "deprecated": false,
+          "id": "library_member:debug:function:setmemorycategory",
+          "kind": "function",
+          "name": "setmemorycategory",
+          "parameters": [
+            {
+              "name": "tag",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/debug.yaml",
+          "sourceFileHash": "b227a8b7d7ced3bbc19c0d0783ef66d70718d2d59a96ecb5763220939ed75554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "debug",
+          "deprecated": false,
+          "id": "library_member:debug:function:traceback:1",
+          "kind": "function",
+          "name": "traceback",
+          "parameters": [
+            {
+              "default": "",
+              "name": "message",
+              "type": "string"
+            },
+            {
+              "default": 1,
+              "name": "level",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/debug.yaml",
+          "sourceFileHash": "b227a8b7d7ced3bbc19c0d0783ef66d70718d2d59a96ecb5763220939ed75554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "debug",
+          "deprecated": false,
+          "id": "library_member:debug:function:traceback:2",
+          "kind": "function",
+          "name": "traceback",
+          "parameters": [
+            {
+              "name": "thread",
+              "type": "thread"
+            },
+            {
+              "default": "",
+              "name": "message",
+              "type": "string"
+            },
+            {
+              "default": 1,
+              "name": "level",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/debug.yaml",
+          "sourceFileHash": "b227a8b7d7ced3bbc19c0d0783ef66d70718d2d59a96ecb5763220939ed75554",
+          "tags": []
+        }
+      ],
+      "name": "debug",
+      "sourceFile": "libraries/debug.yaml",
+      "sourceFileHash": "b227a8b7d7ced3bbc19c0d0783ef66d70718d2d59a96ecb5763220939ed75554",
+      "tags": []
+    },
+    {
+      "deprecated": false,
+      "id": "library:math",
+      "members": [
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:abs",
+          "kind": "function",
+          "name": "abs",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:acos",
+          "kind": "function",
+          "name": "acos",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:asin",
+          "kind": "function",
+          "name": "asin",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:atan",
+          "kind": "function",
+          "name": "atan",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:atan2",
+          "kind": "function",
+          "name": "atan2",
+          "parameters": [
+            {
+              "name": "y",
+              "type": "number"
+            },
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:ceil",
+          "kind": "function",
+          "name": "ceil",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "int"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:clamp",
+          "kind": "function",
+          "name": "clamp",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            },
+            {
+              "name": "min",
+              "type": "number"
+            },
+            {
+              "name": "max",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:cos",
+          "kind": "function",
+          "name": "cos",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:cosh",
+          "kind": "function",
+          "name": "cosh",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:deg",
+          "kind": "function",
+          "name": "deg",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:exp",
+          "kind": "function",
+          "name": "exp",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:floor",
+          "kind": "function",
+          "name": "floor",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "int"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:fmod",
+          "kind": "function",
+          "name": "fmod",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            },
+            {
+              "name": "y",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:frexp",
+          "kind": "function",
+          "name": "frexp",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "int"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:isfinite",
+          "kind": "function",
+          "name": "isfinite",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "boolean"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:isinf",
+          "kind": "function",
+          "name": "isinf",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "boolean"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:isnan",
+          "kind": "function",
+          "name": "isnan",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "boolean"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:ldexp",
+          "kind": "function",
+          "name": "ldexp",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            },
+            {
+              "name": "e",
+              "type": "int"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:lerp",
+          "kind": "function",
+          "name": "lerp",
+          "parameters": [
+            {
+              "name": "a",
+              "type": "number"
+            },
+            {
+              "name": "b",
+              "type": "number"
+            },
+            {
+              "name": "t",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:log",
+          "kind": "function",
+          "name": "log",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            },
+            {
+              "default": 2.7182818,
+              "name": "base",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:log10",
+          "kind": "function",
+          "name": "log10",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:map",
+          "kind": "function",
+          "name": "map",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            },
+            {
+              "name": "inmin",
+              "type": "number"
+            },
+            {
+              "name": "inmax",
+              "type": "number"
+            },
+            {
+              "name": "outmin",
+              "type": "number"
+            },
+            {
+              "name": "outmax",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:max",
+          "kind": "function",
+          "name": "max",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            },
+            {
+              "name": "...",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:min",
+          "kind": "function",
+          "name": "min",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            },
+            {
+              "name": "...",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:modf",
+          "kind": "function",
+          "name": "modf",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:noise",
+          "kind": "function",
+          "name": "noise",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            },
+            {
+              "default": 0,
+              "name": "y",
+              "type": "number"
+            },
+            {
+              "default": 0,
+              "name": "z",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:pow",
+          "kind": "function",
+          "name": "pow",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            },
+            {
+              "name": "y",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:rad",
+          "kind": "function",
+          "name": "rad",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:random",
+          "kind": "function",
+          "name": "random",
+          "parameters": [
+            {
+              "default": 0,
+              "name": "m",
+              "type": "number"
+            },
+            {
+              "default": 1,
+              "name": "n",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:randomseed",
+          "kind": "function",
+          "name": "randomseed",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:round",
+          "kind": "function",
+          "name": "round",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:sign",
+          "kind": "function",
+          "name": "sign",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "int"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:sin",
+          "kind": "function",
+          "name": "sin",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:sinh",
+          "kind": "function",
+          "name": "sinh",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:sqrt",
+          "kind": "function",
+          "name": "sqrt",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:tan",
+          "kind": "function",
+          "name": "tan",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:function:tanh",
+          "kind": "function",
+          "name": "tanh",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:property:e",
+          "kind": "property",
+          "name": "e",
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": [],
+          "valueType": "number"
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:property:huge",
+          "kind": "property",
+          "name": "huge",
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": [],
+          "valueType": "number"
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:property:nan",
+          "kind": "property",
+          "name": "nan",
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": [],
+          "valueType": "number"
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:property:phi",
+          "kind": "property",
+          "name": "phi",
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": [],
+          "valueType": "number"
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:property:pi",
+          "kind": "property",
+          "name": "pi",
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": [],
+          "valueType": "number"
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:property:sqrt2",
+          "kind": "property",
+          "name": "sqrt2",
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": [],
+          "valueType": "number"
+        },
+        {
+          "declaringLibrary": "math",
+          "deprecated": false,
+          "id": "library_member:math:property:tau",
+          "kind": "property",
+          "name": "tau",
+          "sourceFile": "libraries/math.yaml",
+          "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+          "tags": [],
+          "valueType": "number"
+        }
+      ],
+      "name": "math",
+      "sourceFile": "libraries/math.yaml",
+      "sourceFileHash": "c572ebb5479b204829bdbad0f3eb17f28c74ab0a8e47589fd8f22f52720dc9fb",
+      "tags": []
+    },
+    {
+      "deprecated": false,
+      "id": "library:os",
+      "members": [
+        {
+          "declaringLibrary": "os",
+          "deprecated": false,
+          "id": "library_member:os:function:clock",
+          "kind": "function",
+          "name": "clock",
+          "parameters": [],
+          "returns": [
+            {
+              "type": "double"
+            }
+          ],
+          "sourceFile": "libraries/os.yaml",
+          "sourceFileHash": "ed15598cc243ca0c179b2ef0371b944b2f02c8dfd144785488f63734c499664b",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "os",
+          "deprecated": false,
+          "id": "library_member:os:function:date",
+          "kind": "function",
+          "name": "date",
+          "parameters": [
+            {
+              "name": "formatString",
+              "type": "string"
+            },
+            {
+              "name": "time",
+              "type": "int"
+            }
+          ],
+          "returns": [
+            {
+              "type": "Dictionary"
+            }
+          ],
+          "sourceFile": "libraries/os.yaml",
+          "sourceFileHash": "ed15598cc243ca0c179b2ef0371b944b2f02c8dfd144785488f63734c499664b",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "os",
+          "deprecated": false,
+          "id": "library_member:os:function:difftime",
+          "kind": "function",
+          "name": "difftime",
+          "parameters": [
+            {
+              "name": "t2",
+              "type": "int"
+            },
+            {
+              "name": "t1",
+              "type": "int"
+            }
+          ],
+          "returns": [
+            {
+              "type": "int"
+            }
+          ],
+          "sourceFile": "libraries/os.yaml",
+          "sourceFileHash": "ed15598cc243ca0c179b2ef0371b944b2f02c8dfd144785488f63734c499664b",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "os",
+          "deprecated": false,
+          "id": "library_member:os:function:time",
+          "kind": "function",
+          "name": "time",
+          "parameters": [
+            {
+              "default": "UTC time",
+              "name": "time",
+              "type": "table"
+            }
+          ],
+          "returns": [
+            {
+              "type": "int"
+            }
+          ],
+          "sourceFile": "libraries/os.yaml",
+          "sourceFileHash": "ed15598cc243ca0c179b2ef0371b944b2f02c8dfd144785488f63734c499664b",
+          "tags": []
+        }
+      ],
+      "name": "os",
+      "sourceFile": "libraries/os.yaml",
+      "sourceFileHash": "ed15598cc243ca0c179b2ef0371b944b2f02c8dfd144785488f63734c499664b",
+      "tags": []
+    },
+    {
+      "deprecated": false,
+      "id": "library:string",
+      "members": [
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:byte",
+          "kind": "function",
+          "name": "byte",
+          "parameters": [
+            {
+              "name": "s",
+              "type": "string"
+            },
+            {
+              "default": 1,
+              "name": "i",
+              "type": "number"
+            },
+            {
+              "default": "i",
+              "name": "j",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "int"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:char",
+          "kind": "function",
+          "name": "char",
+          "parameters": [
+            {
+              "name": "...",
+              "type": "int"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:find",
+          "kind": "function",
+          "name": "find",
+          "parameters": [
+            {
+              "name": "s",
+              "type": "string"
+            },
+            {
+              "name": "pattern",
+              "type": "string"
+            },
+            {
+              "default": 1,
+              "name": "init",
+              "type": "number"
+            },
+            {
+              "default": false,
+              "name": "plain",
+              "type": "bool"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:format",
+          "kind": "function",
+          "name": "format",
+          "parameters": [
+            {
+              "name": "formatstring",
+              "type": "string"
+            },
+            {
+              "name": "...",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:gmatch",
+          "kind": "function",
+          "name": "gmatch",
+          "parameters": [
+            {
+              "name": "s",
+              "type": "string"
+            },
+            {
+              "name": "pattern",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "function"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:gsub",
+          "kind": "function",
+          "name": "gsub",
+          "parameters": [
+            {
+              "name": "s",
+              "type": "string"
+            },
+            {
+              "name": "pattern",
+              "type": "string"
+            },
+            {
+              "name": "replacement",
+              "type": "Variant"
+            },
+            {
+              "name": "replacements",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:len",
+          "kind": "function",
+          "name": "len",
+          "parameters": [
+            {
+              "name": "s",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "int"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:lower",
+          "kind": "function",
+          "name": "lower",
+          "parameters": [
+            {
+              "name": "s",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:match",
+          "kind": "function",
+          "name": "match",
+          "parameters": [
+            {
+              "name": "s",
+              "type": "string"
+            },
+            {
+              "name": "pattern",
+              "type": "string"
+            },
+            {
+              "default": 1,
+              "name": "init",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:pack",
+          "kind": "function",
+          "name": "pack",
+          "parameters": [
+            {
+              "name": "format",
+              "type": "string"
+            },
+            {
+              "name": "...",
+              "type": "Variant"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:packsize",
+          "kind": "function",
+          "name": "packsize",
+          "parameters": [
+            {
+              "name": "format",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:rep",
+          "kind": "function",
+          "name": "rep",
+          "parameters": [
+            {
+              "name": "s",
+              "type": "string"
+            },
+            {
+              "name": "n",
+              "type": "int"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:reverse",
+          "kind": "function",
+          "name": "reverse",
+          "parameters": [
+            {
+              "name": "s",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:split",
+          "kind": "function",
+          "name": "split",
+          "parameters": [
+            {
+              "name": "s",
+              "type": "string"
+            },
+            {
+              "default": ",",
+              "name": "separator",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "table"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:sub",
+          "kind": "function",
+          "name": "sub",
+          "parameters": [
+            {
+              "name": "s",
+              "type": "string"
+            },
+            {
+              "default": 1,
+              "name": "i",
+              "type": "int"
+            },
+            {
+              "default": -1,
+              "name": "j",
+              "type": "int"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:unpack",
+          "kind": "function",
+          "name": "unpack",
+          "parameters": [
+            {
+              "name": "format",
+              "type": "string"
+            },
+            {
+              "name": "data",
+              "type": "string"
+            },
+            {
+              "default": 1,
+              "name": "readStart",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "Tuple"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "string",
+          "deprecated": false,
+          "id": "library_member:string:function:upper",
+          "kind": "function",
+          "name": "upper",
+          "parameters": [
+            {
+              "name": "s",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/string.yaml",
+          "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+          "tags": []
+        }
+      ],
+      "name": "string",
+      "sourceFile": "libraries/string.yaml",
+      "sourceFileHash": "38fa6717571966c688736e54bbb9fd5a60a95348cc7d361ce3f34cb313a41554",
+      "tags": []
+    },
+    {
+      "deprecated": false,
+      "id": "library:table",
+      "members": [
+        {
+          "declaringLibrary": "table",
+          "deprecated": false,
+          "id": "library_member:table:function:clear",
+          "kind": "function",
+          "name": "clear",
+          "parameters": [
+            {
+              "name": "table",
+              "type": "table"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": false,
+          "id": "library_member:table:function:clone",
+          "kind": "function",
+          "name": "clone",
+          "parameters": [
+            {
+              "name": "t",
+              "type": "table"
+            }
+          ],
+          "returns": [
+            {
+              "type": "table"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": false,
+          "id": "library_member:table:function:concat",
+          "kind": "function",
+          "name": "concat",
+          "parameters": [
+            {
+              "name": "t",
+              "type": "Array"
+            },
+            {
+              "default": "",
+              "name": "sep",
+              "type": "string"
+            },
+            {
+              "default": 1,
+              "name": "i",
+              "type": "int"
+            },
+            {
+              "name": "j",
+              "type": "int"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": false,
+          "id": "library_member:table:function:create",
+          "kind": "function",
+          "name": "create",
+          "parameters": [
+            {
+              "name": "count",
+              "type": "number"
+            },
+            {
+              "name": "value",
+              "type": "Variant"
+            }
+          ],
+          "returns": [
+            {
+              "type": "table"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": false,
+          "id": "library_member:table:function:find",
+          "kind": "function",
+          "name": "find",
+          "parameters": [
+            {
+              "name": "haystack",
+              "type": "table"
+            },
+            {
+              "name": "needle",
+              "type": "Variant"
+            },
+            {
+              "name": "init",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "Variant"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": true,
+          "id": "library_member:table:function:foreach",
+          "kind": "function",
+          "name": "foreach",
+          "parameters": [
+            {
+              "name": "t",
+              "type": "table"
+            },
+            {
+              "name": "f",
+              "type": "function"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": [
+            "Deprecated"
+          ]
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": true,
+          "id": "library_member:table:function:foreachi",
+          "kind": "function",
+          "name": "foreachi",
+          "parameters": [
+            {
+              "name": "t",
+              "type": "Array"
+            },
+            {
+              "name": "f",
+              "type": "function"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": [
+            "Deprecated"
+          ]
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": false,
+          "id": "library_member:table:function:freeze",
+          "kind": "function",
+          "name": "freeze",
+          "parameters": [
+            {
+              "name": "t",
+              "type": "table"
+            }
+          ],
+          "returns": [
+            {
+              "type": "table"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": true,
+          "id": "library_member:table:function:getn",
+          "kind": "function",
+          "name": "getn",
+          "parameters": [
+            {
+              "name": "t",
+              "type": "Array"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": [
+            "Deprecated"
+          ]
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": false,
+          "id": "library_member:table:function:insert:1",
+          "kind": "function",
+          "name": "insert",
+          "parameters": [
+            {
+              "name": "t",
+              "type": "Array"
+            },
+            {
+              "name": "pos",
+              "type": "number"
+            },
+            {
+              "name": "value",
+              "type": "Variant"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": false,
+          "id": "library_member:table:function:insert:2",
+          "kind": "function",
+          "name": "insert",
+          "parameters": [
+            {
+              "name": "t",
+              "type": "Array"
+            },
+            {
+              "name": "value",
+              "type": "Variant"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": false,
+          "id": "library_member:table:function:isfrozen",
+          "kind": "function",
+          "name": "isfrozen",
+          "parameters": [
+            {
+              "name": "t",
+              "type": "table"
+            }
+          ],
+          "returns": [
+            {
+              "type": "bool"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": false,
+          "id": "library_member:table:function:maxn",
+          "kind": "function",
+          "name": "maxn",
+          "parameters": [
+            {
+              "name": "t",
+              "type": "table"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": false,
+          "id": "library_member:table:function:move",
+          "kind": "function",
+          "name": "move",
+          "parameters": [
+            {
+              "name": "src",
+              "type": "table"
+            },
+            {
+              "name": "a",
+              "type": "number"
+            },
+            {
+              "name": "b",
+              "type": "number"
+            },
+            {
+              "name": "t",
+              "type": "number"
+            },
+            {
+              "default": "src",
+              "name": "dst",
+              "type": "table"
+            }
+          ],
+          "returns": [
+            {
+              "type": "table"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": false,
+          "id": "library_member:table:function:pack",
+          "kind": "function",
+          "name": "pack",
+          "parameters": [
+            {
+              "name": "values...",
+              "type": "Variant"
+            }
+          ],
+          "returns": [
+            {
+              "type": "Variant"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": false,
+          "id": "library_member:table:function:remove",
+          "kind": "function",
+          "name": "remove",
+          "parameters": [
+            {
+              "name": "t",
+              "type": "Array"
+            },
+            {
+              "name": "pos",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "Variant"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": false,
+          "id": "library_member:table:function:sort",
+          "kind": "function",
+          "name": "sort",
+          "parameters": [
+            {
+              "name": "t",
+              "type": "Array"
+            },
+            {
+              "default": "nil",
+              "name": "comp",
+              "type": "function"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "table",
+          "deprecated": false,
+          "id": "library_member:table:function:unpack",
+          "kind": "function",
+          "name": "unpack",
+          "parameters": [
+            {
+              "name": "list",
+              "type": "table"
+            },
+            {
+              "default": 1,
+              "name": "i",
+              "type": "number"
+            },
+            {
+              "default": "#list",
+              "name": "j",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "Tuple"
+            }
+          ],
+          "sourceFile": "libraries/table.yaml",
+          "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+          "tags": []
+        }
+      ],
+      "name": "table",
+      "sourceFile": "libraries/table.yaml",
+      "sourceFileHash": "bee24fdfe2789c10c9eda1c551ac4c75b2b9609d8e157a01f483660454c1b22a",
+      "tags": []
+    },
+    {
+      "deprecated": false,
+      "id": "library:task",
+      "members": [
+        {
+          "declaringLibrary": "task",
+          "deprecated": false,
+          "id": "library_member:task:function:cancel",
+          "kind": "function",
+          "name": "cancel",
+          "parameters": [
+            {
+              "name": "thread",
+              "type": "thread"
+            }
+          ],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/task.yaml",
+          "sourceFileHash": "05aceb742bb8975de3b285fc9da532b666dab83b663e4ac1bb3c338954840b2f",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "task",
+          "deprecated": false,
+          "id": "library_member:task:function:defer",
+          "kind": "function",
+          "name": "defer",
+          "parameters": [
+            {
+              "name": "functionOrThread",
+              "type": "function | thread"
+            },
+            {
+              "name": "...",
+              "type": "Variant"
+            }
+          ],
+          "returns": [
+            {
+              "type": "thread"
+            }
+          ],
+          "sourceFile": "libraries/task.yaml",
+          "sourceFileHash": "05aceb742bb8975de3b285fc9da532b666dab83b663e4ac1bb3c338954840b2f",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "task",
+          "deprecated": false,
+          "id": "library_member:task:function:delay",
+          "kind": "function",
+          "name": "delay",
+          "parameters": [
+            {
+              "name": "duration",
+              "type": "number"
+            },
+            {
+              "name": "functionOrThread",
+              "type": "function | thread"
+            },
+            {
+              "name": "...",
+              "type": "Variant"
+            }
+          ],
+          "returns": [
+            {
+              "type": "thread"
+            }
+          ],
+          "sourceFile": "libraries/task.yaml",
+          "sourceFileHash": "05aceb742bb8975de3b285fc9da532b666dab83b663e4ac1bb3c338954840b2f",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "task",
+          "deprecated": false,
+          "id": "library_member:task:function:desynchronize",
+          "kind": "function",
+          "name": "desynchronize",
+          "parameters": [],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/task.yaml",
+          "sourceFileHash": "05aceb742bb8975de3b285fc9da532b666dab83b663e4ac1bb3c338954840b2f",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "task",
+          "deprecated": false,
+          "id": "library_member:task:function:spawn",
+          "kind": "function",
+          "name": "spawn",
+          "parameters": [
+            {
+              "name": "functionOrThread",
+              "type": "function | thread"
+            },
+            {
+              "name": "...",
+              "type": "Variant"
+            }
+          ],
+          "returns": [
+            {
+              "type": "thread"
+            }
+          ],
+          "sourceFile": "libraries/task.yaml",
+          "sourceFileHash": "05aceb742bb8975de3b285fc9da532b666dab83b663e4ac1bb3c338954840b2f",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "task",
+          "deprecated": false,
+          "id": "library_member:task:function:synchronize",
+          "kind": "function",
+          "name": "synchronize",
+          "parameters": [],
+          "returns": [
+            {
+              "type": "()"
+            }
+          ],
+          "sourceFile": "libraries/task.yaml",
+          "sourceFileHash": "05aceb742bb8975de3b285fc9da532b666dab83b663e4ac1bb3c338954840b2f",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "task",
+          "deprecated": false,
+          "id": "library_member:task:function:wait",
+          "kind": "function",
+          "name": "wait",
+          "parameters": [
+            {
+              "default": 0,
+              "name": "duration",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/task.yaml",
+          "sourceFileHash": "05aceb742bb8975de3b285fc9da532b666dab83b663e4ac1bb3c338954840b2f",
+          "tags": []
+        }
+      ],
+      "name": "task",
+      "sourceFile": "libraries/task.yaml",
+      "sourceFileHash": "05aceb742bb8975de3b285fc9da532b666dab83b663e4ac1bb3c338954840b2f",
+      "tags": []
+    },
+    {
+      "deprecated": false,
+      "id": "library:utf8",
+      "members": [
+        {
+          "declaringLibrary": "utf8",
+          "deprecated": false,
+          "id": "library_member:utf8:function:char",
+          "kind": "function",
+          "name": "char",
+          "parameters": [
+            {
+              "name": "codepoints",
+              "type": "Tuple<int>"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/utf8.yaml",
+          "sourceFileHash": "11a244eabe27029423bc757e8e32ddb8e9e52d62181bc9abb914745a6f0a7ecd",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "utf8",
+          "deprecated": false,
+          "id": "library_member:utf8:function:codepoint",
+          "kind": "function",
+          "name": "codepoint",
+          "parameters": [
+            {
+              "name": "str",
+              "type": "string"
+            },
+            {
+              "default": 1,
+              "name": "i",
+              "type": "int"
+            },
+            {
+              "default": "i",
+              "name": "j",
+              "type": "int"
+            }
+          ],
+          "returns": [
+            {
+              "type": "Tuple<int>"
+            }
+          ],
+          "sourceFile": "libraries/utf8.yaml",
+          "sourceFileHash": "11a244eabe27029423bc757e8e32ddb8e9e52d62181bc9abb914745a6f0a7ecd",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "utf8",
+          "deprecated": false,
+          "id": "library_member:utf8:function:codes",
+          "kind": "function",
+          "name": "codes",
+          "parameters": [
+            {
+              "name": "str",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "function"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "int"
+            }
+          ],
+          "sourceFile": "libraries/utf8.yaml",
+          "sourceFileHash": "11a244eabe27029423bc757e8e32ddb8e9e52d62181bc9abb914745a6f0a7ecd",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "utf8",
+          "deprecated": false,
+          "id": "library_member:utf8:function:graphemes",
+          "kind": "function",
+          "name": "graphemes",
+          "parameters": [
+            {
+              "name": "str",
+              "type": "string"
+            },
+            {
+              "name": "i",
+              "type": "number"
+            },
+            {
+              "name": "j",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "function"
+            }
+          ],
+          "sourceFile": "libraries/utf8.yaml",
+          "sourceFileHash": "11a244eabe27029423bc757e8e32ddb8e9e52d62181bc9abb914745a6f0a7ecd",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "utf8",
+          "deprecated": false,
+          "id": "library_member:utf8:function:len",
+          "kind": "function",
+          "name": "len",
+          "parameters": [
+            {
+              "name": "s",
+              "type": "string"
+            },
+            {
+              "default": 1,
+              "name": "i",
+              "type": "int"
+            },
+            {
+              "default": -1,
+              "name": "j",
+              "type": "int"
+            }
+          ],
+          "returns": [
+            {
+              "type": "int"
+            }
+          ],
+          "sourceFile": "libraries/utf8.yaml",
+          "sourceFileHash": "11a244eabe27029423bc757e8e32ddb8e9e52d62181bc9abb914745a6f0a7ecd",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "utf8",
+          "deprecated": false,
+          "id": "library_member:utf8:function:nfcnormalize",
+          "kind": "function",
+          "name": "nfcnormalize",
+          "parameters": [
+            {
+              "name": "str",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/utf8.yaml",
+          "sourceFileHash": "11a244eabe27029423bc757e8e32ddb8e9e52d62181bc9abb914745a6f0a7ecd",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "utf8",
+          "deprecated": false,
+          "id": "library_member:utf8:function:nfdnormalize",
+          "kind": "function",
+          "name": "nfdnormalize",
+          "parameters": [
+            {
+              "name": "str",
+              "type": "string"
+            }
+          ],
+          "returns": [
+            {
+              "type": "string"
+            }
+          ],
+          "sourceFile": "libraries/utf8.yaml",
+          "sourceFileHash": "11a244eabe27029423bc757e8e32ddb8e9e52d62181bc9abb914745a6f0a7ecd",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "utf8",
+          "deprecated": false,
+          "id": "library_member:utf8:function:offset",
+          "kind": "function",
+          "name": "offset",
+          "parameters": [
+            {
+              "name": "s",
+              "type": "string"
+            },
+            {
+              "name": "n",
+              "type": "int"
+            },
+            {
+              "default": 1,
+              "name": "i",
+              "type": "int"
+            }
+          ],
+          "returns": [
+            {
+              "type": "int?"
+            }
+          ],
+          "sourceFile": "libraries/utf8.yaml",
+          "sourceFileHash": "11a244eabe27029423bc757e8e32ddb8e9e52d62181bc9abb914745a6f0a7ecd",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "utf8",
+          "deprecated": false,
+          "id": "library_member:utf8:property:charpattern",
+          "kind": "property",
+          "name": "charpattern",
+          "sourceFile": "libraries/utf8.yaml",
+          "sourceFileHash": "11a244eabe27029423bc757e8e32ddb8e9e52d62181bc9abb914745a6f0a7ecd",
+          "tags": [],
+          "valueType": "string"
+        }
+      ],
+      "name": "utf8",
+      "sourceFile": "libraries/utf8.yaml",
+      "sourceFileHash": "11a244eabe27029423bc757e8e32ddb8e9e52d62181bc9abb914745a6f0a7ecd",
+      "tags": []
+    },
+    {
+      "deprecated": false,
+      "id": "library:vector",
+      "members": [
+        {
+          "declaringLibrary": "vector",
+          "deprecated": false,
+          "id": "library_member:vector:function:abs",
+          "kind": "function",
+          "name": "abs",
+          "parameters": [
+            {
+              "name": "vec",
+              "type": "vector"
+            }
+          ],
+          "returns": [
+            {
+              "type": "vector"
+            }
+          ],
+          "sourceFile": "libraries/vector.yaml",
+          "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "vector",
+          "deprecated": false,
+          "id": "library_member:vector:function:angle",
+          "kind": "function",
+          "name": "angle",
+          "parameters": [
+            {
+              "name": "vec1",
+              "type": "vector"
+            },
+            {
+              "name": "vec2",
+              "type": "vector"
+            },
+            {
+              "name": "axis",
+              "type": "vector?"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/vector.yaml",
+          "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "vector",
+          "deprecated": false,
+          "id": "library_member:vector:function:ceil",
+          "kind": "function",
+          "name": "ceil",
+          "parameters": [
+            {
+              "name": "vec",
+              "type": "vector"
+            }
+          ],
+          "returns": [
+            {
+              "type": "vector"
+            }
+          ],
+          "sourceFile": "libraries/vector.yaml",
+          "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "vector",
+          "deprecated": false,
+          "id": "library_member:vector:function:clamp",
+          "kind": "function",
+          "name": "clamp",
+          "parameters": [
+            {
+              "name": "vec",
+              "type": "vector"
+            },
+            {
+              "name": "min",
+              "type": "vector"
+            },
+            {
+              "name": "max",
+              "type": "vector"
+            }
+          ],
+          "returns": [
+            {
+              "type": "vector"
+            }
+          ],
+          "sourceFile": "libraries/vector.yaml",
+          "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "vector",
+          "deprecated": false,
+          "id": "library_member:vector:function:create",
+          "kind": "function",
+          "name": "create",
+          "parameters": [
+            {
+              "name": "x",
+              "type": "number"
+            },
+            {
+              "name": "y",
+              "type": "number"
+            },
+            {
+              "name": "z",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "vector"
+            }
+          ],
+          "sourceFile": "libraries/vector.yaml",
+          "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "vector",
+          "deprecated": false,
+          "id": "library_member:vector:function:cross",
+          "kind": "function",
+          "name": "cross",
+          "parameters": [
+            {
+              "name": "vec1",
+              "type": "vector"
+            },
+            {
+              "name": "vec2",
+              "type": "vector"
+            }
+          ],
+          "returns": [
+            {
+              "type": "vector"
+            }
+          ],
+          "sourceFile": "libraries/vector.yaml",
+          "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "vector",
+          "deprecated": false,
+          "id": "library_member:vector:function:dot",
+          "kind": "function",
+          "name": "dot",
+          "parameters": [
+            {
+              "name": "vec1",
+              "type": "vector"
+            },
+            {
+              "name": "vec2",
+              "type": "vector"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/vector.yaml",
+          "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "vector",
+          "deprecated": false,
+          "id": "library_member:vector:function:floor",
+          "kind": "function",
+          "name": "floor",
+          "parameters": [
+            {
+              "name": "vec",
+              "type": "vector"
+            }
+          ],
+          "returns": [
+            {
+              "type": "vector"
+            }
+          ],
+          "sourceFile": "libraries/vector.yaml",
+          "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "vector",
+          "deprecated": false,
+          "id": "library_member:vector:function:lerp",
+          "kind": "function",
+          "name": "lerp",
+          "parameters": [
+            {
+              "name": "vec1",
+              "type": "vector"
+            },
+            {
+              "name": "vec2",
+              "type": "vector"
+            },
+            {
+              "name": "alpha",
+              "type": "number"
+            }
+          ],
+          "returns": [
+            {
+              "type": "vector"
+            }
+          ],
+          "sourceFile": "libraries/vector.yaml",
+          "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "vector",
+          "deprecated": false,
+          "id": "library_member:vector:function:magnitude",
+          "kind": "function",
+          "name": "magnitude",
+          "parameters": [
+            {
+              "name": "vec",
+              "type": "vector"
+            }
+          ],
+          "returns": [
+            {
+              "type": "number"
+            }
+          ],
+          "sourceFile": "libraries/vector.yaml",
+          "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "vector",
+          "deprecated": false,
+          "id": "library_member:vector:function:max",
+          "kind": "function",
+          "name": "max",
+          "parameters": [
+            {
+              "name": "...",
+              "type": "vector"
+            }
+          ],
+          "returns": [
+            {
+              "type": "vector"
+            }
+          ],
+          "sourceFile": "libraries/vector.yaml",
+          "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "vector",
+          "deprecated": false,
+          "id": "library_member:vector:function:min",
+          "kind": "function",
+          "name": "min",
+          "parameters": [
+            {
+              "name": "...",
+              "type": "vector"
+            }
+          ],
+          "returns": [
+            {
+              "type": "vector"
+            }
+          ],
+          "sourceFile": "libraries/vector.yaml",
+          "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "vector",
+          "deprecated": false,
+          "id": "library_member:vector:function:normalize",
+          "kind": "function",
+          "name": "normalize",
+          "parameters": [
+            {
+              "name": "vec",
+              "type": "vector"
+            }
+          ],
+          "returns": [
+            {
+              "type": "vector"
+            }
+          ],
+          "sourceFile": "libraries/vector.yaml",
+          "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "vector",
+          "deprecated": false,
+          "id": "library_member:vector:function:sign",
+          "kind": "function",
+          "name": "sign",
+          "parameters": [
+            {
+              "name": "vec",
+              "type": "vector"
+            }
+          ],
+          "returns": [
+            {
+              "type": "vector"
+            }
+          ],
+          "sourceFile": "libraries/vector.yaml",
+          "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+          "tags": []
+        },
+        {
+          "declaringLibrary": "vector",
+          "deprecated": false,
+          "id": "library_member:vector:property:one",
+          "kind": "property",
+          "name": "one",
+          "sourceFile": "libraries/vector.yaml",
+          "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+          "tags": [],
+          "valueType": "vector"
+        },
+        {
+          "declaringLibrary": "vector",
+          "deprecated": false,
+          "id": "library_member:vector:property:zero",
+          "kind": "property",
+          "name": "zero",
+          "sourceFile": "libraries/vector.yaml",
+          "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+          "tags": [],
+          "valueType": "vector"
+        }
+      ],
+      "name": "vector",
+      "sourceFile": "libraries/vector.yaml",
+      "sourceFileHash": "283c2df8c017abb82dd77bac84261a9cebef9672f85314f97348c3660e221601",
+      "tags": []
+    }
+  ],
   "source": {
-    "commit": "529a24ff2aa9896dad50fc12268717210ba3127d",
+    "commit": "d025c96bdb1c81570221997092fbe0ad94b5337c",
     "counts": {
       "classCallbacks": 13,
       "classEvents": 393,
@@ -163557,12 +168883,17 @@ export const ROBLOX_API_CATALOG: RobloxApiCatalog = {
       "datatypeProperties": 175,
       "datatypes": 48,
       "enumItems": 3003,
-      "enums": 518
+      "enums": 518,
+      "globalFunctions": 42,
+      "globalProperties": 8,
+      "libraries": 11,
+      "libraryFunctions": 165,
+      "libraryProperties": 10
     },
     "engineReferencePath": "content/en-us/reference/engine",
     "kind": "RobloxApiCatalogSource",
     "repository": "https://github.com/Roblox/creator-docs.git",
-    "sourceTreeHash": "b62066ef0fa92c4be5f8a6e0681cd899b4a88a30571a410900a75de98a987315"
+    "sourceTreeHash": "6df2b67ba4e5fdc4d24f245ee159a64a6575d7eea37f0819107141dfc9716d04"
   }
 };
-export const ROBLOX_API_CATALOG_HASH = "e4d89b5a42f7587f0740d9ee5833e5ecfbb06ef2b212eba1aa4ee037e595af5b";
+export const ROBLOX_API_CATALOG_HASH = "142406530e50b9c65fee0d7792e48aa22001e8697399820b43382dc5fdfe490e";

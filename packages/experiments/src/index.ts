@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import {
   FORGE_NATIVE_RUNTIME_IDENTITY,
-  INITIAL_EXPERIMENT_BUDGETS,
+  DEFAULT_AGENT_BUDGETS,
   orderedToolDescriptionsHash,
   prepareAgentBuild,
   runBoundedAgent,
@@ -93,7 +93,7 @@ export interface RegisteredExperimentRunInput {
 
 export async function registerExperiment(input: RegisterExperimentInput): Promise<ExperimentRegistration> {
   assertRegistrationInput(input);
-  const budgets = { ...(input.budgets ?? INITIAL_EXPERIMENT_BUDGETS) };
+  const budgets = { ...(input.budgets ?? DEFAULT_AGENT_BUDGETS) };
   const temporary = await mkdtemp(join(tmpdir(), "forge-experiment-registration-"));
   try {
     const prepared = await prepareAgentBuild({

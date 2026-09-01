@@ -15,19 +15,23 @@ export function ArtifactWorkbench({ controlView }: ArtifactWorkbenchProps): Reac
     <section className="artifact-workbench" aria-labelledby="artifact-title">
       <div className="panel-heading artifact-workbench__heading">
         <div>
-          <p className="eyebrow">Immutable record</p>
-          <h2 id="artifact-title">Artifact workbench</h2>
+          <h2 id="artifact-title">{controlView.title}</h2>
         </div>
         <span className="view-hash" title={controlView.hash}>view {abbreviate(controlView.hash)}</span>
       </div>
       <p className="view-message" aria-live="polite">{controlView.detail}</p>
       <ReviewPresentation controlView={controlView} />
       <CreatorJudgmentPrompts prompts={controlView.creatorReviewPrompts} />
-      <div className="artifact-grid">
-        {artifacts.map(([label, artifact]) => (
-          <ArtifactCard key={artifact.artifactHash} label={label} artifact={artifact} onOpen={setSelectedArtifact} />
-        ))}
-      </div>
+      {artifacts.length > 0 ? (
+        <section className="artifact-index" aria-label="Immutable evidence files">
+          <h3>Evidence files</h3>
+          <div className="artifact-grid">
+            {artifacts.map(([label, artifact]) => (
+              <ArtifactCard key={artifact.artifactHash} label={label} artifact={artifact} onOpen={setSelectedArtifact} />
+            ))}
+          </div>
+        </section>
+      ) : null}
       <MutationSummary controlView={controlView} />
       <VerificationSummary controlView={controlView} />
       {selectedArtifact ? (
@@ -45,8 +49,8 @@ function MutationSummary({ controlView }: { controlView: CreatorControlView }): 
   return (
     <section className={`verification-summary verification-summary--${mutation.status}`} aria-label="Mutation evidence summary">
       <div>
-        <p className="eyebrow">Transactional mutation proof</p>
-        <strong>{mutation.status.replaceAll("_", " ")}</strong>
+        <strong>Transactional mutation proof</strong>
+        <span className="verification-summary__status">{mutation.status.replaceAll("_", " ")}</span>
         <span>{mutation.projectionFactCount} projected facts · {mutation.replayable ? "Provider-free replay available" : "Evidence is explicitly incomplete"}</span>
       </div>
       {mutation.failureFacts.length > 0 ? (
@@ -73,7 +77,7 @@ function PlanPresentation({ value }: { value: Record<string, unknown> }): React.
   return (
     <section className="review-presentation" aria-label="Plan review evidence">
       <div className="review-presentation__header">
-        <div><p className="eyebrow">Exact request</p><h3>Plan &amp; charter</h3></div>
+        <h3>Exact request</h3>
         {typeof request.promptHash === "string" ? <code>{abbreviate(request.promptHash)}</code> : null}
       </div>
       {typeof request.text === "string" ? <blockquote>{request.text}</blockquote> : null}
@@ -112,7 +116,7 @@ function ChangePresentation({ value }: { value: Record<string, unknown> }): Reac
   return (
     <section className="review-presentation" aria-label="Change review evidence">
       <div className="review-presentation__header">
-        <div><p className="eyebrow">Exact mutation</p><h3>Change set &amp; source diff</h3></div>
+        <h3>Exact mutation</h3>
         <span className={`gate-chip gate-chip--${textValue(gate.status, "unknown")}`}>{textValue(gate.status, "not run")}</span>
       </div>
       <div className="operation-list">
@@ -153,7 +157,7 @@ function CreatorJudgmentPrompts({ prompts }: { prompts: string[] | undefined }):
   if (!prompts || prompts.length === 0) return null;
   return (
     <section className="creator-prompts" aria-label="Creator review prompts">
-      <p className="eyebrow">Creator judgment</p>
+      <h3>Creator checks</h3>
       <ul>{prompts.map((prompt) => <li key={prompt}>{prompt}</li>)}</ul>
     </section>
   );
@@ -190,8 +194,7 @@ function AwaitingEvidence(): React.JSX.Element {
   return (
     <section className="artifact-workbench artifact-workbench--empty" aria-labelledby="artifact-title">
       <div>
-        <p className="eyebrow">Immutable record</p>
-        <h2 id="artifact-title">Artifact workbench</h2>
+        <h2 id="artifact-title">Evidence record</h2>
       </div>
       <div className="empty-state">
         <p>Select a creator session to inspect its exact evidence.</p>
@@ -230,8 +233,8 @@ function VerificationSummary({ controlView }: VerificationSummaryProps): React.J
   return (
     <section className={`verification-summary verification-summary--${verification.status}`} aria-label="Verification summary">
       <div>
-        <p className="eyebrow">Verification</p>
-        <strong>{verification.status}</strong>
+        <strong>Verification</strong>
+        <span className="verification-summary__status">{verification.status}</span>
         <span>{verification.replayable ? "Provider-free replay available" : "Evidence is explicitly incomplete"}</span>
       </div>
       {verification.failureFacts.length > 0 ? (

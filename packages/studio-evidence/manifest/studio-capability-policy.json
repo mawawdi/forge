@@ -1,6 +1,6 @@
 {
   "kind": "StudioCapabilityPolicy",
-  "catalogCommit": "529a24ff2aa9896dad50fc12268717210ba3127d",
+  "catalogCommit": "d025c96bdb1c81570221997092fbe0ad94b5337c",
   "roots": ["Lighting", "ReplicatedFirst", "ReplicatedStorage", "ServerScriptService", "ServerStorage", "SoundService", "StarterGui", "StarterPack", "StarterPlayer", "Teams", "Workspace"],
   "operationKinds": ["create", "delete", "move", "update", "write_source"],
   "authoringGroups": [
@@ -170,10 +170,11 @@
   },
   "runtimeCapabilities": [
     {"name": "base_part.position", "result": "vector3_f32"},
-    {"name": "base_part.position_series", "result": "position_series_f32", "maximumSamples": 32, "minimumIntervalMs": 100, "maximumIntervalMs": 1000},
+    {"name": "base_part.position_series", "result": "position_series_f32", "maximumSamples": 128, "minimumIntervalMs": 100, "maximumIntervalMs": 1000},
     {"name": "instance.property", "result": "manifest_property"},
-    {"name": "instance.property_series", "result": "manifest_property_series", "maximumSamples": 32, "minimumIntervalMs": 100, "maximumIntervalMs": 1000},
+    {"name": "instance.property_series", "result": "manifest_property_series", "maximumSamples": 128, "minimumIntervalMs": 100, "maximumIntervalMs": 1000},
     {"name": "instance.resolve", "result": "instance_identity"}
   ],
-  "limits": {"maximumOperations": 32, "maximumProjectionFacts": 4096, "maximumProjectionBytes": 131072, "maximumRuntimeTargets": 8, "maximumRuntimeCalls": 16, "maximumRuntimeMs": 20000, "maximumRuntimeResultBytes": 65536}
+  "projectState": {"maximumInstances": 2048, "maximumEvidenceBytes": 8388608},
+  "limits": {"maximumOperations": 128, "maximumProjectionFacts": 16384, "maximumProjectionBytes": 524288, "maximumRuntimeTargets": 64, "maximumRuntimeCalls": 128, "maximumRuntimeMs": 300000, "maximumRuntimeResultBytes": 524288}
 }

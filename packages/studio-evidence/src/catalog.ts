@@ -10,7 +10,7 @@ export interface RobloxApiCatalogSource {
   readonly repository: "https://github.com/Roblox/creator-docs.git";
   readonly commit: string;
   readonly engineReferencePath: "content/en-us/reference/engine";
-  /** Tagged hash over every sorted class, datatype, and enum YAML path and its exact bytes. */
+  /** Tagged hash over every sorted class, datatype, enum, global, and library YAML path and its exact bytes. */
   readonly sourceTreeHash: string;
   readonly counts: RobloxApiCatalogCounts;
 }
@@ -30,6 +30,11 @@ export interface RobloxApiCatalogCounts {
   readonly datatypeMethods: number;
   readonly datatypeProperties: number;
   readonly enumItems: number;
+  readonly globalProperties: number;
+  readonly globalFunctions: number;
+  readonly libraries: number;
+  readonly libraryProperties: number;
+  readonly libraryFunctions: number;
 }
 
 export interface RobloxApiParameter {
@@ -133,12 +138,54 @@ export interface RobloxApiEnum {
   readonly sourceFileHash: string;
 }
 
+export type RobloxGlobalMemberKind = "property" | "function";
+export interface RobloxApiGlobalMember {
+  readonly id: string;
+  readonly kind: RobloxGlobalMemberKind;
+  readonly name: string;
+  readonly declaringScope: string;
+  readonly valueType?: string;
+  readonly parameters?: readonly RobloxApiParameter[];
+  readonly returns?: readonly RobloxApiReturn[];
+  readonly tags: readonly string[];
+  readonly deprecated: boolean;
+  readonly sourceFile: string;
+  readonly sourceFileHash: string;
+}
+
+export type RobloxLibraryMemberKind = "property" | "function";
+export interface RobloxApiLibraryMember {
+  readonly id: string;
+  readonly kind: RobloxLibraryMemberKind;
+  readonly name: string;
+  readonly declaringLibrary: string;
+  readonly valueType?: string;
+  readonly parameters?: readonly RobloxApiParameter[];
+  readonly returns?: readonly RobloxApiReturn[];
+  readonly tags: readonly string[];
+  readonly deprecated: boolean;
+  readonly sourceFile: string;
+  readonly sourceFileHash: string;
+}
+
+export interface RobloxApiLibrary {
+  readonly id: string;
+  readonly name: string;
+  readonly tags: readonly string[];
+  readonly deprecated: boolean;
+  readonly members: readonly RobloxApiLibraryMember[];
+  readonly sourceFile: string;
+  readonly sourceFileHash: string;
+}
+
 export interface RobloxApiCatalog {
   readonly kind: "RobloxApiCatalog";
   readonly source: RobloxApiCatalogSource;
   readonly classes: readonly RobloxApiClass[];
   readonly datatypes: readonly RobloxApiDatatype[];
   readonly enums: readonly RobloxApiEnum[];
+  readonly globalMembers: readonly RobloxApiGlobalMember[];
+  readonly libraries: readonly RobloxApiLibrary[];
   readonly counts: RobloxApiCatalogCounts;
   readonly contentHash: string;
 }
@@ -187,7 +234,12 @@ export type RobloxApiCatalogEntryKind =
   | "datatype_method"
   | "datatype_property"
   | "enum"
-  | "enum_item";
+  | "enum_item"
+  | "global_property"
+  | "global_function"
+  | "library"
+  | "library_property"
+  | "library_function";
 
 export interface StudioCapabilityCoverageEntry {
   readonly catalogEntryId: string;

@@ -7,7 +7,7 @@ import {
   BoundedToolHost,
   CandidateWorkspace,
   ForgeNativeAgentRuntime,
-  INITIAL_EXPERIMENT_BUDGETS,
+  DEFAULT_AGENT_BUDGETS,
   assertHarnessConfiguration,
   createHarnessConfiguration,
   loadWorkspaceCandidateArtifact,
@@ -407,6 +407,25 @@ async function repairingClient(withFeedback: boolean): Promise<ModelClient> {
   ]);
 }
 
+test("one default agent budget supports every bounded agent purpose", () => {
+  assert.deepEqual(DEFAULT_AGENT_BUDGETS, {
+    maxTurns: 32,
+    maxToolCalls: 256,
+    maxWrites: 128,
+    maxVerifierCalls: 16,
+    maxChangedFiles: 32,
+    maxAddedLines: 5_000,
+    maxRemovedLines: 2_000,
+    maxBytesPerFile: 128_000,
+    maxChangedSourceBytes: 1_048_576,
+    maxToolResultBytes: 4_194_304,
+    maxDurationMs: 1_800_000,
+    maxBudgetUsd: 10,
+    maxInputTokens: 1_000_000,
+    maxOutputTokens: 128_000,
+  });
+});
+
 test("native runtime performs same-session verifier feedback repair and seals only a locally eligible candidate", async () => {
   const runDirectory = await directory();
   const result = await runBoundedAgent({
@@ -726,7 +745,7 @@ test("runtime persists rejected atomic-batch evidence when a tool host only retu
   const workspace = await CandidateWorkspace.create(
     GENERIC_SEED,
     runDirectory,
-    INITIAL_EXPERIMENT_BUDGETS,
+    DEFAULT_AGENT_BUDGETS,
   );
   const map = await workspace.semanticMap();
   const requirementView = resolveRequirementView(requirements(), {
@@ -754,7 +773,7 @@ test("runtime persists rejected atomic-batch evidence when a tool host only retu
     prompt: CREATOR_PROMPT,
     orientation,
     tools: toolHost,
-    budgets: INITIAL_EXPERIMENT_BUDGETS,
+    budgets: DEFAULT_AGENT_BUDGETS,
     model: "fake/model",
   });
   assert.equal(runtimeResult.status, "completed");
@@ -781,7 +800,7 @@ test("runtime persists rejected atomic-batch evidence when a tool host only retu
     runtime,
     runtimeResult,
     toolHost,
-    budgets: INITIAL_EXPERIMENT_BUDGETS,
+    budgets: DEFAULT_AGENT_BUDGETS,
     directory: runDirectory,
     traceDirectory: join(runDirectory, "traces"),
     executionWorker: {
@@ -831,7 +850,7 @@ test("runtime owns exact monotonic timing for provider turns and executed tool c
   const workspace = await CandidateWorkspace.create(
     GENERIC_SEED,
     await directory(),
-    INITIAL_EXPERIMENT_BUDGETS,
+    DEFAULT_AGENT_BUDGETS,
   );
   const map = await workspace.semanticMap();
   const requirementView = resolveRequirementView(requirements(), {
@@ -887,7 +906,7 @@ test("runtime owns exact monotonic timing for provider turns and executed tool c
         };
       },
     },
-    budgets: INITIAL_EXPERIMENT_BUDGETS,
+    budgets: DEFAULT_AGENT_BUDGETS,
     model: "fake/model",
   });
   assert.deepEqual(result.timing, {
@@ -952,7 +971,7 @@ test("runtime owns exact monotonic timing for provider turns and executed tool c
         };
       },
     },
-    budgets: INITIAL_EXPERIMENT_BUDGETS,
+    budgets: DEFAULT_AGENT_BUDGETS,
     model: "fake/model",
   });
   assert.equal(zeroResult.toolCalls[0]?.durationMs, 0);
@@ -973,7 +992,7 @@ test("repeating a semantically identical rejected batch terminates before the tu
   const workspace = await CandidateWorkspace.create(
     GENERIC_SEED,
     await directory(),
-    INITIAL_EXPERIMENT_BUDGETS,
+    DEFAULT_AGENT_BUDGETS,
   );
   const map = await workspace.semanticMap();
   const requirementView = resolveRequirementView(requirements(), {
@@ -992,7 +1011,7 @@ test("repeating a semantically identical rejected batch terminates before the tu
     prompt: CREATOR_PROMPT,
     orientation,
     tools: recordlessRejectingToolHost(),
-    budgets: { ...INITIAL_EXPERIMENT_BUDGETS, maxTurns: 6 },
+    budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 6 },
     model: "fake/model",
   });
   assert.equal(result.status, "failed");
@@ -1022,7 +1041,7 @@ test("varied consecutive all-failed tool batches terminate before the turn budge
   const workspace = await CandidateWorkspace.create(
     GENERIC_SEED,
     await directory(),
-    INITIAL_EXPERIMENT_BUDGETS,
+    DEFAULT_AGENT_BUDGETS,
   );
   const map = await workspace.semanticMap();
   const requirementView = resolveRequirementView(requirements(), {
@@ -1041,7 +1060,7 @@ test("varied consecutive all-failed tool batches terminate before the turn budge
     prompt: CREATOR_PROMPT,
     orientation,
     tools: recordlessRejectingToolHost(),
-    budgets: { ...INITIAL_EXPERIMENT_BUDGETS, maxTurns: 6 },
+    budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 6 },
     model: "fake/model",
   });
   assert.equal(result.status, "failed");
@@ -1075,7 +1094,7 @@ test("varied executed all-failed tool batches also terminate before the turn bud
   const workspace = await CandidateWorkspace.create(
     GENERIC_SEED,
     await directory(),
-    INITIAL_EXPERIMENT_BUDGETS,
+    DEFAULT_AGENT_BUDGETS,
   );
   const map = await workspace.semanticMap();
   const requirementView = resolveRequirementView(requirements(), {
@@ -1094,7 +1113,7 @@ test("varied executed all-failed tool batches also terminate before the turn bud
     prompt: CREATOR_PROMPT,
     orientation,
     tools: executionFailingToolHost(),
-    budgets: { ...INITIAL_EXPERIMENT_BUDGETS, maxTurns: 6 },
+    budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 6 },
     model: "fake/model",
   });
   assert.equal(result.status, "failed");
@@ -1125,7 +1144,7 @@ test("a successful read resets the consecutive all-failed tool-batch streak", as
   const workspace = await CandidateWorkspace.create(
     GENERIC_SEED,
     await directory(),
-    INITIAL_EXPERIMENT_BUDGETS,
+    DEFAULT_AGENT_BUDGETS,
   );
   const map = await workspace.semanticMap();
   const requirementView = resolveRequirementView(requirements(), {
@@ -1144,7 +1163,7 @@ test("a successful read resets the consecutive all-failed tool-batch streak", as
     prompt: CREATOR_PROMPT,
     orientation,
     tools: readResetToolHost(),
-    budgets: { ...INITIAL_EXPERIMENT_BUDGETS, maxTurns: 6 },
+    budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 6 },
     model: "fake/model",
   });
   assert.equal(result.status, "completed");
@@ -1171,7 +1190,7 @@ test("repeating an executed tool batch without semantic host progress terminates
   const workspace = await CandidateWorkspace.create(
     GENERIC_SEED,
     await directory(),
-    INITIAL_EXPERIMENT_BUDGETS,
+    DEFAULT_AGENT_BUDGETS,
   );
   const map = await workspace.semanticMap();
   const requirementView = resolveRequirementView(requirements(), {
@@ -1190,7 +1209,7 @@ test("repeating an executed tool batch without semantic host progress terminates
     prompt: CREATOR_PROMPT,
     orientation,
     tools: noProgressToolHost(),
-    budgets: { ...INITIAL_EXPERIMENT_BUDGETS, maxTurns: 6 },
+    budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 6 },
     model: "fake/model",
   });
   assert.equal(result.status, "failed");
@@ -1482,9 +1501,9 @@ test("workspace requires a plan, safe relative source paths, fresh hashes, and e
   const workspace = await CandidateWorkspace.create(
     SAFE,
     await directory(),
-    INITIAL_EXPERIMENT_BUDGETS,
+    DEFAULT_AGENT_BUDGETS,
   );
-  const tools = new BoundedToolHost(workspace, INITIAL_EXPERIMENT_BUDGETS);
+  const tools = new BoundedToolHost(workspace, DEFAULT_AGENT_BUDGETS);
   const read = await tools.execute("project.read", {
     path: "src/server/ApplyAction.server.luau",
   });
@@ -1584,7 +1603,7 @@ test("builder orientation withholds benchmark bodies and HarnessConfiguration ha
   const workspace = await CandidateWorkspace.create(
     GENERIC_SEED,
     await directory(),
-    INITIAL_EXPERIMENT_BUDGETS,
+    DEFAULT_AGENT_BUDGETS,
   );
   const map = await workspace.semanticMap();
   const view = resolveRequirementView(requirements(), {
@@ -1648,7 +1667,7 @@ test("builder orientation withholds benchmark bodies and HarnessConfiguration ha
       contentHash: orientation.contentHash,
     },
     requirementViewHash: contentHash("view"),
-    budgets: INITIAL_EXPERIMENT_BUDGETS,
+    budgets: DEFAULT_AGENT_BUDGETS,
     runtime: { name: "forge-native" },
     model: {
       transport: "fake",

@@ -12,8 +12,8 @@ export function SessionHistory({ sessions, selectedSessionId }: SessionHistoryPr
   return (
     <section className="panel session-history" aria-labelledby="history-title">
       <div className="panel-heading">
-        <p className="eyebrow">Record</p>
-        <h2 id="history-title">Session history</h2>
+        <h2 id="history-title">Sessions</h2>
+        {!isEmpty ? <span className="panel-count">{sessions.length}</span> : null}
       </div>
       {isEmpty ? <EmptyHistory /> : <SessionList sessions={sessions} selectedSessionId={selectedSessionId} />}
     </section>
@@ -23,8 +23,8 @@ export function SessionHistory({ sessions, selectedSessionId }: SessionHistoryPr
 function EmptyHistory(): React.JSX.Element {
   return (
     <div className="empty-state empty-state--compact">
-      <p>No creator sessions yet.</p>
-      <span>Your approved evidence will remain here.</span>
+      <p>No requests yet.</p>
+      <span>Start a bounded change request to open an evidence record.</span>
     </div>
   );
 }

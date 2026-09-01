@@ -107,7 +107,11 @@ assert(string.find(emptyListMaterial, "5:array", 1, true) ~= nil and string.find
 assert(not pcall(function() Generated.validateValue("number_f32", { kind = "number_f32", value = math.huge }) end), "non-finite values must fail closed")
 assert(not pcall(function() Generated.validateValue("color3_rgb8", { kind = "color3_rgb8", r = 0, g = 128.5, b = 255 }) end), "RGB values must be exact bytes")
 assert(typeof(Generated.runtimeRunnerDispatchSource) == "string" and string.find(Generated.runtimeRunnerDispatchSource, "base_part.position_series", 1, true), "Play-Solo runtime dispatch must be generated from the manifest")
-assert(string.find(Generated.runtimeRunnerDispatchSource, "call.sampleCount > 32", 1, true), "generated runner dispatch must carry manifest series bounds")
+local generatedSeriesBound = nil
+for _, capability in ipairs(Generated.manifest.runtimeCapabilities) do
+	if capability.name == "base_part.position_series" then generatedSeriesBound = capability.maximumSamples end
+end
+assert(generatedSeriesBound ~= nil and string.find(Generated.runtimeRunnerDispatchSource, "call.sampleCount > " .. tostring(generatedSeriesBound), 1, true), "generated runner dispatch must carry manifest series bounds")
 
 -- Projection provenance changes across pairing, approval, and transaction
 -- phases. It must remain exact evidence without changing the identity of an

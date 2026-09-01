@@ -24,7 +24,7 @@ export type StudioInstanceResolutionRoot = (typeof STUDIO_INSTANCE_RESOLUTION_RO
 export type RuntimeVector3 = { x: number; y: number; z: number };
 
 export type StudioCapabilityName = "instance.resolve" | "base_part.position" | "base_part.position_series" | "instance.property" | "instance.property_series";
-export const CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS = 15_000;
+export const CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS = 90_000;
 export interface StudioRuntimeTarget { id: string; path: string; expectedClass: StudioResolvableClass; }
 export type StudioCapabilityCall =
   | { id: string; capability: "instance.resolve"; targetId: string }

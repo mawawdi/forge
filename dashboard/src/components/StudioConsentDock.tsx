@@ -33,16 +33,17 @@ export function StudioConsentDock({ state, pendingAction }: StudioConsentDockPro
   }
 
   return (
-    <aside className="consent-dock" aria-labelledby="studio-title">
-      <section className="panel studio-card">
+    <aside className="consent-dock" aria-label="Studio and creator consent">
+      <section className="panel control-dock">
         <div className="panel-heading">
-          <p className="eyebrow">Trusted executor</p>
-          <h2 id="studio-title">Studio connection</h2>
+          <h2 id="studio-title">Studio &amp; consent</h2>
+          <span className={`connection-state connection-state--${pairedStudio?.status ?? "unpaired"}`}>
+            {pairedStudio?.status ?? "unpaired"}
+          </span>
         </div>
         <div className={`studio-connection studio-connection--${pairedStudio?.status ?? "unpaired"}`}>
           <span className="connection-orb" aria-hidden="true" />
           <div>
-            <strong>{pairedStudio?.status ?? "unpaired"}</strong>
             <p>{pairedStudio?.message ?? "Waiting for a paired Studio project."}</p>
           </div>
         </div>
@@ -60,12 +61,11 @@ export function StudioConsentDock({ state, pendingAction }: StudioConsentDockPro
             {pairedStudio.capabilities ? <div><dt>Capabilities</dt><dd>{pairedStudio.capabilities.length}</dd></div> : null}
           </dl>
         ) : null}
-      </section>
-      <section className="panel consent-card" aria-labelledby="consent-title">
-        <div className="panel-heading">
-          <p className="eyebrow">Creator authority</p>
-          <h2 id="consent-title">Consent dock</h2>
-        </div>
+        <div className="consent-section" aria-labelledby="consent-title">
+          <div className="consent-section__heading">
+            <h3 id="consent-title">Current action</h3>
+            {state?.controlView ? <code title={state.controlView.hash}>{shortHash(state.controlView.hash)}</code> : null}
+          </div>
         {finalReviewOpen ? (
           <CreatorReport report={report} onChange={setReport} />
         ) : (
@@ -83,8 +83,9 @@ export function StudioConsentDock({ state, pendingAction }: StudioConsentDockPro
           )) : <p className="empty-actions">No creator action is available for this session.</p>}
         </div>
         <p className="action-message" role="status" aria-live="polite">{message ?? ""}</p>
+        </div>
+        <ReplayControl state={state} />
       </section>
-      <ReplayControl state={state} />
     </aside>
   );
 }
@@ -160,8 +161,8 @@ function ReplayControl({ state }: ReplayControlProps): React.JSX.Element | null 
   return (
     <section className="replay-card" aria-label="Evidence replay">
       <div>
-        <p className="eyebrow">Provider-free check</p>
         <strong>Replay evidence</strong>
+        <span>Provider-free check</span>
       </div>
       {mutation?.replayable ? (
         <button type="button" className="quiet-button" onClick={() => void replay(`/api/mutations/${encodeURIComponent(mutation.attemptId)}/replay`)}>Replay mutation</button>

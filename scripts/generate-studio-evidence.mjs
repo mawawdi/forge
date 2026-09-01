@@ -201,7 +201,11 @@ function deriveManifest(policy, catalog) {
     classes: outputClasses,
     attributes: { codecs: ["boolean", "number_f32", "string_utf8"], maximumCount: 64, maximumNameUtf8Bytes: 100, maximumStringUtf8Bytes: 4096, reservedPrefix: "_forge" },
     source: { maximumUtf8Bytes: 48000, evidence: "sha256" },
-    projectState: { facts: ["inventory", "properties", "attributes", "tags", "source_hash", "source_body", "remote"], maximumInstances: 256, maximumEvidenceBytes: 4194304 },
+    projectState: {
+      facts: ["inventory", "properties", "attributes", "tags", "source_hash", "source_body", "remote"],
+      maximumInstances: policy.projectState?.maximumInstances,
+      maximumEvidenceBytes: policy.projectState?.maximumEvidenceBytes,
+    },
     stateRevision: { comparableDomain: ["project", "requirements", "scope"], stateMaterial: ["manifest", "state_domain", "facts"], projectionHashRole: "provenance_only" },
     runtimeCapabilities: [...policy.runtimeCapabilities],
     limits: { ...policy.limits },
@@ -281,6 +285,25 @@ function isCatalogClassAssignableTo(classesByName, actualClass, expectedClass) {
   return false;
 }
 
+function sourceCapabilityDisposition(entry, sourceReason = "script_api") {
+  if (entry.deprecated) return { disposition: "unsupported", reason: "deprecated" };
+  if (entry.tags.includes("Hidden") || entry.tags.includes("NotScriptable")) {
+    return { disposition: "unsupported", reason: "hidden" };
+  }
+  const security = Object.values(entry.security ?? {});
+  if (security.length > 0 && !security.includes("None")) {
+    return { disposition: "unsupported", reason: "security_gated" };
+  }
+  return { disposition: "source_only", reason: sourceReason };
+}
+
+function sourceClassDisposition(classDefinition) {
+  if (classDefinition.deprecated) return { disposition: "unsupported", reason: "deprecated" };
+  if (classDefinition.tags.includes("Service")) return { disposition: "source_only", reason: "service_root" };
+  if (classDefinition.tags.includes("NotCreatable")) return { disposition: "source_only", reason: "class_not_creatable" };
+  return { disposition: "source_only", reason: "script_api" };
+}
+
 function deriveCoverageReport(catalog, policy, policyHash, manifest, manifestHash) {
   const classesByName = new Map(catalog.classes.map((entry) => [entry.name, entry]));
   const groupByClass = new Map(policy.authoringGroups.flatMap((group) => group.classes.map((className) => [className, group.name])));
@@ -295,7 +318,10 @@ function deriveCoverageReport(catalog, policy, policyHash, manifest, manifestHas
   const entries = [];
   for (const classDefinition of catalog.classes) {
     const group = groupByClass.get(classDefinition.name);
-    entries.push({ catalogEntryId: classDefinition.id, entryKind: "class", name: classDefinition.name, disposition: group ? "authorable" : "unsupported", reason: group ? "proof_closed" : "class_not_enabled", ...(group ? { authoringGroup: group } : {}) });
+    const classCoverage = group
+      ? { disposition: "authorable", reason: "proof_closed" }
+      : sourceClassDisposition(classDefinition);
+    entries.push({ catalogEntryId: classDefinition.id, entryKind: "class", name: classDefinition.name, ...classCoverage, ...(group ? { authoringGroup: group } : {}) });
     for (const member of classDefinition.members) {
       const kind = `class_${member.kind}`;
       if (member.kind === "property" && enabledByMemberId.has(member.id)) {
@@ -303,25 +329,39 @@ function deriveCoverageReport(catalog, policy, policyHash, manifest, manifestHas
         entries.push({ catalogEntryId: member.id, entryKind: kind, owner: member.declaringClass, name: member.name, disposition: "authorable", reason: "proof_closed", authoringGroup: groupByClass.get(enabled.classes[0]), codec: enabled.property.codec, inheritedBy: [...enabled.classes].sort() });
       } else {
         const groupForOwner = groupByClass.get(member.declaringClass);
-        entries.push({ catalogEntryId: member.id, entryKind: kind, owner: member.declaringClass, name: member.name, disposition: "unsupported", reason: member.kind === "property" && groupForOwner ? "unsupported_codec" : member.kind === "property" ? "class_not_enabled" : "script_api", ...(groupForOwner ? { authoringGroup: groupForOwner } : {}) });
+        const sourceReason = member.kind === "property" && groupForOwner
+          ? "unsupported_codec"
+          : member.kind === "property" && (member.tags.includes("ReadOnly") || member.security?.write !== "None")
+            ? "read_only"
+            : "script_api";
+        entries.push({ catalogEntryId: member.id, entryKind: kind, owner: member.declaringClass, name: member.name, ...sourceCapabilityDisposition(member, sourceReason), ...(groupForOwner ? { authoringGroup: groupForOwner } : {}) });
       }
     }
   }
   for (const datatype of catalog.datatypes) {
     const codec = policy.codecByApiType[datatype.name] ?? policy.codecByApiType[`Datatype.${datatype.name}`];
-    entries.push({ catalogEntryId: datatype.id, entryKind: "datatype", name: datatype.name, disposition: codec ? "observable_only" : "unsupported", reason: codec ? "catalog_only" : "unsupported_codec", ...(codec ? { codec } : {}) });
-    for (const member of datatype.members) entries.push({ catalogEntryId: member.id, entryKind: `datatype_${member.kind}`, owner: datatype.name, name: member.name, disposition: "unsupported", reason: "catalog_only" });
+    entries.push({ catalogEntryId: datatype.id, entryKind: "datatype", name: datatype.name, ...(codec ? { disposition: "observable_only", reason: "catalog_only", codec } : sourceCapabilityDisposition(datatype)) });
+    for (const member of datatype.members) entries.push({ catalogEntryId: member.id, entryKind: `datatype_${member.kind}`, owner: datatype.name, name: member.name, ...sourceCapabilityDisposition(member) });
   }
   for (const enumeration of catalog.enums) {
     const enabled = enabledEnums.has(enumeration.name);
-    entries.push({ catalogEntryId: enumeration.id, entryKind: "enum", name: enumeration.name, disposition: enabled ? "authorable" : "unsupported", reason: enabled ? "proof_closed" : "catalog_only", ...(enabled ? { codec: "enum_name" } : {}) });
-    for (const item of enumeration.items) entries.push({ catalogEntryId: item.id, entryKind: "enum_item", owner: enumeration.name, name: item.name, disposition: enabled && !item.deprecated ? "authorable" : "unsupported", reason: enabled && !item.deprecated ? "proof_closed" : item.deprecated ? "deprecated" : "catalog_only", ...(enabled && !item.deprecated ? { codec: "enum_name" } : {}) });
+    entries.push({ catalogEntryId: enumeration.id, entryKind: "enum", name: enumeration.name, ...(enabled ? { disposition: "authorable", reason: "proof_closed", codec: "enum_name" } : sourceCapabilityDisposition(enumeration)) });
+    for (const item of enumeration.items) entries.push({ catalogEntryId: item.id, entryKind: "enum_item", owner: enumeration.name, name: item.name, ...(enabled && !item.deprecated ? { disposition: "authorable", reason: "proof_closed", codec: "enum_name" } : sourceCapabilityDisposition(item)) });
+  }
+  for (const member of catalog.globalMembers) {
+    entries.push({ catalogEntryId: member.id, entryKind: `global_${member.kind}`, owner: member.declaringScope, name: member.name, ...sourceCapabilityDisposition(member) });
+  }
+  for (const library of catalog.libraries) {
+    entries.push({ catalogEntryId: library.id, entryKind: "library", name: library.name, ...sourceCapabilityDisposition(library) });
+    for (const member of library.members) entries.push({ catalogEntryId: member.id, entryKind: `library_${member.kind}`, owner: library.name, name: member.name, ...sourceCapabilityDisposition(member) });
   }
   entries.sort((left, right) => left.catalogEntryId.localeCompare(right.catalogEntryId));
   const catalogIds = new Set([
     ...catalog.classes.flatMap((entry) => [entry.id, ...entry.members.map((member) => member.id)]),
     ...catalog.datatypes.flatMap((entry) => [entry.id, ...entry.members.map((member) => member.id)]),
     ...catalog.enums.flatMap((entry) => [entry.id, ...entry.items.map((item) => item.id)]),
+    ...catalog.globalMembers.map((entry) => entry.id),
+    ...catalog.libraries.flatMap((entry) => [entry.id, ...entry.members.map((member) => member.id)]),
   ]);
   const coverageIds = new Set(entries.map((entry) => entry.catalogEntryId));
   if (coverageIds.size !== entries.length || coverageIds.size !== catalogIds.size || [...catalogIds].some((id) => !coverageIds.has(id)) || [...coverageIds].some((id) => !catalogIds.has(id))) throw new Error(`Catalog coverage must classify the exact pinned catalog ID set; catalog=${catalogIds.size}, coverage=${entries.length}`);

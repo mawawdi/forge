@@ -36,6 +36,7 @@ import {
   type StudioPrimitiveValue,
   type StudioReflectionValue,
   gradeStudioCapabilityAttestation,
+  lookupRobloxApiCatalog,
 } from "../packages/studio-evidence/src/index.js";
 
 const project = { name: "Evidence Test", placeId: 7, universeId: 11 };
@@ -119,11 +120,62 @@ test("generated manifest is closed and canonical", () => {
     projectionHashRole: "provenance_only",
     stateMaterial: ["facts", "manifest", "state_domain"],
   });
-  assert.equal(STUDIO_CAPABILITY_COVERAGE_REPORT.entries.length, 9_449);
-  assert.equal(STUDIO_CAPABILITY_COVERAGE_REPORT.summary.total, 9_449);
-  assert.equal(new Set(STUDIO_CAPABILITY_COVERAGE_REPORT.entries.map((entry) => entry.catalogEntryId)).size, 9_449);
+  assert.equal(STUDIO_CAPABILITY_COVERAGE_REPORT.entries.length, 9_685);
+  assert.equal(STUDIO_CAPABILITY_COVERAGE_REPORT.summary.total, 9_685);
+  assert.equal(new Set(STUDIO_CAPABILITY_COVERAGE_REPORT.entries.map((entry) => entry.catalogEntryId)).size, 9_685);
   assert.equal(STUDIO_CAPABILITY_COVERAGE_REPORT.contentHash, STUDIO_CAPABILITY_COVERAGE_REPORT_HASH);
+  assert.ok(STUDIO_CAPABILITY_COVERAGE_REPORT.summary.byDisposition.source_only > 0);
+  assert.equal(
+    Object.values(STUDIO_CAPABILITY_COVERAGE_REPORT.summary.byDisposition).reduce(
+      (total, count) => total + count,
+      0,
+    ),
+    STUDIO_CAPABILITY_COVERAGE_REPORT.summary.total,
+  );
   for (const vector of STUDIO_EVIDENCE_VECTORS) assert.equal(canonicalStudioValueMaterial(vector.value), vector.material, vector.name);
+});
+
+test("pinned API lookup joins official signatures to precise Forge boundaries", () => {
+  const sourceApi = lookupRobloxApiCatalog({
+    className: "ProximityPrompt",
+    query: "Triggered",
+    limit: 5,
+  });
+  assert.equal(sourceApi.kind, "RobloxApiCatalogLookupResult");
+  assert.equal(sourceApi.truncated, false);
+  assert.equal(sourceApi.entries[0]?.catalogEntryId, "class_member:ProximityPrompt:event:Triggered");
+  assert.equal(sourceApi.entries[0]?.disposition, "source_only");
+  assert.deepEqual(sourceApi.entries[0]?.parameters, [
+    { name: "playerWhoTriggered", type: "Player" },
+  ]);
+  assert.equal(sourceApi.entries[0]?.security?.read, "None");
+  assert.match(sourceApi.entries[0]?.sourceFile ?? "", /ProximityPrompt\.yaml$/);
+
+  const direct = lookupRobloxApiCatalog({ className: "ProximityPrompt", query: "RequiresLineOfSight" });
+  assert.equal(direct.entries[0]?.disposition, "authorable");
+  assert.equal(direct.entries[0]?.reason, "proof_closed");
+
+  const restricted = lookupRobloxApiCatalog({
+    className: "AnimationNodeDefinition",
+    query: "NodeId",
+  });
+  assert.equal(restricted.entries[0]?.disposition, "unsupported");
+  assert.equal(restricted.entries[0]?.reason, "security_gated");
+
+  assert.throws(
+    () => lookupRobloxApiCatalog({}),
+    /requires className or query/,
+  );
+  assert.throws(
+    () => lookupRobloxApiCatalog({ query: "Part", limit: 21 }),
+    /limit is invalid/,
+  );
+
+  const library = lookupRobloxApiCatalog({ query: "math.abs" });
+  assert.equal(library.entries[0]?.catalogEntryId, "library_member:math:function:abs");
+  assert.equal(library.entries[0]?.disposition, "source_only");
+  const global = lookupRobloxApiCatalog({ query: "Roblox globals.workspace" });
+  assert.equal(global.entries[0]?.catalogEntryId, "global_member:Roblox globals:property:workspace");
 });
 
 function reflectionValue(className: string, property: StudioManifestProperty): StudioReflectionValue {
@@ -552,7 +604,7 @@ test("connector build identity changes with authored plugin runtime source", () 
 
 test("catalog type namespaces and nullable Instance values remain proof-closed", () => {
   assert.equal(STUDIO_CAPABILITY_MANIFEST.classes.some((entry) => entry.properties.some((property) => property.name === "FontFace")), false);
-  assert.equal(STUDIO_CAPABILITY_COVERAGE_REPORT.entries.find((entry) => entry.catalogEntryId === "enum:Font")?.disposition, "unsupported");
+  assert.equal(STUDIO_CAPABILITY_COVERAGE_REPORT.entries.find((entry) => entry.catalogEntryId === "enum:Font")?.disposition, "source_only");
   const referenceProperty = STUDIO_CAPABILITY_MANIFEST.classes.find((entry) => entry.name === "ObjectValue")?.properties.find((property) => property.name === "Value");
   assert.ok(referenceProperty);
   const nilReference = { kind: "instance_ref", state: "nil", expectedClass: "Instance" } as const;
@@ -589,7 +641,7 @@ test("facts reject omitted observed payloads and unapproved extra fields", () =>
 
 test("Rojo seeds assign deterministic identities and persist transforms as CFrames", () => {
   const manifestClasses = new Set(STUDIO_CAPABILITY_MANIFEST.classes.map((entry) => entry.name));
-  for (const fixture of ["examples/door-control/default.project.json", "examples/status-beacon/default.project.json"]) {
+  for (const fixture of ["examples/door-control/default.project.json", "examples/status-beacon/default.project.json", "examples/orbital-freight-airlock/default.project.json"]) {
     const parsed = JSON.parse(readFileSync(resolve(fixture), "utf8")) as { tree: Record<string, unknown> };
     const stableIds = new Set<string>();
     let applicable = 0;
@@ -614,4 +666,56 @@ test("Rojo seeds assign deterministic identities and persist transforms as CFram
     visit(parsed.tree);
     assert.ok(applicable > 0, `${fixture} has no manifest-applicable instances`);
   }
+});
+
+test("Orbital Freight Airlock is an interconnected but solution-free creator seed", () => {
+  const fixture = JSON.parse(readFileSync(resolve("examples/orbital-freight-airlock/default.project.json"), "utf8")) as { tree: Record<string, unknown> };
+  const at = (path: string): Record<string, unknown> => {
+    let current: unknown = fixture.tree;
+    for (const segment of path.split("/")) current = (current as Record<string, unknown>)[segment];
+    assert.equal(typeof current, "object", `${path} must exist in the seed`);
+    assert.notEqual(current, null, `${path} must exist in the seed`);
+    return current as Record<string, unknown>;
+  };
+  for (const path of [
+    "Workspace/OrbitalFreightAirlock/OuterDoor",
+    "Workspace/OrbitalFreightAirlock/InnerDoor",
+    "Workspace/OrbitalFreightAirlock/PowerConsole",
+    "Workspace/OrbitalFreightAirlock/CoolantValve",
+    "Workspace/OrbitalFreightAirlock/CargoScanner",
+    "Workspace/OrbitalFreightAirlock/EmergencyConsole",
+    "Workspace/OrbitalFreightAirlock/Indicators/Power",
+    "Workspace/OrbitalFreightAirlock/Indicators/Pressure",
+    "Workspace/OrbitalFreightAirlock/Indicators/Clearance",
+    "Workspace/PreservedScenery",
+    "ReplicatedStorage/AirlockSystem",
+    "StarterGui/AirlockHUD/Panel",
+  ]) at(path);
+  assert.deepEqual(Object.keys(at("ReplicatedStorage/AirlockSystem")).sort(), ["$attributes", "$className"]);
+  assert.deepEqual(Object.keys(at("StarterGui/AirlockHUD/Panel")).sort(), ["$attributes", "$className"]);
+  const forbidden = new Set(["ProximityPrompt", "RemoteEvent", "RemoteFunction", "Script", "LocalScript", "ModuleScript"]);
+  const visit = (node: unknown): void => {
+    if (typeof node !== "object" || node === null || Array.isArray(node)) return;
+    const record = node as Record<string, unknown>;
+    assert.equal(forbidden.has(String(record.$className)), false, `seed must not contain solution class ${String(record.$className)}`);
+    assert.equal((record.$properties as Record<string, unknown> | undefined)?.Source, undefined, "seed must not contain source");
+    for (const [key, child] of Object.entries(record)) if (!key.startsWith("$")) visit(child);
+  };
+  visit(fixture.tree);
+});
+
+test("one generated Studio limit policy supports ordinary and interconnected runs", () => {
+  assert.deepEqual(STUDIO_CAPABILITY_MANIFEST.limits, {
+    maximumOperations: 128,
+    maximumProjectionBytes: 524_288,
+    maximumProjectionFacts: 16_384,
+    maximumRuntimeCalls: 128,
+    maximumRuntimeMs: 300_000,
+    maximumRuntimeResultBytes: 524_288,
+    maximumRuntimeTargets: 64,
+  });
+  assert.equal(STUDIO_CAPABILITY_MANIFEST.projectState.maximumInstances, 2_048);
+  assert.equal(STUDIO_CAPABILITY_MANIFEST.projectState.maximumEvidenceBytes, 8_388_608);
+  for (const capability of STUDIO_CAPABILITY_MANIFEST.runtimeCapabilities.filter((entry) => entry.name.endsWith(".property_series") || entry.name.endsWith(".position_series")))
+    assert.equal(capability.maximumSamples, 128);
 });

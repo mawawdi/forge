@@ -233,6 +233,20 @@ export interface StudioCapabilityExplorerEntry {
   codec?: string;
   inheritedBy?: string[];
   proofObligations?: string[];
+  deprecated: boolean;
+  tags: string[];
+  sourceFile: string;
+  sourceFileHash: string;
+  superclass?: string;
+  valueType?: string;
+  parameters?: Array<{ name: string; type: string; default?: string | number | boolean }>;
+  returns?: Array<{ type: string }>;
+  operandTypes?: string[];
+  security?: { read?: string; write?: string };
+  serialization?: { canLoad: boolean; canSave: boolean };
+  threadSafety?: string;
+  capabilities?: string[];
+  enumValue?: number;
 }
 
 export interface StudioCapabilityExplorerPage {

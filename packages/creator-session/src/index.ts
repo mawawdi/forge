@@ -28,7 +28,7 @@ import type {
   ToolResult,
 } from "../../agent-runtime/src/index.js";
 import {
-  INITIAL_EXPERIMENT_BUDGETS,
+  DEFAULT_AGENT_BUDGETS,
   assertCreatorPhaseOutcome,
 } from "../../agent-runtime/src/index.js";
 import {
@@ -59,6 +59,7 @@ import {
   assertStudioValueForProperty,
   canonicalStudioValue,
   isRobloxClassAssignableTo,
+  lookupRobloxApiCatalog,
   type StudioCapabilityAttestationGrade,
   type StudioProjectState,
   type StudioValue,
@@ -69,6 +70,10 @@ export * from "./mutation-evidence.js";
 export const CREATOR_SESSION_POLICY = "prompt_first_studio_authoring" as const;
 export const CREATOR_MODEL = "openai/gpt-5.6-luna" as const;
 export const CREATOR_MAX_REPAIRS = 2;
+export const CREATOR_MAX_INSPECTION_PATHS = 64;
+export const CREATOR_MAX_PLAN_STEPS = 32;
+export const CREATOR_MAX_CHARTER_CLAUSES = 128;
+export const CREATOR_MAX_CHANGES = STUDIO_CAPABILITY_MANIFEST.limits.maximumOperations;
 
 export type StudioWritableClass = (typeof STUDIO_WRITABLE_CLASSES)[number];
 export type StudioScriptClass = (typeof STUDIO_SCRIPT_CLASSES)[number];
@@ -627,8 +632,16 @@ export interface CreatorSession {
   failure?: { code: string; detailHash: string };
 }
 
+export interface CreatorRequestArtifact {
+  kind: "CreatorRequest";
+  sessionId: string;
+  promptHash: string;
+  text: string;
+}
+
 export interface CreatorSessionBundle {
   session: CreatorSession;
+  creatorRequest: ArtifactReference;
   ownership: StudioOwnershipMap;
   observation: StudioProjectState;
   observationHistory: Array<{
@@ -927,7 +940,7 @@ export function assertCreatorControlView(
   if (
     value.creatorReviewPrompts !== undefined &&
     (!Array.isArray(value.creatorReviewPrompts) ||
-      value.creatorReviewPrompts.length > 32 ||
+      value.creatorReviewPrompts.length > CREATOR_MAX_CHARTER_CLAUSES ||
       !value.creatorReviewPrompts.every(
         (prompt) =>
           typeof prompt === "string" &&
@@ -1149,6 +1162,7 @@ export function createCreatorPlan(
     throw new Error("Creator plan must bind the immutable creator prompt");
   if (
     input.steps.length === 0 ||
+    input.steps.length > CREATOR_MAX_PLAN_STEPS ||
     input.steps.some(
       (step) =>
         step.id.trim().length === 0 ||
@@ -1159,14 +1173,14 @@ export function createCreatorPlan(
     throw new Error("Creator plan requires concrete steps bound to changes");
   if (new Set(input.steps.map((step) => step.id)).size !== input.steps.length)
     throw new Error("Creator plan step IDs must be unique");
-  if (input.changes.length === 0 || input.changes.length > 32)
-    throw new Error("Creator plan requires 1-32 typed changes");
+  if (input.changes.length === 0 || input.changes.length > CREATOR_MAX_CHANGES)
+    throw new Error(`Creator plan requires 1-${CREATOR_MAX_CHANGES} typed changes`);
   const inspectionPaths = [
     ...new Set(input.inspectionPaths.map(canonicalStudioPath)),
   ].sort();
   if (
     inspectionPaths.length !== input.inspectionPaths.length ||
-    inspectionPaths.length > 32
+    inspectionPaths.length > CREATOR_MAX_INSPECTION_PATHS
   )
     throw new Error("Creator plan inspection paths must be unique and bounded");
   for (const path of inspectionPaths)
@@ -1183,7 +1197,11 @@ export function createCreatorPlan(
   );
   assertPlanChangeSet(input.changes, observation);
   const clauseIds = input.charter.clauses.map((clause) => clause.id);
-  if (clauseIds.length === 0 || new Set(clauseIds).size !== clauseIds.length)
+  if (
+    clauseIds.length === 0 ||
+    clauseIds.length > CREATOR_MAX_CHARTER_CLAUSES ||
+    new Set(clauseIds).size !== clauseIds.length
+  )
     throw new Error("Verification charter requires unique clauses");
   input.charter.clauses.forEach((clause) =>
     assertProposedCharterClause(clause, input.changes, observation),
@@ -1407,10 +1425,12 @@ export function assertCreatorBuildContract(
     !isHash(value.ownershipMapHash) ||
     !isHash(value.initialRevisionHash) ||
     !Array.isArray(value.initialInspectionPaths) ||
+    value.initialInspectionPaths.length > CREATOR_MAX_INSPECTION_PATHS ||
     !value.initialInspectionPaths.every((path) => typeof path === "string") ||
     !isRecord(value.propertyPolicies) ||
     !Array.isArray(value.changes) ||
-    value.changes.length === 0
+    value.changes.length === 0 ||
+    value.changes.length > CREATOR_MAX_CHANGES
   )
     throw new Error("Invalid CreatorBuildContract");
   const policyKeys = Object.keys(value.propertyPolicies).sort();
@@ -1508,12 +1528,12 @@ export function createCreatorChangeSet(
   );
   if (
     input.operations.length === 0 ||
-    input.operations.length > 32 ||
+    input.operations.length > CREATOR_MAX_CHANGES ||
     new Set(input.operations.map((operation) => operation.id)).size !==
       input.operations.length
   )
     throw new Error(
-      "Creator change set requires 1-32 uniquely identified operations",
+      `Creator change set requires 1-${CREATOR_MAX_CHANGES} uniquely identified operations`,
     );
   const createdPaths = input.operations.flatMap((operation) =>
     operation.kind === "create"
@@ -1580,7 +1600,7 @@ export function assertCreatorChangeSet(
     !isHash(value.expectedRevisionHash) ||
     !Array.isArray(value.operations) ||
     value.operations.length < 1 ||
-    value.operations.length > 32 ||
+    value.operations.length > CREATOR_MAX_CHANGES ||
     !isRecord(value.localGate) ||
     value.localGate.status !== "eligible" ||
     !Array.isArray(value.localGate.issueHashes) ||
@@ -1846,7 +1866,7 @@ abstract class BaseCreatorToolHost implements AgentToolHost {
   private executedVerifierCalls = 0;
   private totalResultBytes = 0;
   protected constructor(
-    protected readonly budgets: BudgetPolicy = INITIAL_EXPERIMENT_BUDGETS,
+    protected readonly budgets: BudgetPolicy = DEFAULT_AGENT_BUDGETS,
   ) {}
   abstract definitions(): AgentToolDefinition[];
   validateBatch(
@@ -2036,6 +2056,23 @@ function inspectSnapshot(
   return { paths: unique, instances, scripts };
 }
 
+function creatorRobloxApiLookup(
+  input: z.infer<z.ZodObject<typeof ROBLOX_API_LOOKUP_SHAPE>>,
+): unknown {
+  try {
+    return lookupRobloxApiCatalog({
+      ...(input.className !== undefined ? { className: input.className } : {}),
+      ...(input.query !== undefined ? { query: input.query } : {}),
+      ...(input.limit !== undefined ? { limit: input.limit } : {}),
+    });
+  } catch (error) {
+    throw new ToolFailure(
+      "ROBLOX_API_LOOKUP_INVALID",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
 export class CreatorPlannerToolHost extends BaseCreatorToolHost {
   private proposal?: CreatorPlan;
   private readonly inspectedPaths = new Set<string>();
@@ -2053,9 +2090,14 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
   override definitions(): AgentToolDefinition[] {
     return [
       definition(
+        "studio.api_lookup",
+        "Search the pinned official Roblox Engine API catalog for class, property, method, event, callback, datatype, or enum metadata. Results include signatures, security/capability context, source provenance, and Forge's precise direct-authoring/source-only/restricted disposition. Catalog presence informs Luau source; it never grants typed Studio mutation or behavioral proof.",
+        ROBLOX_API_LOOKUP_SHAPE,
+      ),
+      definition(
         "studio.inspect",
         "Inspect bounded properties, attributes, positions, ownership, and script hashes for exact paths in the initial Studio snapshot. Source bodies are never returned. Any path declared as a builder inspection dependency must first be inspected here.",
-        { paths: z.array(z.string().min(1)).min(1).max(32) },
+        { paths: z.array(z.string().min(1)).min(1).max(CREATOR_MAX_INSPECTION_PATHS) },
       ),
       definition(
         "creator.propose_plan",
@@ -2083,6 +2125,10 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
     name: string,
     input: unknown,
   ): Promise<unknown> {
+    if (name === "studio.api_lookup")
+      return creatorRobloxApiLookup(
+        input as z.infer<z.ZodObject<typeof ROBLOX_API_LOOKUP_SHAPE>>,
+      );
     if (name === "studio.inspect") {
       const paths = (input as { paths: string[] }).paths;
       const inspected = inspectSnapshot(
@@ -2239,6 +2285,10 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
     name: string,
     input: unknown,
   ): Promise<unknown> {
+    if (name === "studio.api_lookup")
+      return creatorRobloxApiLookup(
+        input as z.infer<z.ZodObject<typeof ROBLOX_API_LOOKUP_SHAPE>>,
+      );
     if (name === "studio.inspect")
       return this.inspect((input as { paths: string[] }).paths);
     if (name === "studio.read_source")
@@ -2526,7 +2576,7 @@ export async function runCreatorPlanner(input: {
     ownership: input.ownership,
     observation: input.observation,
     prompt: input.prompt,
-    budgets: input.budgets ?? INITIAL_EXPERIMENT_BUDGETS,
+    budgets: input.budgets ?? DEFAULT_AGENT_BUDGETS,
   });
   const result = await invokeCreatorRuntime(input.runtime, {
     systemPrompt: CREATOR_PLANNER_SYSTEM_PROMPT,
@@ -2537,7 +2587,7 @@ export async function runCreatorPlanner(input: {
       observation: input.observation,
     }),
     tools: host,
-    budgets: input.budgets ?? INITIAL_EXPERIMENT_BUDGETS,
+    budgets: input.budgets ?? DEFAULT_AGENT_BUDGETS,
     model: input.session.model,
   });
   const plan = host.getPlan();
@@ -2608,7 +2658,7 @@ export async function runCreatorBuilder(input: {
       observation: input.observation,
     }),
     tools: host,
-    budgets: input.budgets ?? INITIAL_EXPERIMENT_BUDGETS,
+    budgets: input.budgets ?? DEFAULT_AGENT_BUDGETS,
     model: input.session.model,
   });
   if (result.status !== "completed")
@@ -2687,21 +2737,6 @@ export async function persistCreatorBundle(
   };
 }
 
-export async function persistCreatorPrompt(
-  session: CreatorSession,
-  prompt: string,
-  directory: string,
-): Promise<string> {
-  if (contentHash(prompt) !== session.promptHash)
-    throw new Error("Creator prompt does not match session identity");
-  const destination = join(resolve(directory), `${session.id}.prompt.txt`);
-  await mkdir(dirname(destination), { recursive: true });
-  const temporary = `${destination}.${randomUUID()}.tmp`;
-  await writeFile(temporary, prompt, { encoding: "utf8", mode: 0o600 });
-  await rename(temporary, destination);
-  return relative(process.cwd(), destination);
-}
-
 export async function loadCreatorBundle(
   path: string,
 ): Promise<CreatorSessionBundle> {
@@ -2710,6 +2745,15 @@ export async function loadCreatorBundle(
   ) as CreatorSessionBundle;
   assertCreatorSessionBundle(value);
   const store = new ImmutableJsonArtifactStore(dirname(resolve(path)));
+  const creatorRequest = await store.read(
+    value.creatorRequest,
+    assertCreatorRequestArtifact,
+  );
+  if (
+    creatorRequest.sessionId !== value.session.id ||
+    creatorRequest.promptHash !== value.session.promptHash
+  )
+    throw new Error("Creator request artifact does not bind its session");
   for (const reference of value.agentRuns) {
     await Promise.all([
       store.verify(reference.agentRun),
@@ -2741,6 +2785,7 @@ export async function loadCreatorBundle(
 
 export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
   assertCreatorSession(value.session);
+  assertArtifactReference(value.creatorRequest);
   assertOwnershipMap(value.ownership);
   assertStudioProjectState(value.observation);
   if (
@@ -3160,6 +3205,23 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
       );
 }
 
+export function assertCreatorRequestArtifact(
+  value: unknown,
+): asserts value is CreatorRequestArtifact {
+  if (
+    !isRecord(value) ||
+    value.kind !== "CreatorRequest" ||
+    typeof value.sessionId !== "string" ||
+    value.sessionId.length === 0 ||
+    !isHash(value.promptHash) ||
+    typeof value.text !== "string" ||
+    value.text.trim().length === 0 ||
+    value.text !== value.text.trim() ||
+    contentHash(value.text) !== value.promptHash
+  )
+    throw new Error("Invalid CreatorRequest artifact");
+}
+
 function mutationAttemptArtifactReferences(
   attempt: import("./mutation-evidence.js").CreatorMutationAttempt,
 ): ArtifactReference[] {
@@ -3394,7 +3456,7 @@ export function assertCreatorPlan(
     value.goal !== value.goal.trim() ||
     contentHash(value.goal) !== value.promptHash ||
     !Array.isArray(value.inspectionPaths) ||
-    value.inspectionPaths.length > 32 ||
+    value.inspectionPaths.length > CREATOR_MAX_INSPECTION_PATHS ||
     !value.inspectionPaths.every(
       (path) => typeof path === "string" && canonicalStudioPath(path) === path,
     ) ||
@@ -3402,7 +3464,9 @@ export function assertCreatorPlan(
     stableJson([...value.inspectionPaths].sort()) !==
       stableJson(value.inspectionPaths) ||
     !Array.isArray(value.steps) ||
+    value.steps.length > CREATOR_MAX_PLAN_STEPS ||
     !Array.isArray(value.changes) ||
+    value.changes.length > CREATOR_MAX_CHANGES ||
     !isRecord(value.charter)
   )
     throw new Error("Invalid CreatorPlan");
@@ -3439,7 +3503,8 @@ export function assertCreatorPlan(
     !isHash(value.charter.hash) ||
     value.charter.visibility !== "creator_visible" ||
     value.charter.authority !== "creator_approved_hypothesis" ||
-    !Array.isArray(value.charter.clauses)
+    !Array.isArray(value.charter.clauses) ||
+    value.charter.clauses.length > CREATOR_MAX_CHARTER_CLAUSES
   )
     throw new Error("Invalid VerificationCharter");
   for (const clause of value.charter.clauses) {
@@ -3490,6 +3555,19 @@ export function assertCreatorPlan(
     throw new Error("Invalid CreatorPlan identity");
 }
 
+const POSITION_SERIES_CAPABILITY = STUDIO_CAPABILITY_MANIFEST.runtimeCapabilities.find(
+  (entry) => entry.name === "base_part.position_series",
+);
+if (
+  POSITION_SERIES_CAPABILITY?.maximumSamples === undefined ||
+  POSITION_SERIES_CAPABILITY.minimumIntervalMs === undefined ||
+  POSITION_SERIES_CAPABILITY.maximumIntervalMs === undefined
+)
+  throw new Error("Studio manifest is missing bounded position-series limits");
+const CREATOR_SERIES_MAX_SAMPLES = POSITION_SERIES_CAPABILITY.maximumSamples;
+const CREATOR_SERIES_MIN_INTERVAL_MS = POSITION_SERIES_CAPABILITY.minimumIntervalMs;
+const CREATOR_SERIES_MAX_INTERVAL_MS = POSITION_SERIES_CAPABILITY.maximumIntervalMs;
+
 const RESOLVABLE_CLASS_SCHEMA = z.enum(STUDIO_RESOLVABLE_CLASSES);
 const PROPOSED_CLAUSE_SCHEMA = z.union([
   z.object({
@@ -3510,10 +3588,10 @@ const PROPOSED_CLAUSE_SCHEMA = z.union([
     check: z.literal("position_series"),
     path: z.string().min(1),
     expectedClass: z.literal("BasePart"),
-    sampleCount: z.number().int().min(2).max(32),
-    intervalMs: z.number().int().min(100).max(1000),
+    sampleCount: z.number().int().min(2).max(CREATOR_SERIES_MAX_SAMPLES),
+    intervalMs: z.number().int().min(CREATOR_SERIES_MIN_INTERVAL_MS).max(CREATOR_SERIES_MAX_INTERVAL_MS),
     quantizationStuds: z.number().positive().max(10),
-    minimumDistinctPositions: z.number().int().min(2).max(32),
+    minimumDistinctPositions: z.number().int().min(2).max(CREATOR_SERIES_MAX_SAMPLES),
   }),
   z.object({
     id: z.string().min(1),
@@ -3557,10 +3635,10 @@ const FINAL_CLAUSE_SCHEMA = z.union([
     statement: z.string().min(1),
     path: z.string().min(1),
     expectedClass: z.literal("BasePart"),
-    sampleCount: z.number().int().min(2).max(32),
-    intervalMs: z.number().int().min(100).max(1000),
+    sampleCount: z.number().int().min(2).max(CREATOR_SERIES_MAX_SAMPLES),
+    intervalMs: z.number().int().min(CREATOR_SERIES_MIN_INTERVAL_MS).max(CREATOR_SERIES_MAX_INTERVAL_MS),
     quantizationStuds: z.number().positive().max(10),
-    minimumDistinctPositions: z.number().int().min(2).max(32),
+    minimumDistinctPositions: z.number().int().min(2).max(CREATOR_SERIES_MAX_SAMPLES),
   }),
   z.object({
     id: z.string().min(1),
@@ -3628,19 +3706,19 @@ const PLAN_CHANGE_SCHEMA = z.union([
 ]);
 
 const PLAN_SHAPE = {
-  inspectionPaths: z.array(z.string().min(1)).max(32),
+  inspectionPaths: z.array(z.string().min(1)).max(CREATOR_MAX_INSPECTION_PATHS),
   steps: z
     .array(
       z.object({
         id: z.string().min(1),
         statement: z.string().min(1),
-        changeIds: z.array(z.string().min(1)).min(1).max(32),
+        changeIds: z.array(z.string().min(1)).min(1).max(CREATOR_MAX_CHANGES),
       }),
     )
     .min(1)
-    .max(12),
-  changes: z.array(PLAN_CHANGE_SCHEMA).min(1).max(32),
-  clauses: z.array(PROPOSED_CLAUSE_SCHEMA).min(1).max(16),
+    .max(CREATOR_MAX_PLAN_STEPS),
+  changes: z.array(PLAN_CHANGE_SCHEMA).min(1).max(CREATOR_MAX_CHANGES),
+  clauses: z.array(PROPOSED_CLAUSE_SCHEMA).min(1).max(CREATOR_MAX_CHARTER_CLAUSES),
 } satisfies ZodRawShape;
 function boundedSourceSchema() {
   return z
@@ -3865,11 +3943,21 @@ const STAGE_PAYLOAD_SCHEMA = z
     source: boundedSourceSchema().optional(),
   })
   .strict();
+const ROBLOX_API_LOOKUP_SHAPE = {
+  className: z.string().min(1).max(128).optional(),
+  query: z.string().min(1).max(160).optional(),
+  limit: z.number().int().min(1).max(20).optional(),
+} satisfies ZodRawShape;
 const BUILDER_DEFINITIONS: AgentToolDefinition[] = [
+  definition(
+    "studio.api_lookup",
+    "Search the pinned official Roblox Engine API catalog for class, property, method, event, callback, datatype, or enum metadata. Results include signatures, security/capability context, source provenance, and Forge's precise direct-authoring/source-only/restricted disposition. Catalog presence informs Luau source; it never grants typed Studio mutation or behavioral proof.",
+    ROBLOX_API_LOOKUP_SHAPE,
+  ),
   definition(
     "studio.inspect",
     "Inspect only explicit initial-snapshot paths listed in the immutable CreatorBuildContract. Source bodies are not returned.",
-    { paths: z.array(z.string().min(1)).min(1).max(32) },
+    { paths: z.array(z.string().min(1)).min(1).max(CREATOR_MAX_INSPECTION_PATHS) },
   ),
   definition(
     "studio.read_source",
@@ -5762,9 +5850,9 @@ function correctiveFailure(
 }
 
 export const CREATOR_PLANNER_SYSTEM_PROMPT =
-  "You are Forge's read-only creator planner. Use studio.inspect for exact initial paths whose properties, attributes, position, ownership, or script hashes matter, then publish one typed plan and visible charter with creator.propose_plan. Explicitly declare the exact already-inspected inspectionPaths the builder will need for relationships, placement, integration, or preservation; do not rely on prose inference. Forge derives the plan goal exactly from the immutable creator request: never restate, weaken, or replace it. Each step must bind exact changeIds and the steps must cover every change once. Each change requires an exact path, action, class, and initialization. Every create and move parent must already exist in the initial snapshot and be Studio-writable; a planned instance cannot parent another planned instance. Script, LocalScript, and ModuleScript creation uses initialization inline_source_required: the builder supplies complete source inside that one create operation. write_source only targets a script present in the initial snapshot; never use it for a planned creation. Non-script creation uses initial_properties. Supply only typed fields for machine checks because Forge generates their exact statements. Every create or move output requires an exact class-aware instance_exists check. Any source-bearing plan requires luau_syntax. instance_exists can use an allowlisted Studio root; position_series is Workspace BasePart-only and every creator position series must span at least 15000 ms while all sequential series remain within the 20000 ms manifest budget, so creator interaction can occur during the authoritative Play Solo window. Playtest diagnostics count the complete playtest rather than attributable messages; subtree_unchanged is only a bounded snapshot comparison. Put visual quality, causal attribution, exact input-to-effect claims, and unsupported gameplay judgments in creator_review. Do not stage changes or invent hidden criteria.";
+  "You are Forge's read-only creator planner. Use studio.api_lookup to ground every Roblox class, member, datatype, or enum that source-bearing work depends on in the pinned official catalog; its source-only results authorize Luau references, not direct Studio mutation or behavioral proof. Use studio.inspect for exact initial paths whose properties, attributes, position, ownership, or script hashes matter, then publish one typed plan and visible charter with creator.propose_plan. Explicitly declare the exact already-inspected inspectionPaths the builder will need for relationships, placement, integration, or preservation; do not rely on prose inference. Forge derives the plan goal exactly from the immutable creator request: never restate, weaken, or replace it. Each step must bind exact changeIds and the steps must cover every change once. Each change requires an exact path, action, class, and initialization. Every create and move parent must already exist in the initial snapshot and be Studio-writable; a planned instance cannot parent another planned instance. Script, LocalScript, and ModuleScript creation uses initialization inline_source_required: the builder supplies complete source inside that one create operation. write_source only targets a script present in the initial snapshot; never use it for a planned creation. Non-script creation uses initial_properties. Supply only typed fields for machine checks because Forge generates their exact statements. Every create or move output requires an exact class-aware instance_exists check. Any source-bearing plan requires luau_syntax. instance_exists can use an allowlisted Studio root; position_series is Workspace BasePart-only and every creator position series must span the current creator observation window while all sequential series remain within the generated manifest runtime budget, so creator interaction can occur during the authoritative Play Solo window. Playtest diagnostics count the complete playtest rather than attributable messages; subtree_unchanged is only a bounded snapshot comparison. Put visual quality, causal attribution, exact input-to-effect claims, and unsupported gameplay judgments in creator_review. Do not stage changes or invent hidden criteria.";
 export const CREATOR_BUILDER_SYSTEM_PROMPT =
-  "You are Forge's bounded Studio builder. The exact immutable CreatorBuildContract is supplied below. It already fixes each operation's kind, path, parent, name, class, stable ID, precondition hashes, temporary ID, and operation ID. Never repeat or invent structural fields. Use studio.inspect only with explicit contract initial paths. For an approved write_source change, use studio.read_source to read its bounded current source before authoring the complete replacement. Use studio.stage with only a planChangeId plus the permitted creative payload. Property inputs use natural JSON without type/value wrappers; follow each sealed property's required codec. Scalars are booleans, finite numbers, or strings. Compound inputs use Vector2 {x,y}, Vector3 {x,y,z}, Color3 {r,g,b} in 0..1, CFrame {position:{x,y,z},rotation:{x,y,z}} in Euler degrees, UDim {scale,offset}, UDim2 {x:{scale,offset},y:{scale,offset}}, Rect {min:{x,y},max:{x,y}}, NumberRange {min,max}, sequences {keypoints:[...]}, BrickColor {name}, Font {family,weight,style}, PhysicalProperties, Axes, Faces, Ray {origin,direction}, or stable instance reference {stableId,path,className}. Implement every contract change exactly once, inspect the diff, and run forge.verify. The contract's per-class property policy is authoritative. A source-required change needs complete non-empty inline source. Never use arbitrary execution, generic property access, unapproved content IDs, terrain, or externally owned Rojo targets. The live place is not mutated until the creator separately approves the sealed change set.";
+  "You are Forge's bounded Studio builder. The exact immutable CreatorBuildContract is supplied below. It already fixes each operation's kind, path, parent, name, class, stable ID, precondition hashes, temporary ID, and operation ID. Never repeat or invent structural fields. Use studio.api_lookup to ground every Roblox class, member, datatype, or enum used in authored source in the pinned official catalog; source-only entries may be referenced in Luau but cannot be sent as typed Studio mutations or claimed as proof. Use studio.inspect only with explicit contract initial paths. For an approved write_source change, use studio.read_source to read its bounded current source before authoring the complete replacement. Use studio.stage with only a planChangeId plus the permitted creative payload. Property inputs use natural JSON without type/value wrappers; follow each sealed property's required codec. Scalars are booleans, finite numbers, or strings. Compound inputs use Vector2 {x,y}, Vector3 {x,y,z}, Color3 {r,g,b} in 0..1, CFrame {position:{x,y,z},rotation:{x,y,z}} in Euler degrees, UDim {scale,offset}, UDim2 {x:{scale,offset},y:{scale,offset}}, Rect {min:{x,y},max:{x,y}}, NumberRange {min,max}, sequences {keypoints:[...]}, BrickColor {name}, Font {family,weight,style}, PhysicalProperties, Axes, Faces, Ray {origin,direction}, or stable instance reference {stableId,path,className}. Implement every contract change exactly once, inspect the diff, and run forge.verify. The contract's per-class property policy is authoritative. A source-required change needs complete non-empty inline source. Never use arbitrary execution, generic property access, unapproved content IDs, terrain, or externally owned Rojo targets. The live place is not mutated until the creator separately approves the sealed change set.";
 
 export function creatorBuilderSystemPrompt(
   plan: CreatorPlan,

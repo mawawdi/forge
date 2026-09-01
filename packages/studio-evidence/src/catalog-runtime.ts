@@ -6,6 +6,8 @@ import type {
   RobloxApiClass,
   RobloxApiDatatype,
   RobloxApiEnum,
+  RobloxApiGlobalMember,
+  RobloxApiLibrary,
   RobloxClassMember,
   RobloxClassMemberKind,
   RobloxDatatypeMemberKind,
@@ -17,14 +19,16 @@ const COUNT_KEYS = [
   "classes", "datatypes", "enums", "classProperties", "classMethods", "classEvents", "classCallbacks",
   "datatypeConstants", "datatypeConstructors", "datatypeFunctions", "datatypeMathOperations", "datatypeMethods",
   "datatypeProperties", "enumItems",
+  "globalProperties", "globalFunctions", "libraries", "libraryProperties", "libraryFunctions",
 ] as const satisfies readonly (keyof RobloxApiCatalogCounts)[];
 const CLASS_MEMBER_KINDS = ["property", "method", "event", "callback"] as const;
 const DATATYPE_MEMBER_KINDS = ["constant", "constructor", "function", "math_operation", "method", "property"] as const;
-const SOURCE_DIRECTORIES = ["classes", "datatypes", "enums"] as const;
+const SOURCE_DIRECTORIES = ["classes", "datatypes", "enums", "globals", "libraries"] as const;
 
 const classesByName = new Map(ROBLOX_API_CATALOG.classes.map((entry) => [entry.name, entry]));
 const datatypesByName = new Map(ROBLOX_API_CATALOG.datatypes.map((entry) => [entry.name, entry]));
 const enumsByName = new Map(ROBLOX_API_CATALOG.enums.map((entry) => [entry.name, entry]));
+const librariesByName = new Map(ROBLOX_API_CATALOG.libraries.map((entry) => [entry.name, entry]));
 
 /** Returns a class from the pinned catalog; it never consults the network. */
 export function getRobloxApiClass(name: string): RobloxApiClass | undefined { return classesByName.get(name); }
@@ -32,6 +36,10 @@ export function getRobloxApiClass(name: string): RobloxApiClass | undefined { re
 export function getRobloxApiDatatype(name: string): RobloxApiDatatype | undefined { return datatypesByName.get(name); }
 /** Returns an enum from the pinned catalog; it never consults the network. */
 export function getRobloxApiEnum(name: string): RobloxApiEnum | undefined { return enumsByName.get(name); }
+/** Returns a standard Luau/Roblox library from the pinned catalog. */
+export function getRobloxApiLibrary(name: string): RobloxApiLibrary | undefined { return librariesByName.get(name); }
+/** Returns every same-named documented global occurrence across official global scopes. */
+export function getRobloxApiGlobalMembers(name: string): readonly RobloxApiGlobalMember[] { return ROBLOX_API_CATALOG.globalMembers.filter((entry) => entry.name === name); }
 
 /**
  * True precisely when `className` is the same class as `expectedClass` or a
@@ -82,28 +90,34 @@ export function resolveRobloxClassMembers(className: string, kind?: RobloxClassM
 /** Validates untrusted catalog JSON before it is used by a tool or policy compiler. */
 export function validateRobloxApiCatalog(value: unknown): asserts value is RobloxApiCatalog {
   const catalog = object(value, "RobloxApiCatalog");
-  exactKeys(catalog, ["kind", "source", "classes", "datatypes", "enums", "counts", "contentHash"], "RobloxApiCatalog");
+  exactKeys(catalog, ["kind", "source", "classes", "datatypes", "enums", "globalMembers", "libraries", "counts", "contentHash"], "RobloxApiCatalog");
   if (catalog.kind !== "RobloxApiCatalog") fail("catalog kind");
   const source = object(catalog.source, "catalog source");
   validateSource(source);
   const classes = array(catalog.classes, "catalog classes");
   const datatypes = array(catalog.datatypes, "catalog datatypes");
   const enums = array(catalog.enums, "catalog enums");
+  const globalMembers = array(catalog.globalMembers, "catalog global members");
+  const libraries = array(catalog.libraries, "catalog libraries");
   const names = classes.map((entry) => string(object(entry, "catalog class").name, "catalog class name"));
   sortedUnique(names, "catalog classes");
   sortedUnique(datatypes.map((entry) => string(object(entry, "catalog datatype").name, "catalog datatype name")), "catalog datatypes");
   sortedUnique(enums.map((entry) => string(object(entry, "catalog enum").name, "catalog enum name")), "catalog enums");
+  sortedUnique(globalMembers.map((entry) => string(object(entry, "catalog global member").id, "catalog global member id")), "catalog global members");
+  sortedUnique(libraries.map((entry) => string(object(entry, "catalog library").name, "catalog library name")), "catalog libraries");
   const classNames = new Set(names);
   const ids = new Set<string>();
   for (const entry of classes) validateClass(object(entry, "catalog class"), classNames, ids);
   for (const entry of datatypes) validateDatatype(object(entry, "catalog datatype"), ids);
   for (const entry of enums) validateEnum(object(entry, "catalog enum"), ids);
+  for (const entry of globalMembers) validateGlobalMember(object(entry, "catalog global member"), ids);
+  for (const entry of libraries) validateLibrary(object(entry, "catalog library"), ids);
   assertAcyclicInheritance(classes, classNames);
   const counts = validateCounts(catalog.counts, "catalog counts");
-  const actualCounts = countCatalog(classes, datatypes, enums);
+  const actualCounts = countCatalog(classes, datatypes, enums, globalMembers, libraries);
   if (!sameCounts(counts, actualCounts) || !sameCounts(counts, validateCounts(source.counts, "source counts"))) fail("catalog counts");
   if (!isHash(catalog.contentHash)) fail("catalog content hash");
-  const material = { kind: catalog.kind, source, classes, datatypes, enums, counts: catalog.counts };
+  const material = { kind: catalog.kind, source, classes, datatypes, enums, globalMembers, libraries, counts: catalog.counts };
   if (contentHash(stableJson(material)) !== catalog.contentHash) fail("catalog content hash");
 }
 
@@ -185,6 +199,34 @@ function validateEnumItem(entry: Record<string, unknown>, enumName: string, ids:
   sortedTags(entry.tags, `catalog enum item tags ${String(entry.id)}`); addId(ids, entry.id);
 }
 
+function validateGlobalMember(entry: Record<string, unknown>, ids: Set<string>): void {
+  const optional = [entry.valueType === undefined ? [] : ["valueType"], entry.parameters === undefined ? [] : ["parameters"], entry.returns === undefined ? [] : ["returns"]].flat();
+  exactKeys(entry, ["id", "kind", "name", "declaringScope", ...optional, "tags", "deprecated", "sourceFile", "sourceFileHash"], "catalog global member");
+  const kind = sourceMemberKind(entry.kind, "catalog global member kind"); const name = string(entry.name, "catalog global member name"); const scope = string(entry.declaringScope, "catalog global member scope");
+  if (typeof entry.deprecated !== "boolean" || !matchesMemberId(entry.id, `global_member:${scope}:${kind}:${name}`)) fail("catalog global member");
+  if ((kind === "property") !== isNonEmptyString(entry.valueType)) fail("catalog global member value type");
+  sortedTags(entry.tags, `catalog global member tags ${String(entry.id)}`); validateParameters(entry.parameters, `catalog global member parameters ${String(entry.id)}`); validateReturns(entry.returns, `catalog global member returns ${String(entry.id)}`); validateSourceFile(entry.sourceFile, entry.sourceFileHash, `catalog global member ${String(entry.id)}`); addId(ids, entry.id);
+}
+
+function validateLibrary(entry: Record<string, unknown>, ids: Set<string>): void {
+  const name = string(entry.name, "catalog library name");
+  exactKeys(entry, ["id", "name", "tags", "deprecated", "members", "sourceFile", "sourceFileHash"], "catalog library");
+  if (entry.id !== `library:${name}` || typeof entry.deprecated !== "boolean" || entry.sourceFile !== `libraries/${name}.yaml`) fail("catalog library");
+  sortedTags(entry.tags, `catalog library tags ${name}`); validateSourceFile(entry.sourceFile, entry.sourceFileHash, `catalog library ${name}`); addId(ids, entry.id);
+  const members = array(entry.members, `catalog library members ${name}`);
+  sortedUnique(members.map((member) => string(object(member, "catalog library member").id, "catalog library member id")), `catalog library members ${name}`);
+  for (const member of members) validateLibraryMember(object(member, "catalog library member"), name, entry.sourceFile, entry.sourceFileHash, ids);
+}
+
+function validateLibraryMember(entry: Record<string, unknown>, libraryName: string, sourceFile: unknown, sourceFileHash: unknown, ids: Set<string>): void {
+  const optional = [entry.valueType === undefined ? [] : ["valueType"], entry.parameters === undefined ? [] : ["parameters"], entry.returns === undefined ? [] : ["returns"]].flat();
+  exactKeys(entry, ["id", "kind", "name", "declaringLibrary", ...optional, "tags", "deprecated", "sourceFile", "sourceFileHash"], "catalog library member");
+  const kind = sourceMemberKind(entry.kind, "catalog library member kind"); const name = string(entry.name, "catalog library member name");
+  if (entry.declaringLibrary !== libraryName || typeof entry.deprecated !== "boolean" || !matchesMemberId(entry.id, `library_member:${libraryName}:${kind}:${name}`)) fail("catalog library member");
+  if ((kind === "property") !== isNonEmptyString(entry.valueType) || entry.sourceFile !== sourceFile || entry.sourceFileHash !== sourceFileHash) fail("catalog library member payload");
+  sortedTags(entry.tags, `catalog library member tags ${String(entry.id)}`); validateParameters(entry.parameters, `catalog library member parameters ${String(entry.id)}`); validateReturns(entry.returns, `catalog library member returns ${String(entry.id)}`); addId(ids, entry.id);
+}
+
 function validateParameters(value: unknown, label: string): void {
   if (value === undefined) return;
   for (const entry of array(value, label)) { const parameter = object(entry, label); exactKeys(parameter, ["name", "type", ...(parameter.default === undefined ? [] : ["default"])], label); if (!isNonEmptyString(parameter.name) || !isNonEmptyString(parameter.type) || (parameter.default !== undefined && !["string", "number", "boolean"].includes(typeof parameter.default))) fail(label); }
@@ -203,7 +245,7 @@ function validateCounts(value: unknown, label: string): RobloxApiCatalogCounts {
   for (const key of COUNT_KEYS) if (!Number.isSafeInteger(counts[key]) || Number(counts[key]) < 0) fail(label);
   return counts as unknown as RobloxApiCatalogCounts;
 }
-function countCatalog(classes: readonly unknown[], datatypes: readonly unknown[], enums: readonly unknown[]): RobloxApiCatalogCounts {
+function countCatalog(classes: readonly unknown[], datatypes: readonly unknown[], enums: readonly unknown[], globalMembers: readonly unknown[], libraries: readonly unknown[]): RobloxApiCatalogCounts {
   const counts: { -readonly [Key in keyof RobloxApiCatalogCounts]: number } = Object.fromEntries(COUNT_KEYS.map((key) => [key, 0])) as { -readonly [Key in keyof RobloxApiCatalogCounts]: number };
   counts.classes = classes.length; counts.datatypes = datatypes.length; counts.enums = enums.length;
   for (const item of classes) for (const member of array(object(item, "catalog class").members, "catalog class members")) {
@@ -215,12 +257,22 @@ function countCatalog(classes: readonly unknown[], datatypes: readonly unknown[]
     if (kind === "constant") counts.datatypeConstants += 1; else if (kind === "constructor") counts.datatypeConstructors += 1; else if (kind === "function") counts.datatypeFunctions += 1; else if (kind === "math_operation") counts.datatypeMathOperations += 1; else if (kind === "method") counts.datatypeMethods += 1; else counts.datatypeProperties += 1;
   }
   for (const item of enums) counts.enumItems += array(object(item, "catalog enum").items, "catalog enum items").length;
+  for (const item of globalMembers) {
+    const kind = sourceMemberKind(object(item, "catalog global member").kind, "catalog global member kind");
+    if (kind === "property") counts.globalProperties += 1; else counts.globalFunctions += 1;
+  }
+  counts.libraries = libraries.length;
+  for (const item of libraries) for (const member of array(object(item, "catalog library").members, "catalog library members")) {
+    const kind = sourceMemberKind(object(member, "catalog library member").kind, "catalog library member kind");
+    if (kind === "property") counts.libraryProperties += 1; else counts.libraryFunctions += 1;
+  }
   return counts;
 }
 function sameCounts(left: RobloxApiCatalogCounts, right: RobloxApiCatalogCounts): boolean { return COUNT_KEYS.every((key) => left[key] === right[key]); }
 
 function classMemberKind(value: unknown): RobloxClassMemberKind { if ((CLASS_MEMBER_KINDS as readonly unknown[]).includes(value)) return value as RobloxClassMemberKind; fail("catalog class member kind"); }
 function datatypeMemberKind(value: unknown): RobloxDatatypeMemberKind { if ((DATATYPE_MEMBER_KINDS as readonly unknown[]).includes(value)) return value as RobloxDatatypeMemberKind; fail("catalog datatype member kind"); }
+function sourceMemberKind(value: unknown, label: string): "property" | "function" { if (value === "property" || value === "function") return value; fail(label); }
 function validateSourceFile(sourceFile: unknown, sourceFileHash: unknown, label: string): void { if (!isNonEmptyString(sourceFile) || !SOURCE_DIRECTORIES.some((directory) => sourceFile.startsWith(`${directory}/`)) || sourceFile.includes("..") || !isHash(sourceFileHash)) fail(label); }
 function sortedTags(value: unknown, label: string): void { sortedUnique(array(value, label).map((entry) => string(entry, label)), label); }
 function sortedUnique(values: readonly string[], label: string): void { for (let index = 0; index < values.length; index += 1) if (index > 0 && compareText(values[index - 1]!, values[index]!) >= 0) fail(`${label} must be sorted and unique`); }

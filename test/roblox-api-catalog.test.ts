@@ -8,6 +8,8 @@ import {
   getRobloxApiClass,
   getRobloxApiDatatype,
   getRobloxApiEnum,
+  getRobloxApiGlobalMembers,
+  getRobloxApiLibrary,
   isRobloxClassAssignableTo,
   loadRobloxApiCatalog,
   resolveRobloxClassMember,
@@ -18,8 +20,8 @@ import {
 test("the pinned catalog is exhaustive, provenance-bound, and internally valid", () => {
   validateRobloxApiCatalog(ROBLOX_API_CATALOG);
   assert.equal(ROBLOX_API_CATALOG.contentHash, ROBLOX_API_CATALOG_HASH);
-  assert.equal(ROBLOX_API_CATALOG.source.commit, "529a24ff2aa9896dad50fc12268717210ba3127d");
-  assert.equal(ROBLOX_API_CATALOG.source.sourceTreeHash, "b62066ef0fa92c4be5f8a6e0681cd899b4a88a30571a410900a75de98a987315");
+  assert.equal(ROBLOX_API_CATALOG.source.commit, "d025c96bdb1c81570221997092fbe0ad94b5337c");
+  assert.equal(ROBLOX_API_CATALOG.source.sourceTreeHash, "6df2b67ba4e5fdc4d24f245ee159a64a6575d7eea37f0819107141dfc9716d04");
   assert.deepEqual(ROBLOX_API_CATALOG.counts, {
     classes: 638,
     datatypes: 48,
@@ -35,12 +37,31 @@ test("the pinned catalog is exhaustive, provenance-bound, and internally valid",
     datatypeMethods: 80,
     datatypeProperties: 175,
     enumItems: 3003,
+    globalProperties: 8,
+    globalFunctions: 42,
+    libraries: 11,
+    libraryProperties: 10,
+    libraryFunctions: 165,
   });
-  const typeEntries = ROBLOX_API_CATALOG.counts.classes + ROBLOX_API_CATALOG.counts.datatypes + ROBLOX_API_CATALOG.counts.enums;
-  const memberEntries = ROBLOX_API_CATALOG.counts.classProperties + ROBLOX_API_CATALOG.counts.classMethods + ROBLOX_API_CATALOG.counts.classEvents + ROBLOX_API_CATALOG.counts.classCallbacks + ROBLOX_API_CATALOG.counts.datatypeConstants + ROBLOX_API_CATALOG.counts.datatypeConstructors + ROBLOX_API_CATALOG.counts.datatypeFunctions + ROBLOX_API_CATALOG.counts.datatypeMathOperations + ROBLOX_API_CATALOG.counts.datatypeMethods + ROBLOX_API_CATALOG.counts.datatypeProperties + ROBLOX_API_CATALOG.counts.enumItems;
-  assert.equal(typeEntries, 1204);
-  assert.equal(memberEntries, 8245);
-  assert.equal(typeEntries + memberEntries, 9449);
+  const typeEntries = ROBLOX_API_CATALOG.counts.classes + ROBLOX_API_CATALOG.counts.datatypes + ROBLOX_API_CATALOG.counts.enums + ROBLOX_API_CATALOG.counts.libraries;
+  const memberEntries = ROBLOX_API_CATALOG.counts.classProperties + ROBLOX_API_CATALOG.counts.classMethods + ROBLOX_API_CATALOG.counts.classEvents + ROBLOX_API_CATALOG.counts.classCallbacks + ROBLOX_API_CATALOG.counts.datatypeConstants + ROBLOX_API_CATALOG.counts.datatypeConstructors + ROBLOX_API_CATALOG.counts.datatypeFunctions + ROBLOX_API_CATALOG.counts.datatypeMathOperations + ROBLOX_API_CATALOG.counts.datatypeMethods + ROBLOX_API_CATALOG.counts.datatypeProperties + ROBLOX_API_CATALOG.counts.enumItems + ROBLOX_API_CATALOG.counts.globalProperties + ROBLOX_API_CATALOG.counts.globalFunctions + ROBLOX_API_CATALOG.counts.libraryProperties + ROBLOX_API_CATALOG.counts.libraryFunctions;
+  assert.equal(typeEntries, 1215);
+  assert.equal(memberEntries, 8470);
+  assert.equal(typeEntries + memberEntries, 9685);
+});
+
+test("globals and standard libraries are first-class pinned catalog entries", () => {
+  const workspace = getRobloxApiGlobalMembers("workspace");
+  assert.equal(workspace.length, 1);
+  assert.equal(workspace[0]?.valueType, "Workspace");
+  assert.equal(workspace[0]?.sourceFile, "globals/RobloxGlobals.yaml");
+
+  const math = getRobloxApiLibrary("math");
+  assert.ok(math);
+  const abs = math.members.find((entry) => entry.kind === "function" && entry.name === "abs");
+  assert.deepEqual(abs?.parameters, [{ name: "x", type: "number" }]);
+  assert.deepEqual(abs?.returns, [{ type: "number" }]);
+  assert.equal(abs?.sourceFile, "libraries/math.yaml");
 });
 
 test("class queries resolve declared and inherited members without copying provenance", () => {

@@ -23,17 +23,17 @@ const catalog: CapabilityExplorerSnapshot = {
       policyHash: "d".repeat(64),
       manifestHash: "e".repeat(64),
       summary: {
-        total: 9_449,
+        total: 9_685,
         byDisposition: {
-          authorable: 14,
-          observable_only: 3,
-          creator_reviewed: 2,
-          source_only: 0,
-          unsupported: 9_430,
+          authorable: 209,
+          observable_only: 16,
+          creator_reviewed: 0,
+          source_only: 7_986,
+          unsupported: 1_474,
         },
         byReason: {},
-        authorableClasses: 9,
-        authorableProperties: 14,
+        authorableClasses: 33,
+        authorableProperties: 183,
       },
       catalogBinding: "matched",
       manifestBinding: "matched",
@@ -65,6 +65,15 @@ const catalog: CapabilityExplorerSnapshot = {
         codec: "boolean",
         inheritedBy: ["MeshPart"],
         proofObligations: ["canonicalize", "validate", "preflight", "write", "read", "project", "compare"],
+        deprecated: false,
+        tags: [],
+        sourceFile: "classes/BasePart.yaml",
+        sourceFileHash: "1".repeat(64),
+        valueType: "boolean",
+        security: { read: "None", write: "None" },
+        serialization: { canLoad: true, canSave: true },
+        threadSafety: "ReadSafe",
+        capabilities: ["Physics"],
       },
     ],
   },
@@ -98,13 +107,20 @@ describe("CapabilityExplorer", () => {
   it("shows the catalog pin, attestation boundary, and authoring proof route", () => {
     render(<CapabilityExplorer catalog={catalog} pairedStudio={pairedStudio} onExplore={() => undefined} />);
 
-    expect(screen.getByText("9,449 accountable API entries")).toBeVisible();
+    expect(screen.getByText("9,685 cataloged API entries")).toBeVisible();
     expect(screen.getByText("Curated manifest attested")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Part.Anchored" })).toBeVisible();
     expect(screen.getByText("canonicalize")).toBeVisible();
     expect(screen.getByText("MeshPart")).toBeVisible();
-    expect(screen.getByText(/not a mutation menu/i)).toBeVisible();
-    expect(screen.getAllByText("183")).toHaveLength(2);
+    expect(screen.getByText("Anchored: boolean")).toBeVisible();
+    expect(screen.getByText(/read None · write None/)).toBeVisible();
+    expect(screen.getByText(/classes\/BasePart\.yaml/)).toBeVisible();
+    expect(screen.getByText(/Source API is usable in Luau source/i)).toBeVisible();
+    expect(screen.getByText("183/183")).toBeVisible();
+    expect(screen.getByText("1,474")).toBeVisible();
+    expect(screen.getByText("Source API")).toBeVisible();
+    expect(screen.getByText("Observe")).toBeVisible();
+    expect(screen.getByText("Restricted")).toBeVisible();
   });
 
   it("renders backend verifier findings verbatim and opens the retained raw artifact", async () => {

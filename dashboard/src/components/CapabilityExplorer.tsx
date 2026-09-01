@@ -24,6 +24,11 @@ type CoveragePresentation = {
   readonly detail?: string;
 };
 
+type CapabilityLabel = {
+  readonly label: string;
+  readonly reasonLabel: string;
+};
+
 export function CapabilityExplorer({
   catalog,
   pairedStudio,
@@ -54,8 +59,7 @@ export function CapabilityExplorer({
     <section className="capability-explorer" aria-labelledby="capability-explorer-title">
       <div className="panel-heading capability-explorer__heading">
         <div>
-          <p className="eyebrow">Pinned capability policy</p>
-          <h2 id="capability-explorer-title">API coverage explorer</h2>
+          <h2 id="capability-explorer-title">Roblox API ledger</h2>
         </div>
         <span className={`catalog-phase catalog-phase--${catalogPhase(catalog.phase, coverage)}`}>
           {catalog.phase === "loading"
@@ -70,7 +74,7 @@ export function CapabilityExplorer({
         </span>
       </div>
       <p className="capability-explorer__intro">
-        This is an accountability map, not a mutation menu. Authoring remains available only through the current Creator Control view.
+        Every pinned Roblox API entry is cataloged here. Direct authoring is transactionally bounded and proof-closed; Source API is usable in Luau source without a transactional proof route; Observe is read-only; Restricted is outside Forge’s current boundary.
       </p>
       {summary ? (
         <CatalogStatus
@@ -138,24 +142,26 @@ function CatalogStatus({
   onInspectAttestation: (artifact: ArtifactReference) => void;
 }): React.JSX.Element {
   const disposition = summary.coverage.summary.byDisposition;
+  const directAuthoring = disposition.authorable ?? 0;
+  const sourceApi = disposition.source_only ?? 0;
+  const observe = (disposition.observable_only ?? 0) + (disposition.creator_reviewed ?? 0);
+  const restricted = Math.max(0, summary.coverage.summary.total - directAuthoring - sourceApi - observe);
   const attestation = getAttestationHealth(pairedStudio, coverage);
   const attestationArtifact = pairedStudio?.attestationArtifact;
   return (
     <div className="catalog-status">
       <div className="catalog-status__pin">
-        <p className="eyebrow">Catalog pin</p>
-        <strong>{summary.coverage.summary.total.toLocaleString()} accountable API entries</strong>
-        <span>creator-docs {shortHash(summary.catalog.source.commit)} · source {shortHash(summary.catalog.source.sourceTreeHash)}</span>
+        <strong>{summary.coverage.summary.total.toLocaleString()} cataloged API entries</strong>
+        <span>creator-docs @ {shortHash(summary.catalog.source.commit)} · source {shortHash(summary.catalog.source.sourceTreeHash)}</span>
         <code title={summary.catalog.hash}>catalog {shortHash(summary.catalog.hash)}</code>
       </div>
       <dl className="catalog-status__coverage">
-        <div><dt>Authorable</dt><dd>{formatCount(disposition.authorable)}</dd></div>
-        <div><dt>Observable</dt><dd>{formatCount(disposition.observable_only)}</dd></div>
-        <div><dt>Reviewed</dt><dd>{formatCount(disposition.creator_reviewed)}</dd></div>
-        <div><dt>Unsupported</dt><dd>{formatCount(disposition.unsupported)}</dd></div>
+        <div><dt>Direct authoring</dt><dd>{formatCount(directAuthoring)}</dd></div>
+        <div><dt>Source API</dt><dd>{formatCount(sourceApi)}</dd></div>
+        <div><dt>Observe</dt><dd>{formatCount(observe)}</dd></div>
+        <div><dt>Restricted</dt><dd>{formatCount(restricted)}</dd></div>
       </dl>
       <div className={`catalog-attestation catalog-attestation--${attestation.tone}`}>
-        <p className="eyebrow">Coverage &amp; connector</p>
         <strong>{attestation.title}</strong>
         {!pairedStudio?.attestation ? <span>{attestation.detail}</span> : null}
         <code title={summary.manifest.hash}>manifest {shortHash(summary.manifest.hash)} · connector {shortHash(summary.manifest.connectorBuildHash)}</code>
@@ -175,14 +181,13 @@ function CatalogStatus({
 }
 
 function AttestationEvidence({ attestation }: { attestation: StudioAttestationSummary }): React.JSX.Element {
+  const findings = attestation.mismatchedFacts + attestation.missingFacts + attestation.unavailableFacts + attestation.readErrorFacts;
   return (
     <section className="attestation-evidence" aria-label="Verifier attestation evidence">
       <p className="attestation-evidence__detail">{attestation.detail}</p>
       <dl className="attestation-evidence__counts">
-        <div><dt>Reported</dt><dd>{formatCount(attestation.totalFacts)}</dd></div>
-        <div><dt>Observed</dt><dd>{formatCount(attestation.observedFacts)}</dd></div>
-        <div><dt>Mismatched</dt><dd>{formatCount(attestation.mismatchedFacts)}</dd></div>
-        <div><dt>Missing</dt><dd>{formatCount(attestation.missingFacts)}</dd></div>
+        <div><dt>Observed</dt><dd>{formatCount(attestation.observedFacts)}/{formatCount(attestation.totalFacts)}</dd></div>
+        <div><dt>Findings</dt><dd>{formatCount(findings)}</dd></div>
         <div><dt>Unavailable</dt><dd>{formatCount(attestation.unavailableFacts)}</dd></div>
         <div><dt>Read errors</dt><dd>{formatCount(attestation.readErrorFacts)}</dd></div>
       </dl>
@@ -298,6 +303,9 @@ function CapabilityEntry({
   proofRoutesAvailable: boolean;
 }): React.JSX.Element {
   const qualifiedName = entry.owner ? `${entry.owner}.${entry.name}` : entry.name;
+  const label = capabilityLabel(entry.disposition);
+  const signature = capabilitySignature(entry);
+  const security = capabilitySecurity(entry);
   return (
     <li className={`capability-entry capability-entry--${entry.disposition}`}>
       <div className="capability-entry__heading">
@@ -305,15 +313,23 @@ function CapabilityEntry({
           <span className="capability-entry__kind">{entry.entryKind.replaceAll("_", " ")}</span>
           <h3>{qualifiedName}</h3>
         </div>
-        <span className="capability-entry__disposition">{entry.disposition.replaceAll("_", " ")}</span>
+        <span className="capability-entry__disposition">{label.label}</span>
       </div>
-      <p className="capability-entry__reason"><strong>Reason</strong> {entry.reason.replaceAll("_", " ")}</p>
+      <p className="capability-entry__reason"><strong>{label.reasonLabel}</strong> {entry.reason.replaceAll("_", " ")}</p>
+      {signature ? <code className="capability-entry__signature">{signature}</code> : null}
       <dl className="capability-entry__facts">
         {entry.authoringGroup ? <div><dt>Authoring group</dt><dd>{entry.authoringGroup}</dd></div> : null}
         {entry.codec ? <div><dt>Codec</dt><dd><code>{entry.codec}</code></dd></div> : null}
         {entry.inheritedBy && entry.inheritedBy.length > 0 ? (
           <div><dt>Inherited by</dt><dd title={entry.inheritedBy.join(", ")}>{entry.inheritedBy.join(", ")}</dd></div>
         ) : null}
+        {entry.superclass ? <div><dt>Extends</dt><dd>{entry.superclass}</dd></div> : null}
+        {security ? <div><dt>Security</dt><dd><code>{security}</code></dd></div> : null}
+        {entry.capabilities && entry.capabilities.length > 0 ? (
+          <div><dt>Capabilities</dt><dd title={entry.capabilities.join(", ")}>{entry.capabilities.join(", ")}</dd></div>
+        ) : null}
+        {entry.threadSafety ? <div><dt>Thread</dt><dd>{entry.threadSafety}</dd></div> : null}
+        <div><dt>Official source</dt><dd title={entry.sourceFile}><code>{entry.sourceFile} · {shortHash(entry.sourceFileHash)}</code></dd></div>
       </dl>
       {proofRoutesAvailable && entry.proofObligations && entry.proofObligations.length > 0 ? (
         <div className="capability-proof" aria-label={`Proof obligations for ${qualifiedName}`}>
@@ -324,6 +340,27 @@ function CapabilityEntry({
       <code className="capability-entry__id">{entry.catalogEntryId}</code>
     </li>
   );
+}
+
+function capabilitySignature(entry: StudioCapabilityExplorerEntry): string | undefined {
+  if (entry.parameters || entry.returns) {
+    const parameters = (entry.parameters ?? [])
+      .map((parameter) => `${parameter.name}: ${parameter.type}`)
+      .join(", ");
+    const returns = (entry.returns ?? []).map((result) => result.type).join(", ");
+    return `${entry.name}(${parameters})${returns ? ` → ${returns}` : ""}`;
+  }
+  if (entry.valueType) return `${entry.name}: ${entry.valueType}`;
+  if (entry.enumValue !== undefined) return `${entry.name} = ${entry.enumValue}`;
+  return undefined;
+}
+
+function capabilitySecurity(entry: StudioCapabilityExplorerEntry): string | undefined {
+  if (!entry.security) return undefined;
+  return [
+    entry.security.read ? `read ${entry.security.read}` : undefined,
+    entry.security.write ? `write ${entry.security.write}` : undefined,
+  ].filter((value): value is string => value !== undefined).join(" · ");
 }
 
 function ExplorerPlaceholder({ loading }: { loading: boolean }): React.JSX.Element {
@@ -421,6 +458,21 @@ function catalogPhase(
 ): "ready" | "loading" | "error" {
   if (phase === "loading" || phase === "error") return phase;
   return coverage.phase === "pinned" ? "ready" : "error";
+}
+
+function capabilityLabel(disposition: string): CapabilityLabel {
+  switch (disposition) {
+    case "authorable":
+      return { label: "direct authoring", reasonLabel: "Proof" };
+    case "observable_only":
+      return { label: "observe", reasonLabel: "Boundary" };
+    case "creator_reviewed":
+      return { label: "observe", reasonLabel: "Creator boundary" };
+    case "source_only":
+      return { label: "source API", reasonLabel: "Boundary" };
+    default:
+      return { label: "restricted", reasonLabel: "Blocker" };
+  }
 }
 
 function shortHash(value: string): string {

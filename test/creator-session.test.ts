@@ -9,9 +9,11 @@ import {
   assertCreatorSessionBundle,
   createCreatorSession,
   createStudioOwnershipMap,
+  CreatorPlannerToolHost,
   type CreatorSessionBundle,
 } from "../packages/creator-session/src/index.js";
 import { restoredCreatorControlDetail } from "../packages/creator-session/src/coordinator.js";
+import { CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS } from "../packages/studio-capabilities/src/index.js";
 import type { StudioProjectState } from "../packages/studio-evidence/src/index.js";
 
 const revisionHash = contentHash("initial evidence revision");
@@ -30,6 +32,45 @@ const observation: StudioProjectState = {
   scripts: [],
   remotes: [],
 };
+
+test("creator planner exposes bounded pinned Roblox API context", async () => {
+  const ownership = createStudioOwnershipMap({
+    projectId: "project-api-lookup",
+    revisionHash,
+    observation,
+  });
+  const prompt = "Use a documented Roblox event in bounded source.";
+  const session = createCreatorSession({
+    prompt,
+    projectId: ownership.projectId,
+    revisionHash,
+    ownership,
+  });
+  const host = new CreatorPlannerToolHost({
+    session,
+    ownership,
+    observation,
+    prompt,
+  });
+  assert.ok(host.definitions().some((entry) => entry.name === "studio.api_lookup"));
+  const result = await host.execute("studio.api_lookup", {
+    className: "ProximityPrompt",
+    query: "Triggered",
+    limit: 2,
+  });
+  assert.equal(result.ok, true);
+  const value = result.value as {
+    kind: string;
+    entries: Array<{ name: string; disposition: string }>;
+  };
+  assert.equal(value.kind, "RobloxApiCatalogLookupResult");
+  assert.equal(value.entries[0]?.name, "Triggered");
+  assert.equal(value.entries[0]?.disposition, "source_only");
+
+  const invalid = await host.execute("studio.api_lookup", {});
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.error?.code, "ROBLOX_API_LOOKUP_INVALID");
+});
 
 test("creator session history is bound to explicit project-state evidence", () => {
   const ownership = createStudioOwnershipMap({
@@ -54,6 +95,11 @@ test("creator session history is bound to explicit project-state evidence", () =
   });
   const bundle: CreatorSessionBundle = {
     session: incomplete,
+    creatorRequest: {
+      locator: `artifacts/${"a".repeat(64)}.json`,
+      artifactHash: "a".repeat(64),
+      bytes: 1,
+    },
     ownership,
     observation,
     observationHistory: [{ revisionHash, observation }],
@@ -111,13 +157,13 @@ test("creator plans reserve enough Play Solo time for a human-triggered observat
   };
   assert.throws(
     () => createCreatorPlan(input, runtimeObservation, runtimeOwnership),
-    /must span at least 15000 ms/,
+    new RegExp(`must span at least ${CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS} ms`),
   );
   assert.doesNotThrow(() => createCreatorPlan({
     ...input,
     charter: {
       clauses: input.charter.clauses.map((clause) =>
-        clause.id === "door-series" ? { ...clause, sampleCount: 16, intervalMs: 1_000 } : clause,
+        clause.id === "door-series" ? { ...clause, sampleCount: CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS / 1_000 + 1, intervalMs: 1_000 } : clause,
       ),
     },
   }, runtimeObservation, runtimeOwnership));

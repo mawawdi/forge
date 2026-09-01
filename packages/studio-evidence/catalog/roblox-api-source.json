@@ -1,9 +1,9 @@
 {
   "kind": "RobloxApiCatalogSource",
   "repository": "https://github.com/Roblox/creator-docs.git",
-  "commit": "529a24ff2aa9896dad50fc12268717210ba3127d",
+  "commit": "d025c96bdb1c81570221997092fbe0ad94b5337c",
   "engineReferencePath": "content/en-us/reference/engine",
-  "sourceTreeHash": "b62066ef0fa92c4be5f8a6e0681cd899b4a88a30571a410900a75de98a987315",
+  "sourceTreeHash": "6df2b67ba4e5fdc4d24f245ee159a64a6575d7eea37f0819107141dfc9716d04",
   "counts": {
     "classes": 638,
     "datatypes": 48,
@@ -18,6 +18,11 @@
     "datatypeMathOperations": 34,
     "datatypeMethods": 80,
     "datatypeProperties": 175,
-    "enumItems": 3003
+    "enumItems": 3003,
+    "globalProperties": 8,
+    "globalFunctions": 42,
+    "libraries": 11,
+    "libraryProperties": 10,
+    "libraryFunctions": 165
   }
 }

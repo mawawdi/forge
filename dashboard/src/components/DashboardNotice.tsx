@@ -47,8 +47,10 @@ export function DashboardNotice({ surface, error, detail }: DashboardNoticeProps
       : notice.body;
   return (
     <section className={`dashboard-notice dashboard-notice--${surface}`} aria-live="polite">
-      <p className="eyebrow">State: {surface}</p>
-      <h1>{notice.title}</h1>
+      <div className="dashboard-notice__heading">
+        <h1>{notice.title}</h1>
+        <span>{surface.replaceAll("-", " ")}</span>
+      </div>
       <p>{body}</p>
     </section>
   );

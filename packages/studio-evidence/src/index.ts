@@ -26,8 +26,13 @@ export type {
   RobloxApiClass,
   RobloxApiDatatype,
   RobloxApiEnum,
+  RobloxApiGlobalMember,
+  RobloxApiLibrary,
+  RobloxApiLibraryMember,
   RobloxClassMember,
   RobloxDatatypeMember,
+  RobloxGlobalMemberKind,
+  RobloxLibraryMemberKind,
   StudioAuthoringGroupPolicy,
   StudioCapabilityCoverageEntry,
   StudioCapabilityCoverageReport,
@@ -43,12 +48,21 @@ export {
   getRobloxApiClass,
   getRobloxApiDatatype,
   getRobloxApiEnum,
+  getRobloxApiGlobalMembers,
+  getRobloxApiLibrary,
   isRobloxClassAssignableTo,
   loadRobloxApiCatalog,
   resolveRobloxClassMember,
   resolveRobloxClassMembers,
   validateRobloxApiCatalog,
 } from "./catalog-runtime.js";
+export {
+  getRobloxApiCatalogLookupEntry,
+  lookupRobloxApiCatalog,
+  type RobloxApiCatalogLookupEntry,
+  type RobloxApiCatalogLookupRequest,
+  type RobloxApiCatalogLookupResult,
+} from "./catalog-query.js";
 
 export type StudioOperationKind = "create" | "delete" | "move" | "update" | "write_source";
 /**

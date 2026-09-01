@@ -100,8 +100,13 @@ end
 local function fixedRunnerSource(planJson: string, nonce: string): string
 	local planLiteral = Encoding.singleStringLiteral(planJson)
 	local nonceLiteral = Encoding.singleStringLiteral(nonce)
-	-- Only planLiteral and nonceLiteral are dynamic and both are one quoted
-	-- string. All resolution/observation behavior below is fixed Forge source.
+	local maximumExecutionMs = tostring(Generated.manifest.limits.maximumRuntimeMs)
+	local maximumResultBytes = tostring(Generated.manifest.limits.maximumRuntimeResultBytes)
+	local maximumTargets = tostring(Generated.manifest.limits.maximumRuntimeTargets)
+	local maximumCalls = tostring(Generated.manifest.limits.maximumRuntimeCalls)
+	-- The plan and nonce are encoded as single quoted strings. The only other
+	-- substitutions are generated manifest integers bound into the connector
+	-- identity; all resolution and observation behavior remains fixed source.
 	return [[
 local HttpService = game:GetService("HttpService")
 local StudioTestService = game:GetService("StudioTestService")
@@ -129,14 +134,14 @@ local function fail(detail)
 end
 local ok, plan = pcall(function() return HttpService:JSONDecode(planJson) end)
 if not ok or typeof(plan) ~= "table" or plan.kind ~= "StudioExecutionPlan" then fail("invalid fixed-data execution plan") return end
-if typeof(plan.budget) ~= "table" or typeof(plan.budget.maxExecutionMs) ~= "number" or plan.budget.maxExecutionMs < 1 or plan.budget.maxExecutionMs > 20000 or typeof(plan.budget.maxResultBytes) ~= "number" or plan.budget.maxResultBytes < 1 or plan.budget.maxResultBytes > 65536 then fail("invalid runtime execution budget") return end
+if typeof(plan.budget) ~= "table" or typeof(plan.budget.maxExecutionMs) ~= "number" or plan.budget.maxExecutionMs < 1 or plan.budget.maxExecutionMs > ]] .. maximumExecutionMs .. [[ or typeof(plan.budget.maxResultBytes) ~= "number" or plan.budget.maxResultBytes < 1 or plan.budget.maxResultBytes > ]] .. maximumResultBytes .. [[ then fail("invalid runtime execution budget") return end
 if typeof(plan.observationWindowMs) ~= "number" or plan.observationWindowMs % 1 ~= 0 or plan.observationWindowMs < 0 or plan.observationWindowMs > plan.budget.maxExecutionMs then fail("invalid runtime observation window") return end
 local started = os.clock()
 local results = {}
 local resolved = {}
 local targets = {}
 local seenCallIds = {}
-if typeof(plan.targets) ~= "table" or #plan.targets < 1 or #plan.targets > 8 or typeof(plan.calls) ~= "table" or #plan.calls < 1 or #plan.calls > 16 then fail("invalid plan collections") return end
+if typeof(plan.targets) ~= "table" or #plan.targets < 1 or #plan.targets > ]] .. maximumTargets .. [[ or typeof(plan.calls) ~= "table" or #plan.calls < 1 or #plan.calls > ]] .. maximumCalls .. [[ then fail("invalid plan collections") return end
 for _, target in ipairs(plan.targets) do
 	if typeof(target) ~= "table" or typeof(target.id) ~= "string" or targets[target.id] ~= nil or typeof(target.path) ~= "string" then fail("invalid plan target") return end
 	targets[target.id] = target
@@ -291,7 +296,7 @@ function RuntimeCapabilityExecutor:start()
 	task.spawn(function()
 		local ok, returned, timedOut = executeWithDeadline(function()
 			return StudioTestService:ExecutePlayModeAsync({ forgeRuntimeCapabilityRunId = run.plan.binding.runId })
-		end, Constants.EXECUTION_DEADLINE_SECONDS + 15)
+		end, run.plan.budget.maxExecutionMs / 1000 + 15)
 		diagnosticConnection:Disconnect()
 		if run.closed then return end
 		destroyRunner()

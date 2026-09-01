@@ -539,7 +539,7 @@ export class StudioBridgeClient implements StudioBridgeConnection {
     }
     if (pending.total !== payload.total || pending.reason !== payload.reason || pending.chunks.has(payload.index)) throw new Error("Invalid or duplicate Studio evidence chunk");
     const nextBytes = pending.bytes + Buffer.byteLength(payload.payload, "utf8");
-    if (nextBytes > 4 * 1024 * 1024) {
+    if (nextBytes > STUDIO_CAPABILITY_MANIFEST.projectState.maximumEvidenceBytes * 2) {
       this.evidenceChunks.delete(key);
       throw new Error("Studio evidence stream exceeds the manifest evidence bound");
     }

@@ -4536,13 +4536,13 @@
   ],
   "kind": "StudioCapabilityManifest",
   "limits": {
-    "maximumOperations": 32,
-    "maximumProjectionBytes": 131072,
-    "maximumProjectionFacts": 4096,
-    "maximumRuntimeCalls": 16,
-    "maximumRuntimeMs": 20000,
-    "maximumRuntimeResultBytes": 65536,
-    "maximumRuntimeTargets": 8
+    "maximumOperations": 128,
+    "maximumProjectionBytes": 524288,
+    "maximumProjectionFacts": 16384,
+    "maximumRuntimeCalls": 128,
+    "maximumRuntimeMs": 300000,
+    "maximumRuntimeResultBytes": 524288,
+    "maximumRuntimeTargets": 64
   },
   "operationKinds": [
     "create",
@@ -4561,8 +4561,8 @@
       "source_hash",
       "tags"
     ],
-    "maximumEvidenceBytes": 4194304,
-    "maximumInstances": 256
+    "maximumEvidenceBytes": 8388608,
+    "maximumInstances": 2048
   },
   "roots": [
     "Lighting",
@@ -4584,7 +4584,7 @@
     },
     {
       "maximumIntervalMs": 1000,
-      "maximumSamples": 32,
+      "maximumSamples": 128,
       "minimumIntervalMs": 100,
       "name": "base_part.position_series",
       "result": "position_series_f32"
@@ -4595,7 +4595,7 @@
     },
     {
       "maximumIntervalMs": 1000,
-      "maximumSamples": 32,
+      "maximumSamples": 128,
       "minimumIntervalMs": 100,
       "name": "instance.property_series",
       "result": "manifest_property_series"
