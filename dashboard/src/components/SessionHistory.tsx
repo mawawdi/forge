@@ -49,6 +49,9 @@ function SessionList({ sessions, selectedSessionId }: SessionListProps): React.J
             <span className="session-row__body">
               <strong>{session.prompt}</strong>
               <small>{session.projectName ?? session.projectId} · {formatTimestamp(session.updatedAt)}</small>
+              {session.failure ? (
+                <small>Reason: {formatStatus(session.failure.code)}</small>
+              ) : null}
             </span>
             <span className="session-row__status">{formatStatus(session.status)}</span>
           </button>

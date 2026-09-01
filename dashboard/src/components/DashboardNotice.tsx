@@ -3,6 +3,7 @@ import type { DashboardSurface } from "../derived";
 interface DashboardNoticeProps {
   surface: DashboardSurface;
   error: string | undefined;
+  detail?: string;
 }
 
 const NOTICE_CONTENT: Record<Exclude<DashboardSurface, "active">, { title: string; body: string }> = {
@@ -36,14 +37,19 @@ const NOTICE_CONTENT: Record<Exclude<DashboardSurface, "active">, { title: strin
   },
 };
 
-export function DashboardNotice({ surface, error }: DashboardNoticeProps): React.JSX.Element | null {
+export function DashboardNotice({ surface, error, detail }: DashboardNoticeProps): React.JSX.Element | null {
   if (surface === "active") return null;
   const notice = NOTICE_CONTENT[surface];
+  const body = surface === "api-error" && error
+    ? error
+    : detail && ["incomplete", "recovery-required", "terminal"].includes(surface)
+      ? detail
+      : notice.body;
   return (
     <section className={`dashboard-notice dashboard-notice--${surface}`} aria-live="polite">
       <p className="eyebrow">State: {surface}</p>
       <h1>{notice.title}</h1>
-      <p>{surface === "api-error" && error ? error : notice.body}</p>
+      <p>{body}</p>
     </section>
   );
 }

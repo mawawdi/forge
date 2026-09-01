@@ -87,6 +87,12 @@ describe("ArtifactWorkbench review evidence", () => {
                   unifiedDiff: "+prompt.Triggered:Connect(toggleDoor)",
                 },
               ],
+              proofObligations: [
+                {
+                  fact: "Script ServerScriptService/DoorController source hash",
+                  expected: "2".repeat(64),
+                },
+              ],
             },
           },
         }}
@@ -96,5 +102,33 @@ describe("ArtifactWorkbench review evidence", () => {
     expect(screen.getAllByText("ServerScriptService/DoorController")).toHaveLength(2);
     expect(screen.getByText(/"Enabled": true/)).toBeVisible();
     expect(screen.getByText(/prompt\.Triggered:Connect/)).toBeVisible();
+    expect(screen.getByText("Direct readback obligations")).toBeVisible();
+    expect(screen.getByText(/source hash/)).toBeVisible();
+  });
+
+  it("renders projection-bound mutation evidence and explicit failure facts", () => {
+    render(
+      <ArtifactWorkbench
+        controlView={{
+          ...BASE,
+          status: "awaiting_verification",
+          mutation: {
+            attemptId: "creator_mutation_attempt_test",
+            status: "matched",
+            projectionFactCount: 7,
+            replayable: true,
+            failureFacts: [],
+          },
+          artifacts: {
+            mutationProjection: { artifactHash: "2".repeat(64), bytes: 120, locator: "artifacts/projection.json" },
+            mutationReadback: { artifactHash: "3".repeat(64), bytes: 240, locator: "artifacts/readback.json" },
+          },
+        }}
+      />,
+    );
+    expect(screen.getByText("Transactional mutation proof")).toBeVisible();
+    expect(screen.getByText(/7 projected facts/)).toBeVisible();
+    expect(screen.getByText("Mutation evidence projection")).toBeVisible();
+    expect(screen.getByText("Direct Studio readback")).toBeVisible();
   });
 });

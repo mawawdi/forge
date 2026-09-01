@@ -6,8 +6,14 @@
       "$className": "Workspace",
       "DoorAssembly": {
         "$className": "Model",
+        "$attributes": {
+          "_forgeStableId": "door-control-door-assembly"
+        },
         "Door": {
           "$className": "Part",
+          "$attributes": {
+            "_forgeStableId": "door-control-door"
+          },
           "$properties": {
             "Anchored": true,
             "CFrame": [0, 5, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
@@ -17,6 +23,9 @@
         },
         "ControlPanel": {
           "$className": "Part",
+          "$attributes": {
+            "_forgeStableId": "door-control-control-panel"
+          },
           "$properties": {
             "Anchored": true,
             "CFrame": [6, 3, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
@@ -27,8 +36,14 @@
       },
       "PreservedScenery": {
         "$className": "Model",
+        "$attributes": {
+          "_forgeStableId": "door-control-preserved-scenery"
+        },
         "Ground": {
           "$className": "Part",
+          "$attributes": {
+            "_forgeStableId": "door-control-ground"
+          },
           "$properties": {
             "Anchored": true,
             "CFrame": [0, -0.5, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
@@ -38,6 +53,9 @@
         },
         "Marker": {
           "$className": "Part",
+          "$attributes": {
+            "_forgeStableId": "door-control-marker"
+          },
           "$properties": {
             "Anchored": true,
             "CFrame": [-12, 3, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],

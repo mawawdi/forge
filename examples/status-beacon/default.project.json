@@ -6,6 +6,9 @@
       "$className": "Workspace",
       "Generator": {
         "$className": "Part",
+        "$attributes": {
+          "_forgeStableId": "status-beacon-generator"
+        },
         "$properties": {
           "Anchored": true,
           "CFrame": [0, 4, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
@@ -15,8 +18,14 @@
       },
       "PreservedTree": {
         "$className": "Model",
+        "$attributes": {
+          "_forgeStableId": "status-beacon-preserved-tree"
+        },
         "Trunk": {
           "$className": "Part",
+          "$attributes": {
+            "_forgeStableId": "status-beacon-tree-trunk"
+          },
           "$properties": {
             "Anchored": true,
             "CFrame": [16, 5, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
@@ -26,6 +35,9 @@
         },
         "Crown": {
           "$className": "Part",
+          "$attributes": {
+            "_forgeStableId": "status-beacon-tree-crown"
+          },
           "$properties": {
             "Anchored": true,
             "CFrame": [16, 11, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],

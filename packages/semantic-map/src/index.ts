@@ -1,6 +1,7 @@
 import { join, relative, resolve, sep } from "node:path";
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { assertFixtureManifest, contentHash, stableJson, type ForgeFixtureManifest, type RelativePath, type RemoteFlowDeclaration } from "../../contracts/src/index.js";
+import type { StudioProjectState, StudioValue } from "../../studio-evidence/src/index.js";
 
 export interface SourceFile { path: RelativePath; absolutePath: string; source: string; executionContext: "server" | "client" | "shared" | "unknown" }
 export interface SemanticScript { id: string; path: RelativePath; executionContext: SourceFile["executionContext"]; sourceHash: string; dependencies: RelativePath[] }
@@ -28,16 +29,6 @@ export interface ProjectSnapshot {
   structureHash: string;
   projectSemanticHash: string;
   semanticMapHash: string;
-}
-
-export interface StudioPrimitiveEntry { name: string; value: string | number | boolean }
-export interface StudioSnapshotObservation {
-  kind: "StudioSnapshotObservation";
-    project: { name: string; placeId: number; universeId: number };
-  capturedAt: string;
-  instances: Array<{ stableId: string; path: string; className: string; position?: { x: number; y: number; z: number }; properties: StudioPrimitiveEntry[]; attributes: StudioPrimitiveEntry[]; tags: string[] }>;
-  scripts: Array<{ stableId: string; path: string; executionContext: SourceFile["executionContext"]; sourceHash: string; source?: string }>;
-  remotes: Array<{ path: string; name: string; className: "RemoteEvent" | "RemoteFunction"; direction: RemoteFlowDeclaration["direction"] }>;
 }
 
 export interface ProjectSourceAdapter {
@@ -80,15 +71,15 @@ export function createProjectSnapshot(map: ProjectSemanticMap): ProjectSnapshot 
   return { kind: "ProjectSnapshot", projectId: map.projectId, sourceHash: map.hashes.sourceHash, structureHash: map.hashes.structureHash, projectSemanticHash, semanticMapHash };
 }
 
-export function mergeStudioObservation(map: ProjectSemanticMap, observation: StudioSnapshotObservation): ProjectSemanticMap {
-  assertStudioSnapshotObservation(observation);
+export function mergeStudioEvidenceState(map: ProjectSemanticMap, observation: StudioProjectState): ProjectSemanticMap {
+  assertStudioProjectState(observation);
   const observedScripts = new Map(observation.scripts.map((script) => [normalize(script.path), script]));
   const files = map.files.map((file) => {
     const observed = observedScripts.get(file.path);
     return observed?.source !== undefined ? { ...file, source: observed.source, executionContext: observed.executionContext } : file;
   });
   const scripts = files.map((file) => ({ id: stableId("script", file.path), path: file.path, executionContext: file.executionContext, sourceHash: observedScripts.get(file.path)?.sourceHash ?? contentHash(file.source), dependencies: findDependencies(file.source) }));
-  const instances = observation.instances.map((instance) => ({ id: stableId("instance", `${instance.path}|${instance.className}`), path: instance.path, className: instance.className, ...(instance.position ? { position: instance.position } : {}), properties: entries(instance.properties), attributes: withoutForgeMetadata(entries(instance.attributes)), tags: [...instance.tags].sort() })).sort((left, right) => left.path.localeCompare(right.path));
+  const instances = observation.instances.map((instance) => ({ id: stableId("instance", `${instance.path}|${instance.className}`), path: instance.path, className: instance.className, ...(instance.position ? { position: instance.position } : {}), properties: studioProperties(instance.properties), attributes: withoutForgeMetadata({ ...instance.attributes }), tags: [...instance.tags].sort() })).sort((left, right) => left.path.localeCompare(right.path));
   const remotes = observation.remotes.map((remote) => {
     const existing = map.remotes.find((candidate) => candidate.path === remote.path);
     return { id: existing?.id ?? stableId("remote", remote.path), path: remote.path, name: remote.name, className: remote.className, direction: remote.direction, clientScript: existing?.clientScript ?? "", serverScript: existing?.serverScript ?? "" };
@@ -111,9 +102,9 @@ export function canonicalProjectSemanticMap(map: ProjectSemanticMap): Record<str
   };
 }
 
-export function assertStudioSnapshotObservation(value: unknown): asserts value is StudioSnapshotObservation {
-  if (!isRecord(value) || value.kind !== "StudioSnapshotObservation" || !isRecord(value.project) || typeof value.capturedAt !== "string" || !Array.isArray(value.instances) || !Array.isArray(value.scripts) || !Array.isArray(value.remotes)) throw new Error("Invalid StudioSnapshotObservation");
-  if (!value.instances.every((entry) => isRecord(entry) && typeof entry.stableId === "string" && typeof entry.path === "string" && typeof entry.className === "string" && Array.isArray(entry.properties) && Array.isArray(entry.attributes) && Array.isArray(entry.tags) && (entry.position === undefined || isVector3(entry.position)))) throw new Error("Invalid Studio instance observation");
+export function assertStudioProjectState(value: unknown): asserts value is StudioProjectState {
+  if (!isRecord(value) || !isRecord(value.project) || !Array.isArray(value.instances) || !Array.isArray(value.scripts) || !Array.isArray(value.remotes)) throw new Error("Invalid StudioProjectState");
+  if (!value.instances.every((entry) => isRecord(entry) && typeof entry.stableId === "string" && typeof entry.path === "string" && typeof entry.className === "string" && isRecord(entry.properties) && isRecord(entry.attributes) && Array.isArray(entry.tags) && (entry.position === undefined || isVector3(entry.position)))) throw new Error("Invalid Studio project-state instance");
 }
 
 export function assertProjectSemanticMap(value: unknown): asserts value is ProjectSemanticMap { if (!isRecord(value) || value.kind !== "ProjectSemanticMap" || typeof value.projectId !== "string" || !Array.isArray(value.files) || !Array.isArray(value.instances) || !Array.isArray(value.remoteFlows) || !isRecord(value.hashes)) throw new Error("Invalid ProjectSemanticMap"); }
@@ -157,8 +148,13 @@ function inferContext(path: string): SourceFile["executionContext"] { if (/\.ser
 function scriptClass(file: SourceFile): string { return file.executionContext === "server" ? "Script" : file.executionContext === "client" ? "LocalScript" : "ModuleScript"; }
 function stableId(kind: string, value: string): string { return `${kind}_${contentHash(value).slice(0, 24)}`; }
 function normalize(value: string): string { return value.replaceAll("\\", "/").replace(/^\.\//, ""); }
-function entries(values: StudioPrimitiveEntry[]): Record<string, string | number | boolean> { return Object.fromEntries([...values].sort((left, right) => left.name.localeCompare(right.name)).map((entry) => [entry.name, entry.value])); }
 function withoutForgeMetadata(values: Record<string, string | number | boolean>): Record<string, string | number | boolean> { const { _forgeStableId: _ignored, ...rest } = values; return rest; }
+function studioProperties(values: Readonly<Record<string, StudioValue>>): Record<string, string | number | boolean> {
+  return Object.fromEntries(Object.entries(values).sort(([left], [right]) => left.localeCompare(right)).flatMap(([name, value]) => {
+    if (value.kind === "boolean" || value.kind === "number_f32" || value.kind === "string_utf8" || value.kind === "enum_name") return [[name, value.value]];
+    return [];
+  }));
+}
 function sorted<T extends string | number | boolean>(values: Record<string, T>): Record<string, T> { return Object.fromEntries(Object.entries(values).sort(([left], [right]) => left.localeCompare(right))); }
 function byPath<T extends { path: string }>(left: T, right: T): number { return left.path.localeCompare(right.path); }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }

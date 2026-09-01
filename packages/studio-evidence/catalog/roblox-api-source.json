@@ -1,0 +1,23 @@
+{
+  "kind": "RobloxApiCatalogSource",
+  "repository": "https://github.com/Roblox/creator-docs.git",
+  "commit": "529a24ff2aa9896dad50fc12268717210ba3127d",
+  "engineReferencePath": "content/en-us/reference/engine",
+  "sourceTreeHash": "b62066ef0fa92c4be5f8a6e0681cd899b4a88a30571a410900a75de98a987315",
+  "counts": {
+    "classes": 638,
+    "datatypes": 48,
+    "enums": 518,
+    "classProperties": 2864,
+    "classMethods": 1562,
+    "classEvents": 393,
+    "classCallbacks": 13,
+    "datatypeConstants": 11,
+    "datatypeConstructors": 102,
+    "datatypeFunctions": 8,
+    "datatypeMathOperations": 34,
+    "datatypeMethods": 80,
+    "datatypeProperties": 175,
+    "enumItems": 3003
+  }
+}

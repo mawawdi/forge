@@ -1,442 +1,250 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import test from "node:test";
+import { contentHash } from "../packages/contracts/src/index.js";
 import {
-  StudioBridgeServer,
-  createBackendMessage,
-} from "../packages/studio-bridge/src/index.js";
-import {
-  STUDIO_MATERIALS,
-} from "../packages/creator-session/src/index.js";
-import {
-  STUDIO_CAPABILITY_SET,
-  createStudioExecutionPlan,
-  serializeStudioExecutionPlan,
-} from "../packages/studio-capabilities/src/index.js";
+  STUDIO_CAPABILITY_MANIFEST_HASH,
+  STUDIO_CONNECTOR_BUILD_HASH,
+  compileMutationEvidenceProjection,
+  compileProjectStateProjection,
+  createStudioEvidenceEnvelope,
+  serializeStudioEvidenceProjection,
+  studioEvidenceFactKey,
+  type StudioEvidenceTarget,
+} from "../packages/studio-evidence/src/index.js";
 import {
   assertBackendToPluginMessage,
   assertPluginToBackendMessage,
   type PluginToBackendMessage,
   type StudioCapability,
 } from "../packages/studio-protocol/src/index.js";
+import { StudioBridgeServer } from "../packages/studio-bridge/src/index.js";
 
-const time = "2026-08-31T00:00:00.000Z";
-const identity = { name: "RuntimeFixture", placeId: 0, universeId: 0 };
+const sentAt = "2026-09-01T00:00:00.000Z";
+const project = { name: "Protocol Evidence", placeId: 1, universeId: 2 };
+const target: StudioEvidenceTarget = { kind: "instance", stableId: "prompt-1", path: "Workspace/Door/Prompt", className: "ProximityPrompt" };
 const capabilities: StudioCapability[] = [
-  "snapshot",
-  "snapshot_chunks",
-  "sha256",
-  "stable_identity",
-  "studio_play_mode",
-  "http_polling",
-  "bounded_diagnostics",
-  "runtime_eval",
-  "studio_authoring",
+  "studio_evidence", "evidence_chunks", "sha256", "stable_identity", "reflection_attestation", "detached_preflight", "transactional_authoring", "recording_recovery", "studio_play_mode", "bounded_diagnostics", "http_polling",
 ];
-const base = {
-  kind: "StudioProtocolMessage" as const,
-  direction: "plugin_to_backend" as const,
-  sentAt: time,
-};
 
-test("the protocol accepts only the canonical creator and evaluation capability surface", () => {
+function envelopeForProjection(projection: ReturnType<typeof compileMutationEvidenceProjection>, fact: Parameters<typeof createStudioEvidenceEnvelope>[0]["facts"][number]) {
+  return createStudioEvidenceEnvelope({
+    manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
+    projectionId: projection.id,
+    projectionHash: projection.contentHash,
+    bindingHash: projection.bindingHash,
+    project,
+    authoritative: true,
+    startedAt: sentAt,
+    endedAt: "2026-09-01T00:00:01.000Z",
+    completion: "complete",
+    facts: [fact],
+  }, projection);
+}
+
+test("pairing is bound to the generated manifest and exact capability attestation surface", () => {
   const pair: PluginToBackendMessage = {
-    ...base,
-    type: "PairProject",
-    messageId: "pair",
-    payload: { pairingToken: "pairing-token", project: identity, capabilities },
+    kind: "StudioProtocolMessage", direction: "plugin_to_backend", type: "PairProject", messageId: "pair-1", sentAt,
+    payload: { pairingToken: "pairing-token", project, capabilities, connectorBuildHash: "a".repeat(64), manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH },
   };
   assertPluginToBackendMessage(pair);
-  assert.throws(
-    () =>
-      assertPluginToBackendMessage({
-        ...pair,
-        payload: {
-          ...pair.payload,
-          capabilities: [...capabilities, "typed_patch"],
-        },
-      }),
-    /PairProject/,
-  );
-  assert.throws(
-    () =>
-      assertPluginToBackendMessage({
-        ...base,
-        type: "PatchApplied",
-        messageId: "old",
-        payload: {},
-      }),
-    /message type/,
-  );
+  assertPluginToBackendMessage({ ...pair, payload: { ...pair.payload, manifestHash: "0".repeat(64) } });
+  assert.throws(() => assertPluginToBackendMessage({ ...pair, payload: { ...pair.payload, manifestHash: "not-a-hash" } }), /PairProject/);
+  assert.throws(() => assertPluginToBackendMessage({ ...pair, payload: { ...pair.payload, capabilities: capabilities.slice(1) } }), /PairProject/);
 });
 
-test("runtime execution accepts one canonical JSON string and keeps hostile text as data", () => {
-  const hash = createHash("sha256").update("snapshot").digest("hex");
-  const plan = createStudioExecutionPlan({
-    purpose: "capability_canary",
-    capabilitySetId: STUDIO_CAPABILITY_SET.id,
-    capabilitySetHash: STUDIO_CAPABILITY_SET.hash,
-    binding: {
-      runId: "run",
-      correlationId: "correlation",
-      sessionId: "session",
-      projectId: "project",
-      project: identity,
-      projectSnapshotHash: hash,
-    },
-    targets: [
-      {
-        id: "target",
-        path: 'Workspace/Door"; error("injected") --',
-        expectedClass: "BasePart",
-      },
-    ],
-    calls: [{ id: "call", capability: "instance.resolve", targetId: "target" }],
-    budget: { maxExecutionMs: 1000, maxResultBytes: 4096 },
+test("protocol preserves explicit false as observed mutation evidence", () => {
+  const projection = compileMutationEvidenceProjection({
+    id: "protocol-false", project, binding: { sessionId: "protocol-session", changeSetHash: "protocol-change" },
+    operations: [{ id: "set-line-of-sight", kind: "update", target, properties: { RequiresLineOfSight: { kind: "boolean", value: false } } }],
   });
-  const json = serializeStudioExecutionPlan(plan);
-  assert.match(json, /error/);
-  const message = createBackendMessage(
-    "ExecuteRuntimeEvalPlan",
-    {
-      requestId: "request",
-      expectedRevision: hash,
-      executionPlanJson: json,
-      executionPlanJsonHash: createHash("sha256").update(json).digest("hex"),
-      startPolicy: "explicit_plugin_action",
-    },
-    "session",
-    "request",
-    () => new Date(time),
-  );
-  assertBackendToPluginMessage(message);
-  assert.throws(
-    () =>
-      assertBackendToPluginMessage({
-        ...message,
-        payload: {
-          ...message.payload,
-          executionPlanJson: `${json} `,
-          executionPlanJsonHash: createHash("sha256")
-            .update(`${json} `)
-            .digest("hex"),
-        },
-      }),
-    /canonical plan JSON string/,
-  );
-  assert.throws(
-    () =>
-      assertBackendToPluginMessage({
-        ...message,
-        payload: { ...message.payload, executionPlanJsonHash: "0".repeat(64) },
-      }),
-    /ExecuteRuntimeEvalPlan/,
-  );
+  const fact = { kind: "property" as const, key: studioEvidenceFactKey("property", target, "RequiresLineOfSight"), target, propertyName: "RequiresLineOfSight", result: { status: "observed" as const, value: { kind: "boolean" as const, value: false } } };
+  const envelope = envelopeForProjection(projection, fact);
+  const message: PluginToBackendMessage = {
+    kind: "StudioProtocolMessage", direction: "plugin_to_backend", type: "StudioEvidenceProduced", messageId: "evidence-false", sentAt,
+    payload: { project, reason: "post_apply", projection, envelope },
+  };
+  assertPluginToBackendMessage(message);
+  assert.equal((message.payload.envelope.facts[0]?.result as { status: string; value?: { value?: boolean } }).value?.value, false);
+  assert.throws(() => assertPluginToBackendMessage({ ...message, payload: { ...message.payload, envelope: { ...envelope, facts: [{ ...fact, result: { status: "observed", value: { kind: "boolean", value: true } } }] } } }), /content hash/);
 });
 
-test("runtime execution permits service-root resolution but rejects service-root BasePart observation", () => {
-  const hash = createHash("sha256").update("snapshot").digest("hex");
+test("protocol accepts deletion only as an explicit absent structure fact", () => {
+  const projection = compileMutationEvidenceProjection({
+    id: "protocol-delete", project, binding: { sessionId: "protocol-delete-session", changeSetHash: "protocol-delete-change" },
+    operations: [{ id: "delete-prompt", kind: "delete", target }],
+  });
+  const fact = { kind: "structure" as const, key: studioEvidenceFactKey("structure", target), target, result: { status: "absent" as const } };
+  const envelope = envelopeForProjection(projection, fact);
+  assertPluginToBackendMessage({
+    kind: "StudioProtocolMessage", direction: "plugin_to_backend", type: "StudioEvidenceProduced", messageId: "evidence-delete", sentAt,
+    payload: { project, reason: "post_apply", projection, envelope },
+  });
+  assert.throws(() => envelopeForProjection(projection, { ...fact, result: { status: "observed", value: { stableId: target.stableId, path: target.path, className: target.className } } }), /incomplete required evidence/);
+});
+
+test("projection-bound requests reject noncanonical and legacy observation messages", () => {
+  const projection = compileMutationEvidenceProjection({
+    id: "protocol-request", project, binding: { sessionId: "protocol-request-session", changeSetHash: "protocol-request-change" },
+    operations: [{ id: "set-prompt", kind: "update", target, properties: { Enabled: { kind: "boolean", value: false } } }],
+  });
+  const projectionJson = serializeStudioEvidenceProjection(projection);
+  const request = {
+    kind: "StudioProtocolMessage" as const, direction: "backend_to_plugin" as const, type: "RequestStudioEvidence" as const, messageId: "request-evidence", sentAt,
+    payload: { requestId: "request-evidence", reason: "post_apply" as const, projectionJson, projectionJsonHash: contentHash(projectionJson), projectionHash: projection.contentHash },
+  };
+  assertBackendToPluginMessage(request);
+  assert.throws(() => assertBackendToPluginMessage({ ...request, payload: { ...request.payload, projectionJson: `${projectionJson} ` } }), /projection JSON/);
+  assert.throws(() => assertBackendToPluginMessage({ ...request, payload: { ...request.payload, projectionJsonHash: projection.contentHash } }), /projection JSON/);
+  assert.throws(() => assertBackendToPluginMessage({ ...request, payload: { ...request.payload, projectionHash: contentHash(projectionJson) } }), /projection JSON/);
+  assert.throws(() => assertPluginToBackendMessage({ kind: "StudioProtocolMessage", direction: "plugin_to_backend", type: "SnapshotChunk", messageId: "legacy", sentAt, payload: {} }), /message type/);
+
+  const chunk = { kind: "StudioProtocolMessage" as const, direction: "plugin_to_backend" as const, type: "StudioEvidenceChunk" as const, messageId: "chunk-1", sentAt, payload: { project, reason: "post_apply" as const, evidenceId: "evidence-1", index: 0, total: 1, encoding: "json" as const, payload: projectionJson, payloadHash: contentHash(projectionJson) } };
+  assertPluginToBackendMessage(chunk);
+});
+
+test("recording recovery requires an explicit inventory and exact closed-cursor acknowledgement", () => {
+  const creatorSessionId = "creator_session_recovery";
+  const changeSetHash = "a".repeat(64);
+  const recoveryProjection = compileProjectStateProjection({
+    id: "studio_recovery_projection",
+    project,
+    binding: { sessionId: creatorSessionId, changeSetHash },
+  });
+  const inventoryTarget = { kind: "project" as const };
+  const recoveryEvidence = createStudioEvidenceEnvelope(
+    {
+      manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
+      projectionId: recoveryProjection.id,
+      projectionHash: recoveryProjection.contentHash,
+      bindingHash: recoveryProjection.bindingHash,
+      project,
+      authoritative: true,
+      startedAt: sentAt,
+      endedAt: "2026-09-01T00:00:01.000Z",
+      completion: "complete",
+      facts: [
+        {
+          kind: "inventory",
+          key: studioEvidenceFactKey("inventory", inventoryTarget),
+          target: inventoryTarget,
+          result: { status: "observed", value: [] },
+        },
+      ],
+    },
+    recoveryProjection,
+  );
   const binding = {
-    runId: "service-root-run",
-    correlationId: "service-root-correlation",
-    sessionId: "session",
-    projectId: "project",
-    project: identity,
-    projectSnapshotHash: hash,
+    creatorSessionId,
+    changeSetId: "creator_change_set_recovery",
+    changeSetHash,
+    projectionId: "studio_mutation_projection_recovery",
+    projectionHash: "b".repeat(64),
+    manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
+    beforeRevisionHash: "c".repeat(64),
+    recordingId: "recording_recovery",
   };
-  const scriptPlan = createStudioExecutionPlan({
-    purpose: "creator_verification",
-    capabilitySetId: STUDIO_CAPABILITY_SET.id,
-    capabilitySetHash: STUDIO_CAPABILITY_SET.hash,
-    binding,
-    targets: [
-      {
-        id: "controller",
-        path: "ServerScriptService/StatusBeaconController",
-        expectedClass: "Script",
-      },
-    ],
-    calls: [
-      {
-        id: "resolve-controller",
-        capability: "instance.resolve",
-        targetId: "controller",
-      },
-    ],
-    budget: { maxExecutionMs: 1000, maxResultBytes: 4096 },
+  assertPluginToBackendMessage({
+    kind: "StudioProtocolMessage",
+    direction: "plugin_to_backend",
+    type: "CreatorRecordingRecovery",
+    messageId: "recovery-not-open",
+    sentAt,
+    payload: {
+      ...binding,
+      recordingState: "not_open",
+      evidenceProjection: recoveryProjection,
+      evidence: recoveryEvidence,
+    },
   });
-  assert.doesNotThrow(() => serializeStudioExecutionPlan(scriptPlan));
+  assertPluginToBackendMessage({
+    kind: "StudioProtocolMessage",
+    direction: "plugin_to_backend",
+    type: "CreatorRecordingRecovery",
+    messageId: "recovery-none",
+    sentAt,
+    payload: { recordingState: "none" },
+  });
   assert.throws(
     () =>
-      createStudioExecutionPlan({
-        purpose: "creator_verification",
-        capabilitySetId: STUDIO_CAPABILITY_SET.id,
-        capabilitySetHash: STUDIO_CAPABILITY_SET.hash,
-        binding,
-        targets: [
-          {
-            id: "stored-part",
-            path: "ServerStorage/StoredPart",
-            expectedClass: "BasePart",
-          },
-        ],
-        calls: [
-          {
-            id: "call-01-resolve-stored-part",
-            capability: "instance.resolve",
-            targetId: "stored-part",
-          },
-          {
-            id: "call-02-position-stored-part",
-            capability: "base_part.position",
-            targetId: "stored-part",
-          },
-        ],
-        budget: { maxExecutionMs: 1000, maxResultBytes: 4096 },
+      assertPluginToBackendMessage({
+        kind: "StudioProtocolMessage",
+        direction: "plugin_to_backend",
+        type: "CreatorRecordingRecovery",
+        messageId: "recovery-ambiguous-none",
+        sentAt,
+        payload: { recordingState: "none", recordingId: "stale" },
       }),
-    /Workspace/,
+    /CreatorRecordingRecovery/,
   );
-});
-
-test("creator apply is bound to the same observed revision as preparation", () => {
-  const expectedRevision = "a".repeat(64);
-  const apply = createBackendMessage(
-    "ApplyCreatorChangeSet",
-    {
-      requestId: "apply_request",
-      creatorSessionId: "creator_session_apply",
-      changeSetId: "creator_change_set_apply",
-      changeSetHash: "b".repeat(64),
-      expectedRevision,
+  assertBackendToPluginMessage({
+    kind: "StudioProtocolMessage",
+    direction: "backend_to_plugin",
+    type: "AcknowledgeClosedCreatorRecording",
+    messageId: "ack-closed",
+    requestId: "ack-closed",
+    sentAt,
+    payload: {
+      requestId: "ack-closed",
+      ...binding,
+      recoveryProjectionHash: recoveryProjection.contentHash,
+      recoveryEvidenceHash: recoveryEvidence.contentHash,
     },
-    "studio_session",
-    "apply_request",
-    () => new Date(time),
-  );
-  assertBackendToPluginMessage(apply);
-  const invalid = structuredClone(apply) as unknown as {
-    payload: Record<string, unknown>;
-  };
-  delete invalid.payload.expectedRevision;
-  assert.throws(
-    () => assertBackendToPluginMessage(invalid),
-    /ApplyCreatorChangeSet/,
-  );
+  });
 });
 
-test("bridge pairs one plugin session and enforces control authentication", async () => {
-  const bridge = new StudioBridgeServer({
-    port: 0,
-    controlToken: "control_token_12345678901234567890",
-  });
-  const address = await bridge.listen();
-  const url = `http://${address.host}:${address.port}`;
+test("the bridge rejects a stale connector identity before creating a session", async () => {
+  const bridge = new StudioBridgeServer({ port: 0 });
   try {
-    const grant = (await fetch(`${url}/pairing`).then((response) =>
-      response.json(),
-    )) as { pairing: { token: string } };
-    const pair: PluginToBackendMessage = {
-      ...base,
-      type: "PairProject",
-      messageId: "pair-live",
-      payload: {
-        pairingToken: grant.pairing.token,
-        project: identity,
-        capabilities,
-      },
+    const address = await bridge.listen();
+    const origin = `http://${address.host}:${address.port}`;
+    const pairingResponse = await fetch(`${origin}/pairing`);
+    const pairing = (await pairingResponse.json()) as {
+      pairing: { token: string };
     };
-    const paired = await fetch(`${url}/message`, {
+    const pairMessage = (token: string, connectorBuildHash: string) => ({
+      kind: "StudioProtocolMessage",
+      direction: "plugin_to_backend",
+      type: "PairProject",
+      messageId: `pair-${connectorBuildHash.slice(0, 8)}`,
+      sentAt,
+      payload: {
+        pairingToken: token,
+        project,
+        capabilities,
+        connectorBuildHash,
+        manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
+      },
+    });
+    const stale = await fetch(`${origin}/message`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(pair),
+      body: JSON.stringify(pairMessage(pairing.pairing.token, "0".repeat(64))),
     });
-    assert.equal(paired.status, 200);
-    const session = (await paired.json()) as {
-      sessionId: string;
-      sessionToken: string;
-    };
+    assert.equal(stale.status, 409);
+    assert.match(
+      ((await stale.json()) as { message: string }).message,
+      /connector protocol is incompatible/i,
+    );
+    assert.equal(bridge.getSessions().length, 0);
+
+    const freshPairing = (await (
+      await fetch(`${origin}/pairing`)
+    ).json()) as { pairing: { token: string } };
+    const accepted = await fetch(`${origin}/message`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(
+        pairMessage(freshPairing.pairing.token, STUDIO_CONNECTOR_BUILD_HASH),
+      ),
+    });
+    assert.equal(accepted.status, 200);
+    assert.equal(
+      ((await accepted.json()) as { connectorBuildHash: string })
+        .connectorBuildHash,
+      STUDIO_CONNECTOR_BUILD_HASH,
+    );
     assert.equal(bridge.getSessions().length, 1);
-    assert.equal((await fetch(`${url}/sessions`)).status, 401);
-    assert.equal(
-      (
-        await fetch(`${url}/sessions`, {
-          headers: { "x-forge-control-token": address.controlToken },
-        })
-      ).status,
-      200,
-    );
-    const heartbeat: PluginToBackendMessage = {
-      ...base,
-      type: "Heartbeat",
-      messageId: "heartbeat",
-      sessionId: session.sessionId,
-      payload: { project: identity },
-    };
-    assert.equal(
-      (
-        await fetch(`${url}/message`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-forge-session-token": session.sessionToken,
-          },
-          body: JSON.stringify(heartbeat),
-        })
-      ).status,
-      202,
-    );
   } finally {
     await bridge.close();
   }
-});
-
-test("snapshot chunks require bounded indices and SHA-256 payload integrity", () => {
-  const payload = '{"kind":"StudioSnapshotObservation"}';
-  const chunk: PluginToBackendMessage = {
-    ...base,
-    type: "SnapshotChunk",
-    messageId: "chunk",
-    sessionId: "session",
-    payload: {
-      project: identity,
-      revision: {
-        kind: "StudioRevision",
-        observationHash: "a".repeat(64),
-        identityHash: "b".repeat(64),
-        capturedAt: time,
-      },
-      reason: "pre_play",
-      snapshotId: "snapshot",
-      index: 0,
-      total: 1,
-      encoding: "json",
-      payload,
-      payloadHash: createHash("sha256").update(payload).digest("hex"),
-    },
-  };
-  assertPluginToBackendMessage(chunk);
-  assert.throws(
-    () =>
-      assertPluginToBackendMessage({
-        ...chunk,
-        payload: { ...chunk.payload, payloadHash: "0".repeat(64) },
-      }),
-    /SnapshotChunk/,
-  );
-  assert.throws(
-    () =>
-      assertPluginToBackendMessage({
-        ...chunk,
-        payload: { ...chunk.payload, index: 1 },
-      }),
-    /SnapshotChunk/,
-  );
-});
-
-test("plugin contains only observation, transport, identity, fixed capability execution, and typed authoring modules", async () => {
-  assert.deepEqual((await readdir(resolve("plugin/src/Forge"))).sort(), [
-    "Constants.luau",
-    "Hash.luau",
-    "IdentityRegistry.luau",
-    "ObservationRevision.luau",
-    "Runtime.luau",
-    "RuntimeCapabilityEncoding.luau",
-    "RuntimeCapabilityExecutor.luau",
-    "SnapshotCollector.luau",
-    "StudioAuthoring.luau",
-    "StudioInstancePolicy.luau",
-  ]);
-  const runtime = await readFile(
-    resolve("plugin/src/Forge/RuntimeCapabilityExecutor.luau"),
-    "utf8",
-  );
-  assert.doesNotMatch(
-    runtime,
-    /loadstring|PatchExecutor|TransactionManager|HarnessRegistry|StudioProofExecutor/,
-  );
-  assert.match(runtime, /capability == "instance\.resolve"/);
-  assert.match(runtime, /capability == "base_part\.position"/);
-  assert.match(runtime, /capability == "base_part\.position_series"/);
-  assert.match(runtime, /ServerScriptService/);
-  assert.match(runtime, /Workspace BasePart resolution/);
-  const authoring = await readFile(
-    resolve("plugin/src/Forge/StudioAuthoring.luau"),
-    "utf8",
-  );
-  assert.doesNotMatch(
-    authoring,
-    /loadstring|\[operation\.property\]|operation\.callback/,
-  );
-  assert.match(authoring, /ALLOWED_CLASSES/);
-  assert.match(authoring, /MATERIAL_ENUM_NAMES/);
-  for (const material of STUDIO_MATERIALS)
-    assert.match(authoring, new RegExp(`${material} = true`));
-  assert.match(authoring, /Enum\.Material\[value\.value\]/);
-  assert.match(authoring, /Transparency must be between 0 and 1/);
-  assert.match(authoring, /Size components must be greater than 0/);
-  assert.match(authoring, /MAX_SOURCE_UTF8_BYTES/);
-  assert.match(authoring, /validUtf8/);
-  assert.match(
-    authoring,
-    /preflightProperties\(operation\.className, operation\.properties\)/,
-  );
-  assert.match(
-    authoring,
-    /validateRemovedAttributes\(operation\.removedAttributes, operation\.attributes\)/,
-  );
-  const connector = await readFile(
-    resolve("plugin/src/Forge/Runtime.luau"),
-    "utf8",
-  );
-  assert.doesNotMatch(
-    connector,
-    /CreatorUiState|CreatorPromptSubmitted|CreatorControlActionRequested|PresentCreatorControlView|creator_control|promptBox|artifactBox|primaryButton|secondaryButton/,
-  );
-  assert.match(connector, /Run Approved Play Solo Check/);
-  assert.match(connector, /Prompts, evidence, approvals, and reports live in the dashboard/i);
-  assert.match(
-    connector,
-    /requireFreshRevision\(message\.payload\.expectedRevision, "creator change preparation"\)/,
-  );
-  assert.match(
-    connector,
-    /requireFreshRevision\(message\.payload\.expectedRevision, "creator change application"\)/,
-  );
-  assert.match(authoring, /prepared\.beforeRevision ~= currentRevision/);
-  assert.match(
-    authoring,
-    /operation\.kind == "move"[\s\S]*preflightProperties\(operation\.expectedClass, operation\.properties\)/,
-  );
-  assert.match(
-    authoring,
-    /operation\.kind == "write_source"[\s\S]*validateRemovedAttributes\(operation\.removedAttributes, operation\.attributes\)/,
-  );
-  const collector = await readFile(
-    resolve("plugin/src/Forge/SnapshotCollector.luau"),
-    "utf8",
-  );
-  const registry = await readFile(
-    resolve("plugin/src/Forge/IdentityRegistry.luau"),
-    "utf8",
-  );
-  const instancePolicy = await readFile(
-    resolve("plugin/src/Forge/StudioInstancePolicy.luau"),
-    "utf8",
-  );
-  assert.match(collector, /StudioInstancePolicy\.rootNames/);
-  assert.match(collector, /StudioInstancePolicy\.shouldHaveStableIdentity/);
-  assert.match(registry, /StudioInstancePolicy\.rootNames/);
-  assert.match(registry, /StudioInstancePolicy\.shouldHaveStableIdentity/);
-  assert.doesNotMatch(registry, /local function eligible/);
-  assert.doesNotMatch(registry, /game:GetDescendants/);
-  for (const parentClass of [
-    "LayerCollector",
-    "Tool",
-    "StarterPlayerScripts",
-    "StarterCharacterScripts",
-    "Team",
-  ])
-    assert.match(instancePolicy, new RegExp(parentClass));
 });

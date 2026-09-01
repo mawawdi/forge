@@ -2,8 +2,17 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { assertPluginToBackendMessage, assertBackendToPluginMessage, MAX_PROTOCOL_MESSAGE_BYTES, type BackendToPluginMessage, type PairingResponse, type PluginProjectIdentity, type PluginToBackendMessage, type ProjectObservationReason, type StudioCapability, type StudioTransport } from "../../studio-protocol/src/index.js";
-import type { StudioSnapshotObservation } from "../../semantic-map/src/index.js";
+import { assertPluginToBackendMessage, assertBackendToPluginMessage, MAX_PROTOCOL_MESSAGE_BYTES, type BackendToPluginMessage, type PairingResponse, type PluginProjectIdentity, type PluginToBackendMessage, type StudioCapability, type StudioEvidenceProducedPayload, type StudioTransport } from "../../studio-protocol/src/index.js";
+import {
+  STUDIO_CAPABILITY_MANIFEST,
+  STUDIO_CAPABILITY_MANIFEST_HASH,
+  STUDIO_CONNECTOR_BUILD_HASH,
+  compileProjectStateProjection,
+  createStudioEvidenceProjection,
+  serializeStudioEvidenceProjection,
+  studioEvidenceFactKey,
+  type StudioEvidenceProjection,
+} from "../../studio-evidence/src/index.js";
 
 export interface PairingCode {
   token: string;
@@ -76,6 +85,10 @@ export interface StudioBridgeSession {
   projectId: string;
   project: PluginProjectIdentity;
   capabilities: StudioCapability[];
+  manifestHash: string;
+  connectorBuildHash: string;
+  capabilityAttestationProjectionHash: string;
+  projectStateProjectionHash: string;
   sessionToken: string;
   connectedAt: string;
 }
@@ -247,6 +260,10 @@ export class StudioBridgeServer implements StudioTransport {
     if (!session) throw new ProtocolHttpError(401, "Studio message requires a connected session");
     const sessionToken = request.headers["x-forge-session-token"];
     if (typeof sessionToken !== "string" || sessionToken !== session.sessionToken) throw new ProtocolHttpError(401, "Invalid Studio session token");
+    if (
+      (message.type === "StudioEvidenceProduced" || message.type === "StudioEvidenceChunk" || message.type === "Heartbeat") &&
+      !sameProjectIdentity(message.payload.project, session.project)
+    ) throw new ProtocolHttpError(409, "Studio evidence project does not match its paired session");
     if (message.type === "UnpairProject") {
       await Promise.all([...this.handlers].map((handler) => handler(message, session)));
       this.dropSession(session.sessionId);
@@ -285,7 +302,38 @@ export class StudioBridgeServer implements StudioTransport {
     const sessionId = `studio_${randomUUID()}`;
     const sessionToken = randomBytes(24).toString("base64url");
     const projectId = studioProjectId(message.payload.project);
-    const session: StudioBridgeSession = { sessionId, projectId, project: message.payload.project, capabilities: [...message.payload.capabilities], sessionToken, connectedAt: this.now().toISOString() };
+    if (message.payload.manifestHash !== STUDIO_CAPABILITY_MANIFEST_HASH)
+      throw new ProtocolHttpError(409, "Studio connector manifest is incompatible with this Forge build");
+    if (message.payload.connectorBuildHash !== STUDIO_CONNECTOR_BUILD_HASH)
+      throw new ProtocolHttpError(409, "Studio connector protocol is incompatible with this Forge build");
+    const evidenceBinding = {
+      sessionId,
+      projectId,
+      buildHash: STUDIO_CONNECTOR_BUILD_HASH,
+      pairingHash: createHash("sha256").update(message.payload.pairingToken).digest("hex"),
+    };
+    const capabilityAttestationProjection = compileCapabilityAttestationProjection(
+      sessionId,
+      message.payload.project,
+      evidenceBinding,
+    );
+    const projectStateProjection = compileProjectStateProjection({
+      id: `studio_project_state_${sessionId}`,
+      project: message.payload.project,
+      binding: evidenceBinding,
+    });
+    const session: StudioBridgeSession = {
+      sessionId,
+      projectId,
+      project: message.payload.project,
+      capabilities: [...message.payload.capabilities],
+      manifestHash: message.payload.manifestHash,
+      connectorBuildHash: STUDIO_CONNECTOR_BUILD_HASH,
+      capabilityAttestationProjectionHash: capabilityAttestationProjection.contentHash,
+      projectStateProjectionHash: projectStateProjection.contentHash,
+      sessionToken,
+      connectedAt: this.now().toISOString(),
+    };
     for (const [existingId, existing] of this.sessions) {
       if (studioProjectKey(existing.project) === studioProjectKey(session.project)) {
         this.dropSession(existingId);
@@ -296,7 +344,22 @@ export class StudioBridgeServer implements StudioTransport {
     this.outboundMessageIds.set(sessionId, { ids: new Set(), order: [] });
     this.events.set(sessionId, { baseCursor: 0, messages: [] });
     this.receivedMessageIds.set(sessionId, { ids: new Set(), order: [] });
-    const payload: PairingResponse = { sessionId, sessionToken, projectId, expiresAt: new Date(this.now().getTime() + this.pairingTtlMs).toISOString() };
+    const capabilityAttestationProjectionJson = serializeStudioEvidenceProjection(capabilityAttestationProjection);
+    const projectStateProjectionJson = serializeStudioEvidenceProjection(projectStateProjection);
+    const payload: PairingResponse = {
+      sessionId,
+      sessionToken,
+      projectId,
+      manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
+      connectorBuildHash: STUDIO_CONNECTOR_BUILD_HASH,
+      capabilityAttestationProjectionJson,
+      capabilityAttestationProjectionJsonHash: createHash("sha256").update(capabilityAttestationProjectionJson).digest("hex"),
+      capabilityAttestationProjectionHash: capabilityAttestationProjection.contentHash,
+      projectStateProjectionJson,
+      projectStateProjectionJsonHash: createHash("sha256").update(projectStateProjectionJson).digest("hex"),
+      projectStateProjectionHash: projectStateProjection.contentHash,
+      expiresAt: new Date(this.now().getTime() + this.pairingTtlMs).toISOString(),
+    };
     writeJson(response, 200, { kind: "ForgeStudioPairAccepted", ...payload });
     // Pairing has exactly one synchronous response path. It is never also
     // queued as a command, which prevents duplicate enrollment and snapshots.
@@ -347,7 +410,7 @@ export class StudioBridgeClient implements StudioBridgeConnection {
   private readonly baseUrl: string;
   private readonly handlers = new Set<MessageHandler>();
   private readonly cursors = new Map<string, number>();
-  private readonly snapshotChunks = new Map<string, { session: StudioBridgeSession; project: PluginProjectIdentity; revision: { kind: "StudioRevision"; observationHash: string; identityHash: string; capturedAt: string }; reason: ProjectObservationReason; total: number; chunks: Map<number, string> }>();
+  private readonly evidenceChunks = new Map<string, { session: StudioBridgeSession; project: PluginProjectIdentity; reason: import("../../studio-protocol/src/index.js").StudioEvidenceReason; total: number; bytes: number; chunks: Map<number, string> }>();
   private sessions = new Map<string, StudioBridgeSession>();
   private polling = false;
   private pollPromise: Promise<void> = Promise.resolve();
@@ -403,7 +466,7 @@ export class StudioBridgeClient implements StudioBridgeConnection {
     await this.pollPromise;
     this.handlers.clear();
     this.cursors.clear();
-    this.snapshotChunks.clear();
+    this.evidenceChunks.clear();
     this.sessions.clear();
   }
 
@@ -433,7 +496,7 @@ export class StudioBridgeClient implements StudioBridgeConnection {
     for (const sessionId of this.sessions.keys()) {
       if (next.has(sessionId)) continue;
       this.cursors.delete(sessionId);
-      for (const key of this.snapshotChunks.keys()) if (key.startsWith(`${sessionId}:`)) this.snapshotChunks.delete(key);
+      for (const key of this.evidenceChunks.keys()) if (key.startsWith(`${sessionId}:`)) this.evidenceChunks.delete(key);
     }
     this.sessions = next;
   }
@@ -448,8 +511,8 @@ export class StudioBridgeClient implements StudioBridgeConnection {
     for (const value of body.messages) {
       try {
         assertPluginToBackendMessage(value);
-        if (value.type === "SnapshotChunk") {
-          await this.acceptSnapshotChunk(value, session);
+        if (value.type === "StudioEvidenceChunk") {
+          await this.acceptEvidenceChunk(value, session);
         } else {
           await this.dispatch(value, session);
         }
@@ -463,26 +526,34 @@ export class StudioBridgeClient implements StudioBridgeConnection {
     await Promise.all([...this.handlers].map((handler) => handler(message, session)));
   }
 
-  private async acceptSnapshotChunk(message: Extract<PluginToBackendMessage, { type: "SnapshotChunk" }>, session: StudioBridgeSession): Promise<void> {
+  private async acceptEvidenceChunk(message: Extract<PluginToBackendMessage, { type: "StudioEvidenceChunk" }>, session: StudioBridgeSession): Promise<void> {
     const payload = message.payload;
-    if (createHash("sha256").update(payload.payload).digest("hex") !== payload.payloadHash) throw new Error("Snapshot chunk SHA-256 mismatch");
-    const key = `${session.sessionId}:${payload.snapshotId}`;
-    let pending = this.snapshotChunks.get(key);
+    if (createHash("sha256").update(payload.payload).digest("hex") !== payload.payloadHash) throw new Error("Studio evidence chunk SHA-256 mismatch");
+    if (!sameProjectIdentity(payload.project, session.project)) throw new Error("Studio evidence chunk project does not match its paired session");
+    const key = `${session.sessionId}:${payload.evidenceId}`;
+    let pending = this.evidenceChunks.get(key);
     if (!pending) {
-      pending = { session, project: payload.project, revision: payload.revision, reason: payload.reason, total: payload.total, chunks: new Map() };
-      this.snapshotChunks.set(key, pending);
+      if (this.evidenceChunks.size >= 8) throw new Error("Too many concurrent Studio evidence streams");
+      pending = { session, project: payload.project, reason: payload.reason, total: payload.total, bytes: 0, chunks: new Map() };
+      this.evidenceChunks.set(key, pending);
     }
-    if (pending.total !== payload.total || pending.revision.observationHash !== payload.revision.observationHash || pending.reason !== payload.reason || pending.chunks.has(payload.index)) throw new Error("Invalid or duplicate snapshot chunk");
+    if (pending.total !== payload.total || pending.reason !== payload.reason || pending.chunks.has(payload.index)) throw new Error("Invalid or duplicate Studio evidence chunk");
+    const nextBytes = pending.bytes + Buffer.byteLength(payload.payload, "utf8");
+    if (nextBytes > 4 * 1024 * 1024) {
+      this.evidenceChunks.delete(key);
+      throw new Error("Studio evidence stream exceeds the manifest evidence bound");
+    }
+    pending.bytes = nextBytes;
     pending.chunks.set(payload.index, payload.payload);
     if (pending.chunks.size !== pending.total) return;
     const encoded = [...pending.chunks.entries()].sort(([left], [right]) => left - right).map(([, chunk]) => chunk).join("");
-    const observation = JSON.parse(encoded) as unknown;
+    const evidence = JSON.parse(encoded) as StudioEvidenceProducedPayload;
     const reconstructed = {
-      kind: "StudioProtocolMessage", direction: "plugin_to_backend", type: "ProjectObservation", messageId: `snapshot_${payload.snapshotId}`, sessionId: session.sessionId, sentAt: payload.revision.capturedAt,
-      payload: { project: payload.project, revision: payload.revision, reason: payload.reason, observation: observation as unknown as StudioSnapshotObservation }
+      kind: "StudioProtocolMessage", direction: "plugin_to_backend", type: "StudioEvidenceProduced", messageId: `evidence_${payload.evidenceId}`, sessionId: session.sessionId, sentAt: evidence.envelope.endedAt,
+      payload: evidence,
     } as PluginToBackendMessage;
     assertPluginToBackendMessage(reconstructed);
-    this.snapshotChunks.delete(key);
+    this.evidenceChunks.delete(key);
     await this.dispatch(reconstructed, session);
   }
 }
@@ -496,8 +567,40 @@ function studioProjectKey(project: PluginProjectIdentity): string {
   return `local:${project.name.normalize("NFC")}`;
 }
 
+function sameProjectIdentity(left: PluginProjectIdentity, right: PluginProjectIdentity): boolean {
+  return left.name === right.name && left.placeId === right.placeId && left.universeId === right.universeId;
+}
+
 function studioProjectId(project: PluginProjectIdentity): string {
   return `studio_project_${createHash("sha256").update(studioProjectKey(project)).digest("hex").slice(0, 24)}`;
+}
+
+function compileCapabilityAttestationProjection(
+  sessionId: string,
+  project: PluginProjectIdentity,
+  binding: Record<string, string>,
+): StudioEvidenceProjection {
+  const target = { kind: "project" as const };
+  return createStudioEvidenceProjection({
+    id: `studio_capability_attestation_${sessionId}`,
+    manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
+    purpose: "capability_attestation",
+    project,
+    binding,
+    requirements: STUDIO_CAPABILITY_MANIFEST.classes.flatMap((classDefinition) =>
+      classDefinition.properties.map((property) => ({
+        key: studioEvidenceFactKey("reflection", target, `${classDefinition.name}.${property.name}`),
+        kind: "reflection" as const,
+        target,
+      })),
+    ),
+    scope: { mode: "exact", roots: [], requireCompleteInventory: false },
+    bounds: {
+      maximumFacts: STUDIO_CAPABILITY_MANIFEST.limits.maximumProjectionFacts,
+      maximumBytes: STUDIO_CAPABILITY_MANIFEST.limits.maximumProjectionBytes,
+      roots: [],
+    },
+  });
 }
 
 export function createBackendMessage<T extends keyof BackendPayloadByType>(type: T, payload: BackendPayloadByType[T], sessionId: string, requestId?: string, now: () => Date = () => new Date()): BackendToPluginMessage {
@@ -507,11 +610,16 @@ export function createBackendMessage<T extends keyof BackendPayloadByType>(type:
 }
 
 export type BackendPayloadByType = {
-  RequestObservation: { requestId: string; reason: ProjectObservationReason };
+  RequestStudioEvidence: import("../../studio-protocol/src/index.js").RequestStudioEvidencePayload;
   ExecuteRuntimeEvalPlan: import("../../studio-protocol/src/index.js").ExecuteRuntimeEvalPlanPayload;
   PrepareCreatorChangeSet: import("../../studio-protocol/src/index.js").PrepareCreatorChangeSetPayload;
+  PreflightCreatorChangeSet: import("../../studio-protocol/src/index.js").PreflightCreatorChangeSetPayload;
   ApplyCreatorChangeSet: import("../../studio-protocol/src/index.js").ApplyCreatorChangeSetPayload;
   FinalizeCreatorChangeSet: import("../../studio-protocol/src/index.js").FinalizeCreatorChangeSetPayload;
+  RequestCreatorRecordingRecovery: import("../../studio-protocol/src/index.js").RequestCreatorRecordingRecoveryPayload;
+  AcknowledgeClosedCreatorRecording: import("../../studio-protocol/src/index.js").AcknowledgeClosedCreatorRecordingPayload;
+  CancelInterruptedRecording: import("../../studio-protocol/src/index.js").CancelInterruptedRecordingPayload;
+  AcknowledgeCreatorChangeFinalization: import("../../studio-protocol/src/index.js").AcknowledgeCreatorChangeFinalizationPayload;
   RollbackCreatorCheckpoint: import("../../studio-protocol/src/index.js").RollbackCreatorCheckpointPayload;
 };
 

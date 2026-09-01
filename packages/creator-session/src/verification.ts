@@ -1,14 +1,18 @@
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 import { ImmutableJsonArtifactStore } from "../../artifact-store/src/index.js";
-import type { StudioSnapshotObservation } from "../../semantic-map/src/index.js";
 import {
-  type RuntimeObservationEnvelope,
-  assertRuntimeObservationEnvelope,
+  canonicalizeStudioRuntimeCalls,
   assertStudioExecutionPlan,
   type StudioExecutionPlan,
   type StudioCapabilityCall,
   type StudioRuntimeTarget,
 } from "../../studio-capabilities/src/index.js";
+import {
+  assertStudioEvidenceEnvelope,
+  runtimeResultsFromEvidence,
+  type StudioEvidenceEnvelope,
+  type StudioProjectState,
+} from "../../studio-evidence/src/index.js";
 import {
   subtreeSnapshotHash,
   type CreatorSessionBundle,
@@ -16,6 +20,7 @@ import {
   type CreatorVerificationReplay,
   type VerificationCharterClause,
 } from "./index.js";
+import { replayCreatorMutation } from "./mutation-evidence.js";
 
 export interface CreatorVerificationFailureFact {
   statement: string;
@@ -94,12 +99,12 @@ export function createCharterExecution(
         intervalMs: series.intervalMs,
       });
   }
-  return { targets, calls };
+  return { targets, calls: canonicalizeStudioRuntimeCalls(calls) };
 }
 
 export function gradeSnapshotCharter(
   clauses: readonly VerificationCharterClause[],
-  observation: StudioSnapshotObservation,
+  observation: StudioProjectState,
 ): string[] {
   return clauses.flatMap((clause) => {
     if (clause.kind !== "snapshot_check") return [];
@@ -115,24 +120,25 @@ export function gradeSnapshotCharter(
 
 export function gradeRuntimeCharter(
   clauses: readonly VerificationCharterClause[],
-  envelope: RuntimeObservationEnvelope,
+  envelope: StudioEvidenceEnvelope,
 ): string[] {
   const failures: string[] = [];
+  const results = runtimeResultsFromEvidence(envelope);
   const paths = charterRuntimePaths(clauses);
   for (const clause of clauses) {
     if (clause.kind !== "studio_check") continue;
     if (clause.check === "playtest_diagnostics") {
       if (
-        envelope.diagnostics.errors > clause.maximumErrors ||
-        envelope.diagnostics.warnings > clause.maximumWarnings ||
-        envelope.diagnostics.truncated
+        (envelope.diagnostics ?? []).filter((entry) => entry.code === "error").length > clause.maximumErrors ||
+        (envelope.diagnostics ?? []).filter((entry) => entry.code === "warning").length > clause.maximumWarnings ||
+        envelope.completion !== "complete"
       )
         failures.push(clause.statement);
       continue;
     }
     const targetId = `creator_target_${paths.indexOf(clause.path) + 1}`;
     if (clause.check === "instance_exists") {
-      const result = envelope.results.find(
+      const result = results.find(
         (entry) => entry.id === `resolve_${targetId}`,
       );
       if (
@@ -143,7 +149,7 @@ export function gradeRuntimeCharter(
       continue;
     }
 
-    const result = envelope.results.find(
+    const result = results.find(
       (entry) => entry.id === `series_${targetId}`,
     );
     if (
@@ -157,7 +163,7 @@ export function gradeRuntimeCharter(
     const distinct = new Set(
       result.samples.map(
         (sample) =>
-          `${Math.round(sample.position.x / clause.quantizationStuds)},${Math.round(sample.position.y / clause.quantizationStuds)},${Math.round(sample.position.z / clause.quantizationStuds)}`,
+          `${Math.round(sample.value.x / clause.quantizationStuds)},${Math.round(sample.value.y / clause.quantizationStuds)},${Math.round(sample.value.z / clause.quantizationStuds)}`,
       ),
     );
     if (distinct.size < clause.minimumDistinctPositions)
@@ -194,8 +200,19 @@ export async function replayCreatorVerification(
         "The connector run did not produce complete evidence.",
     };
 
+  const mutationAttempt = bundle.mutationAttempts.find(
+    (entry) => entry.id === verification.mutationAttempt.id && entry.hash === verification.mutationAttempt.hash,
+  );
+  if (!mutationAttempt || mutationAttempt.completion !== "settled")
+    return { ...base, result: "missing_or_incomplete", detail: "The linked matched mutation attempt is missing." };
+  const mutationReplay = await replayCreatorMutation(mutationAttempt, store);
+  if (mutationReplay.result !== "exact_match" || mutationReplay.recordedStatus !== "matched")
+    return { ...base, result: mutationReplay.result === "mismatch" ? "mismatch" : "missing_or_incomplete", detail: "Verification requires an exactly replayable matched mutation attempt." };
+  if (mutationAttempt.reconciliation.hash !== verification.mutationAttempt.reconciliationHash)
+    return { ...base, result: "mismatch", detail: "The linked mutation reconciliation binding changed." };
+
   const snapshot = bundle.observationHistory.find(
-    (entry) => entry.revisionHash === verification.snapshotRevisionHash,
+    (entry) => entry.revisionHash === verification.stateRevisionHash,
   );
   if (!snapshot)
     return {
@@ -205,7 +222,7 @@ export async function replayCreatorVerification(
     };
   if (
     verificationEvidenceHash(snapshot.observation) !==
-    verification.snapshotObservationHash
+    verification.stateEvidenceHash
   )
     return {
       ...base,
@@ -217,7 +234,8 @@ export async function replayCreatorVerification(
   try {
     executionPlan = await store.read(
       verification.executionPlan.artifact,
-      assertStudioExecutionPlan,
+      (value) =>
+        assertStudioExecutionPlan(value, mutationAttempt.manifest.hash),
     );
   } catch (error) {
     return evidenceReadFailure(base, "execution plan", error);
@@ -246,28 +264,28 @@ export async function replayCreatorVerification(
   const snapshotFailures = gradeSnapshotCharter(clauses, snapshot.observation);
   let failures = snapshotFailures;
   if (failures.length === 0) {
-    if (!verification.runtimeObservation)
+    if (!verification.runtimeEvidence)
       return {
         ...base,
         result: "missing_or_incomplete",
         detail: "Runtime observation evidence is required but missing.",
       };
-    let envelope: RuntimeObservationEnvelope;
+    let envelope: StudioEvidenceEnvelope;
     try {
       envelope = await store.read(
-        verification.runtimeObservation.artifact,
-        assertRuntimeObservationEnvelope,
+        verification.runtimeEvidence.artifact,
+        assertStudioEvidenceEnvelope,
       );
     } catch (error) {
       return evidenceReadFailure(base, "runtime observation", error);
     }
     if (
       verificationEvidenceHash(envelope) !==
-        verification.runtimeObservation.observationHash ||
-      verificationEvidenceHash(envelope.diagnostics) !==
-        verification.runtimeObservation.diagnosticsHash ||
-      envelope.executionPlanId !== executionPlan.id ||
-      envelope.executionPlanHash !== executionPlan.hash
+        verification.runtimeEvidence.evidenceHash ||
+      verificationEvidenceHash(envelope.diagnostics ?? []) !==
+        verification.runtimeEvidence.diagnosticsHash ||
+      envelope.projectionHash !== executionPlan.evidenceProjection.contentHash ||
+      envelope.bindingHash !== executionPlan.evidenceProjection.bindingHash
     )
       return {
         ...base,

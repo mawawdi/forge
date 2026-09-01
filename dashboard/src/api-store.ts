@@ -1,14 +1,21 @@
 import { useSyncExternalStore } from "react";
 import type {
+  CapabilityExplorerSnapshot,
   CreatorDashboardState,
   DashboardActionRequest,
   DashboardSnapshot,
+  StudioCapabilityExplorerPage,
+  StudioCatalogSummary,
 } from "./types";
 
-const INITIAL_SNAPSHOT: DashboardSnapshot = { phase: "loading" };
+const INITIAL_SNAPSHOT: DashboardSnapshot = {
+  phase: "loading",
+  catalog: { phase: "loading" },
+};
 const JSON_HEADERS = { "Content-Type": "application/json" };
+const MAX_ATTESTATION_FINDINGS = 32;
 
-class CreatorDashboardStore {
+export class CreatorDashboardStore {
   private snapshot = INITIAL_SNAPSHOT;
   private readonly listeners = new Set<() => void>();
   private selectedSessionId: string | undefined;
@@ -17,6 +24,8 @@ class CreatorDashboardStore {
   private invalidations = 0;
   private refreshing = false;
   private refreshAgain = false;
+  private catalogSummaryRequest = 0;
+  private capabilityPageRequest = 0;
   private started = false;
 
   subscribe = (listener: () => void): (() => void) => {
@@ -30,6 +39,7 @@ class CreatorDashboardStore {
     if (this.started || typeof window === "undefined") return;
     this.started = true;
     void this.refresh();
+    void this.refreshCatalog();
     this.connectEvents();
   };
 
@@ -53,12 +63,13 @@ class CreatorDashboardStore {
       if (!response.ok) throw new Error(readError(value, response.status));
       if (isDashboardState(value)) {
         this.selectedSessionId = value.selectedSessionId ?? this.selectedSessionId;
-        this.setSnapshot({ phase: "ready", data: value });
+        this.setSnapshot({ ...this.snapshot, phase: "ready", data: value });
       } else {
         await this.refresh();
       }
     } catch (error) {
       this.setSnapshot({
+        ...this.snapshot,
         phase: "error",
         ...(this.snapshot.data ? { data: this.snapshot.data } : {}),
         error: errorMessage(error),
@@ -70,6 +81,14 @@ class CreatorDashboardStore {
         this.setSnapshot(withoutPendingAction);
       }
     }
+  };
+
+  exploreCapabilities = (input: {
+    className?: string;
+    query?: string;
+    cursor?: number;
+  }): void => {
+    void this.refreshCapabilities(input);
   };
 
   private connectEvents(): void {
@@ -104,7 +123,11 @@ class CreatorDashboardStore {
     }
     this.refreshing = true;
     const previous = this.snapshot.data;
-    this.setSnapshot({ phase: "loading", ...(previous ? { data: previous } : {}) });
+    this.setSnapshot({
+      ...this.snapshot,
+      phase: "loading",
+      ...(previous ? { data: previous } : {}),
+    });
     try {
       const search = this.selectedSessionId
         ? `?sessionId=${encodeURIComponent(this.selectedSessionId)}`
@@ -117,9 +140,10 @@ class CreatorDashboardStore {
       if (!response.ok) throw new Error(readError(value, response.status));
       if (!isDashboardState(value)) throw new Error("The control plane returned an invalid dashboard state.");
       this.selectedSessionId = value.selectedSessionId ?? this.selectedSessionId;
-      this.setSnapshot({ phase: "ready", data: value });
+      this.setSnapshot({ ...this.snapshot, phase: "ready", data: value });
     } catch (error) {
       this.setSnapshot({
+        ...this.snapshot,
         phase: "error",
         ...(previous ? { data: previous } : {}),
         error: errorMessage(error),
@@ -135,6 +159,94 @@ class CreatorDashboardStore {
     }
   }
 
+  private async refreshCatalog(): Promise<void> {
+    const request = ++this.catalogSummaryRequest;
+    const capabilityPageRequestAtStart = this.capabilityPageRequest;
+    const previous = this.snapshot.catalog;
+    this.setCatalog({
+      phase: "loading",
+      ...(previous.summary ? { summary: previous.summary } : {}),
+      ...(previous.page ? { page: previous.page } : {}),
+    });
+    try {
+      const response = await fetch("/api/control/catalog", {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      const value = await readJson(response);
+      if (!response.ok) throw new Error(readError(value, response.status));
+      if (!isCatalogSummary(value))
+        throw new Error("The control plane returned an invalid catalog summary.");
+      if (request !== this.catalogSummaryRequest) return;
+      const current = this.snapshot.catalog;
+      this.setCatalog({
+        phase: "ready",
+        summary: value,
+        ...(current.page ? { page: current.page } : {}),
+      });
+      if (!current.page && capabilityPageRequestAtStart === this.capabilityPageRequest)
+        void this.refreshCapabilities({});
+    } catch (error) {
+      if (request !== this.catalogSummaryRequest) return;
+      const current = this.snapshot.catalog;
+      this.setCatalog({
+        phase: "error",
+        ...(current.summary ? { summary: current.summary } : {}),
+        ...(current.page ? { page: current.page } : {}),
+        error: errorMessage(error),
+      });
+    }
+  }
+
+  private async refreshCapabilities(input: {
+    className?: string;
+    query?: string;
+    cursor?: number;
+  }): Promise<void> {
+    const request = ++this.capabilityPageRequest;
+    const previous = this.snapshot.catalog;
+    this.setCatalog({
+      phase: "loading",
+      ...(previous.summary ? { summary: previous.summary } : {}),
+      ...(previous.page ? { page: previous.page } : {}),
+    });
+    const search = new URLSearchParams();
+    if (input.className?.trim()) search.set("class", input.className.trim());
+    if (input.query?.trim()) search.set("query", input.query.trim());
+    if (input.cursor !== undefined) search.set("cursor", String(input.cursor));
+    search.set("limit", "40");
+    try {
+      const response = await fetch(`/api/control/capabilities?${search.toString()}`, {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      const value = await readJson(response);
+      if (!response.ok) throw new Error(readError(value, response.status));
+      if (!isCapabilityPage(value))
+        throw new Error("The control plane returned an invalid capability page.");
+      if (request !== this.capabilityPageRequest) return;
+      const current = this.snapshot.catalog;
+      this.setCatalog({
+        phase: "ready",
+        ...(current.summary ? { summary: current.summary } : {}),
+        page: value,
+      });
+    } catch (error) {
+      if (request !== this.capabilityPageRequest) return;
+      const current = this.snapshot.catalog;
+      this.setCatalog({
+        phase: "error",
+        ...(current.summary ? { summary: current.summary } : {}),
+        ...(current.page ? { page: current.page } : {}),
+        error: errorMessage(error),
+      });
+    }
+  }
+
+  private setCatalog(value: CapabilityExplorerSnapshot): void {
+    this.setSnapshot({ ...this.snapshot, catalog: value });
+  }
+
   private setSnapshot(value: DashboardSnapshot): void {
     this.snapshot = value;
     for (const listener of this.listeners) listener();
@@ -144,7 +256,84 @@ class CreatorDashboardStore {
 function isDashboardState(value: unknown): value is CreatorDashboardState {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
-  return candidate.kind === "CreatorDashboardState" && Array.isArray(candidate.sessions);
+  return (
+    candidate.kind === "CreatorDashboardState" &&
+    Array.isArray(candidate.sessions) &&
+    (candidate.pairedStudio === undefined || isPairedStudioState(candidate.pairedStudio))
+  );
+}
+
+function isPairedStudioState(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (
+    value.status !== "paired" &&
+    value.status !== "unpaired" &&
+    value.status !== "connecting"
+  ) return false;
+  if (typeof value.message !== "string") return false;
+  return value.attestation === undefined || isAttestationSummary(value.attestation);
+}
+
+function isAttestationSummary(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.detail !== "string") return false;
+  if (typeof value.findingsTruncated !== "boolean") return false;
+  if (!Array.isArray(value.findings) || value.findings.length > MAX_ATTESTATION_FINDINGS)
+    return false;
+  for (const key of [
+    "totalFacts",
+    "observedFacts",
+    "unavailableFacts",
+    "readErrorFacts",
+    "mismatchedFacts",
+    "missingFacts",
+  ]) {
+    const count = value[key];
+    if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0)
+      return false;
+  }
+  return value.findings.every(isAttestationFinding);
+}
+
+function isAttestationFinding(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.key !== "string" || typeof value.code !== "string")
+    return false;
+  return (
+    (value.expected === undefined || isAttestationEvidence(value.expected)) &&
+    (value.received === undefined || isAttestationEvidence(value.received))
+  );
+}
+
+function isAttestationEvidence(value: unknown): boolean {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) return true;
+  if (Array.isArray(value)) return value.every(isAttestationEvidence);
+  return isRecord(value) && Object.values(value).every(isAttestationEvidence);
+}
+
+function isCatalogSummary(value: unknown): value is StudioCatalogSummary {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    candidate.kind === "StudioCatalogSummary" &&
+    isRecord(candidate.catalog) &&
+    isRecord(candidate.coverage) &&
+    isRecord(candidate.manifest)
+  );
+}
+
+function isCapabilityPage(value: unknown): value is StudioCapabilityExplorerPage {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    candidate.kind === "StudioCapabilityExplorerPage" &&
+    Array.isArray(candidate.entries) &&
+    isRecord(candidate.page) &&
+    isRecord(candidate.selection)
+  );
 }
 
 async function readJson(response: Response): Promise<unknown> {
@@ -181,6 +370,10 @@ function readCursor(data: string, lastEventId: string, fallback: number): number
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "The control request failed.";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export const dashboardStore = new CreatorDashboardStore();

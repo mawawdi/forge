@@ -50,6 +50,13 @@ export function StudioConsentDock({ state, pendingAction }: StudioConsentDockPro
           <dl className="studio-facts">
             <div><dt>Project</dt><dd>{pairedStudio.projectName ?? pairedStudio.projectId}</dd></div>
             {pairedStudio.revisionHash ? <div><dt>Revision</dt><dd><code>{shortHash(pairedStudio.revisionHash)}</code></dd></div> : null}
+            {pairedStudio.manifestHash ? <div><dt>Manifest</dt><dd><code>{shortHash(pairedStudio.manifestHash)}</code></dd></div> : null}
+            {pairedStudio.attestationStatus ? (
+              <div>
+                <dt>Attestation</dt>
+                <dd>{attestationStatus(pairedStudio)}</dd>
+              </div>
+            ) : null}
             {pairedStudio.capabilities ? <div><dt>Capabilities</dt><dd>{pairedStudio.capabilities.length}</dd></div> : null}
           </dl>
         ) : null}
@@ -134,11 +141,11 @@ interface ReplayControlProps {
 function ReplayControl({ state }: ReplayControlProps): React.JSX.Element | null {
   const [result, setResult] = useState<string | undefined>();
   const verification = state?.controlView?.verification;
-  if (!verification?.replayable) return null;
-  const replayableVerification = verification;
-  async function replay(): Promise<void> {
+  const mutation = state?.controlView?.mutation;
+  if (!verification?.replayable && !mutation?.replayable) return null;
+  async function replay(path: string): Promise<void> {
     try {
-      const response = await fetch(`/api/verifications/${encodeURIComponent(replayableVerification.id)}/replay`, {
+      const response = await fetch(path, {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
@@ -154,9 +161,14 @@ function ReplayControl({ state }: ReplayControlProps): React.JSX.Element | null 
     <section className="replay-card" aria-label="Evidence replay">
       <div>
         <p className="eyebrow">Provider-free check</p>
-        <strong>Replay verification</strong>
+        <strong>Replay evidence</strong>
       </div>
-      <button type="button" className="quiet-button" onClick={() => void replay()}>Replay</button>
+      {mutation?.replayable ? (
+        <button type="button" className="quiet-button" onClick={() => void replay(`/api/mutations/${encodeURIComponent(mutation.attemptId)}/replay`)}>Replay mutation</button>
+      ) : null}
+      {verification?.replayable ? (
+        <button type="button" className="quiet-button" onClick={() => void replay(`/api/verifications/${encodeURIComponent(verification.id)}/replay`)}>Replay verification</button>
+      ) : null}
       {result ? <p role="status" aria-live="polite">{result}</p> : null}
     </section>
   );
@@ -168,4 +180,11 @@ function isFinalReviewAction(action: CreatorControlAction): boolean {
 
 function shortHash(value: string): string {
   return value.length > 16 ? `${value.slice(0, 9)}…${value.slice(-5)}` : value;
+}
+
+function attestationStatus(state: NonNullable<CreatorDashboardState["pairedStudio"]>): string {
+  const summary = state.attestation;
+  if (!summary) return state.attestationStatus ?? "pending";
+  const findings = summary.mismatchedFacts + summary.missingFacts + summary.unavailableFacts + summary.readErrorFacts;
+  return `${state.attestationStatus ?? "pending"} · ${summary.observedFacts}/${summary.totalFacts} observed · ${findings} finding${findings === 1 ? "" : "s"}`;
 }

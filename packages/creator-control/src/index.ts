@@ -15,11 +15,108 @@ import {
 } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
 import type { CreatorSessionCoordinator } from "../../creator-session/src/coordinator.js";
+import {
+  ROBLOX_API_CATALOG,
+  ROBLOX_API_CATALOG_HASH,
+  STUDIO_CAPABILITY_COVERAGE_REPORT,
+  STUDIO_CAPABILITY_COVERAGE_REPORT_HASH,
+  STUDIO_CAPABILITY_MANIFEST,
+  STUDIO_CAPABILITY_MANIFEST_HASH,
+  STUDIO_CONNECTOR_BUILD_HASH,
+  type RobloxApiCatalogCounts,
+  type RobloxApiCatalogEntryKind,
+  type StudioCapabilityDisposition,
+  type StudioCapabilityReason,
+} from "../../studio-evidence/src/index.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_SUBSCRIBERS = 32;
 const MAX_EVENTS = 256;
 const COOKIE_NAME = "forge_creator_session";
+const DEFAULT_CAPABILITY_PAGE_SIZE = 40;
+const MAX_CAPABILITY_PAGE_SIZE = 100;
+const MAX_CAPABILITY_QUERY_LENGTH = 160;
+const MAX_CLASS_NAME_LENGTH = 128;
+
+/**
+ * A small, static view of the pinned Roblox catalog and its proof-policy
+ * coverage. This intentionally excludes catalog entries; callers must use the
+ * paginated explorer below to inspect them.
+ */
+export interface StudioCatalogSummaryView {
+  readonly kind: "StudioCatalogSummary";
+  readonly catalog: {
+    readonly hash: string;
+    readonly source: {
+      readonly repository: string;
+      readonly commit: string;
+      readonly engineReferencePath: string;
+      readonly sourceTreeHash: string;
+    };
+    readonly counts: RobloxApiCatalogCounts;
+  };
+  readonly coverage: {
+    readonly hash: string;
+    readonly catalogHash: string;
+    readonly policyHash: string;
+    readonly manifestHash: string;
+    readonly summary: {
+      readonly total: number;
+      readonly byDisposition: Readonly<Record<StudioCapabilityDisposition, number>>;
+      readonly byReason: Readonly<Partial<Record<StudioCapabilityReason, number>>>;
+      readonly authorableClasses: number;
+      readonly authorableProperties: number;
+    };
+    readonly catalogBinding: "matched" | "mismatched";
+    readonly manifestBinding: "matched" | "mismatched";
+  };
+  readonly manifest: {
+    readonly hash: string;
+    readonly connectorBuildHash: string;
+    readonly classCount: number;
+    readonly writablePropertyCount: number;
+    readonly roots: readonly string[];
+    readonly operationKinds: readonly string[];
+  };
+}
+
+export interface StudioCapabilityExplorerEntryView {
+  readonly catalogEntryId: string;
+  readonly entryKind: RobloxApiCatalogEntryKind;
+  readonly owner?: string;
+  readonly name: string;
+  readonly disposition: StudioCapabilityDisposition;
+  readonly reason: StudioCapabilityReason;
+  readonly authoringGroup?: string;
+  readonly codec?: string;
+  readonly inheritedBy?: readonly string[];
+  /** The explicit manifest proof route, present only for authorable properties. */
+  readonly proofObligations?: readonly string[];
+}
+
+export interface StudioCapabilityExplorerPage {
+  readonly kind: "StudioCapabilityExplorerPage";
+  readonly catalogHash: string;
+  readonly coverageHash: string;
+  readonly selection: {
+    readonly className?: string;
+    readonly query?: string;
+  };
+  readonly page: {
+    readonly cursor: number;
+    readonly limit: number;
+    readonly total: number;
+    readonly nextCursor?: number;
+  };
+  readonly entries: readonly StudioCapabilityExplorerEntryView[];
+}
+
+export interface StudioCapabilityExplorerRequest {
+  readonly className?: string;
+  readonly query?: string;
+  readonly cursor?: number;
+  readonly limit?: number;
+}
 
 export interface CreatorControlDiscovery {
   kind: "ForgeCreatorControlDiscovery";
@@ -140,6 +237,25 @@ export class CreatorControlServer {
           ),
         );
       }
+      if (request.method === "GET" && url.pathname === "/api/control/catalog") {
+        return writeJson(response, 200, studioCatalogSummary());
+      }
+      if (request.method === "GET" && url.pathname === "/api/control/capabilities") {
+        return writeJson(response, 200, studioCapabilityExplorerPage({
+          ...(url.searchParams.has("class")
+            ? { className: readClassName(url.searchParams.get("class")) }
+            : {}),
+          ...(url.searchParams.has("query")
+            ? { query: readCapabilityQuery(url.searchParams.get("query")) }
+            : {}),
+          ...(url.searchParams.has("cursor")
+            ? { cursor: readBoundedInteger(url.searchParams.get("cursor"), "Capability cursor", 0, Number.MAX_SAFE_INTEGER) }
+            : {}),
+          ...(url.searchParams.has("limit")
+            ? { limit: readBoundedInteger(url.searchParams.get("limit"), "Capability page size", 1, MAX_CAPABILITY_PAGE_SIZE) }
+            : {}),
+        }));
+      }
       if (request.method === "GET" && url.pathname === "/api/control/events")
         return this.openEvents(request, url, response);
       if (request.method === "POST" && url.pathname === "/api/control/action") {
@@ -170,6 +286,16 @@ export class CreatorControlServer {
         this.assertSameOrigin(request);
         const result = await this.options.coordinator.replayVerification(
           decodeURIComponent(replay[1]),
+        );
+        return writeJson(response, 200, result);
+      }
+      const mutationReplay = /^\/api\/mutations\/([^/]+)\/replay$/.exec(
+        url.pathname,
+      );
+      if (request.method === "POST" && mutationReplay?.[1]) {
+        this.assertSameOrigin(request);
+        const result = await this.options.coordinator.replayMutation(
+          decodeURIComponent(mutationReplay[1]),
         );
         return writeJson(response, 200, result);
       }
@@ -278,6 +404,223 @@ export class CreatorControlServer {
     for (const [grant, expiry] of this.launches)
       if (expiry < now) this.launches.delete(grant);
   }
+}
+
+/** Returns only pinning and aggregate data; catalog entries remain paginated. */
+export function studioCatalogSummary(): StudioCatalogSummaryView {
+  const coverage = STUDIO_CAPABILITY_COVERAGE_REPORT;
+  const manifest = STUDIO_CAPABILITY_MANIFEST;
+  return {
+    kind: "StudioCatalogSummary",
+    catalog: {
+      hash: ROBLOX_API_CATALOG_HASH,
+      source: {
+        repository: ROBLOX_API_CATALOG.source.repository,
+        commit: ROBLOX_API_CATALOG.source.commit,
+        engineReferencePath: ROBLOX_API_CATALOG.source.engineReferencePath,
+        sourceTreeHash: ROBLOX_API_CATALOG.source.sourceTreeHash,
+      },
+      counts: ROBLOX_API_CATALOG.counts,
+    },
+    coverage: {
+      hash: STUDIO_CAPABILITY_COVERAGE_REPORT_HASH,
+      catalogHash: coverage.catalogHash,
+      policyHash: coverage.policyHash,
+      manifestHash: coverage.manifestHash,
+      summary: coverage.summary,
+      catalogBinding:
+        coverage.catalogHash === ROBLOX_API_CATALOG_HASH ? "matched" : "mismatched",
+      manifestBinding:
+        coverage.manifestHash === STUDIO_CAPABILITY_MANIFEST_HASH
+          ? "matched"
+          : "mismatched",
+    },
+    manifest: {
+      hash: STUDIO_CAPABILITY_MANIFEST_HASH,
+      connectorBuildHash: STUDIO_CONNECTOR_BUILD_HASH,
+      classCount: manifest.classes.length,
+      writablePropertyCount: manifest.classes.reduce(
+        (count, entry) => count + entry.properties.length,
+        0,
+      ),
+      roots: manifest.roots,
+      operationKinds: manifest.operationKinds,
+    },
+  };
+}
+
+/**
+ * Read-only catalog exploration. The page size and request fields are bounded
+ * so neither the control API nor ordinary dashboard state can expose the full
+ * generated catalog in one response.
+ */
+export function studioCapabilityExplorerPage(
+  request: StudioCapabilityExplorerRequest = {},
+): StudioCapabilityExplorerPage {
+  const className = request.className;
+  const query = request.query?.trim();
+  const cursor = request.cursor ?? 0;
+  const limit = request.limit ?? DEFAULT_CAPABILITY_PAGE_SIZE;
+  assertCapabilityExplorerRequest({
+    ...(className !== undefined ? { className } : {}),
+    ...(query !== undefined ? { query } : {}),
+    cursor,
+    limit,
+  });
+
+  if (
+    className !== undefined &&
+    !ROBLOX_API_CATALOG.classes.some((entry) => entry.name === className)
+  )
+    throw new HttpError(404, `Roblox API class is not present in the pinned catalog: ${className}`);
+
+  const normalizedQuery = query?.toLowerCase();
+  const entries = STUDIO_CAPABILITY_COVERAGE_REPORT.entries
+    .filter((entry) => matchesCapabilityClass(entry, className))
+    .filter((entry) => matchesCapabilityQuery(entry, normalizedQuery))
+    .map((entry) => capabilityExplorerEntry(entry))
+    .sort((left, right) => left.catalogEntryId.localeCompare(right.catalogEntryId));
+  const pageEntries = entries.slice(cursor, cursor + limit);
+  const nextCursor = cursor + pageEntries.length;
+  return {
+    kind: "StudioCapabilityExplorerPage",
+    catalogHash: ROBLOX_API_CATALOG_HASH,
+    coverageHash: STUDIO_CAPABILITY_COVERAGE_REPORT_HASH,
+    selection: {
+      ...(className !== undefined ? { className } : {}),
+      ...(query ? { query } : {}),
+    },
+    page: {
+      cursor,
+      limit,
+      total: entries.length,
+      ...(nextCursor < entries.length ? { nextCursor } : {}),
+    },
+    entries: pageEntries,
+  };
+}
+
+function capabilityExplorerEntry(
+  entry: (typeof STUDIO_CAPABILITY_COVERAGE_REPORT.entries)[number],
+): StudioCapabilityExplorerEntryView {
+  const proofObligations = manifestProofObligations(
+    entry.owner,
+    entry.name,
+    entry.inheritedBy,
+  );
+  return {
+    catalogEntryId: entry.catalogEntryId,
+    entryKind: entry.entryKind,
+    ...(entry.owner !== undefined ? { owner: entry.owner } : {}),
+    name: entry.name,
+    disposition: entry.disposition,
+    reason: entry.reason,
+    ...(entry.authoringGroup !== undefined
+      ? { authoringGroup: entry.authoringGroup }
+      : {}),
+    ...(entry.codec !== undefined ? { codec: entry.codec } : {}),
+    ...(entry.inheritedBy !== undefined ? { inheritedBy: entry.inheritedBy } : {}),
+    ...(proofObligations !== undefined ? { proofObligations } : {}),
+  };
+}
+
+function manifestProofObligations(
+  owner: string | undefined,
+  name: string,
+  inheritedBy: readonly string[] | undefined,
+): readonly string[] | undefined {
+  const candidateClasses = [owner, ...(inheritedBy ?? [])].filter(
+    (candidate): candidate is string => candidate !== undefined,
+  );
+  for (const className of candidateClasses) {
+    const property = STUDIO_CAPABILITY_MANIFEST.classes
+      .find((entry) => entry.name === className)
+      ?.properties.find((candidate) => candidate.name === name);
+    if (property) return property.proof;
+  }
+  return undefined;
+}
+
+function matchesCapabilityClass(
+  entry: (typeof STUDIO_CAPABILITY_COVERAGE_REPORT.entries)[number],
+  className: string | undefined,
+): boolean {
+  if (className === undefined) return true;
+  return (
+    (entry.entryKind === "class" && entry.name === className) ||
+    entry.owner === className ||
+    entry.inheritedBy?.includes(className) === true
+  );
+}
+
+function matchesCapabilityQuery(
+  entry: (typeof STUDIO_CAPABILITY_COVERAGE_REPORT.entries)[number],
+  query: string | undefined,
+): boolean {
+  if (!query) return true;
+  return [
+    entry.catalogEntryId,
+    entry.entryKind,
+    entry.owner,
+    entry.name,
+    entry.disposition,
+    entry.reason,
+    entry.authoringGroup,
+    entry.codec,
+    ...(entry.inheritedBy ?? []),
+  ].some((candidate) => candidate?.toLowerCase().includes(query));
+}
+
+function assertCapabilityExplorerRequest(
+  request: Required<Pick<StudioCapabilityExplorerRequest, "cursor" | "limit">> &
+    Pick<StudioCapabilityExplorerRequest, "className" | "query">,
+): void {
+  if (
+    request.className !== undefined &&
+    (!isClassName(request.className) || request.className.length > MAX_CLASS_NAME_LENGTH)
+  )
+    throw new HttpError(400, "Capability class name is invalid");
+  if (
+    request.query !== undefined &&
+    (request.query.length > MAX_CAPABILITY_QUERY_LENGTH || /[\u0000-\u001f\u007f]/.test(request.query))
+  )
+    throw new HttpError(400, "Capability search query is invalid");
+  if (!Number.isSafeInteger(request.cursor) || request.cursor < 0)
+    throw new HttpError(400, "Capability cursor is invalid");
+  if (
+    !Number.isSafeInteger(request.limit) ||
+    request.limit < 1 ||
+    request.limit > MAX_CAPABILITY_PAGE_SIZE
+  )
+    throw new HttpError(400, "Capability page size is invalid");
+}
+
+function readClassName(value: string | null): string {
+  if (value === null) throw new HttpError(400, "Capability class name is required");
+  return value;
+}
+
+function readCapabilityQuery(value: string | null): string {
+  if (value === null) throw new HttpError(400, "Capability search query is required");
+  return value;
+}
+
+function readBoundedInteger(
+  value: string | null,
+  label: string,
+  minimum: number,
+  maximum: number,
+): number {
+  if (value === null || !/^\d+$/.test(value))
+    throw new HttpError(400, `${label} is invalid`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum)
+    throw new HttpError(400, `${label} is invalid`);
+  return parsed;
+}
+
+function isClassName(value: string): boolean {
+  return /^[A-Za-z][A-Za-z0-9_]*$/.test(value);
 }
 
 export function defaultCreatorControlDiscoveryPath(

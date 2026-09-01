@@ -26,15 +26,14 @@ export interface RuntimeProofBundle {
   runtimeEvalDefinitionHash: string;
   runtimeEvalPlanId: string;
   runtimeEvalPlanHash: string;
-  studioCapabilitySetId: string;
-  studioCapabilitySetHash: string;
+  studioManifestHash: string;
   runtimeEvaluatorConfigurationId: string;
   runtimeEvaluatorConfigurationHash: string;
   runtimeEvaluationRunId: string;
   runtimeEvaluationRunHash: string;
   assertionResults: Array<{ id: string; status: "pass" | "fail"; evidenceHash: string }>;
   /** Explicitly scoped: no universal-mechanic or quality claim is implied. */
-  scope: "exact_runtime_definition_capability_set_configuration_authoritative_run";
+  scope: "exact_runtime_definition_manifest_projection_configuration_authoritative_run";
 }
 
 export function createRuntimeProofBundle(input: Omit<RuntimeProofBundle, "kind" | "id" | "hash">): RuntimeProofBundle {
@@ -46,7 +45,7 @@ export function createRuntimeProofBundle(input: Omit<RuntimeProofBundle, "kind" 
 }
 
 export function assertRuntimeProofBundle(value: unknown): asserts value is RuntimeProofBundle {
-  if (!isRecord(value) || value.kind !== "RuntimeProofBundle" || !isId(value.id) || !isHash(value.hash) || !["runtime_verified", "rejected", "incomplete"].includes(String(value.status)) || !isHash(value.creatorPromptHash) || !isId(value.experimentRegistrationId) || !isHash(value.experimentRegistrationHash) || !isId(value.requirementSetId) || !isId(value.requirementViewId) || !isId(value.evaluatorViewId) || !isId(value.harnessConfigurationId) || !isHash(value.harnessConfigurationHash) || !isId(value.agentRunId) || !isId(value.workspaceCandidateArtifactId) || !isHash(value.workspaceCandidateArtifactHash) || !isHash(value.seedHash) || !isHash(value.candidateHash) || !isId(value.workspaceDeltaId) || !isHash(value.localVerificationReportHash) || !isId(value.localVerificationTraceId) || !isId(value.runtimeEvalDefinitionId) || !isHash(value.runtimeEvalDefinitionHash) || !isId(value.runtimeEvalPlanId) || !isHash(value.runtimeEvalPlanHash) || !isId(value.studioCapabilitySetId) || !isHash(value.studioCapabilitySetHash) || !isId(value.runtimeEvaluatorConfigurationId) || !isHash(value.runtimeEvaluatorConfigurationHash) || !isId(value.runtimeEvaluationRunId) || !isHash(value.runtimeEvaluationRunHash) || !Array.isArray(value.assertionResults) || value.scope !== "exact_runtime_definition_capability_set_configuration_authoritative_run") throw new Error("Invalid RuntimeProofBundle");
+  if (!isRecord(value) || value.kind !== "RuntimeProofBundle" || !isId(value.id) || !isHash(value.hash) || !["runtime_verified", "rejected", "incomplete"].includes(String(value.status)) || !isHash(value.creatorPromptHash) || !isId(value.experimentRegistrationId) || !isHash(value.experimentRegistrationHash) || !isId(value.requirementSetId) || !isId(value.requirementViewId) || !isId(value.evaluatorViewId) || !isId(value.harnessConfigurationId) || !isHash(value.harnessConfigurationHash) || !isId(value.agentRunId) || !isId(value.workspaceCandidateArtifactId) || !isHash(value.workspaceCandidateArtifactHash) || !isHash(value.seedHash) || !isHash(value.candidateHash) || !isId(value.workspaceDeltaId) || !isHash(value.localVerificationReportHash) || !isId(value.localVerificationTraceId) || !isId(value.runtimeEvalDefinitionId) || !isHash(value.runtimeEvalDefinitionHash) || !isId(value.runtimeEvalPlanId) || !isHash(value.runtimeEvalPlanHash) || !isHash(value.studioManifestHash) || !isId(value.runtimeEvaluatorConfigurationId) || !isHash(value.runtimeEvaluatorConfigurationHash) || !isId(value.runtimeEvaluationRunId) || !isHash(value.runtimeEvaluationRunHash) || !Array.isArray(value.assertionResults) || value.scope !== "exact_runtime_definition_manifest_projection_configuration_authoritative_run") throw new Error("Invalid RuntimeProofBundle");
   const assertions = value.assertionResults as unknown[];
   if ((value.status !== "incomplete" && assertions.length === 0) || !assertions.every((assertion) => isRecord(assertion) && isId(assertion.id) && (assertion.status === "pass" || assertion.status === "fail") && isHash(assertion.evidenceHash)) || !isCanonical(assertions.map((assertion) => (assertion as { id: string }).id))) throw new Error("Invalid RuntimeProofBundle assertion results");
   const { kind: _kind, id: _id, hash: _hash, ...payload } = value;

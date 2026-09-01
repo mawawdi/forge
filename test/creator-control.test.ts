@@ -25,7 +25,32 @@ test("creator control exchanges one-time launch grants and separates cookie and 
       return {
         kind: "CreatorDashboardState",
         sessions: [],
-        pairedStudio: { status: "unpaired", message: "waiting" },
+        pairedStudio: {
+          status: "paired",
+          message: "Studio paired, but its capability attestation was rejected.",
+          attestationStatus: "rejected",
+          attestationHash: "c".repeat(64),
+          attestationArtifact: {
+            locator: "studio-evidence/attestation-envelope.json",
+            artifactHash: "c".repeat(64),
+            bytes: 2_048,
+          },
+          attestation: {
+            detail: "The backend verifier found one missing reflection row.",
+            totalFacts: 183,
+            observedFacts: 182,
+            unavailableFacts: 0,
+            readErrorFacts: 0,
+            mismatchedFacts: 0,
+            missingFacts: 1,
+            findingsTruncated: false,
+            findings: [{
+              key: "reflection:project:Beam.Attachment0",
+              code: "missing_fact",
+              expected: { catalogType: { category: "class", name: "Attachment" }, reflection: { engineType: "RefType", scriptType: "Instance", instanceType: "Attachment" } },
+            }],
+          },
+        },
         stages: [],
         serverTime: "2026-09-01T00:00:00.000Z",
       };
@@ -63,8 +88,47 @@ test("creator control exchanges one-time launch grants and separates cookie and 
       headers: { cookie: cookie! },
     });
     assert.equal(state.status, 200);
-    assert.equal((await state.json() as { kind: string }).kind, "CreatorDashboardState");
+    const dashboardState = await state.json() as {
+      kind: string;
+      pairedStudio: {
+        attestation?: { missingFacts?: number; findings?: Array<{ code?: string }> };
+        attestationArtifact?: { artifactHash?: string };
+      };
+    };
+    assert.equal(dashboardState.kind, "CreatorDashboardState");
+    assert.equal(dashboardState.pairedStudio.attestation?.missingFacts, 1);
+    assert.equal(dashboardState.pairedStudio.attestation?.findings?.[0]?.code, "missing_fact");
+    assert.equal(dashboardState.pairedStudio.attestationArtifact?.artifactHash, "c".repeat(64));
     assert.equal(state.headers.get("access-control-allow-origin"), null);
+
+    const catalog = await fetch(`${origin}/api/control/catalog`, {
+      headers: { authorization: `Bearer ${address.bearerToken}` },
+    });
+    assert.equal(catalog.status, 200);
+    assert.equal(catalog.headers.get("cache-control"), "no-store");
+    assert.equal((await catalog.json() as { kind: string }).kind, "StudioCatalogSummary");
+
+    const capabilities = await fetch(
+      `${origin}/api/control/capabilities?class=Part&limit=1`,
+      { headers: { authorization: `Bearer ${address.bearerToken}` } },
+    );
+    assert.equal(capabilities.status, 200);
+    const capabilityPage = await capabilities.json() as {
+      kind: string;
+      entries: unknown[];
+      page: { limit: number };
+    };
+    assert.equal(capabilityPage.kind, "StudioCapabilityExplorerPage");
+    assert.equal(capabilityPage.page.limit, 1);
+    assert.ok(capabilityPage.entries.length <= 1);
+    assert.equal(
+      (
+        await fetch(`${origin}/api/control/capabilities?limit=101`, {
+          headers: { authorization: `Bearer ${address.bearerToken}` },
+        })
+      ).status,
+      400,
+    );
 
     const wrongOrigin = await fetch(`${origin}/api/control/action`, {
       method: "POST",

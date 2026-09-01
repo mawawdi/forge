@@ -44,83 +44,39 @@ import {
 import { analyzeWithRobloxLuau } from "../../luau-toolchain/src/index.js";
 import type { ModelToolCall } from "../../model-client/src/contracts.js";
 import {
-  assertStudioSnapshotObservation,
-  type StudioSnapshotObservation,
-} from "../../semantic-map/src/index.js";
-import {
+  CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS,
   STUDIO_RESOLVABLE_CLASSES,
   type StudioResolvableClass,
 } from "../../studio-capabilities/src/index.js";
+import { assertStudioProjectState } from "../../semantic-map/src/index.js";
+import {
+  STUDIO_AUTHORING_ROOTS,
+  STUDIO_CAPABILITY_MANIFEST,
+  STUDIO_CODECS,
+  STUDIO_SCRIPT_CLASSES,
+  STUDIO_WRITABLE_CLASSES,
+  assertStudioValue,
+  assertStudioValueForProperty,
+  canonicalStudioValue,
+  isRobloxClassAssignableTo,
+  type StudioCapabilityAttestationGrade,
+  type StudioProjectState,
+  type StudioValue,
+} from "../../studio-evidence/src/index.js";
+
+export * from "./mutation-evidence.js";
 
 export const CREATOR_SESSION_POLICY = "prompt_first_studio_authoring" as const;
 export const CREATOR_MODEL = "openai/gpt-5.6-luna" as const;
 export const CREATOR_MAX_REPAIRS = 2;
 
-export const STUDIO_WRITABLE_CLASSES = [
-  "Folder",
-  "LocalScript",
-  "Model",
-  "ModuleScript",
-  "Part",
-  "ProximityPrompt",
-  "RemoteEvent",
-  "RemoteFunction",
-  "Script",
-] as const;
 export type StudioWritableClass = (typeof STUDIO_WRITABLE_CLASSES)[number];
-export const STUDIO_SCRIPT_CLASSES = [
-  "LocalScript",
-  "ModuleScript",
-  "Script",
-] as const;
 export type StudioScriptClass = (typeof STUDIO_SCRIPT_CLASSES)[number];
-export const STUDIO_NON_SCRIPT_WRITABLE_CLASSES = [
-  "Folder",
-  "Model",
-  "Part",
-  "ProximityPrompt",
-  "RemoteEvent",
-  "RemoteFunction",
-] as const;
-export type StudioNonScriptWritableClass =
-  (typeof STUDIO_NON_SCRIPT_WRITABLE_CLASSES)[number];
-export const STUDIO_AUTHORING_ROOTS = [
-  "Workspace",
-  "ReplicatedStorage",
-  "ServerScriptService",
-  "ServerStorage",
-  "StarterPlayer",
-  "StarterGui",
-  "StarterPack",
-  "ReplicatedFirst",
-  "Lighting",
-  "SoundService",
-  "Teams",
-] as const;
-export const STUDIO_MATERIALS = [
-  "Plastic",
-  "SmoothPlastic",
-  "Wood",
-  "WoodPlanks",
-  "Metal",
-  "DiamondPlate",
-  "Foil",
-  "Grass",
-  "Ice",
-  "Brick",
-  "Sand",
-  "Fabric",
-  "Granite",
-  "Marble",
-  "Pebble",
-  "Cobblestone",
-  "Concrete",
-  "CorrodedMetal",
-  "Glacier",
-  "Glass",
-  "Neon",
-  "ForceField",
-] as const;
+export const STUDIO_NON_SCRIPT_WRITABLE_CLASSES = STUDIO_WRITABLE_CLASSES.filter(
+  (className): className is Exclude<StudioWritableClass, StudioScriptClass> =>
+    !STUDIO_SCRIPT_CLASSES.includes(className as StudioScriptClass),
+);
+export type StudioNonScriptWritableClass = Exclude<StudioWritableClass, StudioScriptClass>;
 export type StudioOwner = "studio" | "external_rojo";
 
 export type CreatorSessionStatus =
@@ -128,9 +84,12 @@ export type CreatorSessionStatus =
   | "awaiting_plan_approval"
   | "building"
   | "awaiting_change_approval"
+  | "preflighting"
   | "applying"
   | "awaiting_verification"
   | "verifying"
+  | "cancelling"
+  | "committing"
   | "repairing"
   | "awaiting_review"
   | "creator_accepted"
@@ -301,44 +260,65 @@ export interface CreatorPlan {
   charter: VerificationCharter;
 }
 
-export type StudioValue =
-  | { type: "boolean"; value: boolean }
-  | { type: "number"; value: number }
-  | { type: "string"; value: string }
-  | { type: "vector3"; x: number; y: number; z: number }
-  | { type: "color3"; r: number; g: number; b: number }
-  | {
-      type: "cframe";
-      components: [
-        number,
-        number,
-        number,
-        number,
-        number,
-        number,
-        number,
-        number,
-        number,
-        number,
-        number,
-        number,
-      ];
-    };
-
 /**
  * Model-facing property input. Forge resolves these natural JSON values against
  * the approved per-class property policy, then emits the tagged StudioValue
  * representation only across the trusted Forge-to-Studio boundary.
  */
 export type CreatorPropertyInput =
+  | null
   | boolean
   | number
   | string
+  | { x: number; y: number }
   | { x: number; y: number; z: number }
   | { r: number; g: number; b: number }
   | {
       position: { x: number; y: number; z: number };
       rotation: { x: number; y: number; z: number };
+    }
+  | { scale: number; offset: number }
+  | {
+      x: { scale: number; offset: number };
+      y: { scale: number; offset: number };
+    }
+  | { min: { x: number; y: number }; max: { x: number; y: number } }
+  | { min: number; max: number }
+  | {
+      keypoints: readonly { time: number; value: number; envelope: number }[];
+    }
+  | {
+      keypoints: readonly {
+        time: number;
+        color: { r: number; g: number; b: number };
+      }[];
+    }
+  | { name: string }
+  | { family: string; weight: string; style: string }
+  | {
+      density: number;
+      friction: number;
+      elasticity: number;
+      frictionWeight: number;
+      elasticityWeight: number;
+    }
+  | { x: boolean; y: boolean; z: boolean }
+  | {
+      top: boolean;
+      bottom: boolean;
+      left: boolean;
+      right: boolean;
+      front: boolean;
+      back: boolean;
+    }
+  | {
+      origin: { x: number; y: number; z: number };
+      direction: { x: number; y: number; z: number };
+    }
+  | {
+      stableId: string;
+      path: string;
+      className: string;
     };
 
 export type StudioChangeOperation =
@@ -428,7 +408,7 @@ export interface CreatorBuildContract {
 export interface CreatorPropertyPolicy {
   allowedProperties: Array<{
     name: string;
-    valueTypes: StudioValue["type"][];
+    valueKinds: StudioValue["kind"][];
     constraints?: CreatorPropertyConstraints;
   }>;
   attributes: "primitive" | "none";
@@ -443,6 +423,8 @@ export interface CreatorPropertyConstraints {
   cframeTranslationMaximumAbsolute?: number;
   cframeRotationMaximumAbsolute?: number;
   maximumUtf8Bytes?: number;
+  maximumEntries?: number;
+  referenceClass?: string;
   allowedStrings?: string[];
 }
 
@@ -556,7 +538,8 @@ export interface CreatorCheckpoint {
   changeSetHash: string;
   beforeRevisionHash: string;
   afterRevisionHash: string;
-  inverseMaterialHash: string;
+  mutationAttemptId: string;
+  mutationAttemptHash: string;
   status: "committed" | "rolled_back" | "recovery_required";
 }
 
@@ -585,15 +568,20 @@ export interface CreatorVerificationRecord {
   changeSetHash: string;
   charterId: string;
   charterHash: string;
-  snapshotRevisionHash: string;
-  snapshotObservationHash: string;
+  stateRevisionHash: string;
+  stateEvidenceHash: string;
+  mutationAttempt: {
+    id: string;
+    hash: string;
+    reconciliationHash: string;
+  };
   executionPlan: {
     id: string;
     hash: string;
     artifact: ArtifactReference;
   };
-  runtimeObservation?: {
-    observationHash: string;
+  runtimeEvidence?: {
+    evidenceHash: string;
     diagnosticsHash: string;
     artifact: ArtifactReference;
   };
@@ -642,10 +630,10 @@ export interface CreatorSession {
 export interface CreatorSessionBundle {
   session: CreatorSession;
   ownership: StudioOwnershipMap;
-  observation: StudioSnapshotObservation;
+  observation: StudioProjectState;
   observationHistory: Array<{
     revisionHash: string;
-    observation: StudioSnapshotObservation;
+    observation: StudioProjectState;
   }>;
   plan?: CreatorPlan;
   buildContracts: CreatorBuildContract[];
@@ -656,6 +644,15 @@ export interface CreatorSessionBundle {
     report: CreatorReviewReport;
     artifact: ArtifactReference;
   };
+  /**
+   * Durable transaction cursor for a mutation that may still own a Studio
+   * ChangeHistory recording.  It contains references only: the immutable
+   * bodies stay in the creator artifact store.  This field is cleared only
+   * after an exact commit/cancel acknowledgement and its post-finalize state
+   * evidence have been persisted.
+   */
+  activeMutation?: CreatorActiveMutation;
+  mutationAttempts: import("./mutation-evidence.js").CreatorMutationAttempt[];
   verifications: CreatorVerificationRecord[];
   agentRuns: Array<{
     phase: "creator_planner" | "creator_builder";
@@ -670,6 +667,35 @@ export interface CreatorSessionBundle {
   }>;
 }
 
+export interface CreatorActiveMutation {
+  attemptId: string;
+  stage:
+    | "preflighted"
+    | "recording_may_be_open"
+    | "provisional"
+    | "recovery_cancelled";
+  changeSetId: string;
+  changeSetHash: string;
+  projectionId: string;
+  projectionHash: string;
+  beforeRevisionHash: string;
+  recordingId?: string;
+  manifest: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
+  attestation: import("./mutation-evidence.js").CreatorMutationArtifactEvidence;
+  changeSet: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
+  projection: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
+  preflight: import("./mutation-evidence.js").CreatorMutationArtifactEvidence;
+  beforeState: import("./mutation-evidence.js").CreatorMutationArtifactStateEvidence;
+  directReadback?: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
+  afterState?: import("./mutation-evidence.js").CreatorMutationArtifactStateEvidence;
+  reconciliation?: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
+  executionFailure?: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
+  verificationPlan?: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
+  verificationDraft?: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
+  recoveryFinalization?: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
+  finalState?: import("./mutation-evidence.js").CreatorMutationArtifactStateEvidence;
+}
+
 export type CreatorControlActionId =
   | "approve_plan"
   | "reject_plan"
@@ -678,7 +704,8 @@ export type CreatorControlActionId =
   | "start_checks"
   | "accept_result"
   | "reject_and_rollback"
-  | "cancel_changes";
+  | "cancel_changes"
+  | "cancel_interrupted_recording";
 export interface CreatorControlActionDescriptor {
   id: CreatorControlActionId;
   label: string;
@@ -715,7 +742,15 @@ export interface CreatorControlView {
     plan?: ArtifactReference;
     changeSet?: ArtifactReference;
     studioExecutionPlan?: ArtifactReference;
-    runtimeObservation?: ArtifactReference;
+    capabilityManifest?: ArtifactReference;
+    capabilityAttestation?: ArtifactReference;
+    mutationProjection?: ArtifactReference;
+    mutationPreflight?: ArtifactReference;
+    mutationReadback?: ArtifactReference;
+    projectState?: ArtifactReference;
+    mutationReconciliation?: ArtifactReference;
+    mutationFinalization?: ArtifactReference;
+    runtimeEvidence?: ArtifactReference;
     verification?: ArtifactReference;
     reviewReport?: ArtifactReference;
     agentRun?: ArtifactReference;
@@ -726,6 +761,23 @@ export interface CreatorControlView {
     status: "passed" | "failed" | "incomplete" | "not_run";
     failureFacts: Array<{ statement: string; hash: string }>;
     replayable: boolean;
+  };
+  mutation?: {
+    attemptId: string;
+    status:
+      | "preflighting"
+      | "preflight_failed"
+      | "provisional"
+      | "matched"
+      | "mismatched"
+      | "incomplete"
+      | "cancelled"
+      | "committed"
+      | "rolled_back"
+      | "recovery_required";
+    failureFacts: Array<{ statement: string; hash: string }>;
+    replayable: boolean;
+    projectionFactCount: number;
   };
   primaryAction?: CreatorControlActionDescriptor;
   secondaryAction?: CreatorControlActionDescriptor;
@@ -768,6 +820,12 @@ export interface CreatorDashboardState {
     projectName?: string;
     revisionHash?: string;
     capabilities?: string[];
+    manifestHash?: string;
+    connectorBuildHash?: string;
+    attestationStatus?: "verified" | "pending" | "rejected" | "incomplete";
+    attestationHash?: string;
+    attestationArtifact?: ArtifactReference;
+    attestation?: Omit<StudioCapabilityAttestationGrade, "status">;
     message: string;
   };
   serverTime: string;
@@ -902,6 +960,33 @@ export function assertCreatorControlView(
     )
       throw new Error("Invalid CreatorControlView verification");
   }
+  if (
+    value.mutation !== undefined &&
+    (!isRecord(value.mutation) ||
+      !isId(value.mutation.attemptId) ||
+      ![
+        "preflighting",
+        "preflight_failed",
+        "provisional",
+        "matched",
+        "mismatched",
+        "incomplete",
+        "cancelled",
+        "committed",
+        "rolled_back",
+        "recovery_required",
+      ].includes(String(value.mutation.status)) ||
+      typeof value.mutation.replayable !== "boolean" ||
+      !Number.isInteger(value.mutation.projectionFactCount) ||
+      Number(value.mutation.projectionFactCount) < 0 ||
+      !Array.isArray(value.mutation.failureFacts) ||
+      !value.mutation.failureFacts.every(
+        (fact) =>
+          isRecord(fact) &&
+          typeof fact.statement === "string" &&
+          isHash(fact.hash),
+      ))
+  ) throw new Error("Invalid CreatorControlView mutation evidence");
   const { kind: _kind, id: _id, hash: _hash, ...payload } = value;
   const expected = contentHash(stableJson(payload));
   if (
@@ -945,10 +1030,10 @@ export function assertCreatorControlActionBinding(
 export function createStudioOwnershipMap(input: {
   projectId: string;
   revisionHash: string;
-  observation: StudioSnapshotObservation;
+  observation: StudioProjectState;
   externalRojoPaths?: readonly string[];
 }): StudioOwnershipMap {
-  assertStudioSnapshotObservation(input.observation);
+  assertStudioProjectState(input.observation);
   assertHash(input.revisionHash, "Studio revision");
   const external = [...(input.externalRojoPaths ?? [])]
     .map(canonicalStudioPath)
@@ -1044,10 +1129,10 @@ export function createCreatorPlan(
     creatorPrompt: string;
     charter: { clauses: VerificationCharterProposalClause[] };
   },
-  observation: StudioSnapshotObservation,
+  observation: StudioProjectState,
   ownership: StudioOwnershipMap,
 ): CreatorPlan {
-  assertStudioSnapshotObservation(observation);
+  assertStudioProjectState(observation);
   assertOwnershipMap(ownership);
   if (
     input.projectRevisionHash !== ownership.revisionHash ||
@@ -1125,6 +1210,7 @@ export function createCreatorPlan(
       "Verification charter must expose its playtest diagnostic thresholds",
     );
   assertPlanOutputCoverage(input.changes, input.charter.clauses);
+  assertCreatorRuntimeObservationWindow(input.charter.clauses);
   if (
     input.changes.some(sourceBearingPlanChange) &&
     !input.charter.clauses.some(
@@ -1154,7 +1240,7 @@ export function createCreatorPlan(
     sessionId: input.sessionId,
     promptHash: input.promptHash,
     projectRevisionHash: input.projectRevisionHash,
-    projectStateHash: studioSnapshotStateHash(observation),
+    projectStateHash: studioProjectStateHash(observation),
     ownershipMapId: input.ownershipMapId,
     ownershipMapHash: input.ownershipMapHash,
     goal,
@@ -1223,11 +1309,30 @@ export function createCreatorBuildContract(input: {
   plan: CreatorPlan;
   planApproval: CreatorApproval;
   ownership: StudioOwnershipMap;
-  observation: StudioSnapshotObservation;
+  observation: StudioProjectState;
 }): CreatorBuildContract {
+  return materializeCreatorBuildContract(input, creatorPropertyPolicies());
+}
+
+/**
+ * Build contracts are immutable evidence. New contracts use the current
+ * generated policy, while replay rematerializes an existing contract from the
+ * policy snapshot already sealed into that contract. Capability growth must
+ * never rewrite the meaning of previously accepted evidence.
+ */
+function materializeCreatorBuildContract(
+  input: {
+    session: CreatorSession;
+    plan: CreatorPlan;
+    planApproval: CreatorApproval;
+    ownership: StudioOwnershipMap;
+    observation: StudioProjectState;
+  },
+  propertyPolicies: Readonly<Record<string, CreatorPropertyPolicy>>,
+): CreatorBuildContract {
   assertCreatorPlan(input.plan);
   assertOwnershipMap(input.ownership);
-  assertStudioSnapshotObservation(input.observation);
+  assertStudioProjectState(input.observation);
   if (
     input.plan.sessionId !== input.session.id ||
     input.plan.promptHash !== input.session.promptHash ||
@@ -1235,7 +1340,7 @@ export function createCreatorBuildContract(input: {
     input.plan.ownershipMapHash !== input.ownership.hash ||
     input.plan.projectRevisionHash !== input.session.initialRevisionHash ||
     input.plan.projectStateHash !==
-      studioSnapshotStateHash(input.observation) ||
+      studioProjectStateHash(input.observation) ||
     input.planApproval.decision !== "approved" ||
     input.planApproval.artifactKind !== "plan" ||
     input.planApproval.artifactId !== input.plan.id ||
@@ -1244,7 +1349,6 @@ export function createCreatorBuildContract(input: {
     throw new Error(
       "Creator build contract plan or Studio-state binding mismatch",
     );
-  const propertyPolicies = creatorPropertyPolicies();
   const changes = input.plan.changes.map((change) =>
     materializeBuildContractChange(
       change,
@@ -1270,7 +1374,8 @@ export function createCreatorBuildContract(input: {
     ownershipMapHash: input.ownership.hash,
     initialRevisionHash: input.session.currentRevisionHash,
     initialInspectionPaths,
-    propertyPolicies,
+    propertyPolicies:
+      propertyPolicies as Record<StudioWritableClass, CreatorPropertyPolicy>,
     changes,
   };
   const hash = contentHash(stableJson(payload));
@@ -1320,17 +1425,17 @@ export function assertCreatorBuildContract(
   )
     throw new Error("CreatorBuildContract inspection paths are non-canonical");
   if (
-    stableJson(policyKeys) !== stableJson([...STUDIO_WRITABLE_CLASSES].sort())
+    policyKeys.length === 0 ||
+    policyKeys.length > 2_048 ||
+    policyKeys.some(
+      (className) =>
+        !/^[A-Za-z][A-Za-z0-9_]*$/.test(className) ||
+        !isRobloxClassAssignableTo(className, "Instance"),
+    )
   )
-    throw new Error("CreatorBuildContract property policies are incomplete");
-  for (const className of STUDIO_WRITABLE_CLASSES)
+    throw new Error("CreatorBuildContract property policy classes are invalid");
+  for (const className of policyKeys)
     assertCreatorPropertyPolicy(value.propertyPolicies[className]);
-  if (
-    stableJson(value.propertyPolicies) !== stableJson(creatorPropertyPolicies())
-  )
-    throw new Error(
-      "CreatorBuildContract property policies are not the canonical authoring policy",
-    );
   const changeIds = new Set<string>();
   for (const change of value.changes) {
     if (
@@ -1347,6 +1452,17 @@ export function assertCreatorBuildContract(
     if (!isRecord(change.propertyPolicy))
       throw new Error("Invalid CreatorBuildContract change policy");
     assertCreatorPropertyPolicy(change.propertyPolicy);
+    const className = String(
+      change.kind === "create" ? change.className : change.expectedClass,
+    );
+    const sealedPolicy = value.propertyPolicies[className];
+    if (
+      sealedPolicy === undefined ||
+      stableJson(change.propertyPolicy) !== stableJson(sealedPolicy)
+    )
+      throw new Error(
+        "CreatorBuildContract change policy is not bound to its sealed class policy",
+      );
   }
   const { kind: _kind, id: _id, hash: _hash, ...payload } = value;
   const expected = contentHash(stableJson(payload));
@@ -1359,12 +1475,12 @@ export function assertCreatorBuildContract(
 
 export function createCreatorChangeSet(
   input: Omit<CreatorChangeSet, "kind" | "id" | "hash">,
-  observation: StudioSnapshotObservation,
+  observation: StudioProjectState,
   ownership: StudioOwnershipMap,
   plan: CreatorPlan,
   contract: CreatorBuildContract,
 ): CreatorChangeSet {
-  assertStudioSnapshotObservation(observation);
+  assertStudioProjectState(observation);
   assertOwnershipMap(ownership);
   assertCreatorBuildContract(contract);
   if (
@@ -1495,8 +1611,12 @@ export function assertCreatorVerificationRecord(
     !isHash(value.changeSetHash) ||
     !isId(value.charterId) ||
     !isHash(value.charterHash) ||
-    !isHash(value.snapshotRevisionHash) ||
-    !isHash(value.snapshotObservationHash) ||
+    !isHash(value.stateRevisionHash) ||
+    !isHash(value.stateEvidenceHash) ||
+    !isRecord(value.mutationAttempt) ||
+    !isId(value.mutationAttempt.id) ||
+    !isHash(value.mutationAttempt.hash) ||
+    !isHash(value.mutationAttempt.reconciliationHash) ||
     !isRecord(value.executionPlan) ||
     !isId(value.executionPlan.id) ||
     !isHash(value.executionPlan.hash) ||
@@ -1519,14 +1639,14 @@ export function assertCreatorVerificationRecord(
   )
     throw new Error("Invalid CreatorVerificationRecord");
   assertArtifactReference(value.executionPlan.artifact);
-  if (value.runtimeObservation !== undefined) {
+  if (value.runtimeEvidence !== undefined) {
     if (
-      !isRecord(value.runtimeObservation) ||
-      !isHash(value.runtimeObservation.observationHash) ||
-      !isHash(value.runtimeObservation.diagnosticsHash)
+      !isRecord(value.runtimeEvidence) ||
+      !isHash(value.runtimeEvidence.evidenceHash) ||
+      !isHash(value.runtimeEvidence.diagnosticsHash)
     )
       throw new Error("Invalid CreatorVerificationRecord runtime evidence");
-    assertArtifactReference(value.runtimeObservation.artifact);
+    assertArtifactReference(value.runtimeEvidence.artifact);
   }
   if (
     value.status !== "incomplete" &&
@@ -1558,7 +1678,8 @@ export function assertCreatorCheckpoint(
     !isHash(value.changeSetHash) ||
     !isHash(value.beforeRevisionHash) ||
     !isHash(value.afterRevisionHash) ||
-    !isHash(value.inverseMaterialHash) ||
+    !isId(value.mutationAttemptId) ||
+    !isHash(value.mutationAttemptHash) ||
     !["committed", "rolled_back", "recovery_required"].includes(
       String(value.status),
     )
@@ -1694,7 +1815,7 @@ export function creatorOrientation(
   bundle: Pick<CreatorSessionBundle, "session" | "ownership" | "observation">,
 ): AgentOrientation {
   return compileCreatorOrientation({
-    observation: bundle.observation,
+    state: bundle.observation,
     revisionHash: bundle.session.currentRevisionHash,
     projectId: bundle.session.projectId,
     ownership: new Map(
@@ -1868,7 +1989,7 @@ abstract class BaseCreatorToolHost implements AgentToolHost {
 }
 
 function inspectSnapshot(
-  observation: StudioSnapshotObservation,
+  observation: StudioProjectState,
   ownership: StudioOwnershipMap,
   paths: string[],
 ): unknown {
@@ -1922,7 +2043,7 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
     private readonly input: {
       session: CreatorSession;
       ownership: StudioOwnershipMap;
-      observation: StudioSnapshotObservation;
+      observation: StudioProjectState;
       prompt: string;
       budgets?: BudgetPolicy;
     },
@@ -2032,7 +2153,7 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
     private readonly input: {
       session: CreatorSession;
       ownership: StudioOwnershipMap;
-      observation: StudioSnapshotObservation;
+      observation: StudioProjectState;
       plan: CreatorPlan;
       planApproval: CreatorApproval;
       budgets?: BudgetPolicy;
@@ -2393,7 +2514,7 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
 export async function runCreatorPlanner(input: {
   session: CreatorSession;
   ownership: StudioOwnershipMap;
-  observation: StudioSnapshotObservation;
+  observation: StudioProjectState;
   prompt: string;
   runtime: AgentRuntime;
   budgets?: BudgetPolicy;
@@ -2456,7 +2577,7 @@ export async function runCreatorPlanner(input: {
 export async function runCreatorBuilder(input: {
   session: CreatorSession;
   ownership: StudioOwnershipMap;
-  observation: StudioSnapshotObservation;
+  observation: StudioProjectState;
   prompt: string;
   plan: CreatorPlan;
   planApproval: CreatorApproval;
@@ -2598,11 +2719,22 @@ export async function loadCreatorBundle(
   await Promise.all(
     value.verifications.flatMap((verification) => [
       store.verify(verification.executionPlan.artifact),
-      ...(verification.runtimeObservation
-        ? [store.verify(verification.runtimeObservation.artifact)]
+      ...(verification.runtimeEvidence
+        ? [store.verify(verification.runtimeEvidence.artifact)]
         : []),
     ]),
   );
+  await Promise.all(
+    value.mutationAttempts.flatMap(mutationAttemptArtifactReferences)
+      .map((reference) => store.verify(reference)),
+  );
+  if (value.activeMutation) {
+    await Promise.all(
+      creatorActiveMutationReferences(value.activeMutation).map((reference) =>
+        store.verify(reference),
+      ),
+    );
+  }
   if (value.review) await store.verify(value.review.artifact);
   return value;
 }
@@ -2610,7 +2742,7 @@ export async function loadCreatorBundle(
 export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
   assertCreatorSession(value.session);
   assertOwnershipMap(value.ownership);
-  assertStudioSnapshotObservation(value.observation);
+  assertStudioProjectState(value.observation);
   if (
     !Array.isArray(value.observationHistory) ||
     value.observationHistory.length < 1 ||
@@ -2622,7 +2754,7 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
   for (const entry of value.observationHistory) {
     if (!isRecord(entry) || !isHash(entry.revisionHash))
       throw new Error("Invalid creator Studio observation history entry");
-    assertStudioSnapshotObservation(entry.observation);
+    assertStudioProjectState(entry.observation);
   }
   if (
     new Set(
@@ -2722,23 +2854,26 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
     const observed = value.observationHistory.find(
       (entry) =>
         entry.revisionHash === contract.initialRevisionHash &&
-        studioSnapshotStateHash(entry.observation) ===
+        studioProjectStateHash(entry.observation) ===
           value.plan!.projectStateHash,
     );
     if (!approval || !observed)
       throw new Error(
         "Creator build contract is not bound to approved plan and reproducible Studio facts",
       );
-    const rematerialized = createCreatorBuildContract({
-      session: {
-        ...value.session,
-        currentRevisionHash: contract.initialRevisionHash,
+    const rematerialized = materializeCreatorBuildContract(
+      {
+        session: {
+          ...value.session,
+          currentRevisionHash: contract.initialRevisionHash,
+        },
+        plan: value.plan,
+        planApproval: approval,
+        ownership: value.ownership,
+        observation: observed.observation,
       },
-      plan: value.plan,
-      planApproval: approval,
-      ownership: value.ownership,
-      observation: observed.observation,
-    });
+      contract.propertyPolicies,
+    );
     if (
       rematerialized.id !== contract.id ||
       rematerialized.hash !== contract.hash
@@ -2794,7 +2929,7 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
     const observed = value.observationHistory.find(
       (entry) =>
         entry.revisionHash === changeSet.expectedRevisionHash &&
-        studioSnapshotStateHash(entry.observation) ===
+        studioProjectStateHash(entry.observation) ===
           value.plan!.projectStateHash,
     );
     if (!observed)
@@ -2856,6 +2991,19 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
     throw new Error("Creator session change-set reference is unresolved");
   if (!Array.isArray(value.verifications))
     throw new Error("Creator session bundle requires verification evidence");
+  if (!Array.isArray(value.mutationAttempts))
+    throw new Error("Creator session bundle requires mutation-attempt evidence");
+  for (const attempt of value.mutationAttempts) {
+    if (
+      !isRecord(attempt) ||
+      attempt.kind !== "CreatorMutationAttempt" ||
+      !isId(attempt.id) ||
+      !isHash(attempt.hash) ||
+      attempt.sessionId !== value.session.id
+    ) throw new Error("Invalid creator mutation-attempt evidence");
+  }
+  if (value.activeMutation !== undefined)
+    assertCreatorActiveMutation(value.activeMutation, value);
   value.verifications.forEach((record) => {
     assertCreatorVerificationRecord(record);
     if (
@@ -2867,7 +3015,13 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
       ) ||
       !value.plan ||
       record.charterId !== value.plan.charter.id ||
-      record.charterHash !== value.plan.charter.hash
+      record.charterHash !== value.plan.charter.hash ||
+      !value.mutationAttempts.some((attempt) =>
+        attempt.id === record.mutationAttempt.id &&
+        attempt.hash === record.mutationAttempt.hash &&
+        attempt.completion === "settled" &&
+        isRecord(attempt.reconciliation) &&
+        attempt.reconciliation.hash === record.mutationAttempt.reconciliationHash)
     )
       throw new Error("Creator verification graph mismatch");
   });
@@ -2881,7 +3035,11 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
           changeSet.hash === value.checkpoint!.changeSetHash,
       ) ||
       value.session.checkpoint?.id !== value.checkpoint.id ||
-      value.session.checkpoint.hash !== value.checkpoint.hash
+      value.session.checkpoint.hash !== value.checkpoint.hash ||
+      !value.mutationAttempts.some((attempt) =>
+        attempt.id === value.checkpoint!.mutationAttemptId &&
+        attempt.hash === value.checkpoint!.mutationAttemptHash &&
+        attempt.completion === "settled")
     )
       throw new Error("Creator checkpoint graph mismatch");
   } else if (value.session.checkpoint)
@@ -3000,6 +3158,167 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
       throw new Error(
         "Persisted CreatorChangeSet has no sealed AgentRun evidence link",
       );
+}
+
+function mutationAttemptArtifactReferences(
+  attempt: import("./mutation-evidence.js").CreatorMutationAttempt,
+): ArtifactReference[] {
+  const common = [
+    attempt.manifest.artifact,
+    attempt.attestation.projection.artifact,
+    attempt.attestation.envelope.artifact,
+    attempt.changeSet.artifact,
+    attempt.projection.artifact,
+    attempt.beforeState.projection.artifact,
+    attempt.beforeState.envelope.artifact,
+    attempt.beforeState.revision.artifact,
+    ...(attempt.completion === "incomplete"
+      ? [attempt.preflightProjection.artifact]
+      : []),
+    ...(attempt.preflight
+      ? [attempt.preflight.projection.artifact, attempt.preflight.envelope.artifact]
+      : []),
+  ];
+  if (attempt.completion === "incomplete")
+    return attempt.phase === "apply"
+      ? [
+          ...common,
+          attempt.finalState.projection.artifact,
+          attempt.finalState.envelope.artifact,
+          attempt.finalState.revision.artifact,
+          attempt.finalization.artifact,
+        ]
+      : common;
+  return [
+    ...common,
+    attempt.directReadback.artifact,
+    attempt.afterState.projection.artifact,
+    attempt.afterState.envelope.artifact,
+    attempt.afterState.revision.artifact,
+    attempt.finalState.projection.artifact,
+    attempt.finalState.envelope.artifact,
+    attempt.finalState.revision.artifact,
+    attempt.reconciliation.artifact,
+    attempt.finalization.artifact,
+  ];
+}
+
+function creatorActiveMutationReferences(
+  active: CreatorActiveMutation,
+): ArtifactReference[] {
+  return [
+    active.manifest.artifact,
+    active.attestation.projection.artifact,
+    active.attestation.envelope.artifact,
+    active.changeSet.artifact,
+    active.projection.artifact,
+    active.preflight.projection.artifact,
+    active.preflight.envelope.artifact,
+    active.beforeState.projection.artifact,
+    active.beforeState.envelope.artifact,
+    active.beforeState.revision.artifact,
+    ...(active.directReadback ? [active.directReadback.artifact] : []),
+    ...(active.afterState
+      ? [
+          active.afterState.projection.artifact,
+          active.afterState.envelope.artifact,
+          active.afterState.revision.artifact,
+        ]
+      : []),
+    ...(active.reconciliation ? [active.reconciliation.artifact] : []),
+    ...(active.executionFailure ? [active.executionFailure.artifact] : []),
+    ...(active.verificationPlan ? [active.verificationPlan.artifact] : []),
+    ...(active.verificationDraft ? [active.verificationDraft.artifact] : []),
+    ...(active.recoveryFinalization
+      ? [active.recoveryFinalization.artifact]
+      : []),
+    ...(active.finalState
+      ? [
+          active.finalState.projection.artifact,
+          active.finalState.envelope.artifact,
+          active.finalState.revision.artifact,
+        ]
+      : []),
+  ];
+}
+
+function assertCreatorActiveMutation(
+  active: CreatorActiveMutation,
+  bundle: CreatorSessionBundle,
+): void {
+  if (
+    !isRecord(active) ||
+    !isId(active.attemptId) ||
+    ![
+      "preflighted",
+      "recording_may_be_open",
+      "provisional",
+      "recovery_cancelled",
+    ].includes(
+      String(active.stage),
+    ) ||
+    !isId(active.changeSetId) ||
+    !isHash(active.changeSetHash) ||
+    !isId(active.projectionId) ||
+    !isHash(active.projectionHash) ||
+    !isHash(active.beforeRevisionHash) ||
+    (active.recordingId !== undefined && !isId(active.recordingId))
+  )
+    throw new Error("Invalid active creator mutation cursor");
+  if (
+    !bundle.changeSets.some(
+      (changeSet) =>
+        changeSet.id === active.changeSetId &&
+        changeSet.hash === active.changeSetHash,
+    ) ||
+    active.projection.hash !== active.projectionHash
+  )
+    throw new Error("Active creator mutation graph mismatch");
+  for (const reference of creatorActiveMutationReferences(active))
+    assertArtifactReference(reference);
+  for (const binding of [
+    active.manifest,
+    active.attestation.projection,
+    active.attestation.envelope,
+    active.changeSet,
+    active.projection,
+    active.preflight.projection,
+    active.preflight.envelope,
+    active.beforeState.projection,
+    active.beforeState.envelope,
+    active.beforeState.revision,
+    active.directReadback,
+    active.afterState?.projection,
+    active.afterState?.envelope,
+    active.afterState?.revision,
+    active.reconciliation,
+    active.executionFailure,
+    active.verificationPlan,
+    active.verificationDraft,
+    active.recoveryFinalization,
+    active.finalState?.projection,
+    active.finalState?.envelope,
+    active.finalState?.revision,
+  ]) {
+    if (
+      binding !== undefined &&
+      (!isRecord(binding) || !isHash(binding.hash))
+    )
+      throw new Error("Invalid active creator mutation artifact binding");
+  }
+  if (
+    active.stage === "provisional" &&
+    (!active.recordingId ||
+      !active.directReadback ||
+      !active.afterState ||
+      !active.reconciliation)
+  )
+    throw new Error("Provisional creator mutation cursor is incomplete");
+  if (
+    active.stage === "recovery_cancelled" &&
+    (!active.recordingId || !active.recoveryFinalization || !active.finalState)
+  )
+    throw new Error("Recovery-cancelled creator mutation cursor is incomplete");
 }
 
 export function assertCreatorSession(
@@ -3332,42 +3651,16 @@ function boundedSourceSchema() {
     );
 }
 const FINITE_NUMBER_SCHEMA = z.number().finite();
-const STUDIO_VALUE_SCHEMA: z.ZodType<StudioValue> = z.discriminatedUnion(
-  "type",
-  [
-    z.object({ type: z.literal("boolean"), value: z.boolean() }),
-    z.object({ type: z.literal("number"), value: FINITE_NUMBER_SCHEMA }),
-    z.object({ type: z.literal("string"), value: z.string().max(4096) }),
-    z.object({
-      type: z.literal("vector3"),
-      x: FINITE_NUMBER_SCHEMA,
-      y: FINITE_NUMBER_SCHEMA,
-      z: FINITE_NUMBER_SCHEMA,
-    }),
-    z.object({
-      type: z.literal("color3"),
-      r: z.number().min(0).max(1),
-      g: z.number().min(0).max(1),
-      b: z.number().min(0).max(1),
-    }),
-    z.object({
-      type: z.literal("cframe"),
-      components: z.tuple([
-        FINITE_NUMBER_SCHEMA,
-        FINITE_NUMBER_SCHEMA,
-        FINITE_NUMBER_SCHEMA,
-        FINITE_NUMBER_SCHEMA,
-        FINITE_NUMBER_SCHEMA,
-        FINITE_NUMBER_SCHEMA,
-        FINITE_NUMBER_SCHEMA,
-        FINITE_NUMBER_SCHEMA,
-        FINITE_NUMBER_SCHEMA,
-        FINITE_NUMBER_SCHEMA,
-        FINITE_NUMBER_SCHEMA,
-        FINITE_NUMBER_SCHEMA,
-      ]),
-    }),
-  ],
+const STUDIO_VALUE_SCHEMA: z.ZodType<StudioValue> = z.custom<StudioValue>(
+  (value) => {
+    try {
+      assertStudioValue(value);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  "invalid canonical Studio value",
 );
 const PRIMITIVE_SCHEMA = z.union([
   z.string().max(4096),
@@ -3380,6 +3673,9 @@ const NATURAL_VECTOR3_SCHEMA = z
     y: FINITE_NUMBER_SCHEMA,
     z: FINITE_NUMBER_SCHEMA,
   })
+  .strict();
+const NATURAL_VECTOR2_SCHEMA = z
+  .object({ x: FINITE_NUMBER_SCHEMA, y: FINITE_NUMBER_SCHEMA })
   .strict();
 const NATURAL_COLOR3_SCHEMA = z
   .object({
@@ -3396,13 +3692,108 @@ const NATURAL_CFRAME_SCHEMA = z
     ),
   })
   .strict();
+const NATURAL_UDIM_SCHEMA = z
+  .object({ scale: FINITE_NUMBER_SCHEMA, offset: z.number().int() })
+  .strict();
+const NATURAL_UDIM2_SCHEMA = z
+  .object({ x: NATURAL_UDIM_SCHEMA, y: NATURAL_UDIM_SCHEMA })
+  .strict();
+const NATURAL_RECT_SCHEMA = z
+  .object({ min: NATURAL_VECTOR2_SCHEMA, max: NATURAL_VECTOR2_SCHEMA })
+  .strict();
+const NATURAL_NUMBER_RANGE_SCHEMA = z
+  .object({ min: FINITE_NUMBER_SCHEMA, max: FINITE_NUMBER_SCHEMA })
+  .strict();
+const NATURAL_NUMBER_SEQUENCE_SCHEMA = z
+  .object({
+    keypoints: z
+      .array(
+        z
+          .object({
+            time: FINITE_NUMBER_SCHEMA,
+            value: FINITE_NUMBER_SCHEMA,
+            envelope: FINITE_NUMBER_SCHEMA,
+          })
+          .strict(),
+      )
+      .min(2)
+      .max(64),
+  })
+  .strict();
+const NATURAL_COLOR_SEQUENCE_SCHEMA = z
+  .object({
+    keypoints: z
+      .array(
+        z
+          .object({ time: FINITE_NUMBER_SCHEMA, color: NATURAL_COLOR3_SCHEMA })
+          .strict(),
+      )
+      .min(2)
+      .max(64),
+  })
+  .strict();
+const NATURAL_BRICK_COLOR_SCHEMA = z.object({ name: z.string().min(1).max(128) }).strict();
+const NATURAL_FONT_SCHEMA = z
+  .object({
+    family: z.string().min(1).max(1_024),
+    weight: z.string().min(1).max(128),
+    style: z.string().min(1).max(128),
+  })
+  .strict();
+const NATURAL_PHYSICAL_PROPERTIES_SCHEMA = z
+  .object({
+    density: FINITE_NUMBER_SCHEMA,
+    friction: FINITE_NUMBER_SCHEMA,
+    elasticity: FINITE_NUMBER_SCHEMA,
+    frictionWeight: FINITE_NUMBER_SCHEMA,
+    elasticityWeight: FINITE_NUMBER_SCHEMA,
+  })
+  .strict();
+const NATURAL_AXES_SCHEMA = z
+  .object({ x: z.boolean(), y: z.boolean(), z: z.boolean() })
+  .strict();
+const NATURAL_FACES_SCHEMA = z
+  .object({
+    top: z.boolean(),
+    bottom: z.boolean(),
+    left: z.boolean(),
+    right: z.boolean(),
+    front: z.boolean(),
+    back: z.boolean(),
+  })
+  .strict();
+const NATURAL_RAY_SCHEMA = z
+  .object({ origin: NATURAL_VECTOR3_SCHEMA, direction: NATURAL_VECTOR3_SCHEMA })
+  .strict();
+const NATURAL_INSTANCE_REFERENCE_SCHEMA = z
+  .object({
+    stableId: z.string().min(1),
+    path: z.string().min(1),
+    className: z.string().min(1),
+  })
+  .strict();
 const CREATOR_PROPERTY_INPUT_SCHEMA: z.ZodType<CreatorPropertyInput> = z.union([
+  z.null(),
   z.boolean(),
   FINITE_NUMBER_SCHEMA,
   z.string().max(4096),
+  NATURAL_VECTOR2_SCHEMA,
   NATURAL_VECTOR3_SCHEMA,
   NATURAL_COLOR3_SCHEMA,
   NATURAL_CFRAME_SCHEMA,
+  NATURAL_UDIM_SCHEMA,
+  NATURAL_UDIM2_SCHEMA,
+  NATURAL_RECT_SCHEMA,
+  NATURAL_NUMBER_RANGE_SCHEMA,
+  NATURAL_NUMBER_SEQUENCE_SCHEMA,
+  NATURAL_COLOR_SEQUENCE_SCHEMA,
+  NATURAL_BRICK_COLOR_SCHEMA,
+  NATURAL_FONT_SCHEMA,
+  NATURAL_PHYSICAL_PROPERTIES_SCHEMA,
+  NATURAL_AXES_SCHEMA,
+  NATURAL_FACES_SCHEMA,
+  NATURAL_RAY_SCHEMA,
+  NATURAL_INSTANCE_REFERENCE_SCHEMA,
 ]);
 const CHANGE_OPERATION_SCHEMA = z.discriminatedUnion("kind", [
   z.object({
@@ -3487,7 +3878,7 @@ const BUILDER_DEFINITIONS: AgentToolDefinition[] = [
   ),
   definition(
     "studio.stage",
-    "Stage exactly one approved change. Supply only planChangeId and its creative payload. Property JSON is natural and untagged: booleans, numbers, strings, Vector3 as {x,y,z}, Color3 as {r,g,b} with channels from 0 to 1, and CFrame as {position:{x,y,z},rotation:{x,y,z}} with Euler rotation in degrees. Never send type/value wrappers. Attributes are primitive where permitted; source is required only where the contract says so. Forge derives structural fields and converts properties to the trusted Studio representation. This never mutates the live place.",
+    "Stage exactly one approved change. Supply only planChangeId and its creative payload. Property JSON is natural and untagged; the sealed property policy names the required codec. Scalars use booleans, finite numbers, or strings. Compound shapes are Vector2 {x,y}, Vector3 {x,y,z}, Color3 {r,g,b} in 0..1, CFrame {position:{x,y,z},rotation:{x,y,z}} in Euler degrees, UDim {scale,offset}, UDim2 {x:{scale,offset},y:{scale,offset}}, Rect {min:{x,y},max:{x,y}}, NumberRange {min,max}, sequences {keypoints:[...]}, BrickColor {name}, Font {family,weight,style}, PhysicalProperties, Axes, Faces, Ray {origin,direction}, or stable instance reference {stableId,path,className}. Never send type/value wrappers. Attributes are primitive where permitted; source is required only where the contract says so. Forge derives structural fields and converts properties to the trusted Studio representation. This never mutates the live place.",
     { change: STAGE_PAYLOAD_SCHEMA },
   ),
   definition(
@@ -3671,7 +4062,7 @@ function classMatches(
 function resultingClassAt(
   path: string,
   changes: CreatorPlanChange[],
-  observation: StudioSnapshotObservation,
+  observation: StudioProjectState,
 ): string | undefined {
   for (const change of changes) {
     if (change.kind === "create" && change.path === path)
@@ -3689,7 +4080,7 @@ function resultingClassAt(
 function assertCreatorPlanChange(
   change: CreatorPlanChange,
   changes: CreatorPlanChange[],
-  observation: StudioSnapshotObservation,
+  observation: StudioProjectState,
   ownership: StudioOwnershipMap,
 ): void {
   PLAN_CHANGE_SCHEMA.parse(change);
@@ -3791,9 +4182,40 @@ function assertPlanOutputCoverage(
       );
   }
 }
+function assertCreatorRuntimeObservationWindow(
+  clauses: readonly VerificationCharterProposalClause[],
+): void {
+  const series = clauses.filter(
+    (
+      clause,
+    ): clause is Extract<
+      VerificationCharterProposalClause,
+      { check: "position_series" }
+    > => clause.kind === "studio_check" && clause.check === "position_series",
+  );
+  if (series.length === 0) return;
+  const durations = series.map(
+    (clause) => (clause.sampleCount - 1) * clause.intervalMs,
+  );
+  if (
+    durations.some(
+      (duration) => duration < CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS,
+    )
+  )
+    throw new Error(
+      `Each creator position-series check must span at least ${CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS} ms so creator-triggered behavior can occur during the authoritative Play Solo observation window`,
+    );
+  if (
+    durations.reduce((total, duration) => total + duration, 0) >
+    STUDIO_CAPABILITY_MANIFEST.limits.maximumRuntimeMs
+  )
+    throw new Error(
+      "Creator position-series checks exceed the manifest runtime budget; use one bounded machine observation and leave unsupported behavior to creator review",
+    );
+}
 function assertPlanChangeSet(
   changes: CreatorPlanChange[],
-  observation: StudioSnapshotObservation,
+  observation: StudioProjectState,
 ): void {
   const outputs = changes.flatMap((change) =>
     changeOutputPath(change) ? [changeOutputPath(change)!] : [],
@@ -3832,7 +4254,7 @@ function assertPlanChangeSet(
 function assertProposedCharterClause(
   clause: VerificationCharterProposalClause,
   changes: CreatorPlanChange[],
-  observation: StudioSnapshotObservation,
+  observation: StudioProjectState,
 ): void {
   PROPOSED_CLAUSE_SCHEMA.parse(clause);
   if (!("path" in clause)) return;
@@ -3865,7 +4287,7 @@ function assertProposedCharterClause(
 }
 function materializeCharterClause(
   clause: VerificationCharterProposalClause,
-  observation: StudioSnapshotObservation,
+  observation: StudioProjectState,
 ): VerificationCharterClause {
   if (clause.kind === "creator_review") return { ...clause };
   if (clause.kind === "local_check")
@@ -3982,10 +4404,10 @@ function assertCheckPathScope(
     );
 }
 export function subtreeSnapshotHash(
-  observation: StudioSnapshotObservation,
+  observation: StudioProjectState,
   rootPath: string,
 ): string {
-  assertStudioSnapshotObservation(observation);
+  assertStudioProjectState(observation);
   const root = canonicalStudioPath(rootPath);
   const under = (path: string) => path === root || path.startsWith(`${root}/`);
   const payload = {
@@ -4016,10 +4438,10 @@ export function subtreeSnapshotHash(
 }
 
 /** Stable factual Studio state, excluding capture time and transport revision. */
-export function studioSnapshotStateHash(
-  observation: StudioSnapshotObservation,
+export function studioProjectStateHash(
+  observation: StudioProjectState,
 ): string {
-  assertStudioSnapshotObservation(observation);
+  assertStudioProjectState(observation);
   return contentHash(
     stableJson({
       project: observation.project,
@@ -4035,83 +4457,29 @@ function creatorPropertyPolicies(): Record<
   StudioWritableClass,
   CreatorPropertyPolicy
 > {
-  const policy = (
-    allowedProperties: CreatorPropertyPolicy["allowedProperties"],
-    source: "required" | "forbidden" = "forbidden",
-  ): CreatorPropertyPolicy => ({
-    allowedProperties,
-    attributes: "primitive",
-    source,
-  });
-  return {
-    Folder: policy([]),
-    LocalScript: policy([], "required"),
-    Model: policy([]),
-    ModuleScript: policy([], "required"),
-    Part: policy([
-      { name: "Anchored", valueTypes: ["boolean"] },
-      { name: "CanCollide", valueTypes: ["boolean"] },
-      { name: "CanTouch", valueTypes: ["boolean"] },
+  return Object.fromEntries(
+    STUDIO_CAPABILITY_MANIFEST.classes.map((classDefinition) => [
+      classDefinition.name,
       {
-        name: "CFrame",
-        valueTypes: ["cframe"],
-        constraints: {
-          cframeTranslationMaximumAbsolute: 100_000,
-          cframeRotationMaximumAbsolute: 1.001,
-        },
-      },
-      {
-        name: "Color",
-        valueTypes: ["color3"],
-        constraints: { minimum: 0, maximum: 1 },
-      },
-      {
-        name: "Material",
-        valueTypes: ["string"],
-        constraints: {
-          allowedStrings: [...STUDIO_MATERIALS],
-          maximumUtf8Bytes: 32,
-        },
-      },
-      {
-        name: "Size",
-        valueTypes: ["vector3"],
-        constraints: { minimumExclusive: 0, maximum: 2048 },
-      },
-      {
-        name: "Transparency",
-        valueTypes: ["number"],
-        constraints: { minimum: 0, maximum: 1 },
+        allowedProperties: classDefinition.properties.map((property) => ({
+          name: property.name,
+          valueKinds: [property.codec],
+          constraints: {
+            ...(property.minimum === undefined ? {} : { minimum: property.minimum }),
+            ...(property.minimumExclusive === undefined ? {} : { minimumExclusive: property.minimumExclusive }),
+            ...(property.maximum === undefined ? {} : { maximum: property.maximum }),
+            ...(property.maximumAbsoluteTranslation === undefined ? {} : { cframeTranslationMaximumAbsolute: property.maximumAbsoluteTranslation }),
+            ...(property.maximumUtf8Bytes === undefined ? {} : { maximumUtf8Bytes: property.maximumUtf8Bytes }),
+            ...(property.maximumEntries === undefined ? {} : { maximumEntries: property.maximumEntries }),
+            ...(property.referenceClass === undefined ? {} : { referenceClass: property.referenceClass }),
+            ...(property.allowed === undefined ? {} : { allowedStrings: [...property.allowed] }),
+          },
+        })),
+        attributes: "primitive" as const,
+        source: classDefinition.source === "required_on_create_and_writeable" ? "required" as const : "forbidden" as const,
       },
     ]),
-    ProximityPrompt: policy([
-      {
-        name: "ActionText",
-        valueTypes: ["string"],
-        constraints: { maximumUtf8Bytes: 200 },
-      },
-      { name: "Enabled", valueTypes: ["boolean"] },
-      {
-        name: "HoldDuration",
-        valueTypes: ["number"],
-        constraints: { minimum: 0, maximum: 3600 },
-      },
-      {
-        name: "MaxActivationDistance",
-        valueTypes: ["number"],
-        constraints: { minimum: 0, maximum: 1000 },
-      },
-      {
-        name: "ObjectText",
-        valueTypes: ["string"],
-        constraints: { maximumUtf8Bytes: 200 },
-      },
-      { name: "RequiresLineOfSight", valueTypes: ["boolean"] },
-    ]),
-    RemoteEvent: policy([]),
-    RemoteFunction: policy([]),
-    Script: policy([], "required"),
-  };
+  ) as Record<StudioWritableClass, CreatorPropertyPolicy>;
 }
 function assertCreatorPropertyPolicy(
   value: unknown,
@@ -4123,16 +4491,10 @@ function assertCreatorPropertyPolicy(
       (entry) =>
         isRecord(entry) &&
         typeof entry.name === "string" &&
-        Array.isArray(entry.valueTypes) &&
-        entry.valueTypes.every((type) =>
-          [
-            "boolean",
-            "number",
-            "string",
-            "vector3",
-            "color3",
-            "cframe",
-          ].includes(String(type)),
+        Array.isArray(entry.valueKinds) &&
+        entry.valueKinds.length === 1 &&
+        entry.valueKinds.every((type) =>
+          STUDIO_CODECS.includes(type as (typeof STUDIO_CODECS)[number]),
         ) &&
         (entry.constraints === undefined ||
           validPropertyConstraints(entry.constraints)),
@@ -4141,6 +4503,12 @@ function assertCreatorPropertyPolicy(
     (value.source !== "required" && value.source !== "forbidden")
   )
     throw new Error("Invalid CreatorBuildContract property policy");
+  const propertyNames = value.allowedProperties.map((entry) => entry.name);
+  if (
+    new Set(propertyNames).size !== propertyNames.length ||
+    stableJson([...propertyNames].sort()) !== stableJson(propertyNames)
+  )
+    throw new Error("CreatorBuildContract property policy is not canonical");
 }
 function validPropertyConstraints(value: unknown): boolean {
   if (!isRecord(value)) return false;
@@ -4152,11 +4520,29 @@ function validPropertyConstraints(value: unknown): boolean {
     "cframeTranslationMaximumAbsolute",
     "cframeRotationMaximumAbsolute",
     "maximumUtf8Bytes",
+    "maximumEntries",
   ];
   if (
     Object.keys(value).some(
-      (key) => !numericKeys.includes(key) && key !== "allowedStrings",
+      (key) =>
+        !numericKeys.includes(key) &&
+        key !== "allowedStrings" &&
+        key !== "referenceClass",
     )
+  )
+    return false;
+  const maximumEntries = value.maximumEntries;
+  if (
+    maximumEntries !== undefined &&
+    (typeof maximumEntries !== "number" ||
+      !Number.isSafeInteger(maximumEntries) ||
+      maximumEntries <= 0)
+  )
+    return false;
+  if (
+    value.referenceClass !== undefined &&
+    (typeof value.referenceClass !== "string" ||
+      !isRobloxClassAssignableTo(value.referenceClass, "Instance"))
   )
     return false;
   if (
@@ -4179,12 +4565,20 @@ function validPropertyConstraints(value: unknown): boolean {
 function materializeBuildContractChange(
   change: CreatorPlanChange,
   plan: CreatorPlan,
-  observation: StudioSnapshotObservation,
-  policies: Record<StudioWritableClass, CreatorPropertyPolicy>,
+  observation: StudioProjectState,
+  policies: Readonly<Record<string, CreatorPropertyPolicy>>,
 ): CreatorBuildContractChange {
   const identity = (suffix: string) =>
     `${suffix}_${contentHash(stableJson({ planHash: plan.hash, planChangeId: change.id })).slice(0, 24)}`;
   const operationId = identity("creator_operation");
+  const policyFor = (className: StudioWritableClass): CreatorPropertyPolicy => {
+    const policy = policies[className];
+    if (policy === undefined)
+      throw new Error(
+        `Creator build contract has no sealed policy for ${className}`,
+      );
+    return policy;
+  };
   if (change.kind === "create") {
     const parentPath = pathParent(change.path);
     const name = change.path.slice(parentPath.length + 1);
@@ -4197,7 +4591,7 @@ function materializeBuildContractChange(
       name,
       className: change.className,
       tempId: identity("creator_temp"),
-      propertyPolicy: policies[change.className],
+      propertyPolicy: policyFor(change.className),
     };
   }
   const sourcePath = change.kind === "move" ? change.fromPath : change.path;
@@ -4217,7 +4611,7 @@ function materializeBuildContractChange(
       expectedPath: change.path,
       expectedClass: change.expectedClass,
       beforeHash: contentHash(stableJson(instance)),
-      propertyPolicy: policies[change.expectedClass],
+      propertyPolicy: policyFor(change.expectedClass),
     };
   if (change.kind === "move") {
     const parentPath = pathParent(change.toPath);
@@ -4231,7 +4625,7 @@ function materializeBuildContractChange(
       beforeHash: contentHash(stableJson(instance)),
       parentPath,
       name: change.toPath.slice(parentPath.length + 1),
-      propertyPolicy: policies[change.expectedClass],
+      propertyPolicy: policyFor(change.expectedClass),
     };
   }
   if (change.kind === "delete")
@@ -4243,7 +4637,7 @@ function materializeBuildContractChange(
       expectedPath: change.path,
       expectedClass: change.expectedClass,
       beforeHash: contentHash(stableJson(instance)),
-      propertyPolicy: policies[change.expectedClass],
+      propertyPolicy: policyFor(change.expectedClass),
     };
   const script = observation.scripts.find(
     (entry) =>
@@ -4261,7 +4655,7 @@ function materializeBuildContractChange(
     expectedPath: change.path,
     expectedClass: change.expectedClass,
     beforeSourceHash: script.sourceHash,
-    propertyPolicy: policies[change.expectedClass],
+    propertyPolicy: policyFor(change.expectedClass),
   };
 }
 function contractInspectionPaths(change: CreatorBuildContractChange): string[] {
@@ -4425,25 +4819,81 @@ function normalizeCreatorPropertyInputs(
         throw new Error(
           `Property ${name} is not allowlisted; allowed properties: ${[...allowed.keys()].join(", ") || "none"}`,
         );
-      const value = normalizeCreatorPropertyInput(name, input);
-      if (!rule.valueTypes.includes(value.type))
+      const value = normalizeCreatorPropertyInput(name, input, rule);
+      if (!rule.valueKinds.includes(value.kind))
         throw new Error(
-          `Property ${name} requires ${rule.valueTypes.join(" or ")}, but its natural JSON shape resolved to ${value.type}`,
+          `Property ${name} requires ${rule.valueKinds.join(" or ")}, but its natural JSON shape resolved to ${value.kind}`,
         );
       return [name, value];
     }),
   );
 }
 
+/**
+ * Canonicalize one model-facing property value through the current generated
+ * authoring policy. This is useful to preflight tooling and keeps the model
+ * JSON vocabulary on the same codec path as staged creator changes.
+ */
+export function canonicalizeCreatorPropertyInput(input: {
+  className: StudioWritableClass;
+  propertyName: string;
+  value: CreatorPropertyInput;
+}): StudioValue {
+  const policy = creatorPropertyPolicies()[input.className];
+  const rule = policy.allowedProperties.find(
+    (candidate) => candidate.name === input.propertyName,
+  );
+  const manifestClass = STUDIO_CAPABILITY_MANIFEST.classes.find(
+    (candidate) => candidate.name === input.className,
+  );
+  const property = manifestClass?.properties.find(
+    (candidate) => candidate.name === input.propertyName,
+  );
+  if (rule === undefined || property === undefined)
+    throw new Error(
+      `Property ${input.className}.${input.propertyName} is outside the current proof-closed authoring manifest`,
+    );
+  const value = normalizeCreatorPropertyInput(
+    input.propertyName,
+    input.value,
+    rule,
+  );
+  assertStudioValueConstraints(input.propertyName, value, rule.constraints);
+  assertStudioValueForProperty(value, property);
+  return value;
+}
+
 function normalizeCreatorPropertyInput(
   name: string,
   input: CreatorPropertyInput,
+  rule: CreatorPropertyPolicy["allowedProperties"][number],
 ): StudioValue {
-  if (typeof input === "boolean") return { type: "boolean", value: input };
-  if (typeof input === "number")
-    return { type: "number", value: studioFloat(input) };
-  if (typeof input === "string") return { type: "string", value: input };
-  if ("position" in input) {
+  const expectedKind = rule.valueKinds[0]!;
+  if (input === null && expectedKind === "instance_ref") {
+    const expectedClass = rule.constraints?.referenceClass;
+    if (expectedClass === undefined)
+      throw new Error(`Property ${name} has no manifest Instance reference constraint`);
+    return canonicalStudioValue({ kind: expectedKind, state: "nil", expectedClass });
+  }
+  if (typeof input === "boolean" && expectedKind === "boolean") return { kind: "boolean", value: input };
+  if (typeof input === "number") {
+    if (expectedKind === "number_f32")
+      return canonicalStudioValue({ kind: expectedKind, value: input });
+    if (expectedKind === "number_f64")
+      return canonicalStudioValue({ kind: expectedKind, value: input });
+    if (expectedKind === "int32")
+      return canonicalStudioValue({ kind: expectedKind, value: input });
+  }
+  if (typeof input === "string") {
+    if (expectedKind === "enum_name") return { kind: expectedKind, value: input };
+    if (expectedKind === "string_utf8" || expectedKind === "content")
+      return { kind: expectedKind, value: input };
+    if (expectedKind === "int64_decimal")
+      return { kind: expectedKind, value: input };
+    if (expectedKind === "brick_color")
+      return { kind: expectedKind, name: input };
+  }
+  if (typeof input === "object" && input !== null && "position" in input && expectedKind === "cframe_f32x12") {
     const degrees = input.rotation;
     const x = (degrees.x * Math.PI) / 180;
     const y = (degrees.y * Math.PI) / 180;
@@ -4457,7 +4907,7 @@ function normalizeCreatorPropertyInput(
     const clean = (value: number): number =>
       studioFloat(Math.abs(value) < 1e-12 ? 0 : value);
     return {
-      type: "cframe",
+      kind: "cframe_f32x12",
       components: [
         clean(input.position.x),
         clean(input.position.y),
@@ -4474,20 +4924,198 @@ function normalizeCreatorPropertyInput(
       ],
     };
   }
-  if ("r" in input)
+  if (typeof input === "object" && input !== null && "r" in input && expectedKind === "color3_rgb8")
     return {
-      type: "color3",
+      kind: "color3_rgb8",
       r: studioColorChannel(input.r),
       g: studioColorChannel(input.g),
       b: studioColorChannel(input.b),
     };
-  if ("x" in input)
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "x" in input &&
+    "y" in input &&
+    !("z" in input) &&
+    typeof input.x === "number" &&
+    expectedKind === "vector2_f32"
+  )
+    return canonicalStudioValue({
+      kind: expectedKind,
+      x: input.x,
+      y: input.y as number,
+    });
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "x" in input &&
+    "y" in input &&
+    "z" in input &&
+    typeof input.x === "number" &&
+    typeof input.y === "number" &&
+    typeof input.z === "number" &&
+    expectedKind === "vector3_f32"
+  )
     return {
-      type: "vector3",
+      kind: "vector3_f32",
       x: studioFloat(input.x),
       y: studioFloat(input.y),
       z: studioFloat(input.z),
     };
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "scale" in input &&
+    expectedKind === "udim"
+  )
+    return canonicalStudioValue({
+      kind: expectedKind,
+      scale: input.scale,
+      offset: input.offset,
+    });
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "x" in input &&
+    "y" in input &&
+    typeof input.x === "object" &&
+    input.x !== null &&
+    typeof input.y === "object" &&
+    input.y !== null &&
+    expectedKind === "udim2"
+  )
+    return canonicalStudioValue({ kind: expectedKind, x: input.x, y: input.y });
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "min" in input &&
+    "max" in input &&
+    typeof input.min === "object" &&
+    input.min !== null &&
+    typeof input.max === "object" &&
+    input.max !== null &&
+    expectedKind === "rect"
+  )
+    return canonicalStudioValue({
+      kind: expectedKind,
+      minX: input.min.x,
+      minY: input.min.y,
+      maxX: input.max.x,
+      maxY: input.max.y,
+    });
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "min" in input &&
+    "max" in input &&
+    typeof input.min === "number" &&
+    expectedKind === "number_range"
+  )
+    return canonicalStudioValue({
+      kind: expectedKind,
+      min: input.min,
+      max: input.max as number,
+    });
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "keypoints" in input &&
+    expectedKind === "number_sequence"
+  )
+    return canonicalStudioValue({
+      kind: expectedKind,
+      keypoints: input.keypoints as readonly {
+        time: number;
+        value: number;
+        envelope: number;
+      }[],
+    });
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "keypoints" in input &&
+    expectedKind === "color_sequence"
+  )
+    return canonicalStudioValue({
+      kind: expectedKind,
+      keypoints: (input.keypoints as readonly {
+        time: number;
+        color: { r: number; g: number; b: number };
+      }[]).map((keypoint) => ({
+        time: keypoint.time,
+        color: {
+          r: studioColorChannel(keypoint.color.r),
+          g: studioColorChannel(keypoint.color.g),
+          b: studioColorChannel(keypoint.color.b),
+        },
+      })),
+    });
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "name" in input &&
+    expectedKind === "brick_color"
+  )
+    return { kind: expectedKind, name: input.name };
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "family" in input &&
+    expectedKind === "font"
+  )
+    return canonicalStudioValue({ kind: expectedKind, ...input });
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "density" in input &&
+    expectedKind === "physical_properties"
+  )
+    return canonicalStudioValue({ kind: expectedKind, ...input });
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "x" in input &&
+    typeof input.x === "boolean" &&
+    expectedKind === "axes"
+  )
+    return { kind: expectedKind, x: input.x, y: input.y, z: input.z };
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "top" in input &&
+    expectedKind === "faces"
+  )
+    return { kind: expectedKind, ...input };
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "origin" in input &&
+    expectedKind === "ray"
+  )
+    return canonicalStudioValue({ kind: expectedKind, ...input });
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "stableId" in input &&
+    expectedKind === "instance_ref"
+  ) {
+    const expectedClass = rule.constraints?.referenceClass;
+    if (
+      expectedClass === undefined ||
+      !isRobloxClassAssignableTo(input.className, expectedClass)
+    )
+      throw new Error(
+        `Property ${name} requires a stable reference assignable to ${expectedClass ?? "its manifest class"}`,
+      );
+    return canonicalStudioValue({
+      kind: expectedKind,
+      state: "reference",
+      stableId: input.stableId,
+      path: input.path,
+      className: input.className,
+      expectedClass,
+    });
+  }
   throw new Error(`Property ${name} has an unsupported natural JSON value`);
 }
 
@@ -4497,7 +5125,7 @@ function studioFloat(value: number): number {
 }
 
 function studioColorChannel(value: number): number {
-  return studioFloat(Math.round(value * 255) / 255);
+  return Math.round(value * 255);
 }
 function assertOperationMatchesPlan(
   operation: StudioChangeOperation,
@@ -4705,7 +5333,7 @@ function assertOperationCreativePayload(
 }
 function assertStudioChangeOperation(
   operation: StudioChangeOperation,
-  observation: StudioSnapshotObservation,
+  observation: StudioProjectState,
   ownership: StudioOwnershipMap,
 ): void {
   CHANGE_OPERATION_SCHEMA.parse(operation);
@@ -4724,6 +5352,11 @@ function assertStudioChangeOperation(
     if (isScriptClass(operation.className))
       assertRequiredSource(operation.source);
     assertProperties(operation.className, operation.properties);
+    assertInstanceReferenceProperties(
+      operation.properties,
+      observation,
+      ownership,
+    );
     assertAttributes(operation.attributes);
     return;
   }
@@ -4761,6 +5394,11 @@ function assertStudioChangeOperation(
     throw new Error("Studio instance precondition hash mismatch");
   if (operation.kind === "update") {
     assertProperties(operation.expectedClass, operation.properties);
+    assertInstanceReferenceProperties(
+      operation.properties,
+      observation,
+      ownership,
+    );
     assertAttributes(operation.attributes);
     assertRemovedAttributes(operation.removedAttributes);
     if (
@@ -4781,6 +5419,11 @@ function assertStudioChangeOperation(
     )
       throw new Error("Creator move destination already exists");
     assertProperties(operation.expectedClass, operation.properties);
+    assertInstanceReferenceProperties(
+      operation.properties,
+      observation,
+      ownership,
+    );
     assertAttributes(operation.attributes);
     assertRemovedAttributes(operation.removedAttributes);
     if (
@@ -4791,11 +5434,44 @@ function assertStudioChangeOperation(
       throw new Error("Updated attributes cannot be both set and removed");
   }
 }
+function assertInstanceReferenceProperties(
+  properties: Record<string, StudioValue>,
+  observation: StudioProjectState,
+  ownership: StudioOwnershipMap,
+): void {
+  for (const [propertyName, value] of Object.entries(properties)) {
+    if (value.kind !== "instance_ref") continue;
+    if (value.state === "nil") continue;
+    const observed = observation.instances.find(
+      (entry) => entry.stableId === value.stableId,
+    );
+    const owner = ownership.entries.find(
+      (entry) => entry.stableId === value.stableId,
+    );
+    if (
+      observed === undefined ||
+      owner?.owner !== "studio" ||
+      observed.path !== value.path ||
+      observed.className !== value.className ||
+      !isRobloxClassAssignableTo(value.className, value.expectedClass)
+    )
+      throw new Error(
+        `Property ${propertyName} requires an exact stable Studio-owned instance reference`,
+      );
+  }
+}
 function assertProperties(
   className: StudioWritableClass,
   properties: Record<string, StudioValue>,
 ): void {
   assertPropertiesWithPolicy(creatorPropertyPolicies()[className], properties);
+  const manifestClass = STUDIO_CAPABILITY_MANIFEST.classes.find((entry) => entry.name === className);
+  if (!manifestClass) throw new Error(`Class ${className} is outside the Studio capability manifest`);
+  for (const [name, value] of Object.entries(properties)) {
+    const property = manifestClass.properties.find((entry) => entry.name === name);
+    if (!property) throw new Error(`Property ${className}.${name} is outside the Studio capability manifest`);
+    assertStudioValueForProperty(value, property);
+  }
 }
 function assertPropertiesWithPolicy(
   policy: CreatorPropertyPolicy,
@@ -4810,9 +5486,9 @@ function assertPropertiesWithPolicy(
       throw new Error(
         `Property ${name} is not allowlisted; allowed properties: ${[...allowed.keys()].join(", ") || "none"}`,
       );
-    if (!rule.valueTypes.includes(value.type))
+    if (!rule.valueKinds.includes(value.kind))
       throw new Error(
-        `Property ${name} requires a typed ${rule.valueTypes.join(" or ")} value`,
+        `Property ${name} requires a typed ${rule.valueKinds.join(" or ")} value`,
       );
     assertStudioValueConstraints(name, value, rule.constraints);
   }
@@ -4822,21 +5498,20 @@ function assertStudioValueConstraints(
   value: StudioValue,
   constraints?: CreatorPropertyConstraints,
 ): void {
-  if (value.type === "color3")
+  assertStudioValue(value);
+  if (value.kind === "color3_rgb8")
     for (const channel of [value.r, value.g, value.b])
-      if (channel !== studioColorChannel(channel))
+      if (!Number.isInteger(channel) || channel < 0 || channel > 255)
         throw new Error(
           `Property ${name} requires canonical 8-bit Studio color channels`,
         );
   if (!constraints) return;
   const scalars =
-    value.type === "number"
+    value.kind === "number_f32"
       ? [value.value]
-      : value.type === "vector3"
+      : value.kind === "vector3_f32"
         ? [value.x, value.y, value.z]
-        : value.type === "color3"
-          ? [value.r, value.g, value.b]
-          : [];
+        : [];
   for (const scalar of scalars) {
     if (!Number.isFinite(scalar))
       throw new Error(`Property ${name} requires finite numeric values`);
@@ -4863,7 +5538,7 @@ function assertStudioValueConstraints(
         `Property ${name} exceeds its absolute bound ${constraints.maximumAbsolute}`,
       );
   }
-  if (value.type === "string") {
+  if (value.kind === "string_utf8" || value.kind === "enum_name") {
     if (
       constraints.maximumUtf8Bytes !== undefined &&
       Buffer.byteLength(value.value, "utf8") > constraints.maximumUtf8Bytes
@@ -4877,7 +5552,7 @@ function assertStudioValueConstraints(
         `Property ${name} must be one of: ${constraints.allowedStrings.join(", ")}`,
       );
   }
-  if (value.type === "cframe") {
+  if (value.kind === "cframe_f32x12") {
     value.components.forEach((component, index) => {
       if (!Number.isFinite(component))
         throw new Error(`Property ${name} requires finite CFrame components`);
@@ -4935,7 +5610,7 @@ function canonicalParentPath(value: string): string {
 }
 function assertWritableParent(
   value: string,
-  observation: StudioSnapshotObservation,
+  observation: StudioProjectState,
   ownership: StudioOwnershipMap,
 ): void {
   const path = canonicalParentPath(value);
@@ -5001,20 +5676,23 @@ function assertTransition(
     planning: ["awaiting_plan_approval", "incomplete"],
     awaiting_plan_approval: ["building", "creator_rejected", "incomplete"],
     building: ["awaiting_change_approval", "incomplete"],
-    awaiting_change_approval: ["applying", "creator_rejected", "incomplete"],
-    applying: ["awaiting_verification", "incomplete", "recovery_required"],
+    awaiting_change_approval: ["preflighting", "creator_rejected", "incomplete"],
+    preflighting: ["applying", "incomplete"],
+    applying: ["awaiting_verification", "cancelling", "incomplete", "recovery_required"],
     awaiting_verification: [
       "verifying",
-      "creator_rejected",
+      "creator_rejected", "cancelling",
       "incomplete",
       "recovery_required",
     ],
     verifying: [
-      "awaiting_review",
+      "committing", "cancelling",
       "repairing",
       "incomplete",
       "recovery_required",
     ],
+    cancelling: ["repairing", "creator_rejected", "incomplete", "recovery_required"],
+    committing: ["awaiting_review", "recovery_required"],
     repairing: ["awaiting_change_approval", "incomplete"],
     awaiting_review: [
       "creator_accepted",
@@ -5026,7 +5704,7 @@ function assertTransition(
     creator_rejected: ["rolled_back"],
     rolled_back: [],
     incomplete: [],
-    recovery_required: [],
+    recovery_required: ["cancelling"],
   };
   if (!allowed[from].includes(to))
     throw new Error(`Invalid CreatorSession transition ${from} -> ${to}`);
@@ -5039,9 +5717,12 @@ function isStatus(value: unknown): value is CreatorSessionStatus {
       "awaiting_plan_approval",
       "building",
       "awaiting_change_approval",
+      "preflighting",
       "applying",
       "awaiting_verification",
       "verifying",
+      "cancelling",
+      "committing",
       "repairing",
       "awaiting_review",
       "creator_accepted",
@@ -5081,9 +5762,9 @@ function correctiveFailure(
 }
 
 export const CREATOR_PLANNER_SYSTEM_PROMPT =
-  "You are Forge's read-only creator planner. Use studio.inspect for exact initial paths whose properties, attributes, position, ownership, or script hashes matter, then publish one typed plan and visible charter with creator.propose_plan. Explicitly declare the exact already-inspected inspectionPaths the builder will need for relationships, placement, integration, or preservation; do not rely on prose inference. Forge derives the plan goal exactly from the immutable creator request: never restate, weaken, or replace it. Each step must bind exact changeIds and the steps must cover every change once. Each change requires an exact path, action, class, and initialization. Every create and move parent must already exist in the initial snapshot and be Studio-writable; a planned instance cannot parent another planned instance. Script, LocalScript, and ModuleScript creation uses initialization inline_source_required: the builder supplies complete source inside that one create operation. write_source only targets a script present in the initial snapshot; never use it for a planned creation. Non-script creation uses initial_properties. Supply only typed fields for machine checks because Forge generates their exact statements. Every create or move output requires an exact class-aware instance_exists check. Any source-bearing plan requires luau_syntax. instance_exists can use an allowlisted Studio root; position_series is Workspace BasePart-only; playtest diagnostics count the complete playtest rather than attributable messages; subtree_unchanged is only a bounded snapshot comparison. Put visual quality and unsupported gameplay judgments in creator_review. Do not stage changes or invent hidden criteria.";
+  "You are Forge's read-only creator planner. Use studio.inspect for exact initial paths whose properties, attributes, position, ownership, or script hashes matter, then publish one typed plan and visible charter with creator.propose_plan. Explicitly declare the exact already-inspected inspectionPaths the builder will need for relationships, placement, integration, or preservation; do not rely on prose inference. Forge derives the plan goal exactly from the immutable creator request: never restate, weaken, or replace it. Each step must bind exact changeIds and the steps must cover every change once. Each change requires an exact path, action, class, and initialization. Every create and move parent must already exist in the initial snapshot and be Studio-writable; a planned instance cannot parent another planned instance. Script, LocalScript, and ModuleScript creation uses initialization inline_source_required: the builder supplies complete source inside that one create operation. write_source only targets a script present in the initial snapshot; never use it for a planned creation. Non-script creation uses initial_properties. Supply only typed fields for machine checks because Forge generates their exact statements. Every create or move output requires an exact class-aware instance_exists check. Any source-bearing plan requires luau_syntax. instance_exists can use an allowlisted Studio root; position_series is Workspace BasePart-only and every creator position series must span at least 15000 ms while all sequential series remain within the 20000 ms manifest budget, so creator interaction can occur during the authoritative Play Solo window. Playtest diagnostics count the complete playtest rather than attributable messages; subtree_unchanged is only a bounded snapshot comparison. Put visual quality, causal attribution, exact input-to-effect claims, and unsupported gameplay judgments in creator_review. Do not stage changes or invent hidden criteria.";
 export const CREATOR_BUILDER_SYSTEM_PROMPT =
-  "You are Forge's bounded Studio builder. The exact immutable CreatorBuildContract is supplied below. It already fixes each operation's kind, path, parent, name, class, stable ID, precondition hashes, temporary ID, and operation ID. Never repeat or invent structural fields. Use studio.inspect only with explicit contract initial paths. For an approved write_source change, use studio.read_source to read its bounded current source before authoring the complete replacement. Use studio.stage with only a planChangeId plus the permitted creative payload. Property inputs use natural JSON without type/value wrappers: booleans, numbers, strings, Vector3 {x,y,z}, Color3 {r,g,b} with channels from 0 to 1, and CFrame {position:{x,y,z},rotation:{x,y,z}} with Euler degrees. Implement every contract change exactly once, inspect the diff, and run forge.verify. The contract's per-class property policy is authoritative. A source-required change needs complete non-empty inline source. Never use arbitrary execution, generic property access, assets, terrain, or externally owned Rojo targets. The live place is not mutated until the creator separately approves the sealed change set.";
+  "You are Forge's bounded Studio builder. The exact immutable CreatorBuildContract is supplied below. It already fixes each operation's kind, path, parent, name, class, stable ID, precondition hashes, temporary ID, and operation ID. Never repeat or invent structural fields. Use studio.inspect only with explicit contract initial paths. For an approved write_source change, use studio.read_source to read its bounded current source before authoring the complete replacement. Use studio.stage with only a planChangeId plus the permitted creative payload. Property inputs use natural JSON without type/value wrappers; follow each sealed property's required codec. Scalars are booleans, finite numbers, or strings. Compound inputs use Vector2 {x,y}, Vector3 {x,y,z}, Color3 {r,g,b} in 0..1, CFrame {position:{x,y,z},rotation:{x,y,z}} in Euler degrees, UDim {scale,offset}, UDim2 {x:{scale,offset},y:{scale,offset}}, Rect {min:{x,y},max:{x,y}}, NumberRange {min,max}, sequences {keypoints:[...]}, BrickColor {name}, Font {family,weight,style}, PhysicalProperties, Axes, Faces, Ray {origin,direction}, or stable instance reference {stableId,path,className}. Implement every contract change exactly once, inspect the diff, and run forge.verify. The contract's per-class property policy is authoritative. A source-required change needs complete non-empty inline source. Never use arbitrary execution, generic property access, unapproved content IDs, terrain, or externally owned Rojo targets. The live place is not mutated until the creator separately approves the sealed change set.";
 
 export function creatorBuilderSystemPrompt(
   plan: CreatorPlan,

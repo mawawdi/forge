@@ -1,18 +1,20 @@
 --!strict
-local EncodingService = game:GetService("EncodingService")
-
 local Hash = {}
+
+local function encodingService()
+	return game:GetService("EncodingService")
+end
 
 function Hash.available(): boolean
 	local ok, digest = pcall(function()
-		return EncodingService:ComputeStringHash("forge-capability-probe", Enum.HashAlgorithm.Sha256)
+		return encodingService():ComputeStringHash("forge-capability-probe", Enum.HashAlgorithm.Sha256)
 	end)
 	return ok and typeof(digest) == "string" and #digest == 32
 end
 
 function Hash.sha256(value: string): string
 	local ok, digest = pcall(function()
-		return EncodingService:ComputeStringHash(value, Enum.HashAlgorithm.Sha256)
+		return encodingService():ComputeStringHash(value, Enum.HashAlgorithm.Sha256)
 	end)
 	if not ok or typeof(digest) ~= "string" or #digest ~= 32 then
 		error("Forge requires EncodingService SHA-256 support: " .. tostring(digest))

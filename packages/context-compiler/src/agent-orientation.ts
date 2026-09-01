@@ -1,6 +1,7 @@
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 import type { RequirementView } from "../../semantic-authority/src/index.js";
-import type { ProjectSemanticMap, StudioSnapshotObservation } from "../../semantic-map/src/index.js";
+import type { ProjectSemanticMap } from "../../semantic-map/src/index.js";
+import type { StudioProjectState } from "../../studio-evidence/src/index.js";
 
 export type OrientationMode = "registered_experiment" | "creator_session";
 
@@ -29,7 +30,7 @@ export interface CreatorOrientationContent {
   mode: "creator_session";
   projectId: string;
   sourceRoots: [];
-  project: StudioSnapshotObservation["project"];
+  project: StudioProjectState["project"];
   revisionHash: string;
   instances: Array<{ stableId: string; path: string; className: string; owner: "studio" | "external_rojo"; position?: { x: number; y: number; z: number } }>;
   scripts: Array<{ stableId: string; path: string; executionContext: string; sourceHash: string; owner: "studio" | "external_rojo" }>;
@@ -74,15 +75,15 @@ export function compileAgentOrientation(input: { semanticMap: ProjectSemanticMap
   return orientation("registered_experiment", input.projectSnapshotHash, content, input.requirementView.id);
 }
 
-export function compileCreatorOrientation(input: { observation: StudioSnapshotObservation; revisionHash: string; projectId: string; ownership: ReadonlyMap<string, "studio" | "external_rojo">; allowedClasses: readonly string[]; resolvableClasses: readonly string[] }): AgentOrientation {
+export function compileCreatorOrientation(input: { state: StudioProjectState; revisionHash: string; projectId: string; ownership: ReadonlyMap<string, "studio" | "external_rojo">; allowedClasses: readonly string[]; resolvableClasses: readonly string[] }): AgentOrientation {
   const content: CreatorOrientationContent = {
     mode: "creator_session",
     projectId: input.projectId,
     sourceRoots: [],
-    project: { ...input.observation.project },
+    project: { ...input.state.project },
     revisionHash: input.revisionHash,
-    instances: input.observation.instances.map((instance) => ({ stableId: instance.stableId, path: instance.path, className: instance.className, owner: input.ownership.get(instance.stableId) ?? "studio", ...(instance.position ? { position: { ...instance.position } } : {}) })).sort((left, right) => left.path.localeCompare(right.path) || left.stableId.localeCompare(right.stableId)),
-    scripts: input.observation.scripts.map((script) => ({ stableId: script.stableId, path: script.path, executionContext: script.executionContext, sourceHash: script.sourceHash, owner: input.ownership.get(script.stableId) ?? "studio" })).sort((left, right) => left.path.localeCompare(right.path) || left.stableId.localeCompare(right.stableId)),
+    instances: input.state.instances.map((instance) => ({ stableId: instance.stableId, path: instance.path, className: instance.className, owner: input.ownership.get(instance.stableId) ?? "studio", ...(instance.position ? { position: { ...instance.position } } : {}) })).sort((left, right) => left.path.localeCompare(right.path) || left.stableId.localeCompare(right.stableId)),
+    scripts: input.state.scripts.map((script) => ({ stableId: script.stableId, path: script.path, executionContext: script.executionContext, sourceHash: script.sourceHash, owner: input.ownership.get(script.stableId) ?? "studio" })).sort((left, right) => left.path.localeCompare(right.path) || left.stableId.localeCompare(right.stableId)),
     studioAuthoring: {
       writableOwner: "studio",
       allowedClasses: [...input.allowedClasses].sort(),

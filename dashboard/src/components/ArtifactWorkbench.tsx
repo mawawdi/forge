@@ -28,11 +28,29 @@ export function ArtifactWorkbench({ controlView }: ArtifactWorkbenchProps): Reac
           <ArtifactCard key={artifact.artifactHash} label={label} artifact={artifact} onOpen={setSelectedArtifact} />
         ))}
       </div>
+      <MutationSummary controlView={controlView} />
       <VerificationSummary controlView={controlView} />
       {selectedArtifact ? (
         <Suspense fallback={<div className="raw-evidence-loading">Loading immutable evidence…</div>}>
           <RawArtifactViewer artifact={selectedArtifact} onClose={() => setSelectedArtifact(undefined)} />
         </Suspense>
+      ) : null}
+    </section>
+  );
+}
+
+function MutationSummary({ controlView }: { controlView: CreatorControlView }): React.JSX.Element | null {
+  const mutation = controlView.mutation;
+  if (!mutation) return null;
+  return (
+    <section className={`verification-summary verification-summary--${mutation.status}`} aria-label="Mutation evidence summary">
+      <div>
+        <p className="eyebrow">Transactional mutation proof</p>
+        <strong>{mutation.status.replaceAll("_", " ")}</strong>
+        <span>{mutation.projectionFactCount} projected facts · {mutation.replayable ? "Provider-free replay available" : "Evidence is explicitly incomplete"}</span>
+      </div>
+      {mutation.failureFacts.length > 0 ? (
+        <ul>{mutation.failureFacts.map((fact) => <li key={fact.hash}>{fact.statement}</li>)}</ul>
       ) : null}
     </section>
   );
@@ -90,6 +108,7 @@ function ChangePresentation({ value }: { value: Record<string, unknown> }): Reac
   const gate = isRecord(value.localGate) ? value.localGate : {};
   const operations = records(value.operations);
   const sourceDiffs = records(value.sourceDiffs);
+  const proofObligations = records(value.proofObligations);
   return (
     <section className="review-presentation" aria-label="Change review evidence">
       <div className="review-presentation__header">
@@ -108,6 +127,18 @@ function ChangePresentation({ value }: { value: Record<string, unknown> }): Reac
           </article>
         ))}
       </div>
+      {proofObligations.length > 0 ? (
+        <section className="proof-obligations" aria-label="Projected mutation proof obligations">
+          <h4>Direct readback obligations</h4>
+          <p>These exact expected facts are bound into this review before Studio may open a recording.</p>
+          <ul>{proofObligations.map((obligation, index) => (
+            <li key={`${textValue(obligation.fact, "fact")}-${index}`}>
+              <strong>{textValue(obligation.fact, "Mutation fact")}</strong>
+              <code>{textValue(obligation.expected, "observed")}</code>
+            </li>
+          ))}</ul>
+        </section>
+      ) : null}
       {sourceDiffs.map((diff, index) => (
         <div className="source-diff" key={textValue(diff.path, String(index))}>
           <strong>{textValue(diff.path, "Source diff")}</strong>
@@ -218,8 +249,16 @@ function artifactEntries(controlView: CreatorControlView | undefined): Array<[st
     ["prompt", "Creator request"],
     ["plan", "Plan & charter"],
     ["changeSet", "Exact change set"],
+    ["capabilityManifest", "Studio capability manifest"],
+    ["capabilityAttestation", "Studio capability attestation"],
+    ["mutationProjection", "Mutation evidence projection"],
+    ["mutationPreflight", "Detached mutation preflight"],
+    ["mutationReadback", "Direct Studio readback"],
+    ["projectState", "Projected Studio state"],
+    ["mutationReconciliation", "Mutation reconciliation"],
+    ["mutationFinalization", "Mutation finalization"],
     ["studioExecutionPlan", "Studio execution plan"],
-    ["runtimeObservation", "Runtime observation"],
+    ["runtimeEvidence", "Runtime evidence"],
     ["verification", "Verification result"],
     ["reviewReport", "Creator review report"],
     ["agentRun", "Agent run"],

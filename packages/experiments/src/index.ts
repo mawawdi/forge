@@ -18,10 +18,10 @@ import { contentHash, stableJson } from "../../contracts/src/index.js";
 import {
   assertRuntimeEvalDefinition,
   assertRuntimeEvaluatorConfiguration,
-  STUDIO_CAPABILITY_SET,
   type RuntimeEvalDefinition,
   type RuntimeEvaluatorConfiguration
 } from "../../studio-capabilities/src/index.js";
+import { STUDIO_CAPABILITY_MANIFEST_HASH } from "../../studio-evidence/src/index.js";
 import {
   assertAcceptanceSpec,
   assertAcceptanceSpecReferences,
@@ -63,7 +63,7 @@ export interface ExperimentRegistration {
     runtimeEvaluatorConfiguration: RuntimeEvaluatorConfiguration;
   };
   expected: ExperimentRegistrationBinding["expected"];
-  studio: { capabilitySetId: string; capabilitySetHash: string };
+  studio: { manifestHash: string };
   policy: { providerAdmission: "single_valid_provider_envelope"; studioAdmission: "single_runtime_start"; execution: "creator_triggered_play_solo" };
 }
 
@@ -147,7 +147,7 @@ export async function registerExperiment(input: RegisterExperimentInput): Promis
         harnessConfigurationId: prepared.configuration.id,
         harnessConfigurationHash: prepared.configuration.hash
       },
-      studio: { capabilitySetId: STUDIO_CAPABILITY_SET.id, capabilitySetHash: STUDIO_CAPABILITY_SET.hash },
+      studio: { manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH },
       policy: { providerAdmission: "single_valid_provider_envelope", studioAdmission: "single_runtime_start", execution: "creator_triggered_play_solo" }
     };
     return createExperimentRegistration(payload);
@@ -176,9 +176,9 @@ export function assertExperimentRegistration(value: unknown): asserts value is E
   const builder = resolveRequirementView(value.artifacts.requirementSet, { phase: "build", environment: "benchmark", audience: "builder" });
   const evaluator = resolveRequirementView(value.artifacts.requirementSet, { phase: "evaluate", environment: "benchmark", audience: "evaluator" });
   if (value.artifacts.builderViewId !== builder.id || value.artifacts.builderViewHash !== contentHash(stableJson(builder)) || value.artifacts.evaluatorViewId !== evaluator.id || value.artifacts.evaluatorViewHash !== contentHash(stableJson(evaluator))) throw new Error("ExperimentRegistration requirement-view identity mismatch");
-  if (value.artifacts.runtimeEvalDefinition.requirementSetId !== value.artifacts.requirementSet.id || value.artifacts.runtimeEvalDefinition.evaluatorViewId !== evaluator.id || value.artifacts.runtimeEvalDefinition.evaluatorViewHash !== contentHash(stableJson(evaluator)) || value.artifacts.runtimeEvalDefinition.acceptanceSpecId !== value.artifacts.acceptanceSpec.id || value.artifacts.runtimeEvalDefinition.capabilitySetId !== STUDIO_CAPABILITY_SET.id || value.artifacts.runtimeEvalDefinition.capabilitySetHash !== STUDIO_CAPABILITY_SET.hash) throw new Error("ExperimentRegistration runtime definition mismatch");
+  if (value.artifacts.runtimeEvalDefinition.requirementSetId !== value.artifacts.requirementSet.id || value.artifacts.runtimeEvalDefinition.evaluatorViewId !== evaluator.id || value.artifacts.runtimeEvalDefinition.evaluatorViewHash !== contentHash(stableJson(evaluator)) || value.artifacts.runtimeEvalDefinition.acceptanceSpecId !== value.artifacts.acceptanceSpec.id || value.artifacts.runtimeEvalDefinition.manifestHash !== STUDIO_CAPABILITY_MANIFEST_HASH) throw new Error("ExperimentRegistration runtime definition mismatch");
   if (value.artifacts.runtimeEvaluatorConfiguration.runtimeEvalDefinitionId !== value.artifacts.runtimeEvalDefinition.id || value.artifacts.runtimeEvaluatorConfiguration.runtimeEvalDefinitionHash !== value.artifacts.runtimeEvalDefinition.hash) throw new Error("ExperimentRegistration evaluator configuration mismatch");
-  if (!isHash(value.seed.hash) || !isCanonicalRoots(value.seed.sourceRoots) || stableJson(value.seed) !== stableJson({ hash: value.expected.seedHash, sourceRoots: value.expected.sourceRoots }) || !isExpected(value.expected) || value.studio.capabilitySetId !== STUDIO_CAPABILITY_SET.id || value.studio.capabilitySetHash !== STUDIO_CAPABILITY_SET.hash || value.policy.providerAdmission !== "single_valid_provider_envelope" || value.policy.studioAdmission !== "single_runtime_start" || value.policy.execution !== "creator_triggered_play_solo") throw new Error("ExperimentRegistration treatment mismatch");
+  if (!isHash(value.seed.hash) || !isCanonicalRoots(value.seed.sourceRoots) || stableJson(value.seed) !== stableJson({ hash: value.expected.seedHash, sourceRoots: value.expected.sourceRoots }) || !isExpected(value.expected) || value.studio.manifestHash !== STUDIO_CAPABILITY_MANIFEST_HASH || value.policy.providerAdmission !== "single_valid_provider_envelope" || value.policy.studioAdmission !== "single_runtime_start" || value.policy.execution !== "creator_triggered_play_solo") throw new Error("ExperimentRegistration treatment mismatch");
   if (!isModel(value.model) || stableJson(value).includes("OPENROUTER_API_KEY") || stableJson(value).includes("apiKey")) throw new Error("ExperimentRegistration must not contain secrets");
   const { kind: _kind, id: _id, hash: _hash, ...payload } = value;
   const canonical = canonicalRegistration(payload as Omit<ExperimentRegistration, "kind" | "id" | "hash">);

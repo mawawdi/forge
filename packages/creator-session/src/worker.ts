@@ -5,7 +5,7 @@ import {
   type BudgetPolicy,
 } from "../../agent-runtime/src/index.js";
 import { ImmutableJsonArtifactStore } from "../../artifact-store/src/index.js";
-import type { StudioSnapshotObservation } from "../../semantic-map/src/index.js";
+import type { StudioProjectState } from "../../studio-evidence/src/index.js";
 import {
   creatorOrientation,
   runCreatorBuilder,
@@ -25,14 +25,14 @@ export interface CreatorAgentWorker {
   plan(input: {
     session: CreatorSession;
     ownership: StudioOwnershipMap;
-    observation: StudioSnapshotObservation;
+    observation: StudioProjectState;
     prompt: string;
     budgets: BudgetPolicy;
   }): Promise<CreatorWorkerPlanResult>;
   build(input: {
     session: CreatorSession;
     ownership: StudioOwnershipMap;
-    observation: StudioSnapshotObservation;
+    observation: StudioProjectState;
     prompt: string;
     plan: CreatorPlan;
     planApproval: CreatorApproval;
@@ -82,7 +82,7 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
   async plan(input: {
     session: CreatorSession;
     ownership: StudioOwnershipMap;
-    observation: StudioSnapshotObservation;
+    observation: StudioProjectState;
     prompt: string;
     budgets: BudgetPolicy;
   }): Promise<CreatorWorkerPlanResult> {
@@ -148,7 +148,7 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
   async build(input: {
     session: CreatorSession;
     ownership: StudioOwnershipMap;
-    observation: StudioSnapshotObservation;
+    observation: StudioProjectState;
     prompt: string;
     plan: CreatorPlan;
     planApproval: CreatorApproval;

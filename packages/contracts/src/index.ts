@@ -120,8 +120,8 @@ export interface BuildTrace {
     workspaceCandidateArtifactHash?: Hash;
     runtimeEvalPlanId?: ID;
     runtimeEvalPlanHash?: Hash;
-    studioCapabilitySetId?: ID;
-    studioCapabilitySetHash?: Hash;
+    studioManifestHash?: Hash;
+    studioEvidenceProjectionHash?: Hash;
     runtimeEvaluatorConfigurationId?: ID;
     runtimeEvaluatorConfigurationHash?: Hash;
     runtimeEvaluationRunId?: ID;
