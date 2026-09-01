@@ -1,9 +1,7 @@
-import { contentHash, stableJson } from "../../contracts/src/index.js";
+import { contentHash } from "../../contracts/src/index.js";
 import {
   assertCreatorChangeSet,
-  assertCreatorControlView,
   serializeCreatorChangeSet,
-  type CreatorControlActionId,
 } from "../../creator-session/src/index.js";
 import {
   assertStudioSnapshotObservation,
@@ -29,8 +27,6 @@ export type PluginMessageType =
   | "RuntimeEvalStarted"
   | "RuntimeEvalResult"
   | "RuntimeEvalStopped"
-  | "CreatorPromptSubmitted"
-  | "CreatorControlActionRequested"
   | "CreatorChangePrepared"
   | "CreatorChangeApplied"
   | "CreatorChangeFinalized"
@@ -40,7 +36,6 @@ export type PluginMessageType =
 export type BackendMessageType =
   | "RequestObservation"
   | "ExecuteRuntimeEvalPlan"
-  | "PresentCreatorControlView"
   | "PrepareCreatorChangeSet"
   | "ApplyCreatorChangeSet"
   | "FinalizeCreatorChangeSet"
@@ -59,8 +54,7 @@ export type StudioCapability =
   | "http_polling"
   | "bounded_diagnostics"
   | "runtime_eval"
-  | "studio_authoring"
-  | "creator_control";
+  | "studio_authoring";
 
 export interface PairProjectPayload {
   pairingToken: string;
@@ -155,16 +149,6 @@ export interface RuntimeEvalLifecyclePayload {
 }
 export type RuntimeEvalResultPayload = RuntimeObservationEnvelope;
 
-export interface CreatorPromptSubmittedPayload {
-  prompt: string;
-}
-export interface CreatorControlActionRequestedPayload {
-  creatorSessionId: string;
-  viewId: string;
-  viewHash: string;
-  actionId: CreatorControlActionId;
-  note?: string;
-}
 export interface CreatorChangeLifecyclePayload {
   creatorSessionId: string;
   changeSetId: string;
@@ -178,10 +162,6 @@ export interface CreatorChangeLifecyclePayload {
     "prepared" | "applied" | "committed" | "cancelled" | "recovery_required";
 }
 
-export interface PresentCreatorControlViewPayload {
-  viewJson: string;
-  viewJsonHash: string;
-}
 export interface PrepareCreatorChangeSetPayload {
   requestId: string;
   creatorSessionId: string;
@@ -277,16 +257,6 @@ export type PluginToBackendMessage =
     >
   | StudioMessageBase<
       "plugin_to_backend",
-      "CreatorPromptSubmitted",
-      CreatorPromptSubmittedPayload
-    >
-  | StudioMessageBase<
-      "plugin_to_backend",
-      "CreatorControlActionRequested",
-      CreatorControlActionRequestedPayload
-    >
-  | StudioMessageBase<
-      "plugin_to_backend",
       "CreatorChangePrepared",
       CreatorChangeLifecyclePayload
     >
@@ -318,11 +288,6 @@ export type BackendToPluginMessage =
       "backend_to_plugin",
       "ExecuteRuntimeEvalPlan",
       ExecuteRuntimeEvalPlanPayload
-    >
-  | StudioMessageBase<
-      "backend_to_plugin",
-      "PresentCreatorControlView",
-      PresentCreatorControlViewPayload
     >
   | StudioMessageBase<
       "backend_to_plugin",
@@ -363,8 +328,6 @@ const PLUGIN_MESSAGE_TYPES = new Set<PluginMessageType>([
   "RuntimeEvalStarted",
   "RuntimeEvalResult",
   "RuntimeEvalStopped",
-  "CreatorPromptSubmitted",
-  "CreatorControlActionRequested",
   "CreatorChangePrepared",
   "CreatorChangeApplied",
   "CreatorChangeFinalized",
@@ -375,7 +338,6 @@ const PLUGIN_MESSAGE_TYPES = new Set<PluginMessageType>([
 const BACKEND_MESSAGE_TYPES = new Set<BackendMessageType>([
   "RequestObservation",
   "ExecuteRuntimeEvalPlan",
-  "PresentCreatorControlView",
   "PrepareCreatorChangeSet",
   "ApplyCreatorChangeSet",
   "FinalizeCreatorChangeSet",
@@ -391,7 +353,6 @@ const CAPABILITIES: readonly StudioCapability[] = [
   "bounded_diagnostics",
   "runtime_eval",
   "studio_authoring",
-  "creator_control",
 ];
 
 export function assertStudioProtocolMessage(
@@ -556,46 +517,12 @@ function validatePayload(type: string, payload: Record<string, unknown>): void {
     assertRuntimeObservationEnvelope(payload);
     return;
   }
-  if (type === "CreatorPromptSubmitted") {
-    if (
-      !isString(payload.prompt) ||
-      payload.prompt.trim().length === 0 ||
-      payload.prompt.length > 16_000
-    )
-      throw new Error("Invalid CreatorPromptSubmitted payload");
-    return;
-  }
-  if (type === "CreatorControlActionRequested") {
-    if (
-      !isId(payload.creatorSessionId) ||
-      !isId(payload.viewId) ||
-      !isHash(payload.viewHash) ||
-      ![
-        "approve_plan",
-        "reject_plan",
-        "approve_and_apply_changes",
-        "reject_changes",
-        "start_checks",
-        "accept_result",
-        "reject_and_rollback",
-        "cancel_changes",
-      ].includes(String(payload.actionId)) ||
-      (payload.note !== undefined &&
-        (!isString(payload.note) || payload.note.length > 4096))
-    )
-      throw new Error("Invalid CreatorControlActionRequested payload");
-    return;
-  }
   if (
     type === "CreatorChangePrepared" ||
     type === "CreatorChangeApplied" ||
     type === "CreatorChangeFinalized"
   ) {
     assertCreatorLifecycle(payload);
-    return;
-  }
-  if (type === "PresentCreatorControlView") {
-    assertPresentCreatorControlView(payload);
     return;
   }
   if (type === "PrepareCreatorChangeSet") {
@@ -686,27 +613,6 @@ function assertExecuteRuntimeEvalPlanPayload(
   )
     throw new Error(
       "ExecuteRuntimeEvalPlan start policy does not match its purpose",
-    );
-}
-function assertPresentCreatorControlView(
-  payload: Record<string, unknown>,
-): void {
-  if (
-    !isString(payload.viewJson) ||
-    !isHash(payload.viewJsonHash) ||
-    contentHash(payload.viewJson) !== payload.viewJsonHash
-  )
-    throw new Error("Invalid PresentCreatorControlView payload");
-  let view: unknown;
-  try {
-    view = JSON.parse(payload.viewJson);
-  } catch {
-    throw new Error("Creator control view is not JSON");
-  }
-  assertCreatorControlView(view);
-  if (stableJson(view) !== payload.viewJson)
-    throw new Error(
-      "PresentCreatorControlView requires its exact canonical view",
     );
 }
 function assertPrepareChangeSet(payload: Record<string, unknown>): void {

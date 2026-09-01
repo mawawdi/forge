@@ -27,7 +27,7 @@ const execFile = promisify(execFileCallback);
 
 const HASH = contentHash("studio-capability-test");
 const SESSION: StudioBridgeSession = {
-  sessionId: "session_runtime", projectId: "project_runtime", project: { name: "MovingPlatform", placeId: 0, universeId: 0 }, capabilities: ["snapshot", "snapshot_chunks", "sha256", "stable_identity", "studio_play_mode", "http_polling", "bounded_diagnostics", "runtime_eval", "studio_authoring", "creator_control"], sessionToken: "private", connectedAt: "2026-08-30T00:00:00.000Z"
+  sessionId: "session_runtime", projectId: "project_runtime", project: { name: "MovingPlatform", placeId: 0, universeId: 0 }, capabilities: ["snapshot", "snapshot_chunks", "sha256", "stable_identity", "studio_play_mode", "http_polling", "bounded_diagnostics", "runtime_eval", "studio_authoring"], sessionToken: "private", connectedAt: "2026-08-30T00:00:00.000Z"
 };
 
 const TARGETS = [

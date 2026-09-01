@@ -6,13 +6,16 @@ Forge has one current clean-break artifact and message shape. `kind` discriminat
 
 ## Current implementation
 
-The primary product path is prompt-only and Studio-native. The creator supplies one prompt against the open place. Forge first produces a read-only plan and fully visible verification charter. Only after the creator approves that exact hash does a separate builder stage a typed change set. Studio remains the only persistent writer.
+The primary product path is prompt-only and Studio-native, with creator control in a local React dashboard. The creator supplies one prompt against the open place. Forge first produces a read-only plan and fully visible verification charter. Only after the creator approves that exact hash does a separate builder stage a typed change set. Studio remains the only persistent writer.
 
 Registered experiments remain a separate benchmark path. They use file-backed seeds and evaluator-only material to produce scoped evidence; those task JSON files are not product inputs for an ordinary creator session.
 
 ```mermaid
 flowchart TB
-    creator[Creator in Studio] --> prompt[One creator prompt]
+    creator[Creator in local dashboard] --> prompt[One creator prompt]
+    dashboard[React evidence workbench] --> control_server[Loopback CreatorControlServer]
+    creator --> dashboard
+    control_server --> coordinator
     studio[Open Studio place] --> snapshot[Bounded Studio snapshot]
     snapshot --> ownership[Studio ownership map]
     rojo[Optional declared Rojo roots] -. exclusion zones .-> ownership
@@ -28,7 +31,8 @@ flowchart TB
         planner --> closure[Executable plan closure: exact prompt, initialization, output checks, source syntax]
         closure --> plan[Typed CreatorPlan and generated visible VerificationCharter]
         plan --> control[Canonical CreatorControlView]
-        control --> plan_approval{Creator approves exact hash?}
+        control --> dashboard
+        dashboard --> plan_approval{Creator approves exact hash?}
         plan_approval -->|yes| build_contract[Content-addressed CreatorBuildContract]
         build_contract --> builder[Separate builder AgentRun in same worker seam]
         builder --> source_read[Contract-scoped existing source read]
@@ -42,10 +46,11 @@ flowchart TB
         apply --> observe[Post-apply snapshot]
         observe --> verify[One creator action arms and starts exact visible charter checks]
         verify --> diagnostics[Runtime facts and bounded diagnostics]
-        diagnostics --> decision{Checks pass?}
+        diagnostics --> replayable[Persist plan and complete runtime evidence]
+        replayable --> decision{Checks pass?}
         decision -->|no| cancel[Cancel recording or bounded repair]
         decision -->|yes| checkpoint[Commit guarded checkpoint]
-        checkpoint --> review{Creator final review}
+        checkpoint --> review{Creator final report and decision}
         review -->|accept| accepted[Creator accepted]
         review -->|reject| rollback[Revision-guarded Studio undo]
     end
@@ -66,6 +71,7 @@ flowchart TB
     builder --> evidence
     unsealed --> evidence
     verify --> evidence
+    replayable --> evidence
     grader --> evidence
     evaluator -. never reaches creator planner or builder .-> planner
     evaluator -. never enters Studio .-> apply
@@ -78,14 +84,17 @@ The two paths share the native model runtime, Studio bridge, factual observation
 ```mermaid
 sequenceDiagram
     actor Creator
+    participant Dashboard as Local React dashboard
+    participant Control as CreatorControlServer
     participant Plugin as Thin Studio connector
     participant Forge as Creator coordinator
     participant Worker as LocalCreatorAgentWorker
     participant Model as Native planner or builder
     participant Studio as Live Studio place
 
-    Creator->>Plugin: Enter one prompt
-    Plugin->>Forge: Prompt plus authenticated project session
+    Creator->>Dashboard: Enter one prompt
+    Dashboard->>Control: Hash-bound CreatorControlAction
+    Control->>Forge: Authenticated action
     Forge->>Studio: Request fresh bounded snapshot
     Forge->>Worker: Immutable phase input and worker descriptor
     Worker->>Model: Prompt, catalog, ownership, authoring constraints
@@ -94,8 +103,8 @@ sequenceDiagram
     Model-->>Worker: Typed changes and visible charter fields
     Worker->>Worker: Derive exact prompt goal and require executable verification closure
     Worker-->>Forge: Plan, AgentRun, and trace references
-    Forge-->>Creator: CreatorControlView with exact plan and two actions
-    Creator->>Forge: Approve exact plan view
+    Forge-->>Dashboard: CreatorDashboardState with exact plan and two actions
+    Creator->>Dashboard: Approve exact plan view
     Forge->>Worker: Approved plan and hash-bound build contract
     Worker->>Model: Approved plan semantics and contract
     opt approved replacement of an existing script
@@ -105,28 +114,29 @@ sequenceDiagram
     Model-->>Worker: planChangeId plus creative payload and local verification
     alt artifact is seal-ready
         Worker-->>Forge: Change set, sealed AgentRun, and trace references
-        Forge-->>Creator: CreatorControlView with exact diff and approve-and-apply
-        Creator->>Forge: Approve and immediately apply exact change set
+        Forge-->>Dashboard: CreatorControlView with exact diff and approve-and-apply
+        Creator->>Dashboard: Approve and immediately apply exact change set
         Forge->>Studio: Reobserve exact revision before prepare and again before apply
         Studio-->>Forge: Post-apply snapshot inside open recording
-        Creator->>Plugin: Start Approved Checks
+        Creator->>Dashboard: Start approved checks
+        Forge->>Plugin: Execute the exact authorized Play Solo plan
         Plugin-->>Forge: Correlated observations and diagnostic hashes
         alt checks fail
             Forge->>Studio: Cancel recording
             Forge->>Worker: At most two repairs using visible failure facts
         else checks pass
             Forge->>Studio: Commit recording and bind checkpoint revision
-            Forge-->>Creator: Final visual review
+            Forge-->>Dashboard: Final report prompts and exact evidence
             alt creator accepts
-                Creator->>Forge: Accept exact result
+                Creator->>Dashboard: Submit report and accept exact result
             else creator rejects
-                Creator->>Forge: Roll back
+                Creator->>Dashboard: Submit report and request rollback
                 Forge->>Studio: Undo only if checkpoint revision still matches
             end
         end
     else model or finalization stops incomplete
         Worker-->>Forge: Unsealed AgentRun, trace, failure code, and attempt hash
-        Forge-->>Creator: Incomplete status with no Studio mutation
+        Forge-->>Dashboard: Incomplete status with no Studio mutation
     end
 ```
 
@@ -134,7 +144,7 @@ The planner cannot write. It uses a bounded read-only inspection tool before dec
 
 The approved plan is compiled into a content-addressed `CreatorBuildContract` before the builder's first turn. The plan declares exact initial-snapshot `inspectionPaths` already inspected by the planner for relationships, placement, integration, or preservation; the contract carries those paths plus structural parent/target facts. The approved plan and complete contract are model-visible. The contract is persisted by ID and hash in the builder `AgentRun`, trace, and creator-session history. For each approved change it fixes the change ID, operation ID, kind, exact destination path, parent, name, class, stable identity, and precondition; it also includes exact property, attribute, removal, source, and UTF-8 limits. Forge derives those fields when staging operations. The model supplies only `planChangeId` and the permitted creative payload. Model-facing properties are natural JSON primitives, vectors, colors, and position/rotation CFrames; Forge resolves those shapes against the contract, canonicalizes numeric values to Studio floats and colors to deterministic 8-bit channels before creator review, and converts them into tagged `StudioValue` data for the trusted Studio boundary. Post-apply reconciliation therefore compares the approved canonical storage value to the observed storage value rather than comparing an unrepresentable input decimal. A move may atomically carry allowlisted property and attribute changes, and source replacement may atomically carry attribute changes, avoiding multiple conflicting operations on one stable target. A rejected stage returns field-path-specific validation plus structured expected-versus-received fields and the applicable allowlist, and the runtime records rejected batches as evidence. Live budget admission occurs before tool execution; repeated identical no-progress submissions or three varied consecutive all-failed batches terminate as `incomplete` rather than spending the turn budget on guesses. The same property, attribute, explicit `removedAttributes`, source, and UTF-8 rules are enforced before staging and by Studio. Allowlisted service roots and supported container parents are explicit initial-snapshot facts; every create or move parent must be one of those facts and remain Studio-writable. Class-aware existence resolution accepts only explicit safe service roots, while spatial capabilities remain `Workspace`-only and `BasePart`-only. The plugin accepts only canonical typed operations over allowlisted classes, properties, attributes, and service roots. It recollects the complete bounded observation at prepare and apply and rejects either boundary if the revision changed. It rejects arbitrary callbacks, expressions, generic property access, terrain, assets, externally declared Rojo roots, stale revisions, mismatched stable identities, oversized source, and unbounded deletion.
 
-The private creator bundle retains a bounded revision-to-observation history. On every load, Forge re-materializes the plan, every build contract, and every change set from the exact approved observation and rejects a graph that cannot be reproduced. AgentRun and trace locators carry their persisted content hashes and trace build key; terminal control views expose those evidence references while allowing a new prompt to start a new identity.
+The current private creator store is `.forge/creator`. Historical `.forge/creator-sessions` bytes are preserved but have no current reader. The current bundle retains a bounded revision-to-observation history and references every immutable JSON artifact through one root-relative `ArtifactReference` containing its hash and byte count. On every load, Forge verifies regular-file and symlink safety, canonical bytes, hashes, and graph bindings; it then re-materializes the plan, every build contract, and every change set from the exact approved observation. Verification records bind the exact snapshot revision and observation, the canonical execution-plan artifact, and—when Studio ran—the complete bounded runtime-observation artifact and diagnostics. Pure replay regrades those bodies without Studio, a provider, or network access. AgentRun and trace artifacts carry real root, provider-turn, and tool-call intervals. Final judgment is an immutable creator-authority `CreatorReviewReport`, not a source of machine claims.
 
 ### Current implementation inventory
 
@@ -143,14 +153,14 @@ The private creator bundle retains a bounded revision-to-observation history. On
 | Identity discipline   | contracts and canonical hashing                                                     | one current shape; `kind`, content-addressed IDs, descriptor hashes, capability-set ID/hash                                                                                                                                                 | Implemented; clean-break readers only                                                                                                                                                                         |
 | Prompt-only contracts | `packages/creator-session`                                                          | `CreatorSession`, executable `CreatorPlan`, `VerificationCharter`, `CreatorBuildContract`, `CreatorChangeSet`                                                                                                                               | Implemented and locally tested; planner inspection, contract-scoped source reads, exact prompt goal, initialization, step coverage, output checks, source syntax, and plan-bound builder contract fail closed |
 | Worker seam           | `creator-session/worker.ts`, `agent-runtime`                                        | `CreatorAgentWorker`; bound `local_process / none` descriptor in AgentRun and harness evidence                                                                                                                                              | Implemented with `LocalCreatorAgentWorker`; sealed and unsealed phase outcomes persist; microVM worker unimplemented                                                                                          |
-| Creator orchestration | `creator-session/coordinator.ts`                                                    | `forge creator ...`; canonical `CreatorControlView`                                                                                                                                                                                         | Implemented and fake-runtime tested; plan review exposes prompt binding, initialization commitments, output-check coverage, and creator-only judgments                                                        |
+| Creator orchestration | `creator-session/coordinator.ts`                                                    | `forge creator ...`; canonical `CreatorControlView`                                                                                                                                                                                         | Implemented and fake-runtime tested; fail-closed restart classification and one active session per paired Studio project                                                                                      |
 | Studio authority      | `plugin/src/Forge/StudioAuthoring.luau`                                             | canonical message envelope plus exact capability-set ID/hash                                                                                                                                                                                | Implemented typed prepare/apply/commit/cancel/guarded undo                                                                                                                                                    |
-| Creator UI            | `plugin/src/Forge/Runtime.luau`, `CreatorUiState.luau`                              | one coordinator-authorized primary and secondary action; separate experiment/canary evaluation action                                                                                                                                       | Implemented; one complete prompt/plan/change/check/review session was creator-accepted                                                                                                                         |
+| Creator control/UI    | `packages/creator-control`, `dashboard`, `plugin/src/Forge/Runtime.luau`            | standalone loopback API and local evidence workbench over canonical `CreatorControlView`; thin connector in Studio                                                                                                                          | Implemented and locally tested; the dashboard owns prompts, review, consent, evidence, progress, and history                                                                                                  |
 | Local checks          | `luau-toolchain`, `verifier`                                                        | `forge.verify` and creator `forge.verify` tool                                                                                                                                                                                              | Implemented                                                                                                                                                                                                   |
 | Studio observation    | `studio-protocol`, `studio-bridge`, `studio-capabilities`, `studio-runtime`, plugin | content-addressed `StudioCapabilitySet`; safe-service class-aware resolve, Workspace BasePart positions, bounded diagnostics                                                                                                                | Implemented; the earlier substrate was demonstrated historically                                                                                                                                              |
 | Registered benchmarks | `experiments`, `agent-runtime`, `proofs`                                            | experiment CLI plus caller-supplied registration and proof artifacts                                                                                                                                                                        | Current contracts implemented and covered by synthetic treatment regressions; predecessor live evidence remains historical                                                                                    |
-| Evidence              | `agent-runtime`, `flight-recorder`, private creator bundles                         | authenticated graph of revision-bound observation history, AgentRun sealed/unsealed outcomes, content-bound build traces/contracts, rejected-batch/no-progress and budget-admission evidence, verification records, hashes, and trace links | Implemented, locally tested, and exercised by one accepted live creator session; runtime observation durability and trace timing remain incomplete                                                             |
-| Demo place seed       | `examples/status-beacon`                                                            | the sole retained buildable place seed, with no task/evaluator JSON                                                                                                                                                                         | Implemented; the latest session was creator-accepted, while consumed failures remain immutable historical evidence                                                                                            |
+| Evidence              | `artifact-store`, `creator-session/verification.ts`, `agent-runtime`, `flight-recorder` | root-relative immutable artifacts, provider-free verification replay, runtime-owned tool evidence, exact phase/provider/tool intervals, and creator reports                                                                              | Implemented and locally tested; current live proof remains pending                                                                                                                                             |
+| Demo place seeds      | `examples/status-beacon`, `examples/door-control`                                   | solution-free buildable seeds with no task/evaluator JSON                                                                                                                                                                                   | Status Beacon is historical accepted evidence; Door Control is the distinct pending live proof                                                                                                                |
 
 ## Why there is no dual writer
 
@@ -166,7 +176,7 @@ Historical AgentRuns, registrations, candidates, proofs, canaries, and traces re
 
 ## Long-term goal
 
-The destination is a creator-facing, long-horizon Studio harness. Goal-only nodes below are not implemented claims.
+The destination is a creator-facing, long-horizon Studio harness. The dashboard and local control entry are implemented; the isolation, broader tools, verification bus, and learning nodes below remain goal-only claims.
 
 ```mermaid
 flowchart TB
@@ -235,14 +245,14 @@ MicroVMs are a future isolation boundary for model/tool execution, local analysi
 
 | Concern             | Current                                                                                                                                    | Near-term evidence task                                                 | Goal                                                                 |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| User input          | One Studio prompt; optional explicit Rojo exclusion roots                                                                                  | One fresh Status Beacon Luna creator session                            | Conversational long-horizon intent                                   |
-| Planning            | Exact prompt-derived goal; typed executable changes and initialization; generated machine-check prose; separate read-only plan and builder | Validate corrected plan clarity and approval UX in Studio               | Revised plans across durable checkpoints                             |
-| Authoring           | Typed instances, selected Part/Prompt properties, attributes, and Script source                                                            | Demonstrate one apply/verify/review flow                                | Broader typed Studio and asset tools                                 |
-| Verification        | Luau gate, class-aware existence, BasePart position facts, bounded subtree digest, diagnostics, creator review                             | Preserve exact pass, rejection, or setup failure without retry          | Verification bus with adversarial and qualitative signals            |
-| Ownership           | Studio single writer; declared Rojo roots read-only                                                                                        | Confirm task JSON is unnecessary after place creation                   | Automatic ownership discovery without concurrent writers             |
-| Execution isolation | Bound local-process worker descriptor; no isolation                                                                                        | Observe the complete phase boundary locally                             | MicroVM builder/evaluator workers plus separate real-Studio workers  |
-| Product UI          | Temporary thin plugin and CLI consume `CreatorControlView`                                                                                 | Validate one-primary/one-secondary flow                                 | Web dashboard over the same control API; plugin only connects Studio |
-| Learning            | AgentRuns and traces preserve sealed and unsealed model phases; historical experiment evidence remains immutable                           | Run a fresh creator session without retrying the consumed prior session | Reviewed failure mining and regression evaluation                    |
+| User input          | One dashboard prompt; optional explicit Rojo exclusion roots                                                                               | One fresh Door Control Luna creator session                             | Conversational long-horizon intent                                  |
+| Planning            | Exact prompt-derived goal; typed executable changes and initialization; generated machine-check prose; separate read-only plan and builder | Review the distinct door plan and charter in the dashboard              | Revised plans across durable checkpoints                            |
+| Authoring           | Typed instances, selected Part/Prompt properties, attributes, and Script source                                                            | Demonstrate the prompt/script door change                               | Broader typed Studio and asset tools                                |
+| Verification        | Replayable snapshot/runtime grading, bounded diagnostics, and required creator report                                                      | Preserve exact pass, failure, or incomplete evidence without retry      | Verification bus with adversarial and qualitative signals           |
+| Ownership           | Studio single writer; declared Rojo roots read-only                                                                                        | Prove PreservedScenery remains unchanged                                | Automatic ownership discovery without concurrent writers            |
+| Execution isolation | Bound local-process worker descriptor; no isolation                                                                                        | Observe the complete phase boundary locally                             | MicroVM builder/evaluator workers plus separate real-Studio workers |
+| Product UI          | Local React dashboard over standalone control API; plugin is a thin Studio connector                                                       | Exercise history, consent, evidence, and final report in one live run   | Cloud identity and multi-user collaboration                         |
+| Learning            | AgentRuns and traces preserve real intervals and sealed/unsealed phases; historical evidence remains immutable                             | Replay the fresh verification from persisted artifacts                  | Reviewed failure mining and regression evaluation                   |
 
 ## Invariants
 
@@ -250,7 +260,7 @@ MicroVMs are a future isolation boundary for model/tool execution, local analysi
 - Hidden evaluator bodies never reach a creator planner or builder. Studio receives data plans and typed change sets, never evaluator assertions or arbitrary callbacks.
 - Studio is the sole persistent creator-session writer. Every mutation requires an exact approved artifact hash, a current revision match, and fixed plugin interpretation.
 - Model providers remain replaceable one-turn transports; `ForgeNativeAgentRuntime` owns iteration, tools, budgets, and stopping.
-- The coordinator owns workflow legality through `CreatorControlView`; neither the plugin nor a future dashboard infers legal actions from status text.
+- The coordinator owns workflow legality through `CreatorControlView`; neither the plugin nor the dashboard infers legal actions from status text.
 - Studio tokens and mutation authority remain outside `CreatorAgentWorker`; changing from the bound local-process worker to an isolated worker changes evidence identity.
 - A local or creator check establishes only its modeled property. Backend benchmark grading remains separate from factual observation and creator satisfaction.
 - Obsolete mechanic compilers, PatchSets, provider-owned loops, mechanic-specific Studio harnesses, and deleted packages are not part of the architecture.

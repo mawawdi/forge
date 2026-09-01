@@ -2,7 +2,6 @@
 local HttpService = game:GetService("HttpService")
 local StudioTestService = game:GetService("StudioTestService")
 local Constants = require(script.Parent.Constants)
-local CreatorUiState = require(script.Parent.CreatorUiState)
 local Hash = require(script.Parent.Hash)
 local IdentityRegistry = require(script.Parent.IdentityRegistry)
 local SnapshotCollector = require(script.Parent.SnapshotCollector)
@@ -15,7 +14,7 @@ local function iso(): string return os.date("!%Y-%m-%dT%H:%M:%SZ") end
 local function messageId(prefix: string): string return prefix .. "_" .. HttpService:GenerateGUID(false) end
 local function identity() return { name = game.Name, placeId = game.PlaceId, universeId = game.GameId } end
 local function capabilities()
-	return { "snapshot", "snapshot_chunks", "sha256", "stable_identity", "studio_play_mode", "http_polling", "bounded_diagnostics", "runtime_eval", "studio_authoring", "creator_control" }
+	return { "snapshot", "snapshot_chunks", "sha256", "stable_identity", "studio_play_mode", "http_polling", "bounded_diagnostics", "runtime_eval", "studio_authoring" }
 end
 local function substrateAvailable(): boolean
 	return Hash.available() and typeof(StudioTestService.ExecutePlayModeAsync) == "function"
@@ -42,11 +41,6 @@ function Runtime.start(plugin: Plugin)
 	local widgetDetail: TextLabel? = nil
 	local pairButton: TextButton? = nil
 	local runButton: TextButton? = nil
-	local promptBox: TextBox? = nil
-	local artifactBox: TextBox? = nil
-	local currentView: any = nil
-	local primaryButton: TextButton? = nil
-	local secondaryButton: TextButton? = nil
 
 	local function state(title: string, detail: string)
 		if widgetStatus then widgetStatus.Text = title end
@@ -139,10 +133,6 @@ function Runtime.start(plugin: Plugin)
 		runtimeCapabilities:abort()
 		if not authoring:abort() then state("RECOVERY REQUIRED", "Studio could not cancel the active Forge creator recording.") end
 		if runButton then runButton.Visible = false; runButton.Active = false; runButton.AutoButtonColor = false end
-		if artifactBox then artifactBox.Visible = true; artifactBox.Text = "" end
-		if primaryButton then primaryButton.Visible = true; primaryButton.Active = true; primaryButton.AutoButtonColor = true; primaryButton.Text = "Submit Prompt" end
-		if secondaryButton then secondaryButton.Visible = true; secondaryButton.Active = true; secondaryButton.AutoButtonColor = true; secondaryButton.Text = "Clear" end
-		currentView = nil
 		if notifyBridge and sessionId and sessionToken then send("UnpairProject", { reason = reason or "user" }) end
 		sessionId, projectId, sessionToken, revision = nil, nil, nil, nil
 		if stopRegistry then stopRegistry(); stopRegistry = nil end
@@ -182,24 +172,6 @@ function Runtime.start(plugin: Plugin)
 				if runButton then runButton.Visible = false end
 				task.defer(startArmedRuntime)
 			elseif runButton then runButton.Visible = true; runButton.Active = true; runButton.AutoButtonColor = true end
-		elseif message.type == "PresentCreatorControlView" then
-			if typeof(message.payload.viewJson) ~= "string" or typeof(message.payload.viewJsonHash) ~= "string" or Hash.sha256(message.payload.viewJson) ~= message.payload.viewJsonHash then error("creator control view transport hash mismatch") end
-			local decoded, view = pcall(function() return HttpService:JSONDecode(message.payload.viewJson) end)
-			if not decoded or typeof(view) ~= "table" or typeof(view.hash) ~= "string" then error("creator control view identity mismatch") end
-			local ui = CreatorUiState.fromView(view)
-			-- Terminal views intentionally have no coordinator action. Return the
-			-- connector to prompt-entry mode while retaining the terminal detail;
-			-- a new request starts a new immutable evidence identity.
-			currentView = if ui.primary ~= nil or ui.secondary ~= nil then view else nil
-			state(string.upper(ui.title), ui.detail .. "\nView: " .. string.sub(ui.viewHash, 1, 16))
-			if artifactBox then
-				local presentation = if view.artifact ~= nil then view.artifact.presentation else view.evidence
-				artifactBox.Visible = presentation ~= nil
-				artifactBox.Text = presentation and HttpService:JSONEncode(presentation) or ""
-			end
-			if primaryButton then primaryButton.Visible = true; primaryButton.Text = ui.primary and ui.primary.label or "Submit New Request"; primaryButton.Active = true; primaryButton.AutoButtonColor = true end
-			if secondaryButton then secondaryButton.Visible = true; secondaryButton.Text = ui.secondary and ui.secondary.label or "Clear"; secondaryButton.Active = true; secondaryButton.AutoButtonColor = true end
-			if runButton then runButton.Visible = false; runButton.Active = false; runButton.AutoButtonColor = false end
 		elseif message.type == "PrepareCreatorChangeSet" then
 			if not revision then error("creator change preparation requires a Studio revision") end
 			local currentRevision = requireFreshRevision(message.payload.expectedRevision, "creator change preparation")
@@ -228,29 +200,15 @@ function Runtime.start(plugin: Plugin)
 		else error("unsupported backend command") end
 	end
 
-	local info = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, true, false, 480, 590, 400, 520)
-	local widget = plugin:CreateDockWidgetPluginGuiAsync("ForgeStudio", info); widget.Title = "Forge Creator"
+	local info = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, true, false, 360, 220, 320, 180)
+	local widget = plugin:CreateDockWidgetPluginGuiAsync("ForgeStudio", info); widget.Title = "Forge Connector"
 	local frame = Instance.new("Frame"); frame.Size = UDim2.fromScale(1, 1); frame.BackgroundColor3 = Color3.fromRGB(17, 24, 39); frame.BorderSizePixel = 0; frame.Parent = widget
 	widgetStatus = Instance.new("TextLabel"); widgetStatus.Size = UDim2.new(1, -24, 0, 28); widgetStatus.Position = UDim2.fromOffset(12, 12); widgetStatus.BackgroundTransparency = 1; widgetStatus.TextColor3 = Color3.fromRGB(229, 231, 235); widgetStatus.Font = Enum.Font.GothamBold; widgetStatus.TextSize = 16; widgetStatus.TextXAlignment = Enum.TextXAlignment.Left; widgetStatus.Parent = frame
 	widgetDetail = Instance.new("TextLabel"); widgetDetail.Size = UDim2.new(1, -24, 0, 64); widgetDetail.Position = UDim2.fromOffset(12, 44); widgetDetail.BackgroundTransparency = 1; widgetDetail.TextColor3 = Color3.fromRGB(156, 163, 175); widgetDetail.Font = Enum.Font.Gotham; widgetDetail.TextSize = 12; widgetDetail.TextWrapped = true; widgetDetail.TextXAlignment = Enum.TextXAlignment.Left; widgetDetail.TextYAlignment = Enum.TextYAlignment.Top; widgetDetail.Parent = frame
-	promptBox = Instance.new("TextBox"); promptBox.Size = UDim2.new(1, -24, 0, 62); promptBox.Position = UDim2.fromOffset(12, 112); promptBox.PlaceholderText = "Describe what you want to add or change…"; promptBox.Text = ""; promptBox.ClearTextOnFocus = false; promptBox.MultiLine = true; promptBox.TextWrapped = true; promptBox.Parent = frame
-	artifactBox = Instance.new("TextBox"); artifactBox.Size = UDim2.new(1, -24, 0, 220); artifactBox.Position = UDim2.fromOffset(12, 184); artifactBox.PlaceholderText = "The exact bound plan or change set appears here for review."; artifactBox.Text = ""; artifactBox.TextEditable = false; artifactBox.ClearTextOnFocus = false; artifactBox.MultiLine = true; artifactBox.TextWrapped = false; artifactBox.TextXAlignment = Enum.TextXAlignment.Left; artifactBox.TextYAlignment = Enum.TextYAlignment.Top; artifactBox.TextSize = 11; artifactBox.Parent = frame
-	local primary = Instance.new("TextButton"); primary.Size = UDim2.new(0.62, -12, 0, 36); primary.Position = UDim2.fromOffset(12, 414); primary.Text = "Submit Prompt"; primary.Parent = frame; primaryButton = primary
-	local secondary = Instance.new("TextButton"); secondary.Size = UDim2.new(0.38, -12, 0, 36); secondary.Position = UDim2.new(0.62, 0, 0, 414); secondary.Text = "Clear"; secondary.Parent = frame; secondaryButton = secondary
-	local evaluateButton = Instance.new("TextButton"); evaluateButton.Size = UDim2.new(1, -24, 0, 32); evaluateButton.Position = UDim2.fromOffset(12, 458); evaluateButton.Text = "Evaluate Registered Run in Studio"; evaluateButton.Visible = false; evaluateButton.Active = false; evaluateButton.AutoButtonColor = false; evaluateButton.Parent = frame; runButton = evaluateButton
-	local pair = Instance.new("TextButton"); pair.Size = UDim2.new(1, -24, 0, 28); pair.Position = UDim2.fromOffset(12, 500); pair.Text = "Connecting…"; pair.Parent = frame; pairButton = pair
-	state("CONNECTING", "Start the local Forge bridge; this place will connect automatically.")
+	local evaluateButton = Instance.new("TextButton"); evaluateButton.Size = UDim2.new(1, -24, 0, 32); evaluateButton.Position = UDim2.fromOffset(12, 118); evaluateButton.Text = "Run Approved Play Solo Check"; evaluateButton.Visible = false; evaluateButton.Active = false; evaluateButton.AutoButtonColor = false; evaluateButton.Parent = frame; runButton = evaluateButton
+	local pair = Instance.new("TextButton"); pair.Size = UDim2.new(1, -24, 0, 28); pair.Position = UDim2.fromOffset(12, 162); pair.Text = "Connecting…"; pair.Parent = frame; pairButton = pair
+	state("CONNECTING", "Start the local Forge service. Prompts, evidence, approvals, and reports live in the dashboard.")
 	pair.MouseButton1Click:Connect(function() if sessionId then unpair(true, "user", true) else autoConnectEnabled = true; nextAutoPair = 0; pair.Text = "Connecting…" end end)
-	primary.MouseButton1Click:Connect(function()
-		if currentView then send("CreatorControlActionRequested", CreatorUiState.actionPayload(currentView, "primary")); primary.Active = false; primary.AutoButtonColor = false; secondary.Active = false; secondary.AutoButtonColor = false; return end
-		if not sessionId or not promptBox or promptBox.Text == "" then state("PROMPT REQUIRED", "Pair Studio and enter a creator prompt first."); return end
-		send("CreatorPromptSubmitted", { prompt = promptBox.Text }); primary.Active = false; primary.AutoButtonColor = false
-		state("PLANNING", "Forge is generating a visible plan and verification charter. No Studio changes can occur yet.")
-	end)
-	secondary.MouseButton1Click:Connect(function()
-		if currentView then send("CreatorControlActionRequested", CreatorUiState.actionPayload(currentView, "secondary")); primary.Active = false; primary.AutoButtonColor = false; secondary.Active = false; secondary.AutoButtonColor = false
-		elseif promptBox then promptBox.Text = "" end
-	end)
 	evaluateButton.MouseButton1Click:Connect(function()
 		startArmedRuntime()
 	end)

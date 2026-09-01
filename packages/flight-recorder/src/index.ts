@@ -11,14 +11,27 @@ export interface FlightRecorderContext {
 }
 
 export interface FlightRecorderOptions {
-  now?: () => Date;
+  clock?: FlightRecorderClock;
   traceIdFactory?: () => ID;
+}
+
+/** A wall-clock projection anchored to a monotonic elapsed-time source. */
+export interface FlightRecorderClock {
+  now(): Date;
+  monotonicNow(): number;
+}
+
+export interface TraceInterval {
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
 }
 
 export interface ActiveSpan {
   id: ID;
   name: ForgeSpanName;
-  startedAt: Date;
+  startedAt: string;
+  startedMonotonicMs: number;
   attributes: Record<string, TraceAttributeValue>;
 }
 
@@ -27,9 +40,10 @@ export interface TraceSink {
 }
 
 export class FlightRecorder {
-  private readonly now: () => Date;
+  private readonly clock: FlightRecorderClock;
   private readonly traceId: ID;
-  private readonly startedAt: Date;
+  private readonly startedAt: string;
+  private readonly startedMonotonicMs: number;
   private readonly spans: BuildTraceSpan[] = [];
   private readonly events: BuildTraceEvent[] = [];
   private readonly activeSpans = new Map<ID, ActiveSpan>();
@@ -40,9 +54,10 @@ export class FlightRecorder {
   private completed = false;
 
   constructor(context: FlightRecorderContext, options: FlightRecorderOptions = {}) {
-    this.now = options.now ?? (() => new Date());
+    this.clock = options.clock ?? createSystemFlightRecorderClock();
     this.traceId = options.traceIdFactory?.() ?? `trace_${randomUUID()}`;
-    this.startedAt = this.now();
+    this.startedAt = this.clock.now().toISOString();
+    this.startedMonotonicMs = this.clock.monotonicNow();
     this.project = {
       id: context.projectId,
       snapshotRetention: context.project?.snapshotRetention ?? "not_retained",
@@ -77,7 +92,13 @@ export class FlightRecorder {
 
   startSpan(name: ForgeSpanName, attributes: Record<string, TraceAttributeValue> = {}): ActiveSpan {
     this.assertOpen();
-    const span: ActiveSpan = { id: `span_${this.sequence + 1}`, name, startedAt: this.now(), attributes: { ...attributes } };
+    const span: ActiveSpan = {
+      id: `span_${this.sequence + 1}`,
+      name,
+      startedAt: this.clock.now().toISOString(),
+      startedMonotonicMs: this.clock.monotonicNow(),
+      attributes: { ...attributes },
+    };
     this.activeSpans.set(span.id, span);
     return span;
   }
@@ -85,22 +106,35 @@ export class FlightRecorder {
   endSpan(span: ActiveSpan, status: BuildTraceSpan["status"], attributes: Record<string, TraceAttributeValue> = {}): number {
     this.assertOpen();
     if (!this.activeSpans.delete(span.id)) throw new Error(`Unknown or completed span: ${span.id}`);
-    const endedAt = this.now();
-    const durationMs = Math.max(0, endedAt.getTime() - span.startedAt.getTime());
-    this.spans.push({ id: span.id, sequence: this.nextSequence(), name: span.name, startedAt: span.startedAt.toISOString(), endedAt: endedAt.toISOString(), durationMs, status, attributes: { ...span.attributes, ...attributes } });
+    const durationMs = elapsedMilliseconds(
+      span.startedMonotonicMs,
+      this.clock.monotonicNow(),
+    );
+    const endedAt = addDuration(span.startedAt, durationMs);
+    this.spans.push({ id: span.id, sequence: this.nextSequence(), name: span.name, startedAt: span.startedAt, endedAt, durationMs, status, attributes: { ...span.attributes, ...attributes } });
     return durationMs;
   }
 
-  recordSpan(name: ForgeSpanName, status: BuildTraceSpan["status"], attributes: Record<string, TraceAttributeValue> = {}, durationMs = 0): void {
+  recordSpan(name: ForgeSpanName, status: BuildTraceSpan["status"], attributes: Record<string, TraceAttributeValue> = {}, interval: number | TraceInterval = 0): void {
     this.assertOpen();
-    const startedAt = this.now();
-    const endedAt = new Date(startedAt.getTime() + Math.max(0, durationMs));
-    this.spans.push({ id: `span_${this.sequence + 1}`, sequence: this.nextSequence(), name, startedAt: startedAt.toISOString(), endedAt: endedAt.toISOString(), durationMs: Math.max(0, durationMs), status, attributes: { ...attributes } });
+    const timing = typeof interval === "number"
+      ? intervalFromDuration(this.clock.now().toISOString(), interval)
+      : assertTraceInterval(interval);
+    this.spans.push({
+      id: `span_${this.sequence + 1}`,
+      sequence: this.nextSequence(),
+      name,
+      startedAt: timing.startedAt,
+      endedAt: timing.endedAt,
+      durationMs: timing.durationMs,
+      status,
+      attributes: { ...attributes },
+    });
   }
 
   addEvent(name: ForgeEventName, attributes: Record<string, TraceAttributeValue> = {}): void {
     this.assertOpen();
-    const event: BuildTraceEvent = { id: `event_${this.sequence + 1}`, sequence: this.nextSequence(), name, occurredAt: this.now().toISOString(), attributes: { ...attributes } };
+    const event: BuildTraceEvent = { id: `event_${this.sequence + 1}`, sequence: this.nextSequence(), name, occurredAt: this.clock.now().toISOString(), attributes: { ...attributes } };
     this.events.push(event);
   }
 
@@ -111,14 +145,16 @@ export class FlightRecorder {
     }
     this.addEvent("forge.build.completed", { "forge.build.status": outcome.status, "forge.issue.count": Object.values(outcome.issueCounts).reduce((total, count) => total + count, 0) });
     this.completed = true;
-    const endedAt = this.now();
+    const endedAt = this.clock.now().toISOString();
     const buildKey = createBuildKey({ project: this.project, references: this.references, components: this.components });
+    const traceStartedAt = earliestIso([this.startedAt, ...this.spans.map((span) => span.startedAt), ...this.events.map((event) => event.occurredAt)]);
+    const traceEndedAt = latestIso([endedAt, ...this.spans.map((span) => span.endedAt), ...this.events.map((event) => event.occurredAt)]);
     return {
       kind: "BuildTrace",
             id: this.traceId,
       buildKey,
-      startedAt: this.startedAt.toISOString(),
-      endedAt: endedAt.toISOString(),
+      startedAt: traceStartedAt,
+      endedAt: traceEndedAt,
       project: this.project,
       references: this.references,
       components: this.components,
@@ -132,7 +168,7 @@ export class FlightRecorder {
   }
 
   elapsedMs(): number {
-    return Math.max(0, this.now().getTime() - this.startedAt.getTime());
+    return elapsedMilliseconds(this.startedMonotonicMs, this.clock.monotonicNow());
   }
 
   private nextSequence(): number {
@@ -143,6 +179,17 @@ export class FlightRecorder {
   private assertOpen(): void {
     if (this.completed) throw new Error("Cannot record after trace completion");
   }
+}
+
+export function createSystemFlightRecorderClock(): FlightRecorderClock {
+  const wallOrigin = Date.now();
+  const monotonicOrigin = process.hrtime.bigint();
+  const monotonicNow = (): number =>
+    Number(process.hrtime.bigint() - monotonicOrigin) / 1_000_000;
+  return {
+    now: () => new Date(wallOrigin + Math.round(monotonicNow())),
+    monotonicNow,
+  };
 }
 
 export class JsonFileTraceSink implements TraceSink {
@@ -191,6 +238,34 @@ function withoutUndefined<T extends Record<string, unknown>>(value: T): T {
 
 function bySequence<T extends { sequence: number }>(left: T, right: T): number {
   return left.sequence - right.sequence;
+}
+
+function elapsedMilliseconds(startedAt: number, endedAt: number): number {
+  return Math.max(0, Math.round(endedAt - startedAt));
+}
+
+function addDuration(startedAt: string, durationMs: number): string {
+  return new Date(Date.parse(startedAt) + durationMs).toISOString();
+}
+
+function intervalFromDuration(startedAt: string, durationMs: number): TraceInterval {
+  const exactDuration = Math.max(0, Math.round(durationMs));
+  return { startedAt, endedAt: addDuration(startedAt, exactDuration), durationMs: exactDuration };
+}
+
+function assertTraceInterval(interval: TraceInterval): TraceInterval {
+  const startedAt = Date.parse(interval.startedAt);
+  const endedAt = Date.parse(interval.endedAt);
+  if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt) || new Date(startedAt).toISOString() !== interval.startedAt || new Date(endedAt).toISOString() !== interval.endedAt || !Number.isFinite(interval.durationMs) || interval.durationMs < 0 || !Number.isSafeInteger(interval.durationMs) || endedAt < startedAt || interval.durationMs !== endedAt - startedAt) throw new Error("Invalid trace interval");
+  return { ...interval };
+}
+
+function earliestIso(values: readonly string[]): string {
+  return values.reduce((earliest, value) => Date.parse(value) < Date.parse(earliest) ? value : earliest);
+}
+
+function latestIso(values: readonly string[]): string {
+  return values.reduce((latest, value) => Date.parse(value) > Date.parse(latest) ? value : latest);
 }
 
 export type { ComponentDescriptor, ModelConfiguration };

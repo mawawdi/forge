@@ -431,7 +431,9 @@ test("registered execution exposes only builder facts, propagates registration e
             outputTokens: 1,
             costUsd: 0,
           },
+          timing: { startedAt: "2026-08-31T00:00:00.000Z", endedAt: "2026-08-31T00:00:00.000Z", durationMs: 0 },
           turns: [],
+          toolCalls: [],
         };
       },
     };

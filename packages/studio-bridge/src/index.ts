@@ -18,12 +18,6 @@ export interface StudioBridgeOptions {
   /** Required to use backend control endpoints. Never sent to the Studio plugin. */
   controlToken?: string;
   maxRetainedEvents?: number;
-  controlHandler?: StudioBridgeControlHandler;
-}
-
-export interface StudioBridgeControlHandler {
-  action(value: unknown): Promise<unknown>;
-  state(query: URLSearchParams): Promise<unknown>;
 }
 
 export interface StudioBridgeDiscovery {
@@ -101,7 +95,6 @@ export class StudioBridgeServer implements StudioTransport {
   private readonly now: () => Date;
   private readonly controlToken: string;
   private readonly maxRetainedEvents: number;
-  private controlHandler: StudioBridgeControlHandler | undefined;
   private readonly server: Server;
   private readonly handlers = new Set<MessageHandler>();
   private readonly sessions = new Map<string, StudioBridgeSession>();
@@ -119,7 +112,6 @@ export class StudioBridgeServer implements StudioTransport {
     this.now = options.now ?? (() => new Date());
     this.controlToken = options.controlToken ?? randomBytes(24).toString("base64url");
     this.maxRetainedEvents = options.maxRetainedEvents ?? 512;
-    this.controlHandler = options.controlHandler;
     this.server = createServer((request, response) => { void this.handle(request, response); });
   }
 
@@ -174,8 +166,6 @@ export class StudioBridgeServer implements StudioTransport {
   }
 
   getSessions(): StudioBridgeSession[] { return [...this.sessions.values()].map((session) => ({ ...session })); }
-  setControlHandler(handler: StudioBridgeControlHandler): void { this.controlHandler = handler; }
-
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     response.setHeader("content-type", "application/json");
     response.setHeader("cache-control", "no-store");
@@ -185,8 +175,6 @@ export class StudioBridgeServer implements StudioTransport {
       if (request.method === "GET" && request.url === "/sessions") { this.assertControl(request); return this.listSessions(response); }
       if (request.method === "GET" && request.url?.startsWith("/events")) { this.assertControl(request); return this.eventsFor(request, response); }
       if (request.method === "POST" && request.url === "/command") { this.assertControl(request); return await this.command(request, response); }
-      if (request.method === "POST" && request.url === "/control/action") { this.assertControl(request); return await this.controlAction(request, response); }
-      if (request.method === "GET" && request.url?.startsWith("/control/state")) { this.assertControl(request); return await this.controlState(request, response); }
       if (request.method === "GET" && request.url?.startsWith("/poll")) return this.poll(request, response);
       if (request.method === "POST" && request.url === "/message") return await this.receive(request, response);
       writeJson(response, 404, { error: "not_found" });
@@ -249,18 +237,6 @@ export class StudioBridgeServer implements StudioTransport {
     queue.push(message);
     this.outbound.set(sessionId, queue);
     writeJson(response, 202, { kind: "ForgeStudioCommandAccepted", messageId: message.messageId });
-  }
-
-  private async controlAction(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    if (!this.controlHandler) throw new ProtocolHttpError(404, "No Forge control service is attached");
-    const value = JSON.parse(await readBody(request)) as unknown;
-    writeJson(response, 200, await this.controlHandler.action(value));
-  }
-
-  private async controlState(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    if (!this.controlHandler) throw new ProtocolHttpError(404, "No Forge control service is attached");
-    const url = new URL(request.url ?? "/", "http://forge.local");
-    writeJson(response, 200, await this.controlHandler.state(url.searchParams));
   }
 
   private async receive(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -533,7 +509,6 @@ export function createBackendMessage<T extends keyof BackendPayloadByType>(type:
 export type BackendPayloadByType = {
   RequestObservation: { requestId: string; reason: ProjectObservationReason };
   ExecuteRuntimeEvalPlan: import("../../studio-protocol/src/index.js").ExecuteRuntimeEvalPlanPayload;
-  PresentCreatorControlView: import("../../studio-protocol/src/index.js").PresentCreatorControlViewPayload;
   PrepareCreatorChangeSet: import("../../studio-protocol/src/index.js").PrepareCreatorChangeSetPayload;
   ApplyCreatorChangeSet: import("../../studio-protocol/src/index.js").ApplyCreatorChangeSetPayload;
   FinalizeCreatorChangeSet: import("../../studio-protocol/src/index.js").FinalizeCreatorChangeSetPayload;

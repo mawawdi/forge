@@ -10,7 +10,6 @@ import {
 import {
   basename,
   dirname,
-  isAbsolute,
   join,
   relative,
   resolve,
@@ -26,13 +25,17 @@ import type {
   BudgetPolicy,
   CreatorPhaseFinalization,
   ToolBatchDecision,
-  ToolCallRecord,
   ToolResult,
 } from "../../agent-runtime/src/index.js";
 import {
   INITIAL_EXPERIMENT_BUDGETS,
   assertCreatorPhaseOutcome,
 } from "../../agent-runtime/src/index.js";
+import {
+  ImmutableJsonArtifactStore,
+  assertArtifactReference,
+  type ArtifactReference,
+} from "../../artifact-store/src/index.js";
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 import {
   compileCreatorOrientation,
@@ -557,15 +560,19 @@ export interface CreatorCheckpoint {
   status: "committed" | "rolled_back" | "recovery_required";
 }
 
-export interface CreatorReview {
-  kind: "CreatorReview";
+export interface CreatorReviewReport {
+  kind: "CreatorReviewReport";
   id: string;
   hash: string;
   sessionId: string;
   changeSetId: string;
+  changeSetHash: string;
+  charterId: string;
+  charterHash: string;
   decision: "accepted" | "rejected";
-  observationHash: string;
-  noteHash?: string;
+  report: string;
+  reviewedObservationHash: string;
+  authority: "creator";
   reviewedAt: string;
 }
 
@@ -578,12 +585,33 @@ export interface CreatorVerificationRecord {
   changeSetHash: string;
   charterId: string;
   charterHash: string;
-  executionPlanId: string;
-  executionPlanHash: string;
+  snapshotRevisionHash: string;
+  snapshotObservationHash: string;
+  executionPlan: {
+    id: string;
+    hash: string;
+    artifact: ArtifactReference;
+  };
+  runtimeObservation?: {
+    observationHash: string;
+    diagnosticsHash: string;
+    artifact: ArtifactReference;
+  };
   status: "passed" | "failed" | "incomplete";
-  observationHash?: string;
-  diagnosticsHash?: string;
+  nonReplayableReason?: string;
   failureFacts: Array<{ statement: string; hash: string }>;
+}
+
+export interface CreatorVerificationReplay {
+  kind: "CreatorVerificationReplay";
+  sessionId: string;
+  verificationId: string;
+  result: "exact_match" | "mismatch" | "missing_or_incomplete";
+  recordedStatus: CreatorVerificationRecord["status"];
+  replayedStatus?: Exclude<CreatorVerificationRecord["status"], "incomplete">;
+  recordedFailureFactHashes: string[];
+  replayedFailureFactHashes?: string[];
+  detail: string;
 }
 
 export interface CreatorSession {
@@ -624,16 +652,17 @@ export interface CreatorSessionBundle {
   approvals: CreatorApproval[];
   changeSets: CreatorChangeSet[];
   checkpoint?: CreatorCheckpoint;
-  review?: CreatorReview;
+  review?: {
+    report: CreatorReviewReport;
+    artifact: ArtifactReference;
+  };
   verifications: CreatorVerificationRecord[];
   agentRuns: Array<{
     phase: "creator_planner" | "creator_builder";
     agentRunId: string;
-    agentRunArtifact: string;
-    agentRunArtifactHash: string;
+    agentRun: ArtifactReference;
     traceId: string;
-    traceArtifact: string;
-    traceArtifactHash: string;
+    trace: ArtifactReference;
     traceBuildKey: string;
     creatorSessionHash: string;
     buildContract?: { id: string; hash: string };
@@ -654,6 +683,7 @@ export interface CreatorControlActionDescriptor {
   id: CreatorControlActionId;
   label: string;
   intent: "primary" | "secondary";
+  requiresReport?: boolean;
 }
 export interface CreatorControlView {
   kind: "CreatorControlView";
@@ -674,15 +704,73 @@ export interface CreatorControlView {
   evidence?: Array<{
     phase: "creator_planner" | "creator_builder";
     agentRunId: string;
-    agentRunArtifact: string;
-    agentRunArtifactHash: string;
+    agentRun: ArtifactReference;
     traceId: string;
-    traceArtifact: string;
-    traceArtifactHash: string;
+    trace: ArtifactReference;
     traceBuildKey: string;
   }>;
+  creatorReviewPrompts?: string[];
+  artifacts?: {
+    prompt?: ArtifactReference;
+    plan?: ArtifactReference;
+    changeSet?: ArtifactReference;
+    studioExecutionPlan?: ArtifactReference;
+    runtimeObservation?: ArtifactReference;
+    verification?: ArtifactReference;
+    reviewReport?: ArtifactReference;
+    agentRun?: ArtifactReference;
+    trace?: ArtifactReference;
+  };
+  verification?: {
+    id: string;
+    status: "passed" | "failed" | "incomplete" | "not_run";
+    failureFacts: Array<{ statement: string; hash: string }>;
+    replayable: boolean;
+  };
   primaryAction?: CreatorControlActionDescriptor;
   secondaryAction?: CreatorControlActionDescriptor;
+}
+
+export type CreatorProgressStageId =
+  | "request"
+  | "plan"
+  | "change"
+  | "studio"
+  | "review";
+export interface CreatorProgressStage {
+  id: CreatorProgressStageId;
+  label: "Request" | "Plan" | "Change" | "Studio" | "Review";
+  status: "pending" | "active" | "complete" | "blocked" | "failed";
+  authority: "creator" | "agent" | "forge" | "studio";
+  detail: string;
+}
+export interface CreatorSessionSummary {
+  id: string;
+  hash: string;
+  projectId: string;
+  prompt: string;
+  promptHash: string;
+  status: CreatorSessionStatus;
+  createdAt: string;
+  updatedAt: string;
+  latestVerificationStatus?: "passed" | "failed" | "incomplete" | "not_run";
+  failure?: { code: string; detailHash: string };
+}
+export interface CreatorDashboardState {
+  kind: "CreatorDashboardState";
+  selectedSessionId?: string;
+  sessions: CreatorSessionSummary[];
+  controlView?: CreatorControlView;
+  stages: CreatorProgressStage[];
+  pairedStudio: {
+    status: "paired" | "unpaired" | "connecting";
+    projectId?: string;
+    projectName?: string;
+    revisionHash?: string;
+    capabilities?: string[];
+    message: string;
+  };
+  serverTime: string;
 }
 
 export interface CreatorAgentWorkerDescriptor {
@@ -778,6 +866,42 @@ export function assertCreatorControlView(
       !value.evidence.every(isCreatorEvidencePresentation))
   )
     throw new Error("Invalid CreatorControlView evidence");
+  if (
+    value.creatorReviewPrompts !== undefined &&
+    (!Array.isArray(value.creatorReviewPrompts) ||
+      value.creatorReviewPrompts.length > 32 ||
+      !value.creatorReviewPrompts.every(
+        (prompt) =>
+          typeof prompt === "string" &&
+          prompt.trim().length > 0 &&
+          prompt.length <= 4096,
+      ))
+  )
+    throw new Error("Invalid CreatorControlView review prompts");
+  if (value.artifacts !== undefined) {
+    if (!isRecord(value.artifacts))
+      throw new Error("Invalid CreatorControlView artifacts");
+    for (const reference of Object.values(value.artifacts))
+      assertArtifactReference(reference);
+  }
+  if (value.verification !== undefined) {
+    if (
+      !isRecord(value.verification) ||
+      !isId(value.verification.id) ||
+      !["passed", "failed", "incomplete", "not_run"].includes(
+        String(value.verification.status),
+      ) ||
+      typeof value.verification.replayable !== "boolean" ||
+      !Array.isArray(value.verification.failureFacts) ||
+      !value.verification.failureFacts.every(
+        (fact) =>
+          isRecord(fact) &&
+          typeof fact.statement === "string" &&
+          isHash(fact.hash),
+      )
+    )
+      throw new Error("Invalid CreatorControlView verification");
+  }
   const { kind: _kind, id: _id, hash: _hash, ...payload } = value;
   const expected = contentHash(stableJson(payload));
   if (
@@ -1371,11 +1495,16 @@ export function assertCreatorVerificationRecord(
     !isHash(value.changeSetHash) ||
     !isId(value.charterId) ||
     !isHash(value.charterHash) ||
-    !isId(value.executionPlanId) ||
-    !isHash(value.executionPlanHash) ||
+    !isHash(value.snapshotRevisionHash) ||
+    !isHash(value.snapshotObservationHash) ||
+    !isRecord(value.executionPlan) ||
+    !isId(value.executionPlan.id) ||
+    !isHash(value.executionPlan.hash) ||
     !["passed", "failed", "incomplete"].includes(String(value.status)) ||
-    (value.observationHash !== undefined && !isHash(value.observationHash)) ||
-    (value.diagnosticsHash !== undefined && !isHash(value.diagnosticsHash)) ||
+    (value.nonReplayableReason !== undefined &&
+      (typeof value.nonReplayableReason !== "string" ||
+        value.nonReplayableReason.trim().length === 0 ||
+        value.nonReplayableReason.length > 4096)) ||
     !Array.isArray(value.failureFacts) ||
     value.failureFacts.length > 32 ||
     !value.failureFacts.every(
@@ -1389,9 +1518,29 @@ export function assertCreatorVerificationRecord(
     )
   )
     throw new Error("Invalid CreatorVerificationRecord");
-  if ((value.status === "passed") !== (value.failureFacts.length === 0))
+  assertArtifactReference(value.executionPlan.artifact);
+  if (value.runtimeObservation !== undefined) {
+    if (
+      !isRecord(value.runtimeObservation) ||
+      !isHash(value.runtimeObservation.observationHash) ||
+      !isHash(value.runtimeObservation.diagnosticsHash)
+    )
+      throw new Error("Invalid CreatorVerificationRecord runtime evidence");
+    assertArtifactReference(value.runtimeObservation.artifact);
+  }
+  if (
+    value.status !== "incomplete" &&
+    (value.status === "passed") !== (value.failureFacts.length === 0)
+  )
     throw new Error(
       "CreatorVerificationRecord status does not match its failure facts",
+    );
+  if (
+    (value.status === "incomplete") !==
+    (value.nonReplayableReason !== undefined)
+  )
+    throw new Error(
+      "Incomplete creator verification requires one non-replayable reason",
     );
   assertArtifactIdentity(value, "creator_verification");
 }
@@ -1418,24 +1567,50 @@ export function assertCreatorCheckpoint(
   assertArtifactIdentity(value, "creator_checkpoint");
 }
 
-export function assertCreatorReview(
+export function assertCreatorReviewReport(
   value: unknown,
-): asserts value is CreatorReview {
+): asserts value is CreatorReviewReport {
   if (
     !isRecord(value) ||
-    value.kind !== "CreatorReview" ||
+    value.kind !== "CreatorReviewReport" ||
     !isId(value.id) ||
     !isHash(value.hash) ||
     !isId(value.sessionId) ||
     !isId(value.changeSetId) ||
+    !isHash(value.changeSetHash) ||
+    !isId(value.charterId) ||
+    !isHash(value.charterHash) ||
     !["accepted", "rejected"].includes(String(value.decision)) ||
-    !isHash(value.observationHash) ||
-    (value.noteHash !== undefined && !isHash(value.noteHash)) ||
+    typeof value.report !== "string" ||
+    value.report.trim().length === 0 ||
+    Buffer.byteLength(value.report, "utf8") > 4096 ||
+    !isHash(value.reviewedObservationHash) ||
+    value.authority !== "creator" ||
     typeof value.reviewedAt !== "string" ||
     !Number.isFinite(Date.parse(value.reviewedAt))
   )
-    throw new Error("Invalid CreatorReview");
-  assertArtifactIdentity(value, "creator_review");
+    throw new Error("Invalid CreatorReviewReport");
+  assertArtifactIdentity(value, "creator_review_report");
+}
+
+export function createCreatorReviewReport(
+  input: Omit<CreatorReviewReport, "kind" | "id" | "hash" | "authority">,
+): CreatorReviewReport {
+  const report = input.report.normalize("NFC");
+  const payload = {
+    ...input,
+    report,
+    authority: "creator" as const,
+  };
+  const hash = contentHash(stableJson(payload));
+  const value: CreatorReviewReport = {
+    kind: "CreatorReviewReport",
+    id: `creator_review_report_${hash.slice(0, 24)}`,
+    hash,
+    ...payload,
+  };
+  assertCreatorReviewReport(value);
+  return value;
 }
 
 function assertArtifactIdentity(
@@ -1462,7 +1637,7 @@ export function advanceSession(
     approval?: CreatorApproval;
     changeSet?: CreatorChangeSet;
     checkpoint?: CreatorCheckpoint;
-    review?: CreatorReview;
+    review?: CreatorReviewReport;
     revisionHash?: string;
     failure?: { code: string; detail: string };
   },
@@ -1545,15 +1720,14 @@ function formatZodIssues(
 }
 
 abstract class BaseCreatorToolHost implements AgentToolHost {
-  private readonly callRecords: ToolCallRecord[] = [];
+  private executedCalls = 0;
+  private executedWrites = 0;
+  private executedVerifierCalls = 0;
   private totalResultBytes = 0;
   protected constructor(
     protected readonly budgets: BudgetPolicy = INITIAL_EXPERIMENT_BUDGETS,
   ) {}
   abstract definitions(): AgentToolDefinition[];
-  records(): readonly ToolCallRecord[] {
-    return this.callRecords;
-  }
   validateBatch(
     calls: readonly ModelToolCall[],
     seenIds: ReadonlySet<string>,
@@ -1564,13 +1738,13 @@ abstract class BaseCreatorToolHost implements AgentToolHost {
     const feedback: ToolBatchDecision["feedback"] = [];
     let valid = true;
     const projected = {
-      toolCalls: this.callRecords.length + calls.length,
+      toolCalls: this.executedCalls + calls.length,
       writes:
-        this.callRecords.filter((record) => record.name === "studio.stage")
-          .length + calls.filter((call) => call.name === "studio.stage").length,
+        this.executedWrites +
+        calls.filter((call) => call.name === "studio.stage").length,
       verifierCalls:
-        this.callRecords.filter((record) => record.name === "forge.verify")
-          .length + calls.filter((call) => call.name === "forge.verify").length,
+        this.executedVerifierCalls +
+        calls.filter((call) => call.name === "forge.verify").length,
     };
     if (
       projected.toolCalls > this.budgets.maxToolCalls ||
@@ -1638,20 +1812,18 @@ abstract class BaseCreatorToolHost implements AgentToolHost {
   }
   async execute(name: string, input: unknown): Promise<ToolResult> {
     if (
-      this.callRecords.length >= this.budgets.maxToolCalls ||
+      this.executedCalls >= this.budgets.maxToolCalls ||
       (name === "studio.stage" &&
-        this.callRecords.filter((record) => record.name === name).length >=
-          this.budgets.maxWrites) ||
+        this.executedWrites >= this.budgets.maxWrites) ||
       (name === "forge.verify" &&
-        this.callRecords.filter((record) => record.name === name).length >=
-          this.budgets.maxVerifierCalls) ||
+        this.executedVerifierCalls >= this.budgets.maxVerifierCalls) ||
       this.totalResultBytes >= this.budgets.maxToolResultBytes
     ) {
       const result = failed(
         "TOOL_BUDGET_EXHAUSTED",
         "Creator tool, write, verifier, or result-byte budget exhausted",
       );
-      this.record(name, input, result);
+      this.record(name, result);
       return result;
     }
     const definitionValue = this.definitions().find(
@@ -1683,22 +1855,13 @@ abstract class BaseCreatorToolHost implements AgentToolHost {
         "TOOL_OUTPUT_BUDGET_EXHAUSTED",
         "Creator tool-result byte budget exhausted",
       );
-    this.record(name, input, result);
+    this.record(name, result);
     return result;
   }
-  private record(name: string, input: unknown, result: ToolResult): void {
-    const inputHash = contentHash(stableJson(input));
-    this.callRecords.push({
-      sequence: this.callRecords.length + 1,
-      name,
-      inputHash,
-      resultHash: result.resultHash,
-      truncated: result.truncated,
-      bytes: result.bytes,
-      at: new Date().toISOString(),
-      input,
-      result,
-    });
+  private record(name: string, result: ToolResult): void {
+    this.executedCalls += 1;
+    if (name === "studio.stage") this.executedWrites += 1;
+    if (name === "forge.verify") this.executedVerifierCalls += 1;
     this.totalResultBytes += result.bytes;
   }
   protected abstract dispatch(name: string, input: unknown): Promise<unknown>;
@@ -2425,19 +2588,22 @@ export async function loadCreatorBundle(
     await readFile(resolve(path), "utf8"),
   ) as CreatorSessionBundle;
   assertCreatorSessionBundle(value);
+  const store = new ImmutableJsonArtifactStore(dirname(resolve(path)));
   for (const reference of value.agentRuns) {
-    const [agentRunBytes, traceBytes] = await Promise.all([
-      readFile(resolve(reference.agentRunArtifact), "utf8"),
-      readFile(resolve(reference.traceArtifact), "utf8"),
+    await Promise.all([
+      store.verify(reference.agentRun),
+      store.verify(reference.trace),
     ]);
-    if (
-      contentHash(agentRunBytes) !== reference.agentRunArtifactHash ||
-      contentHash(traceBytes) !== reference.traceArtifactHash
-    )
-      throw new Error(
-        "Creator session evidence artifact content hash mismatch",
-      );
   }
+  await Promise.all(
+    value.verifications.flatMap((verification) => [
+      store.verify(verification.executionPlan.artifact),
+      ...(verification.runtimeObservation
+        ? [store.verify(verification.runtimeObservation.artifact)]
+        : []),
+    ]),
+  );
+  if (value.review) await store.verify(value.review.artifact);
   return value;
 }
 
@@ -2721,14 +2887,21 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
   } else if (value.session.checkpoint)
     throw new Error("Creator session checkpoint reference is unresolved");
   if (value.review) {
-    assertCreatorReview(value.review);
+    if (!isRecord(value.review)) throw new Error("Invalid creator review evidence");
+    assertCreatorReviewReport(value.review.report);
+    assertArtifactReference(value.review.artifact);
     if (
-      value.review.sessionId !== value.session.id ||
+      value.review.report.sessionId !== value.session.id ||
       !value.changeSets.some(
-        (changeSet) => changeSet.id === value.review!.changeSetId,
+        (changeSet) =>
+          changeSet.id === value.review!.report.changeSetId &&
+          changeSet.hash === value.review!.report.changeSetHash,
       ) ||
-      value.session.review?.id !== value.review.id ||
-      value.session.review.hash !== value.review.hash
+      !value.plan ||
+      value.review.report.charterId !== value.plan.charter.id ||
+      value.review.report.charterHash !== value.plan.charter.hash ||
+      value.session.review?.id !== value.review.report.id ||
+      value.session.review.hash !== value.review.report.hash
     )
       throw new Error("Creator review graph mismatch");
   } else if (value.session.review)
@@ -2742,15 +2915,13 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
         String(reference.phase),
       ) ||
       !isId(reference.agentRunId) ||
-      !isSafeEvidenceLocator(reference.agentRunArtifact) ||
-      !isHash(reference.agentRunArtifactHash) ||
       !isId(reference.traceId) ||
-      !isSafeEvidenceLocator(reference.traceArtifact) ||
-      !isHash(reference.traceArtifactHash) ||
       !isId(reference.traceBuildKey) ||
       !isHash(reference.creatorSessionHash)
     )
       throw new Error("Invalid creator AgentRun reference");
+    assertArtifactReference(reference.agentRun);
+    assertArtifactReference(reference.trace);
     assertCreatorPhaseOutcome(reference.outcome);
     const intended =
       reference.phase === "creator_planner" ? "plan" : "change_set";
@@ -3357,7 +3528,13 @@ async function invokeCreatorRuntime(
       failureCode: "CREATOR_RUNTIME_THROW",
       error: error instanceof Error ? error.message : String(error),
       usage: { turns: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
+      timing: {
+        startedAt: "1970-01-01T00:00:00.000Z",
+        endedAt: "1970-01-01T00:00:00.000Z",
+        durationMs: 0,
+      },
       turns: [],
+      toolCalls: [],
     };
   }
 }
@@ -4793,7 +4970,8 @@ function isControlActionDescriptor(
     ].includes(String(value.id)) &&
     typeof value.label === "string" &&
     value.label.length > 0 &&
-    (value.intent === "primary" || value.intent === "secondary")
+    (value.intent === "primary" || value.intent === "secondary") &&
+    (value.requiresReport === undefined || value.requiresReport === true)
   );
 }
 function isCreatorEvidencePresentation(value: unknown): boolean {
@@ -4801,22 +4979,19 @@ function isCreatorEvidencePresentation(value: unknown): boolean {
     isRecord(value) &&
     ["creator_planner", "creator_builder"].includes(String(value.phase)) &&
     isId(value.agentRunId) &&
-    isSafeEvidenceLocator(value.agentRunArtifact) &&
-    isHash(value.agentRunArtifactHash) &&
     isId(value.traceId) &&
-    isSafeEvidenceLocator(value.traceArtifact) &&
-    isHash(value.traceArtifactHash) &&
-    isId(value.traceBuildKey)
+    isId(value.traceBuildKey) &&
+    validArtifactReference(value.agentRun) &&
+    validArtifactReference(value.trace)
   );
 }
-function isSafeEvidenceLocator(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    value.length > 0 &&
-    !isAbsolute(value) &&
-    !value.includes("\\") &&
-    !value.split("/").some((segment) => segment === "" || segment === ".")
-  );
+function validArtifactReference(value: unknown): value is ArtifactReference {
+  try {
+    assertArtifactReference(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 function assertTransition(
   from: CreatorSessionStatus,
@@ -4828,7 +5003,12 @@ function assertTransition(
     building: ["awaiting_change_approval", "incomplete"],
     awaiting_change_approval: ["applying", "creator_rejected", "incomplete"],
     applying: ["awaiting_verification", "incomplete", "recovery_required"],
-    awaiting_verification: ["verifying", "creator_rejected", "incomplete"],
+    awaiting_verification: [
+      "verifying",
+      "creator_rejected",
+      "incomplete",
+      "recovery_required",
+    ],
     verifying: [
       "awaiting_review",
       "repairing",

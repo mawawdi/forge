@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { test } from "node:test";
 import { assertBuildTrace, contentHash, stableJson, type BuildOutcome } from "../packages/contracts/src/index.js";
-import { FlightRecorder, JsonFileTraceSink, createBuildKey, type TraceSink } from "../packages/flight-recorder/src/index.js";
+import { FlightRecorder, JsonFileTraceSink, createBuildKey, type FlightRecorderClock, type TraceSink } from "../packages/flight-recorder/src/index.js";
 import { verifyProject } from "../packages/verifier/src/index.js";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -21,9 +21,9 @@ test("build keys are deterministic while execution trace IDs remain distinct", (
   };
   assert.equal(createBuildKey(context), createBuildKey(context));
 
-  const now = fixedClock();
-  const one = new FlightRecorder({ projectId: "project_test", project: context.project, components: context.components }, { now, traceIdFactory: () => "trace_one" });
-  const two = new FlightRecorder({ projectId: "project_test", project: context.project, components: context.components }, { now, traceIdFactory: () => "trace_two" });
+  const clock = fixedClock();
+  const one = new FlightRecorder({ projectId: "project_test", project: context.project, components: context.components }, { clock, traceIdFactory: () => "trace_one" });
+  const two = new FlightRecorder({ projectId: "project_test", project: context.project, components: context.components }, { clock, traceIdFactory: () => "trace_two" });
   const outcome = acceptedOutcome();
   const traceOne = one.complete(outcome, { issues: [] }, semanticReplayability());
   const traceTwo = two.complete(outcome, { issues: [] }, semanticReplayability());
@@ -67,9 +67,65 @@ test("trace persistence failures are explicit and never alter a verification dec
   assert.match(run.tracePersistence.error ?? "", /Trace persistence failed/);
 });
 
-function fixedClock(): () => Date {
+test("flight recorder uses monotonic intervals and BuildTrace rejects impossible timing evidence", () => {
+  const clock = new ManualClock();
+  const recorder = new FlightRecorder(
+    { projectId: "project_timing" },
+    { clock, traceIdFactory: () => "trace_timing" },
+  );
+  const rootSpan = recorder.startSpan("forge.agent.execute");
+  clock.advance(7);
+  assert.equal(recorder.endSpan(rootSpan, "ok"), 7);
+  const trace = recorder.complete(
+    { ...acceptedOutcome(), latencyMs: { total: 7 } },
+    { issues: [] },
+    semanticReplayability(),
+  );
+  assert.equal(trace.spans[0]?.durationMs, 7);
+  assertBuildTrace(trace);
+
+  const durationMismatch = structuredClone(trace);
+  durationMismatch.spans[0]!.durationMs = 6;
+  assert.throws(() => assertBuildTrace(durationMismatch), /duration/);
+
+  const invalidIso = structuredClone(trace);
+  invalidIso.spans[0]!.startedAt = "not-a-timestamp";
+  assert.throws(() => assertBuildTrace(invalidIso), /startedAt/);
+
+  const escapedSpan = structuredClone(trace);
+  escapedSpan.spans[0]!.endedAt = "2026-08-29T00:00:00.008Z";
+  escapedSpan.spans[0]!.durationMs = 8;
+  assert.throws(() => assertBuildTrace(escapedSpan), /outside trace interval/);
+
+  const zeroRootLatency = structuredClone(trace);
+  zeroRootLatency.spans[0]!.endedAt = zeroRootLatency.spans[0]!.startedAt;
+  zeroRootLatency.spans[0]!.durationMs = 0;
+  assert.throws(() => assertBuildTrace(zeroRootLatency), /Nonzero aggregate latency/);
+
+  const duplicateSequence = structuredClone(trace);
+  duplicateSequence.events[0]!.sequence = duplicateSequence.spans[0]!.sequence;
+  assert.throws(() => assertBuildTrace(duplicateSequence), /unique ordered/);
+});
+
+function fixedClock(): FlightRecorderClock {
   let milliseconds = 0;
-  return () => new Date(`2026-08-29T00:00:${String(milliseconds++).padStart(2, "0")}.000Z`);
+  return {
+    now: () => new Date(`2026-08-29T00:00:${String(Math.floor(milliseconds / 1_000)).padStart(2, "0")}.${String(milliseconds++ % 1_000).padStart(3, "0")}Z`),
+    monotonicNow: () => milliseconds,
+  };
+}
+
+class ManualClock implements FlightRecorderClock {
+  private milliseconds = 0;
+  now(): Date {
+    return new Date(`2026-08-29T00:00:00.${String(this.milliseconds).padStart(3, "0")}Z`);
+  }
+  monotonicNow(): number {
+    return this.milliseconds;
+  }
+  advance(durationMs: number): void {
+    this.milliseconds += durationMs;
+  }
 }
 
 function acceptedOutcome(): BuildOutcome {

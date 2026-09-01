@@ -28,6 +28,8 @@ import {
 import {
   FlightRecorder,
   JsonFileTraceSink,
+  createSystemFlightRecorderClock,
+  type FlightRecorderClock,
 } from "../../flight-recorder/src/index.js";
 import type {
   ModelClient,
@@ -303,12 +305,16 @@ export interface ToolResult {
 }
 export interface ToolCallRecord {
   sequence: number;
+  toolCallId: string;
+  disposition: "executed" | "rejected";
   name: string;
   inputHash: string;
   resultHash: string;
   truncated: boolean;
   bytes: number;
-  at: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
   input: unknown;
   result: ToolResult;
 }
@@ -332,7 +338,6 @@ export interface AgentToolHost {
     seenIds: ReadonlySet<string>,
   ): ToolBatchDecision;
   execute(name: string, input: unknown): Promise<ToolResult>;
-  records(): readonly ToolCallRecord[];
   completionStatus?(): AgentToolCompletionStatus;
   /** Content identity of accepted semantic progress, when the host can expose it. */
   progressToken?(): string;
@@ -340,6 +345,9 @@ export interface AgentToolHost {
 
 export interface AgentModelTurn {
   sequence: number;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
   requestHash: string;
   resultKind: ModelTurnResult["kind"];
   responseHash?: string;
@@ -356,6 +364,11 @@ export interface RuntimeUsage {
   outputTokens: number | null;
   costUsd: number | null;
 }
+export interface RuntimeTiming {
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+}
 export interface AgentRuntimeInput {
   systemPrompt: string;
   prompt: string;
@@ -364,11 +377,6 @@ export interface AgentRuntimeInput {
   budgets: BudgetPolicy;
   model: string;
 }
-/**
- * `rejectedToolCalls` is runtime-owned supplemental evidence for rejected
- * atomic batches. Hosts that already record their own rejected calls are not
- * duplicated; hosts that only return validation feedback remain auditable.
- */
 export interface AgentRuntimeResult {
   status: "completed" | "failed" | "budget_exhausted";
   trialStarted: boolean;
@@ -377,8 +385,9 @@ export interface AgentRuntimeResult {
   failureCode?: string;
   failureKind?: "provider" | "model" | "tool" | "harness";
   usage: RuntimeUsage;
+  timing: RuntimeTiming;
   turns: AgentModelTurn[];
-  rejectedToolCalls?: ToolCallRecord[];
+  toolCalls: ToolCallRecord[];
 }
 export interface AgentRuntime {
   readonly identity: { name: string };
@@ -393,8 +402,13 @@ export const FORGE_NATIVE_RUNTIME_IDENTITY = {
 export class ForgeNativeAgentRuntime implements AgentRuntime {
   readonly identity = FORGE_NATIVE_RUNTIME_IDENTITY;
   readonly modelClientDescriptor: ModelClient["descriptor"];
-  constructor(private readonly modelClient: ModelClient) {
+  private readonly clock: FlightRecorderClock;
+  constructor(
+    private readonly modelClient: ModelClient,
+    options: { clock?: FlightRecorderClock } = {},
+  ) {
     this.modelClientDescriptor = { ...modelClient.descriptor };
+    this.clock = options.clock ?? createSystemFlightRecorderClock();
   }
 
   async run(input: AgentRuntimeInput): Promise<AgentRuntimeResult> {
@@ -409,20 +423,21 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
     ];
     const turns: AgentModelTurn[] = [];
     const seenToolCallIds = new Set<string>();
-    const rejectedToolCalls: ToolCallRecord[] = [];
+    const toolCalls: ToolCallRecord[] = [];
     const rejectedBatchCounts = new Map<string, number>();
     const noProgressBatchCounts = new Map<string, number>();
     let consecutiveAllFailedToolBatches = 0;
-    const finish = (outcome: AgentRuntimeResult): AgentRuntimeResult =>
-      rejectedToolCalls.length === 0
-        ? outcome
-        : {
-            ...outcome,
-            rejectedToolCalls: rejectedToolCalls.map(copyToolCallRecord),
-          };
+    const timeline = createRuntimeTimeline(this.clock);
+    const runtimeStarted = startTiming(timeline);
+    const finish = (
+      outcome: Omit<AgentRuntimeResult, "timing" | "toolCalls">,
+    ): AgentRuntimeResult => ({
+      ...outcome,
+      timing: finishTiming(timeline, runtimeStarted),
+      toolCalls: toolCalls.map(copyToolCallRecord),
+    });
     let trialStarted = false;
     let usage: RuntimeUsage = emptyRuntimeUsage();
-    const startedAt = Date.now();
     const tools = input.tools.definitions().map((tool) => ({
       name: tool.name,
       description: tool.description,
@@ -430,7 +445,7 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
     }));
     for (let sequence = 1; sequence <= input.budgets.maxTurns; sequence += 1) {
       const remainingMs =
-        input.budgets.maxDurationMs - (Date.now() - startedAt);
+        input.budgets.maxDurationMs - elapsedSince(timeline, runtimeStarted);
       if (remainingMs <= 0)
         return finish(
           runtimeBudgetResult(
@@ -452,6 +467,7 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
           ),
         );
       let result: ModelTurnResult;
+      const modelTurnStarted = startTiming(timeline);
       try {
         result = await this.modelClient.complete({
           model: input.model,
@@ -466,6 +482,22 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
           timeoutMs: remainingMs,
         });
       } catch (error) {
+        const timing = finishTiming(timeline, modelTurnStarted);
+        turns.push({
+          sequence,
+          ...timing,
+          requestHash: contentHash(
+            stableJson({
+              model: input.model,
+              systemPromptHash: contentHash(input.systemPrompt),
+              messageCount: messages.length,
+            }),
+          ),
+          resultKind: "provider_error",
+          toolCallIds: [],
+          usage: { inputTokens: null, outputTokens: null, costUsd: null },
+          errorClass: "provider_exception",
+        });
         return finish({
           status: "failed",
           trialStarted,
@@ -475,6 +507,7 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
           turns,
         });
       }
+      const modelTurnTiming = finishTiming(timeline, modelTurnStarted);
       if (
         result.kind !== "provider_error" ||
         result.responseFacts.responseId !== null
@@ -483,6 +516,7 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
       usage = addUsage(usage, result.usage);
       turns.push({
         sequence,
+        ...modelTurnTiming,
         requestHash: result.requestHash,
         resultKind: result.kind,
         ...(result.kind === "assistant"
@@ -581,20 +615,27 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
           turns,
         });
       }
-      const recordsBeforeValidation = input.tools.records();
-      const decision = input.tools.validateBatch(
+      const validationStarted = startTiming(timeline);
+      const hostDecision = input.tools.validateBatch(
         result.message.toolCalls,
         seenToolCallIds,
       );
+      const validationTiming = finishTiming(timeline, validationStarted);
+      const decision =
+        toolCalls.length + result.message.toolCalls.length >
+        input.budgets.maxToolCalls
+          ? rejectedToolBudgetDecision(result.message.toolCalls)
+          : hostDecision;
       for (const call of result.message.toolCalls)
         if (call.id.length > 0) seenToolCallIds.add(call.id);
       if (!decision.valid) {
-        rejectedToolCalls.push(
-          ...unrecordedRejectedToolCalls(
+        toolCalls.push(
+          ...materializeRejectedToolCalls(
             result.message.toolCalls,
             decision.feedback,
-            input.tools.records().slice(recordsBeforeValidation.length),
-            rejectedToolCalls.length,
+            validationTiming,
+            toolCalls,
+            input.budgets,
           ),
         );
         messages.push({
@@ -611,13 +652,20 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
         );
         const repeats = (rejectedBatchCounts.get(fingerprint) ?? 0) + 1;
         rejectedBatchCounts.set(fingerprint, repeats);
-        const accountedToolCalls =
-          input.tools.records().length + rejectedToolCalls.length;
-        const accountedToolResultBytes =
-          input.tools.records().reduce((sum, record) => sum + record.bytes, 0) +
-          rejectedToolCalls.reduce((sum, record) => sum + record.bytes, 0);
+        const accountedToolCalls = toolCalls.length;
+        const accountedToolResultBytes = toolCalls.reduce(
+          (sum, record) => sum + record.bytes,
+          0,
+        );
+        const rejectedOutputBudgetExceeded = toolCalls
+          .slice(toolCalls.length - result.message.toolCalls.length)
+          .some(
+            (record) =>
+              record.result.error?.code === "TOOL_OUTPUT_BUDGET_EXHAUSTED",
+          );
         if (
           decision.budgetExhausted ||
+          rejectedOutputBudgetExceeded ||
           accountedToolCalls > input.budgets.maxToolCalls ||
           accountedToolResultBytes > input.budgets.maxToolResultBytes
         )
@@ -663,7 +711,31 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
       const progressBefore = input.tools.progressToken?.();
       const batchResults: ToolResult[] = [];
       for (const call of result.message.toolCalls) {
-        const toolResult = await input.tools.execute(call.name, call.arguments);
+        const toolStarted = startTiming(timeline);
+        let toolResult: ToolResult;
+        try {
+          toolResult = await input.tools.execute(call.name, call.arguments);
+        } catch (error) {
+          toolResult = fail(
+            "TOOL_EXECUTION_THROWN",
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+        const toolTiming = finishTiming(timeline, toolStarted);
+        toolResult = enforceToolResultBudget(
+          toolResult,
+          toolCalls,
+          input.budgets,
+        );
+        toolCalls.push(
+          materializeToolCall(
+            call,
+            toolResult,
+            "executed",
+            toolTiming,
+            toolCalls.length + 1,
+          ),
+        );
         batchResults.push(toolResult);
         messages.push({
           role: "tool",
@@ -818,6 +890,7 @@ export interface AgentRun {
   seedHash: string;
   workspaceDelta?: WorkspaceDelta;
   runtime: { name: string };
+  timing: RuntimeTiming;
   model: {
     transport: string;
     name: string;
@@ -961,12 +1034,17 @@ export function assertAgentRun(value: unknown): asserts value is AgentRun {
     ].includes(String(value.classification)) ||
     value.studio !== "not_run" ||
     !Array.isArray(value.modelTurns) ||
+    !isRuntimeTiming(value.timing) ||
+    !Array.isArray(value.toolCalls) ||
     !isRecord(value.finalVerification) ||
     !isRecord(value.model) ||
     !isRecord(value.model.transportConfiguration) ||
     !isRecord(value.origin)
   )
     throw new Error("Invalid AgentRun");
+  if (!value.modelTurns.every(isAgentModelTurn) || !value.toolCalls.every(isToolCallRecord))
+    throw new Error("Invalid AgentRun timing evidence");
+  assertTimelineWithinRuntime(value.timing, value.modelTurns, value.toolCalls);
   if (
     value.phase === "workspace_build" &&
     value.creatorPhaseOutcome !== undefined
@@ -1264,7 +1342,6 @@ function assertExperimentPreparation(
 export async function runBoundedAgent(
   request: AgentBuildRequest,
 ): Promise<AgentBuildResult> {
-  const startedAt = Date.now();
   const runId = `agent_run_${randomUUID()}`;
   const prepared = await prepareAgentBuild(request);
   if (request.experiment)
@@ -1289,6 +1366,8 @@ export async function runBoundedAgent(
       error: error instanceof Error ? error.message : String(error),
       usage: emptyRuntimeUsage(),
       turns: [],
+      toolCalls: [],
+      timing: zeroRuntimeTiming(),
     };
   }
 
@@ -1304,13 +1383,10 @@ export async function runBoundedAgent(
     };
     delta = await prepared.workspace.currentDeltaUnchecked();
   }
-  const toolCalls = mergeToolCallRecords(
-    prepared.toolHost.records(),
-    runtimeResult.rejectedToolCalls ?? [],
-  );
+  const toolCalls = runtimeResult.toolCalls;
   const consumption = prepared.workspace.consumption(
     toolCalls,
-    Date.now() - startedAt,
+    runtimeResult.timing.durationMs,
     runtimeResult.usage,
   );
   const exhausted = exhaustedBudgets(prepared.budgets, consumption);
@@ -1399,6 +1475,7 @@ export async function runBoundedAgent(
     seedHash: prepared.workspace.seedTreeHash,
     ...(delta.operations.length > 0 ? { workspaceDelta: delta } : {}),
     runtime: { ...request.runtime.identity },
+    timing: { ...runtimeResult.timing },
     model: prepared.modelDescriptor,
     modelTurns: runtimeResult.turns,
     plans: prepared.toolHost.plans(),
@@ -1464,7 +1541,6 @@ export async function persistCreatorPhaseAgentRun(input: {
   runtimeResult: AgentRuntimeResult;
   toolHost: AgentToolHost;
   budgets: BudgetPolicy;
-  durationMs: number;
   directory: string;
   traceDirectory: string;
   executionWorker: CreatorAgentExecutionWorker;
@@ -1547,10 +1623,7 @@ export async function persistCreatorPhaseAgentRun(input: {
       transportConfiguration: input.runtime.modelClientDescriptor.configuration,
     },
   });
-  const toolCalls = mergeToolCallRecords(
-    input.toolHost.records(),
-    input.runtimeResult.rejectedToolCalls ?? [],
-  );
+  const toolCalls = input.runtimeResult.toolCalls;
   const consumed: BudgetConsumption = {
     turns: input.runtimeResult.usage.turns,
     toolCalls: toolCalls.length,
@@ -1565,7 +1638,7 @@ export async function persistCreatorPhaseAgentRun(input: {
       0,
     ),
     toolResultBytes: toolCalls.reduce((sum, call) => sum + call.bytes, 0),
-    durationMs: Math.max(0, input.durationMs),
+    durationMs: input.runtimeResult.timing.durationMs,
     inputTokens: input.runtimeResult.usage.inputTokens,
     outputTokens: input.runtimeResult.usage.outputTokens,
     costUsd: input.runtimeResult.usage.costUsd,
@@ -1584,13 +1657,19 @@ export async function persistCreatorPhaseAgentRun(input: {
           ? contentHash(input.runtimeResult.error)
           : undefined,
         usage: input.runtimeResult.usage,
+        timing: input.runtimeResult.timing,
         turns: input.runtimeResult.turns,
       },
       tools: toolCalls.map((call) => ({
         sequence: call.sequence,
+        toolCallId: call.toolCallId,
+        disposition: call.disposition,
         name: call.name,
         inputHash: call.inputHash,
         resultHash: call.resultHash,
+        startedAt: call.startedAt,
+        endedAt: call.endedAt,
+        durationMs: call.durationMs,
       })),
       finalization:
         input.finalization.status === "sealed"
@@ -1719,17 +1798,33 @@ export async function persistCreatorPhaseAgentRun(input: {
       "forge.worker.environment": input.executionWorker.environment,
       "forge.worker.isolation": input.executionWorker.isolation,
     },
+    input.runtimeResult.timing,
   );
+  for (const turn of input.runtimeResult.turns)
+    recorder.recordSpan(
+      "forge.model.generate",
+      turn.resultKind === "provider_error" ||
+        turn.resultKind === "invalid_model_response"
+        ? "error"
+        : "ok",
+      {
+        "forge.model.turn_sequence": turn.sequence,
+        "forge.model.request_hash": turn.requestHash,
+      },
+      turn,
+    );
   for (const call of toolCalls)
     recorder.recordSpan("forge.tool.call", call.result.ok ? "ok" : "error", {
       "forge.tool.name": call.name,
+      "forge.tool.call_id": call.toolCallId,
+      "forge.tool.disposition": call.disposition,
       "forge.tool.input_hash": call.inputHash,
       "forge.tool.result_hash": call.resultHash,
       "forge.tool.truncated": call.truncated,
       ...(call.result.error
         ? { "forge.tool.error_code": call.result.error.code }
         : {}),
-    });
+    }, call);
   const trace = recorder.complete(
     {
       status,
@@ -1788,6 +1883,7 @@ export async function persistCreatorPhaseAgentRun(input: {
     harnessConfigurationHash: configuration.hash,
     seedHash: input.revisionHash,
     runtime: { ...input.runtime.identity },
+    timing: { ...input.runtimeResult.timing },
     model: {
       transport: input.runtime.modelClientDescriptor.transport,
       name: "openai/gpt-5.6-luna",
@@ -2135,18 +2231,13 @@ export class CandidateWorkspace {
 }
 
 export class BoundedToolHost implements AgentToolHost {
-  private readonly callRecords: ToolCallRecord[] = [];
   private readonly buildPlans: BuildPlan[] = [];
-  private totalResultBytes = 0;
   constructor(
     private readonly workspace: CandidateWorkspace,
-    private readonly budgets: BudgetPolicy,
+    _budgets: BudgetPolicy,
   ) {}
   definitions(): AgentToolDefinition[] {
     return TOOL_DEFINITIONS;
-  }
-  records(): readonly ToolCallRecord[] {
-    return this.callRecords;
   }
   plans(): BuildPlan[] {
     return [...this.buildPlans];
@@ -2190,54 +2281,30 @@ export class BoundedToolHost implements AgentToolHost {
         return undefined;
       },
     );
-    const callBudgetExceeded =
-      this.callRecords.length + calls.length > this.budgets.maxToolCalls;
-    if (!callBudgetExceeded && errors.every((error) => error === undefined))
+    if (errors.every((error) => error === undefined))
       return { valid: true, feedback: [], budgetExhausted: false };
     const feedback = calls.map((call, index) => {
-      const error = callBudgetExceeded
-        ? {
-            code: "TOOL_BUDGET_EXHAUSTED",
-            message: "This batch would exceed the tool-call budget.",
-          }
-        : (errors[index] ?? {
-            code: "TOOL_BATCH_REJECTED",
-            message:
-              "No tool was executed because another request in the batch was invalid.",
-          });
+      const error = errors[index] ?? {
+        code: "TOOL_BATCH_REJECTED",
+        message:
+          "No tool was executed because another request in the batch was invalid.",
+      };
       return {
         id: call.id,
         name: call.name,
-        result: this.record(
-          call.name,
-          call.arguments,
-          fail(error.code, error.message),
-        ),
+        result: fail(error.code, error.message),
       };
     });
-    const outputBudgetExceeded = feedback.some(
-      (item) => item.result.error?.code === "TOOL_OUTPUT_BUDGET_EXHAUSTED",
-    );
     return {
       valid: false,
       feedback,
-      budgetExhausted: callBudgetExceeded || outputBudgetExceeded,
+      budgetExhausted: false,
     };
   }
   async execute(name: string, input: unknown): Promise<ToolResult> {
     const definition = TOOL_DEFINITIONS.find((item) => item.name === name);
     if (!definition)
-      return this.record(
-        name,
-        input,
-        fail("TOOL_UNKNOWN", `Unknown Forge tool: ${name}`),
-      );
-    if (this.callRecords.length >= this.budgets.maxToolCalls)
-      return this.record(
-        name,
-        input,
-        fail("TOOL_BUDGET_EXHAUSTED", "Tool-call budget exhausted"),
-      );
+      return fail("TOOL_UNKNOWN", `Unknown Forge tool: ${name}`);
     try {
       const parsed = z.object(definition.inputShape).strict().parse(input);
       let value: unknown;
@@ -2295,39 +2362,15 @@ export class BoundedToolHost implements AgentToolHost {
         default:
           value = null;
       }
-      return this.record(name, input, bounded(value));
+      return bounded(value);
     } catch (error) {
-      return this.record(
-        name,
-        input,
-        fail(
-          error instanceof CapabilityError
-            ? error.code
-            : "TOOL_INPUT_OR_EXECUTION",
-          error instanceof Error ? error.message : String(error),
-        ),
+      return fail(
+        error instanceof CapabilityError
+          ? error.code
+          : "TOOL_INPUT_OR_EXECUTION",
+        error instanceof Error ? error.message : String(error),
       );
     }
-  }
-  private record(name: string, input: unknown, result: ToolResult): ToolResult {
-    if (this.totalResultBytes + result.bytes > this.budgets.maxToolResultBytes)
-      result = fail(
-        "TOOL_OUTPUT_BUDGET_EXHAUSTED",
-        "Aggregate tool-result budget exhausted",
-      );
-    this.totalResultBytes += result.bytes;
-    this.callRecords.push({
-      sequence: this.callRecords.length + 1,
-      name,
-      inputHash: contentHash(stableJson(input)),
-      resultHash: result.resultHash,
-      truncated: result.truncated,
-      bytes: result.bytes,
-      at: new Date().toISOString(),
-      input,
-      result,
-    });
-    return result;
   }
   private async search(input: {
     query: string;
@@ -2583,25 +2626,34 @@ function createAgentBuildTrace(
       "forge.harness.configuration_hash": configuration.hash,
       "forge.tool.call_count": run.toolCalls.length,
     },
+    run.timing,
   );
-  recorder.recordSpan(
-    "forge.model.generate",
-    run.classification === "provider_failure" ? "error" : "ok",
-    {
-      "forge.model.turns": run.budgets.consumed.turns,
-      "forge.model.cost_usd": run.budgets.consumed.costUsd ?? 0,
-    },
-  );
+  for (const turn of run.modelTurns)
+    recorder.recordSpan(
+      "forge.model.generate",
+      turn.resultKind === "provider_error" ||
+        turn.resultKind === "invalid_model_response"
+        ? "error"
+        : "ok",
+      {
+        "forge.model.turn_sequence": turn.sequence,
+        "forge.model.request_hash": turn.requestHash,
+        "forge.model.cost_usd": turn.usage.costUsd ?? 0,
+      },
+      turn,
+    );
   for (const call of run.toolCalls)
     recorder.recordSpan("forge.tool.call", call.result.ok ? "ok" : "error", {
       "forge.tool.name": call.name,
+      "forge.tool.call_id": call.toolCallId,
+      "forge.tool.disposition": call.disposition,
       "forge.tool.input_hash": call.inputHash,
       "forge.tool.result_hash": call.resultHash,
       "forge.tool.truncated": call.truncated,
       ...(call.result.error
         ? { "forge.tool.error_code": call.result.error.code }
         : {}),
-    });
+    }, call);
   const counts = { info: 0, warning: 0, error: 0, critical: 0 };
   for (const issue of verification.report.issues) counts[issue.severity] += 1;
   const outcome: BuildOutcome = {
@@ -2859,11 +2911,12 @@ function fail(code: string, message: string): ToolResult {
 const MAX_IDENTICAL_REJECTED_TOOL_BATCHES = 2;
 const MAX_CONSECUTIVE_ALL_FAILED_TOOL_BATCHES = 3;
 
-function unrecordedRejectedToolCalls(
+function materializeRejectedToolCalls(
   calls: readonly ModelToolCall[],
   feedback: readonly ToolBatchDecision["feedback"][number][],
-  hostRecords: readonly ToolCallRecord[],
-  existingRuntimeRecords: number,
+  timing: RuntimeTiming,
+  existingRecords: readonly ToolCallRecord[],
+  budgets: BudgetPolicy,
 ): ToolCallRecord[] {
   const feedbackByCall = new Map<string, ToolResult[]>();
   for (const entry of feedback) {
@@ -2872,40 +2925,89 @@ function unrecordedRejectedToolCalls(
     results.push(entry.result);
     feedbackByCall.set(key, results);
   }
-  const unmatchedHostRecords = [...hostRecords];
   const runtimeRecords: ToolCallRecord[] = [];
   for (const call of calls) {
     const key = `${call.id}\u0000${call.name}`;
-    const result =
+    let result =
       feedbackByCall.get(key)?.shift() ??
       fail(
         "TOOL_BATCH_REJECTED",
         "No tool was executed because the rejected batch did not return per-call feedback.",
       );
-    const inputHash = contentHash(stableJson(call.arguments));
-    const existingIndex = unmatchedHostRecords.findIndex(
-      (record) =>
-        record.name === call.name &&
-        record.inputHash === inputHash &&
-        record.resultHash === result.resultHash,
+    result = enforceToolResultBudget(
+      result,
+      [...existingRecords, ...runtimeRecords],
+      budgets,
     );
-    if (existingIndex >= 0) {
-      unmatchedHostRecords.splice(existingIndex, 1);
-      continue;
-    }
     runtimeRecords.push({
-      sequence: existingRuntimeRecords + runtimeRecords.length + 1,
-      name: call.name,
-      inputHash,
-      resultHash: result.resultHash,
-      truncated: result.truncated,
-      bytes: result.bytes,
-      at: new Date().toISOString(),
-      input: structuredClone(call.arguments),
-      result: structuredClone(result),
+      ...materializeToolCall(
+        call,
+        result,
+        "rejected",
+        timing,
+        existingRecords.length + runtimeRecords.length + 1,
+      ),
     });
   }
   return runtimeRecords;
+}
+
+function rejectedToolBudgetDecision(
+  calls: readonly ModelToolCall[],
+): ToolBatchDecision {
+  return {
+    valid: false,
+    feedback: calls.map((call) => ({
+      id: call.id,
+      name: call.name,
+      result: fail(
+        "TOOL_BUDGET_EXHAUSTED",
+        "This batch would exceed the tool-call budget.",
+      ),
+    })),
+    budgetExhausted: true,
+  };
+}
+
+function materializeToolCall(
+  call: ModelToolCall,
+  result: ToolResult,
+  disposition: ToolCallRecord["disposition"],
+  timing: RuntimeTiming,
+  sequence: number,
+): ToolCallRecord {
+  return {
+    sequence,
+    toolCallId: call.id,
+    disposition,
+    name: call.name,
+    inputHash: contentHash(stableJson(call.arguments)),
+    resultHash: result.resultHash,
+    truncated: result.truncated,
+    bytes: result.bytes,
+    startedAt: timing.startedAt,
+    endedAt: timing.endedAt,
+    durationMs: timing.durationMs,
+    input: structuredClone(call.arguments),
+    result: structuredClone(result),
+  };
+}
+
+function enforceToolResultBudget(
+  result: ToolResult,
+  existingRecords: readonly ToolCallRecord[],
+  budgets: BudgetPolicy,
+): ToolResult {
+  const existingBytes = existingRecords.reduce(
+    (total, record) => total + record.bytes,
+    0,
+  );
+  return existingBytes + result.bytes > budgets.maxToolResultBytes
+    ? fail(
+        "TOOL_OUTPUT_BUDGET_EXHAUSTED",
+        "Aggregate tool-result budget exhausted",
+      )
+    : result;
 }
 
 function rejectedBatchFingerprint(
@@ -2950,27 +3052,6 @@ function creatorStageSourceBytes(record: ToolCallRecord): number {
   return Buffer.byteLength(record.input.change.source, "utf8");
 }
 
-function mergeToolCallRecords(
-  hostRecords: readonly ToolCallRecord[],
-  runtimeRejectedToolCalls: readonly ToolCallRecord[],
-): ToolCallRecord[] {
-  const unmatchedRuntimeRecords =
-    runtimeRejectedToolCalls.map(copyToolCallRecord);
-  const merged = hostRecords.map(copyToolCallRecord);
-  for (const record of merged) {
-    const duplicate = unmatchedRuntimeRecords.findIndex(
-      (candidate) =>
-        candidate.name === record.name &&
-        candidate.inputHash === record.inputHash &&
-        candidate.resultHash === record.resultHash,
-    );
-    if (duplicate >= 0) unmatchedRuntimeRecords.splice(duplicate, 1);
-  }
-  return [...merged, ...unmatchedRuntimeRecords].map((record, index) => ({
-    ...record,
-    sequence: index + 1,
-  }));
-}
 function sanitizeIssue(issue: VerificationIssue): unknown {
   return {
     id: issue.id,
@@ -2986,8 +3067,65 @@ function runtimeBudgetResult(
   usage: RuntimeUsage,
   turns: AgentModelTurn[],
   trialStarted: boolean,
-): AgentRuntimeResult {
+): Omit<AgentRuntimeResult, "timing" | "toolCalls"> {
   return { status: "budget_exhausted", trialStarted, error, usage, turns };
+}
+
+interface TimingStart {
+  monotonicStartedAt: number;
+}
+
+interface RuntimeTimeline {
+  clock: FlightRecorderClock;
+  wallOriginMs: number;
+  monotonicOriginMs: number;
+}
+
+function createRuntimeTimeline(clock: FlightRecorderClock): RuntimeTimeline {
+  return {
+    clock,
+    wallOriginMs: clock.now().getTime(),
+    monotonicOriginMs: clock.monotonicNow(),
+  };
+}
+
+function startTiming(timeline: RuntimeTimeline): TimingStart {
+  return {
+    monotonicStartedAt: timeline.clock.monotonicNow(),
+  };
+}
+
+function finishTiming(
+  timeline: RuntimeTimeline,
+  started: TimingStart,
+): RuntimeTiming {
+  const startedOffsetMs = elapsedFromTimeline(timeline, started.monotonicStartedAt);
+  const durationMs = elapsedSince(timeline, started);
+  const startedAt = new Date(timeline.wallOriginMs + startedOffsetMs).toISOString();
+  return {
+    startedAt,
+    endedAt: new Date(Date.parse(startedAt) + durationMs).toISOString(),
+    durationMs,
+  };
+}
+
+function elapsedSince(timeline: RuntimeTimeline, started: TimingStart): number {
+  return Math.max(
+    0,
+    Math.floor(timeline.clock.monotonicNow() - started.monotonicStartedAt),
+  );
+}
+
+function elapsedFromTimeline(
+  timeline: RuntimeTimeline,
+  monotonicAt: number,
+): number {
+  return Math.max(0, Math.floor(monotonicAt - timeline.monotonicOriginMs));
+}
+
+function zeroRuntimeTiming(): RuntimeTiming {
+  const now = new Date().toISOString();
+  return { startedAt: now, endedAt: now, durationMs: 0 };
 }
 function emptyRuntimeUsage(): RuntimeUsage {
   return { turns: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
@@ -3117,6 +3255,38 @@ function isSafeRelative(path: string): boolean {
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isRuntimeTiming(value: unknown): value is RuntimeTiming {
+  if (!isRecord(value) || typeof value.startedAt !== "string" || typeof value.endedAt !== "string" || typeof value.durationMs !== "number" || !Number.isSafeInteger(value.durationMs) || value.durationMs < 0) return false;
+  const startedAt = Date.parse(value.startedAt);
+  const endedAt = Date.parse(value.endedAt);
+  return Number.isFinite(startedAt) && Number.isFinite(endedAt) && new Date(startedAt).toISOString() === value.startedAt && new Date(endedAt).toISOString() === value.endedAt && endedAt >= startedAt && value.durationMs === endedAt - startedAt;
+}
+function isAgentModelTurn(value: unknown): value is AgentModelTurn {
+  return isRecord(value) && isRuntimeTiming(value) && isIdentifier(value.requestHash) && ["assistant", "invalid_model_response", "provider_error"].includes(String(value.resultKind)) && Array.isArray(value.toolCallIds) && value.toolCallIds.every(isString) && isRecord(value.usage);
+}
+function isToolCallRecord(value: unknown): value is ToolCallRecord {
+  return isRecord(value) && typeof value.sequence === "number" && Number.isSafeInteger(value.sequence) && value.sequence > 0 && isString(value.toolCallId) && ["executed", "rejected"].includes(String(value.disposition)) && isIdentifier(value.name) && isHash(value.inputHash) && isHash(value.resultHash) && typeof value.truncated === "boolean" && typeof value.bytes === "number" && Number.isSafeInteger(value.bytes) && value.bytes >= 0 && isRuntimeTiming(value) && isRecord(value.result);
+}
+function assertTimelineWithinRuntime(
+  timing: RuntimeTiming,
+  turns: readonly AgentModelTurn[],
+  toolCalls: readonly ToolCallRecord[],
+): void {
+  const runtimeStart = Date.parse(timing.startedAt);
+  const runtimeEnd = Date.parse(timing.endedAt);
+  for (const [index, turn] of turns.entries()) {
+    if (turn.sequence !== index + 1) throw new Error("Agent model turns require contiguous sequences");
+    const startedAt = Date.parse(turn.startedAt);
+    const endedAt = Date.parse(turn.endedAt);
+    if (startedAt < runtimeStart || endedAt > runtimeEnd) throw new Error("Agent model turn falls outside runtime interval");
+  }
+  for (const [index, call] of toolCalls.entries()) {
+    if (call.sequence !== index + 1) throw new Error("Tool calls require contiguous sequences");
+    const startedAt = Date.parse(call.startedAt);
+    const endedAt = Date.parse(call.endedAt);
+    if (startedAt < runtimeStart || endedAt > runtimeEnd) throw new Error("Tool call falls outside runtime interval");
+  }
 }
 function isCreatorPhaseOutcome(value: unknown): value is CreatorPhaseOutcome {
   if (!isRecord(value) || !isHash(value.attemptHash)) return false;

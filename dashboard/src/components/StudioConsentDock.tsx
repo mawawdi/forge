@@ -1,0 +1,171 @@
+import { useState } from "react";
+import { dashboardStore } from "../api-store";
+import { hasRequiredReport, makeActionRequest, reportByteLength } from "../derived";
+import type {
+  CreatorControlAction,
+  CreatorDashboardState,
+} from "../types";
+
+interface StudioConsentDockProps {
+  state: CreatorDashboardState | undefined;
+  pendingAction: string | undefined;
+}
+
+export function StudioConsentDock({ state, pendingAction }: StudioConsentDockProps): React.JSX.Element {
+  const [report, setReport] = useState("");
+  const [message, setMessage] = useState<string | undefined>();
+  const pairedStudio = state?.pairedStudio;
+  const actions = [
+    state?.controlView?.primaryAction,
+    state?.controlView?.secondaryAction,
+  ].filter((action): action is CreatorControlAction => action !== undefined);
+  const finalReviewOpen = actions.some(isFinalReviewAction);
+
+  async function act(action: CreatorControlAction): Promise<void> {
+    if (!state) return;
+    try {
+      setMessage(undefined);
+      await dashboardStore.submit(makeActionRequest(state, action.id, report));
+      if (isFinalReviewAction(action)) setReport("");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "The control action did not complete.");
+    }
+  }
+
+  return (
+    <aside className="consent-dock" aria-labelledby="studio-title">
+      <section className="panel studio-card">
+        <div className="panel-heading">
+          <p className="eyebrow">Trusted executor</p>
+          <h2 id="studio-title">Studio connection</h2>
+        </div>
+        <div className={`studio-connection studio-connection--${pairedStudio?.status ?? "unpaired"}`}>
+          <span className="connection-orb" aria-hidden="true" />
+          <div>
+            <strong>{pairedStudio?.status ?? "unpaired"}</strong>
+            <p>{pairedStudio?.message ?? "Waiting for a paired Studio project."}</p>
+          </div>
+        </div>
+        {pairedStudio?.projectName || pairedStudio?.projectId ? (
+          <dl className="studio-facts">
+            <div><dt>Project</dt><dd>{pairedStudio.projectName ?? pairedStudio.projectId}</dd></div>
+            {pairedStudio.revisionHash ? <div><dt>Revision</dt><dd><code>{shortHash(pairedStudio.revisionHash)}</code></dd></div> : null}
+            {pairedStudio.capabilities ? <div><dt>Capabilities</dt><dd>{pairedStudio.capabilities.length}</dd></div> : null}
+          </dl>
+        ) : null}
+      </section>
+      <section className="panel consent-card" aria-labelledby="consent-title">
+        <div className="panel-heading">
+          <p className="eyebrow">Creator authority</p>
+          <h2 id="consent-title">Consent dock</h2>
+        </div>
+        {finalReviewOpen ? (
+          <CreatorReport report={report} onChange={setReport} />
+        ) : (
+          <p className="consent-copy">Only exact, hash-bound actions from the current evidence view are available here.</p>
+        )}
+        <div className="action-list">
+          {actions.length > 0 ? actions.map((action) => (
+            <ControlActionButton
+              key={action.id}
+              action={action}
+              report={report}
+              pendingAction={pendingAction}
+              onAct={act}
+            />
+          )) : <p className="empty-actions">No creator action is available for this session.</p>}
+        </div>
+        <p className="action-message" role="status" aria-live="polite">{message ?? ""}</p>
+      </section>
+      <ReplayControl state={state} />
+    </aside>
+  );
+}
+
+interface CreatorReportProps {
+  report: string;
+  onChange: (value: string) => void;
+}
+
+function CreatorReport({ report, onChange }: CreatorReportProps): React.JSX.Element {
+  const count = reportByteLength(report.trim());
+  return (
+    <div className="creator-report">
+      <label htmlFor="creator-report">What you observed in Studio</label>
+      <textarea
+        id="creator-report"
+        value={report}
+        onChange={(event) => onChange(event.target.value)}
+        maxLength={4096}
+        placeholder="Record the interaction you observed, any limits, and your final judgment."
+        aria-describedby="creator-report-rule"
+      />
+      <span id="creator-report-rule">{count}/4096 bytes · a non-whitespace report is required to accept or reject.</span>
+    </div>
+  );
+}
+
+interface ControlActionButtonProps {
+  action: CreatorControlAction;
+  report: string;
+  pendingAction: string | undefined;
+  onAct: (action: CreatorControlAction) => Promise<void>;
+}
+
+function ControlActionButton({ action, report, pendingAction, onAct }: ControlActionButtonProps): React.JSX.Element {
+  const isPending = pendingAction === action.id;
+  const disabled = Boolean(pendingAction) || !hasRequiredReport(action, report);
+  return (
+    <button
+      type="button"
+      className={`action-button action-button--${action.intent}`}
+      disabled={disabled}
+      onClick={() => void onAct(action)}
+    >
+      {isPending ? "Working…" : action.label}
+    </button>
+  );
+}
+
+interface ReplayControlProps {
+  state: CreatorDashboardState | undefined;
+}
+
+function ReplayControl({ state }: ReplayControlProps): React.JSX.Element | null {
+  const [result, setResult] = useState<string | undefined>();
+  const verification = state?.controlView?.verification;
+  if (!verification?.replayable) return null;
+  const replayableVerification = verification;
+  async function replay(): Promise<void> {
+    try {
+      const response = await fetch(`/api/verifications/${encodeURIComponent(replayableVerification.id)}/replay`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+      });
+      const value = await response.json() as { detail?: unknown };
+      if (!response.ok) throw new Error(typeof value.detail === "string" ? value.detail : `Replay failed (${response.status}).`);
+      setResult(typeof value.detail === "string" ? value.detail : "Replay completed.");
+    } catch (error) {
+      setResult(error instanceof Error ? error.message : "Replay failed.");
+    }
+  }
+  return (
+    <section className="replay-card" aria-label="Evidence replay">
+      <div>
+        <p className="eyebrow">Provider-free check</p>
+        <strong>Replay verification</strong>
+      </div>
+      <button type="button" className="quiet-button" onClick={() => void replay()}>Replay</button>
+      {result ? <p role="status" aria-live="polite">{result}</p> : null}
+    </section>
+  );
+}
+
+function isFinalReviewAction(action: CreatorControlAction): boolean {
+  return action.requiresReport || action.id === "accept_result" || action.id === "reject_and_rollback";
+}
+
+function shortHash(value: string): string {
+  return value.length > 16 ? `${value.slice(0, 9)}…${value.slice(-5)}` : value;
+}

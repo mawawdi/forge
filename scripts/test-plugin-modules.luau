@@ -1,6 +1,5 @@
 local ObservationRevision = require("../plugin/src/Forge/ObservationRevision")
 local RuntimeCapabilityEncoding = require("../plugin/src/Forge/RuntimeCapabilityEncoding")
-local CreatorUiState = require("../plugin/src/Forge/CreatorUiState")
 local StudioAuthoring = require("../plugin/src/Forge/StudioAuthoring")
 local StudioInstancePolicy = require("../plugin/src/Forge/StudioInstancePolicy")
 
@@ -67,24 +66,6 @@ assert(not string.find(literal, "\n-- injected", 1, true), "raw plan newlines mu
 -- its service-root resolution policy; this module test keeps the hostile plan
 -- fixture anchored to a Workspace-only BasePart target.
 assert(string.find(hostile, "Workspace/", 1, true), "BasePart observation fixtures must remain Workspace-scoped")
-
-local statuses = { "planning", "awaiting_plan_approval", "building", "awaiting_change_approval", "applying", "awaiting_verification", "verifying", "repairing", "awaiting_review", "creator_accepted", "creator_rejected", "rolled_back", "incomplete", "recovery_required" }
-for _, status in ipairs(statuses) do
-	local view = { kind = "CreatorControlView", id = "view_" .. status, hash = string.rep("a", 64), creatorSessionId = "creator_session_test", creatorSessionHash = string.rep("b", 64), status = status, title = status, detail = "detail" }
-	if status == "awaiting_plan_approval" then view.primaryAction = { id = "approve_plan", label = "Approve Plan", intent = "primary" }; view.secondaryAction = { id = "reject_plan", label = "Reject", intent = "secondary" }
-	elseif status == "awaiting_change_approval" then view.primaryAction = { id = "approve_and_apply_changes", label = "Approve & Apply", intent = "primary" }; view.secondaryAction = { id = "reject_changes", label = "Reject", intent = "secondary" }
-	elseif status == "awaiting_verification" then view.primaryAction = { id = "start_checks", label = "Start Approved Checks", intent = "primary" }; view.secondaryAction = { id = "cancel_changes", label = "Cancel Changes", intent = "secondary" }
-	elseif status == "awaiting_review" then view.primaryAction = { id = "accept_result", label = "Accept Result", intent = "primary" }; view.secondaryAction = { id = "reject_and_rollback", label = "Reject & Roll Back", intent = "secondary" } end
-	local mapped = CreatorUiState.fromView(view)
-	assert(mapped.status == status, "creator UI mapping must preserve every coordinator status")
-	if view.primaryAction then
-		local payload = CreatorUiState.actionPayload(view, "primary")
-		assert(payload.viewId == view.id and payload.viewHash == view.hash and payload.actionId == view.primaryAction.id, "creator action must remain bound to the exact view hash")
-	else assert(mapped.primary == nil and mapped.secondary == nil, "non-interactive statuses must not invent plugin actions") end
-end
-
-local staleOk = pcall(function() CreatorUiState.actionPayload({ kind = "CreatorControlView", id = "stale", hash = string.rep("c", 64), creatorSessionId = "session", creatorSessionHash = string.rep("d", 64), status = "awaiting_plan_approval", title = "Review", detail = "", primaryAction = { id = "apply", label = "Legacy Apply", intent = "primary" } }, "primary") end)
-assert(not staleOk, "legacy or unavailable workflow actions must fail closed in the plugin mapping")
 
 local function payload(properties, source, sourceRequired)
 	return { kind = "create", className = sourceRequired and "Script" or "Part", properties = properties, attributes = { CreatorOwned = true }, source = source, sourceRequired = sourceRequired == true }

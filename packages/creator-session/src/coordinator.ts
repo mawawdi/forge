@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { INITIAL_EXPERIMENT_BUDGETS } from "../../agent-runtime/src/index.js";
+import {
+  ImmutableJsonArtifactStore,
+  type ArtifactReference,
+} from "../../artifact-store/src/index.js";
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 import {
   createBackendMessage,
   type StudioBridgeConnection,
-  type StudioBridgeControlHandler,
   type StudioBridgeSession,
 } from "../../studio-bridge/src/index.js";
 import { type PluginToBackendMessage } from "../../studio-protocol/src/index.js";
@@ -14,8 +17,6 @@ import {
   createStudioExecutionPlan,
   STUDIO_CAPABILITY_SET,
   type RuntimeObservationEnvelope,
-  type StudioCapabilityCall,
-  type StudioRuntimeTarget,
 } from "../../studio-capabilities/src/index.js";
 import {
   executeCreatorVerificationPlan,
@@ -26,23 +27,31 @@ import {
   assertCreatorControlActionBinding,
   createCreatorControlView,
   createCreatorApproval,
+  createCreatorReviewReport,
   createCreatorSession,
   createStudioOwnershipMap,
   loadCreatorBundle,
   persistCreatorBundle,
   persistCreatorPrompt,
   serializeCreatorChangeSet,
-  subtreeSnapshotHash,
   type CreatorChangeSet,
   type CreatorCheckpoint,
-  type CreatorReview,
+  type CreatorDashboardState,
+  type CreatorProgressStage,
   type CreatorSessionBundle,
   type CreatorControlActionId,
   type CreatorControlView,
   type CreatorPlanChange,
   type CreatorVerificationRecord,
-  type VerificationCharterClause,
 } from "./index.js";
+import {
+  createCharterExecution,
+  createVerificationFailureFacts,
+  gradeRuntimeCharter,
+  gradeSnapshotCharter,
+  replayCreatorVerification,
+  verificationEvidenceHash,
+} from "./verification.js";
 import type { CreatorAgentWorker } from "./worker.js";
 
 export type CreatorControlAction =
@@ -53,10 +62,10 @@ export type CreatorControlAction =
       viewId: string;
       viewHash: string;
       actionId: CreatorControlActionId;
-      note?: string;
+      report?: string;
     };
 
-export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
+export class CreatorSessionCoordinator {
   private readonly bundles = new Map<string, CreatorSessionBundle>();
   private readonly pendingRecordings = new Map<
     string,
@@ -70,8 +79,10 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
   private readonly inFlight = new Set<string>();
   private readonly views = new Map<string, CreatorControlView>();
   private readonly consumedViewHashes = new Set<string>();
+  private readonly listeners = new Set<() => void>();
   private pairedSession?: StudioBridgeSession;
   private unsubscribe: () => void;
+  private readonly artifactStore: ImmutableJsonArtifactStore;
 
   constructor(
     private readonly input: {
@@ -82,6 +93,9 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
       externalRojoPaths?: readonly string[];
     },
   ) {
+    this.artifactStore = new ImmutableJsonArtifactStore(
+      resolve(input.directory),
+    );
     this.unsubscribe = input.connection.subscribeWithSession(
       (message, session) => {
         void this.onPluginMessage(message, session);
@@ -91,6 +105,155 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
 
   close(): void {
     this.unsubscribe();
+    this.listeners.clear();
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  pairedStudio(): StudioBridgeSession | undefined {
+    if (
+      "getSessions" in this.input.connection &&
+      typeof this.input.connection.getSessions === "function"
+    ) {
+      const sessions = (
+        this.input.connection.getSessions as () => StudioBridgeSession[]
+      )();
+      if (sessions.length === 1) this.pairedSession = sessions[0]!;
+      else delete this.pairedSession;
+    }
+    return this.pairedSession ? structuredClone(this.pairedSession) : undefined;
+  }
+
+  async initialize(): Promise<void> {
+    const directory = resolve(this.input.directory);
+    const names = await readdir(directory).catch((error: unknown) => {
+      if (isNodeError(error, "ENOENT")) return [];
+      throw error;
+    });
+    for (const name of names.filter((entry) => /^creator_session_.+\.json$/.test(entry))) {
+      let bundle = await loadCreatorBundle(join(directory, name));
+      if (["planning", "building", "repairing"].includes(bundle.session.status)) {
+        bundle = {
+          ...bundle,
+          session: advanceSession(bundle.session, {
+            status: "incomplete",
+            failure: {
+              code: "control_process_interrupted",
+              detail: "The creator control process stopped during an agent phase.",
+            },
+          }),
+        };
+        await this.persist(bundle);
+      } else if (
+        ["applying", "awaiting_verification", "verifying"].includes(
+          bundle.session.status,
+        )
+      ) {
+        bundle = {
+          ...bundle,
+          session: advanceSession(bundle.session, {
+            status: "recovery_required",
+            failure: {
+              code: "control_process_interrupted",
+              detail:
+                "The creator control process stopped while Studio might retain an open recording.",
+            },
+          }),
+        };
+        await this.persist(bundle);
+      }
+      this.bundles.set(bundle.session.id, bundle);
+    }
+    const activeByProject = new Map<string, string>();
+    for (const bundle of this.bundles.values()) {
+      if (isTerminalStatus(bundle.session.status)) continue;
+      const existing = activeByProject.get(bundle.session.projectId);
+      if (existing)
+        throw new Error(
+          `Studio project has multiple nonterminal creator sessions: ${existing}, ${bundle.session.id}`,
+        );
+      activeByProject.set(bundle.session.projectId, bundle.session.id);
+    }
+  }
+
+  async dashboardState(sessionId?: string): Promise<CreatorDashboardState> {
+    const bundles = [...this.bundles.values()].sort((left, right) =>
+      right.session.updatedAt.localeCompare(left.session.updatedAt),
+    );
+    const selected = sessionId
+      ? await this.bundle(sessionId)
+      : bundles[0];
+    const sessions = await Promise.all(
+      bundles.map(async (bundle) => ({
+        id: bundle.session.id,
+        hash: bundle.session.hash,
+        projectId: bundle.session.projectId,
+        prompt: await this.prompt(bundle.session.id),
+        promptHash: bundle.session.promptHash,
+        status: bundle.session.status,
+        createdAt: bundle.session.createdAt,
+        updatedAt: bundle.session.updatedAt,
+        latestVerificationStatus:
+          bundle.verifications.at(-1)?.status ?? ("not_run" as const),
+        ...(bundle.session.failure
+          ? { failure: { ...bundle.session.failure } }
+          : {}),
+      })),
+    );
+    const studio = this.pairedStudio();
+    const selectedView = selected
+      ? (this.views.get(selected.session.id) ??
+        (await this.view(selected, "Creator session ready.")))
+      : undefined;
+    if (selected && selectedView)
+      this.views.set(selected.session.id, selectedView);
+    return {
+      kind: "CreatorDashboardState",
+      ...(selected ? { selectedSessionId: selected.session.id } : {}),
+      sessions,
+      ...(selectedView ? { controlView: selectedView } : {}),
+      stages: creatorProgress(selected?.session),
+      pairedStudio: studio
+        ? {
+            status: "paired",
+            projectId: studio.projectId,
+            projectName: studio.project.name,
+            capabilities: [...studio.capabilities],
+            message: "Studio is paired for trusted snapshot and mutation commands.",
+          }
+        : {
+            status: "unpaired",
+            message: "Open the Forge connector in Studio to pair this dashboard.",
+          },
+      serverTime: new Date().toISOString(),
+    };
+  }
+
+  async readAuthorizedArtifact(hash: string): Promise<unknown> {
+    const reference = [...this.bundles.values()]
+      .flatMap(bundleArtifactReferences)
+      .concat(
+        [...this.views.values()].flatMap((view) =>
+          view.artifacts ? Object.values(view.artifacts) : [],
+        ),
+      )
+      .find((candidate) => candidate.artifactHash === hash);
+    if (!reference) throw new Error("Artifact is not referenced by creator history");
+    return this.artifactStore.read(reference);
+  }
+
+  async replayVerification(verificationId: string) {
+    for (const bundle of this.bundles.values()) {
+      const verification = bundle.verifications.find(
+        (candidate) => candidate.id === verificationId,
+      );
+      if (verification)
+        return replayCreatorVerification(bundle, verification, this.artifactStore);
+    }
+    throw new Error("Creator verification was not found");
   }
 
   async action(value: unknown): Promise<unknown> {
@@ -102,6 +265,15 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
         this.views.get(bundle.session.id) ??
         (await this.view(bundle, "Creator session ready."));
       assertActionBinding(action, view, this.consumedViewHashes);
+      if (
+        [
+          "approve_and_apply_changes",
+          "start_checks",
+          "cancel_changes",
+          "reject_and_rollback",
+        ].includes(action.actionId)
+      )
+        await this.currentStudioSession();
       this.consumedViewHashes.add(action.viewHash);
       if (action.actionId === "approve_plan")
         return this.decidePlan(
@@ -130,68 +302,19 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
       if (action.actionId === "start_checks") return this.verify(bundle);
       if (action.actionId === "cancel_changes") return this.rollback(bundle);
       if (action.actionId === "accept_result")
-        return this.review(bundle, "accepted", action.note);
+        return this.review(bundle, "accepted", action.report);
       if (action.actionId === "reject_and_rollback")
-        return this.rejectAndRollback(bundle, action.note);
+        return this.rejectAndRollback(bundle, action.report);
       throw new Error("The requested creator action is unavailable");
     });
   }
 
-  async state(query: URLSearchParams): Promise<unknown> {
-    const id = query.get("sessionId");
-    if (id) {
-      const bundle = await this.bundle(id);
-      return (
-        this.views.get(id) ??
-        (await this.view(bundle, "Creator session ready."))
-      );
-    }
-    const views = await Promise.all(
-      [...this.bundles.values()]
-        .sort((left, right) =>
-          right.session.updatedAt.localeCompare(left.session.updatedAt),
-        )
-        .map(
-          async (bundle) =>
-            this.views.get(bundle.session.id) ??
-            this.view(bundle, "Creator session ready."),
-        ),
-    );
-    return { kind: "ForgeCreatorControlViews", views };
-  }
-
   private async onPluginMessage(
-    message: PluginToBackendMessage,
+    _message: PluginToBackendMessage,
     session: StudioBridgeSession,
   ): Promise<void> {
     this.pairedSession = session;
-    try {
-      if (message.type === "CreatorPromptSubmitted")
-        await this.action({ action: "start", prompt: message.payload.prompt });
-      else if (message.type === "CreatorControlActionRequested")
-        await this.action({
-          action: "act",
-          sessionId: message.payload.creatorSessionId,
-          viewId: message.payload.viewId,
-          viewHash: message.payload.viewHash,
-          actionId: message.payload.actionId,
-          ...(message.payload.note ? { note: message.payload.note } : {}),
-        });
-    } catch (error) {
-      const creatorSessionId =
-        "creatorSessionId" in message.payload &&
-        typeof message.payload.creatorSessionId === "string"
-          ? message.payload.creatorSessionId
-          : undefined;
-      if (creatorSessionId) {
-        const bundle = await this.bundle(creatorSessionId);
-        await this.publishView(
-          session,
-          bundle,
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-    }
+    this.emit();
   }
 
   private async start(prompt: string): Promise<unknown> {
@@ -200,6 +323,15 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
       throw new Error("Creator prompt must be non-empty");
     const studio = await this.currentStudioSession();
     return this.lock(`project:${studio.projectId}`, async () => {
+      const active = [...this.bundles.values()].find(
+        (bundle) =>
+          bundle.session.projectId === studio.projectId &&
+          !isTerminalStatus(bundle.session.status),
+      );
+      if (active)
+        throw new Error(
+          `Studio project already has a nonterminal creator session: ${active.session.id}`,
+        );
       const fresh = await requestFreshStudioSnapshot(
         this.input.connection,
         studio,
@@ -243,7 +375,6 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
       );
       await this.persist(bundle);
       await this.publishView(
-        studio,
         bundle,
         "Generating a visible plan and verification charter. Studio is read-only.",
       );
@@ -281,7 +412,6 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
         this.bundles.set(session.id, bundle);
         await this.persist(bundle);
         await this.publishView(
-          studio,
           bundle,
           "Review the exact plan, typed changes, and generated machine-check thresholds before approving.",
         );
@@ -340,9 +470,7 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
     bundle = { ...bundle, session, approvals: [...bundle.approvals, approval] };
     this.bundles.set(session.id, bundle);
     await this.persist(bundle);
-    const studio = await this.currentStudioSession();
     await this.publishView(
-      studio,
       bundle,
       "Building a virtual Studio change set. The live place remains unchanged.",
     );
@@ -384,7 +512,6 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
       this.bundles.set(session.id, bundle);
       await this.persist(bundle);
       await this.publishView(
-        studio,
         bundle,
         "Review the exact change-set hash. Approving applies this exact set immediately.",
       );
@@ -619,7 +746,6 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
       this.bundles.set(bundle.session.id, bundle);
       await this.persist(bundle);
       await this.publishView(
-        studio,
         bundle,
         "Changes are applied inside an open Studio recording. Start the exact approved checks, or cancel the uncommitted changes.",
       );
@@ -649,11 +775,10 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
     this.bundles.set(bundle.session.id, bundle);
     await this.persist(bundle);
     await this.publishView(
-      studio,
       bundle,
       "Starting the exact creator-approved checks. Studio will enter Play Solo once for this action.",
     );
-    const { targets, calls } = charterExecution(plan.charter.clauses);
+    const { targets, calls } = createCharterExecution(plan.charter.clauses);
     const executionPlan = createStudioExecutionPlan({
       purpose: "creator_verification",
       capabilitySetId: STUDIO_CAPABILITY_SET.id,
@@ -687,19 +812,28 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
       snapshotFailures.length > 0
         ? snapshotFailures
         : observed?.status === "completed" && observed.observation
-          ? gradeCharter(plan.charter.clauses, observed.observation)
+          ? gradeRuntimeCharter(plan.charter.clauses, observed.observation)
           : [
               observed?.failure?.detail ??
                 "Studio verification did not complete",
             ];
+    const executionPlanArtifact = await this.artifactStore.write(executionPlan);
+    const runtimeObservationArtifact = observed?.observation
+      ? await this.artifactStore.write(observed.observation)
+      : undefined;
     const verification = createVerificationRecord(
       bundle.session.id,
       changeSet,
       plan.charter,
       executionPlan,
+      executionPlanArtifact,
+      bundle.session.currentRevisionHash,
+      verificationEvidenceHash(bundle.observation),
       observed?.observation,
+      runtimeObservationArtifact,
       failures,
       snapshotFailures.length > 0 || observed?.status === "completed",
+      observed?.failure?.detail,
     );
     bundle = {
       ...bundle,
@@ -755,7 +889,6 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
         this.bundles.set(bundle.session.id, bundle);
         await this.persist(bundle);
         await this.publishView(
-          studio,
           bundle,
           "Machine checks completed. Visually review the exact result, then accept it or reject and roll it back.",
         );
@@ -886,9 +1019,7 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
     };
     this.bundles.set(bundle.session.id, bundle);
     await this.persist(bundle);
-    const studio = await this.currentStudioSession();
     await this.publishView(
-      studio,
       bundle,
       "The failed attempt was cancelled. Review the repaired exact change set; approval applies it immediately.",
     );
@@ -898,29 +1029,30 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
   private async review(
     bundle: CreatorSessionBundle,
     decision: "accepted" | "rejected",
-    note?: string,
+    report?: string,
   ): Promise<unknown> {
     const changeSet = requiredChangeSet(bundle);
-    if (bundle.session.status !== "awaiting_review" || !bundle.checkpoint)
+    if (
+      bundle.session.status !== "awaiting_review" ||
+      !bundle.checkpoint ||
+      !bundle.plan
+    )
       throw new Error("Creator session is not awaiting final review");
-    const payload = {
+    const review = createCreatorReviewReport({
       sessionId: bundle.session.id,
       changeSetId: changeSet.id,
+      changeSetHash: changeSet.hash,
+      charterId: bundle.plan.charter.id,
+      charterHash: bundle.plan.charter.hash,
       decision,
-      observationHash: contentHash(stableJson(bundle.observation)),
-      ...(note ? { noteHash: contentHash(note) } : {}),
+      report: report ?? "",
+      reviewedObservationHash: verificationEvidenceHash(bundle.observation),
       reviewedAt: new Date().toISOString(),
-    };
-    const hash = contentHash(stableJson(payload));
-    const review: CreatorReview = {
-      kind: "CreatorReview",
-      id: `creator_review_${hash.slice(0, 24)}`,
-      hash,
-      ...payload,
-    };
+    });
+    const artifact = await this.artifactStore.write(review);
     bundle = {
       ...bundle,
-      review,
+      review: { report: review, artifact },
       session: advanceSession(bundle.session, {
         status:
           decision === "accepted" ? "creator_accepted" : "creator_rejected",
@@ -937,29 +1069,29 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
 
   private async rejectAndRollback(
     bundle: CreatorSessionBundle,
-    note?: string,
+    report?: string,
   ): Promise<unknown> {
-    if (bundle.session.status !== "awaiting_review")
+    if (bundle.session.status !== "awaiting_review" || !bundle.plan)
       throw new Error("Creator session is not awaiting final review");
+    // Do not seal the creator's rejection until guarded undo has a paired
+    // Studio authority available. An offline review must remain resumable.
+    await this.currentStudioSession();
     const changeSet = requiredChangeSet(bundle);
-    const payload = {
+    const review = createCreatorReviewReport({
       sessionId: bundle.session.id,
       changeSetId: changeSet.id,
+      changeSetHash: changeSet.hash,
+      charterId: bundle.plan.charter.id,
+      charterHash: bundle.plan.charter.hash,
       decision: "rejected" as const,
-      observationHash: contentHash(stableJson(bundle.observation)),
-      ...(note ? { noteHash: contentHash(note) } : {}),
+      report: report ?? "",
+      reviewedObservationHash: verificationEvidenceHash(bundle.observation),
       reviewedAt: new Date().toISOString(),
-    };
-    const hash = contentHash(stableJson(payload));
-    const review: CreatorReview = {
-      kind: "CreatorReview",
-      id: `creator_review_${hash.slice(0, 24)}`,
-      hash,
-      ...payload,
-    };
+    });
+    const artifact = await this.artifactStore.write(review);
     bundle = {
       ...bundle,
-      review,
+      review: { report: review, artifact },
       session: advanceSession(bundle.session, {
         status: "creator_rejected",
         review,
@@ -1173,20 +1305,12 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
   }
 
   private async publishView(
-    studio: StudioBridgeSession,
     bundle: CreatorSessionBundle,
     detailValue: string,
   ): Promise<void> {
     const view = await this.view(bundle, detailValue);
     this.views.set(bundle.session.id, view);
-    const viewJson = stableJson(view);
-    await this.input.connection.send(
-      createBackendMessage(
-        "PresentCreatorControlView",
-        { viewJson, viewJsonHash: contentHash(viewJson) },
-        studio.sessionId,
-      ),
-    );
+    this.emit();
   }
 
   private capture(
@@ -1202,13 +1326,17 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
     });
   }
   private async currentStudioSession(): Promise<StudioBridgeSession> {
-    if (this.pairedSession) return this.pairedSession;
     const sessions =
       "getSessions" in this.input.connection &&
       typeof this.input.connection.getSessions === "function"
         ? (this.input.connection.getSessions as () => StudioBridgeSession[])()
         : [];
-    if (sessions.length === 1) return sessions[0]!;
+    if (sessions.length === 1) {
+      this.pairedSession = sessions[0]!;
+      return sessions[0]!;
+    }
+    if (!("getSessions" in this.input.connection) && this.pairedSession)
+      return this.pairedSession;
     throw new Error(
       "Exactly one Studio project must be paired with forge creator serve",
     );
@@ -1226,11 +1354,38 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
     bundle: CreatorSessionBundle,
     detailValue: string,
   ): Promise<CreatorControlView> {
-    const prompt =
-      bundle.session.status === "awaiting_plan_approval"
-        ? await this.prompt(bundle.session.id)
-        : undefined;
-    return controlView(bundle, detailValue, prompt);
+    const prompt = await this.prompt(bundle.session.id);
+    const changeSet = activeChangeSet(bundle);
+    const verification = bundle.verifications.at(-1);
+    const [promptArtifact, planArtifact, changeSetArtifact, verificationArtifact] =
+      await Promise.all([
+        this.artifactStore.write({
+          kind: "CreatorPrompt",
+          sessionId: bundle.session.id,
+          promptHash: bundle.session.promptHash,
+          text: prompt,
+        }),
+        bundle.plan ? this.artifactStore.write(bundle.plan) : undefined,
+        changeSet ? this.artifactStore.write(changeSet) : undefined,
+        verification ? this.artifactStore.write(verification) : undefined,
+      ]);
+    const latestRun = bundle.agentRuns.at(-1);
+    return controlView(bundle, detailValue, prompt, {
+      prompt: promptArtifact,
+      ...(planArtifact ? { plan: planArtifact } : {}),
+      ...(changeSetArtifact ? { changeSet: changeSetArtifact } : {}),
+      ...(verification?.executionPlan
+        ? { studioExecutionPlan: verification.executionPlan.artifact }
+        : {}),
+      ...(verification?.runtimeObservation
+        ? { runtimeObservation: verification.runtimeObservation.artifact }
+        : {}),
+      ...(verificationArtifact ? { verification: verificationArtifact } : {}),
+      ...(bundle.review ? { reviewReport: bundle.review.artifact } : {}),
+      ...(latestRun
+        ? { agentRun: latestRun.agentRun, trace: latestRun.trace }
+        : {}),
+    });
   }
   private async bundle(id: string): Promise<CreatorSessionBundle> {
     const cached = this.bundles.get(id);
@@ -1243,6 +1398,7 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
   }
   private async persist(bundle: CreatorSessionBundle): Promise<void> {
     await persistCreatorBundle(bundle, this.input.directory);
+    this.emit();
   }
   private async finish(
     bundle: CreatorSessionBundle,
@@ -1250,8 +1406,7 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
   ): Promise<unknown> {
     this.bundles.set(bundle.session.id, bundle);
     await this.persist(bundle);
-    const studio = await this.currentStudioSession();
-    await this.publishView(studio, bundle, message);
+    await this.publishView(bundle, message);
     return summary(bundle);
   }
   private async drift(
@@ -1279,12 +1434,128 @@ export class CreatorSessionCoordinator implements StudioBridgeControlHandler {
       this.inFlight.delete(key);
     }
   }
+
+  private emit(): void {
+    for (const listener of this.listeners) listener();
+  }
 }
 
 function requiredChangeSet(bundle: CreatorSessionBundle): CreatorChangeSet {
   const changeSet = activeChangeSet(bundle);
   if (!changeSet) throw new Error("Creator session has no active change set");
   return changeSet;
+}
+function bundleArtifactReferences(
+  bundle: CreatorSessionBundle,
+): ArtifactReference[] {
+  return [
+    ...bundle.agentRuns.flatMap((run) => [run.agentRun, run.trace]),
+    ...bundle.verifications.flatMap((verification) => [
+      verification.executionPlan.artifact,
+      ...(verification.runtimeObservation
+        ? [verification.runtimeObservation.artifact]
+        : []),
+    ]),
+    ...(bundle.review ? [bundle.review.artifact] : []),
+  ];
+}
+function isTerminalStatus(
+  status: CreatorSessionBundle["session"]["status"],
+): boolean {
+  return [
+    "creator_accepted",
+    "creator_rejected",
+    "rolled_back",
+    "incomplete",
+    "recovery_required",
+  ].includes(status);
+}
+function creatorProgress(
+  session: CreatorSessionBundle["session"] | undefined,
+): CreatorProgressStage[] {
+  const order = ["request", "plan", "change", "studio", "review"] as const;
+  const labels = {
+    request: "Request",
+    plan: "Plan",
+    change: "Change",
+    studio: "Studio",
+    review: "Review",
+  } as const;
+  const authority = {
+    request: "creator",
+    plan: "agent",
+    change: "agent",
+    studio: "studio",
+    review: "creator",
+  } as const;
+  if (!session)
+    return order.map((id) => ({
+      id,
+      label: labels[id],
+      status: "pending",
+      authority: authority[id],
+      detail: `${labels[id]} evidence`,
+    }));
+  const status = session.status;
+  const activeIndex = ["planning"].includes(status)
+      ? 1
+      : ["awaiting_plan_approval"].includes(status)
+        ? 1
+        : ["building", "awaiting_change_approval"].includes(status)
+          ? 2
+          : [
+                "applying",
+                "awaiting_verification",
+                "verifying",
+                "repairing",
+              ].includes(status)
+            ? 3
+            : status === "recovery_required"
+              ? 3
+              : status === "incomplete"
+                ? !session.plan
+                  ? 1
+                  : !session.changeSet
+                    ? 2
+                    : !session.checkpoint
+                      ? 3
+                      : 4
+                : status === "creator_rejected" && !session.review
+                  ? session.changeSet
+                    ? 2
+                    : 1
+                  : 4;
+  const failed = status === "incomplete" || status === "creator_rejected";
+  const blocked = status === "recovery_required";
+  return order.map((id, index) => ({
+    id,
+    label: labels[id],
+    status:
+      index < activeIndex
+        ? "complete"
+        : index === activeIndex
+          ? blocked
+            ? "blocked"
+            : failed
+              ? "failed"
+            : status === "creator_accepted" || status === "rolled_back"
+              ? "complete"
+              : "active"
+          : "pending",
+    authority: authority[id],
+    detail:
+      index === activeIndex
+        ? status.replaceAll("_", " ")
+        : `${labels[id]} evidence`,
+  }));
+}
+function isNodeError(error: unknown, code: string): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === code
+  );
 }
 function activeChangeSet(
   bundle: CreatorSessionBundle,
@@ -1312,7 +1583,7 @@ function summary(bundle: CreatorSessionBundle): unknown {
     changeSetHash: changeSet?.hash,
     checkpointId: bundle.checkpoint?.id,
     verificationIds: bundle.verifications.map((record) => record.id),
-    reviewId: bundle.review?.id,
+    reviewId: bundle.review?.report.id,
     repairsUsed: bundle.session.repairsUsed,
   };
 }
@@ -1351,8 +1622,13 @@ function assertControlAction(value: unknown): CreatorControlAction {
       "reject_and_rollback",
       "cancel_changes",
     ].includes(String(action.actionId)) &&
-    (action.note === undefined ||
-      (typeof action.note === "string" && action.note.length <= 4096))
+    (action.report === undefined ||
+      (typeof action.report === "string" &&
+        Buffer.byteLength(action.report, "utf8") <= 4096)) &&
+    (!["accept_result", "reject_and_rollback"].includes(
+      String(action.actionId),
+    ) ||
+      (typeof action.report === "string" && action.report.trim().length > 0))
   )
     return action as CreatorControlAction;
   throw new Error("Invalid creator control action");
@@ -1385,6 +1661,7 @@ function controlView(
   bundle: CreatorSessionBundle,
   detailValue: string,
   prompt?: string,
+  artifacts?: NonNullable<CreatorControlView["artifacts"]>,
 ): CreatorControlView {
   if (
     bundle.session.status === "awaiting_plan_approval" &&
@@ -1431,23 +1708,22 @@ function controlView(
     ({
       phase,
       agentRunId,
-      agentRunArtifact,
-      agentRunArtifactHash,
+      agentRun,
       traceId,
-      traceArtifact,
-      traceArtifactHash,
+      trace,
       traceBuildKey,
     }) => ({
       phase,
       agentRunId,
-      agentRunArtifact,
-      agentRunArtifactHash,
+      agentRun,
       traceId,
-      traceArtifact,
-      traceArtifactHash,
+      trace,
       traceBuildKey,
     }),
   );
+  const creatorReviewPrompts = bundle.plan?.charter.clauses
+    .filter((clause) => clause.kind === "creator_review")
+    .map((clause) => clause.statement);
   return createCreatorControlView({
     creatorSessionId: bundle.session.id,
     creatorSessionHash: bundle.session.hash,
@@ -1456,6 +1732,22 @@ function controlView(
     detail: detailValue.slice(0, 4096),
     ...(artifact ? { artifact } : {}),
     ...(evidence.length > 0 ? { evidence } : {}),
+    ...(creatorReviewPrompts && creatorReviewPrompts.length > 0
+      ? { creatorReviewPrompts }
+      : {}),
+    ...(artifacts ? { artifacts } : {}),
+    ...(bundle.verifications.at(-1)
+      ? {
+          verification: {
+            id: bundle.verifications.at(-1)!.id,
+            status: bundle.verifications.at(-1)!.status,
+            failureFacts: bundle.verifications.at(-1)!.failureFacts.map(
+              (fact) => ({ ...fact }),
+            ),
+            replayable: bundle.verifications.at(-1)!.status !== "incomplete",
+          },
+        }
+      : {}),
     ...actions,
   });
 }
@@ -1507,11 +1799,13 @@ function controlActions(
         id: "accept_result",
         label: "Accept Result",
         intent: "primary",
+        requiresReport: true,
       },
       secondaryAction: {
         id: "reject_and_rollback",
         label: "Reject & Roll Back",
         intent: "secondary",
+        requiresReport: true,
       },
     };
   return {};
@@ -1937,173 +2231,19 @@ function matchesStudioValue(
     )
   );
 }
-function charterExecution(clauses: VerificationCharterClause[]): {
-  targets: StudioRuntimeTarget[];
-  calls: StudioCapabilityCall[];
-} {
-  const paths = [
-    ...new Set(
-      clauses.flatMap((clause) =>
-        clause.kind === "studio_check" &&
-        (clause.check === "instance_exists" ||
-          clause.check === "position_series")
-          ? [clause.path]
-          : [],
-      ),
-    ),
-  ].sort();
-  if (paths.length === 0)
-    throw new Error(
-      "The approved charter has no executable Studio observation",
-    );
-  const targets = paths.map((path, index) => {
-    const clausesForPath = clauses.filter(
-      (
-        clause,
-      ): clause is Extract<
-        VerificationCharterClause,
-        { kind: "studio_check" }
-      > =>
-        clause.kind === "studio_check" &&
-        "path" in clause &&
-        clause.path === path,
-    );
-    const position = clausesForPath.find(
-      (clause) => clause.check === "position_series",
-    );
-    const existence = clausesForPath.find(
-      (clause) => clause.check === "instance_exists",
-    );
-    const expectedClass = position?.expectedClass ?? existence?.expectedClass;
-    if (
-      !expectedClass ||
-      clausesForPath.some(
-        (clause) =>
-          "expectedClass" in clause && clause.expectedClass !== expectedClass,
-      )
-    )
-      throw new Error(
-        `Creator charter has conflicting expected classes for ${path}`,
-      );
-    return { id: `creator_target_${index + 1}`, path, expectedClass };
-  });
-  const calls: StudioCapabilityCall[] = [];
-  for (const target of targets) {
-    calls.push({
-      id: `resolve_${target.id}`,
-      capability: "instance.resolve",
-      targetId: target.id,
-    });
-    const series = clauses.find(
-      (
-        clause,
-      ): clause is Extract<
-        VerificationCharterClause,
-        { check: "position_series" }
-      > =>
-        clause.kind === "studio_check" &&
-        clause.check === "position_series" &&
-        clause.path === target.path,
-    );
-    if (series)
-      calls.push({
-        id: `series_${target.id}`,
-        capability: "base_part.position_series",
-        targetId: target.id,
-        sampleCount: series.sampleCount,
-        intervalMs: series.intervalMs,
-      });
-  }
-  return { targets, calls };
-}
-function gradeSnapshotCharter(
-  clauses: VerificationCharterClause[],
-  observation: CreatorSessionBundle["observation"],
-): string[] {
-  return clauses.flatMap((clause) => {
-    if (clause.kind !== "snapshot_check") return [];
-    try {
-      return subtreeSnapshotHash(observation, clause.path) ===
-        clause.baselineHash
-        ? []
-        : [clause.statement];
-    } catch {
-      return [clause.statement];
-    }
-  });
-}
-function gradeCharter(
-  clauses: VerificationCharterClause[],
-  envelope: RuntimeObservationEnvelope,
-): string[] {
-  const failures: string[] = [];
-  for (const clause of clauses) {
-    if (clause.kind !== "studio_check") continue;
-    if (clause.check === "playtest_diagnostics") {
-      if (
-        envelope.diagnostics.errors > clause.maximumErrors ||
-        envelope.diagnostics.warnings > clause.maximumWarnings ||
-        envelope.diagnostics.truncated
-      )
-        failures.push(clause.statement);
-      continue;
-    }
-    const targetIndex =
-      [
-        ...new Set(
-          clauses.flatMap((entry) =>
-            entry.kind === "studio_check" &&
-            (entry.check === "instance_exists" ||
-              entry.check === "position_series")
-              ? [entry.path]
-              : [],
-          ),
-        ),
-      ]
-        .sort()
-        .indexOf(clause.path) + 1;
-    const targetId = `creator_target_${targetIndex}`;
-    if (clause.check === "instance_exists") {
-      const result = envelope.results.find(
-        (entry) => entry.id === `resolve_${targetId}`,
-      );
-      if (
-        result?.capability !== "instance.resolve" ||
-        result.status !== "resolved"
-      )
-        failures.push(clause.statement);
-    } else {
-      const result = envelope.results.find(
-        (entry) => entry.id === `series_${targetId}`,
-      );
-      if (
-        result?.capability !== "base_part.position_series" ||
-        result.status !== "ok" ||
-        !result.samples
-      )
-        failures.push(clause.statement);
-      else {
-        const distinct = new Set(
-          result.samples.map(
-            (sample) =>
-              `${Math.round(sample.position.x / clause.quantizationStuds)},${Math.round(sample.position.y / clause.quantizationStuds)},${Math.round(sample.position.z / clause.quantizationStuds)}`,
-          ),
-        );
-        if (distinct.size < clause.minimumDistinctPositions)
-          failures.push(clause.statement);
-      }
-    }
-  }
-  return failures;
-}
 function createVerificationRecord(
   sessionId: string,
   changeSet: CreatorChangeSet,
   charter: import("./index.js").VerificationCharter,
   executionPlan: import("../../studio-capabilities/src/index.js").StudioExecutionPlan,
+  executionPlanArtifact: ArtifactReference,
+  snapshotRevisionHash: string,
+  snapshotObservationHash: string,
   observation: RuntimeObservationEnvelope | undefined,
+  runtimeObservationArtifact: ArtifactReference | undefined,
   failures: string[],
   completed: boolean,
+  incompleteDetail: string | undefined,
 ): CreatorVerificationRecord {
   const payload = {
     sessionId,
@@ -2111,25 +2251,35 @@ function createVerificationRecord(
     changeSetHash: changeSet.hash,
     charterId: charter.id,
     charterHash: charter.hash,
-    executionPlanId: executionPlan.id,
-    executionPlanHash: executionPlan.hash,
+    snapshotRevisionHash,
+    snapshotObservationHash,
+    executionPlan: {
+      id: executionPlan.id,
+      hash: executionPlan.hash,
+      artifact: executionPlanArtifact,
+    },
     status: !completed
       ? ("incomplete" as const)
       : failures.length === 0
         ? ("passed" as const)
         : ("failed" as const),
-    ...(observation
+    ...(observation && runtimeObservationArtifact
       ? {
-          observationHash: contentHash(stableJson(observation)),
-          diagnosticsHash: contentHash(stableJson(observation.diagnostics)),
+          runtimeObservation: {
+            observationHash: verificationEvidenceHash(observation),
+            diagnosticsHash: verificationEvidenceHash(observation.diagnostics),
+            artifact: runtimeObservationArtifact,
+          },
         }
       : {}),
-    failureFacts: failures
-      .map((statement) => ({
-        statement: statement.slice(0, 4096),
-        hash: contentHash(statement.slice(0, 4096)),
-      }))
-      .sort((left, right) => left.hash.localeCompare(right.hash)),
+    ...(!completed
+      ? {
+          nonReplayableReason: (
+            incompleteDetail ?? "Studio connector evidence is incomplete"
+          ).slice(0, 4096),
+        }
+      : {}),
+    failureFacts: createVerificationFailureFacts(failures),
   };
   const hash = contentHash(stableJson(payload));
   return {

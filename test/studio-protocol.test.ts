@@ -3,14 +3,12 @@ import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
-import { stableJson } from "../packages/contracts/src/index.js";
 import {
   StudioBridgeServer,
   createBackendMessage,
 } from "../packages/studio-bridge/src/index.js";
 import {
   STUDIO_MATERIALS,
-  createCreatorControlView,
 } from "../packages/creator-session/src/index.js";
 import {
   STUDIO_CAPABILITY_SET,
@@ -36,7 +34,6 @@ const capabilities: StudioCapability[] = [
   "bounded_diagnostics",
   "runtime_eval",
   "studio_authoring",
-  "creator_control",
 ];
 const base = {
   kind: "StudioProtocolMessage" as const,
@@ -203,67 +200,6 @@ test("runtime execution permits service-root resolution but rejects service-root
   );
 });
 
-test("the protocol carries one canonical control view and one view-bound creator action", () => {
-  const view = createCreatorControlView({
-    creatorSessionId: "creator_session_protocol",
-    creatorSessionHash: "a".repeat(64),
-    status: "awaiting_plan_approval",
-    title: "Review Plan",
-    detail: "Review exact changes.",
-    primaryAction: {
-      id: "approve_plan",
-      label: "Approve Plan",
-      intent: "primary",
-    },
-    secondaryAction: {
-      id: "reject_plan",
-      label: "Reject",
-      intent: "secondary",
-    },
-  });
-  const viewJson = stableJson(view);
-  const presented = createBackendMessage(
-    "PresentCreatorControlView",
-    {
-      viewJson,
-      viewJsonHash: createHash("sha256").update(viewJson).digest("hex"),
-    },
-    "session",
-    undefined,
-    () => new Date(time),
-  );
-  assertBackendToPluginMessage(presented);
-  assert.throws(
-    () =>
-      assertBackendToPluginMessage({
-        ...presented,
-        payload: { ...presented.payload, viewJsonHash: "0".repeat(64) },
-      }),
-    /ControlView/,
-  );
-  const requested: PluginToBackendMessage = {
-    ...base,
-    type: "CreatorControlActionRequested",
-    messageId: "creator-action",
-    sessionId: "session",
-    payload: {
-      creatorSessionId: view.creatorSessionId,
-      viewId: view.id,
-      viewHash: view.hash,
-      actionId: "approve_plan",
-    },
-  };
-  assertPluginToBackendMessage(requested);
-  assert.throws(
-    () =>
-      assertPluginToBackendMessage({
-        ...requested,
-        payload: { ...requested.payload, actionId: "apply" },
-      }),
-    /ControlAction/,
-  );
-});
-
 test("creator apply is bound to the same observed revision as preparation", () => {
   const expectedRevision = "a".repeat(64);
   const apply = createBackendMessage(
@@ -402,7 +338,6 @@ test("snapshot chunks require bounded indices and SHA-256 payload integrity", ()
 test("plugin contains only observation, transport, identity, fixed capability execution, and typed authoring modules", async () => {
   assert.deepEqual((await readdir(resolve("plugin/src/Forge"))).sort(), [
     "Constants.luau",
-    "CreatorUiState.luau",
     "Hash.luau",
     "IdentityRegistry.luau",
     "ObservationRevision.luau",
@@ -457,20 +392,10 @@ test("plugin contains only observation, transport, identity, fixed capability ex
   );
   assert.doesNotMatch(
     connector,
-    /primaryButton\.Text = ui\.primary and ui\.primary\.label or "Waiting…"/,
+    /CreatorUiState|CreatorPromptSubmitted|CreatorControlActionRequested|PresentCreatorControlView|creator_control|promptBox|artifactBox|primaryButton|secondaryButton/,
   );
-  assert.match(connector, /Submit New Request/);
-  assert.match(
-    connector,
-    /currentView = if ui\.primary ~= nil or ui\.secondary ~= nil then view else nil/,
-  );
-  assert.match(
-    connector,
-    /local presentation = if view\.artifact ~= nil then view\.artifact\.presentation else view\.evidence/,
-  );
-  assert.match(connector, /artifactBox\.Visible = presentation ~= nil/);
-  assert.match(connector, /primaryButton\.Visible = true/);
-  assert.match(connector, /runButton\.Visible = false/);
+  assert.match(connector, /Run Approved Play Solo Check/);
+  assert.match(connector, /Prompts, evidence, approvals, and reports live in the dashboard/i);
   assert.match(
     connector,
     /requireFreshRevision\(message\.payload\.expectedRevision, "creator change preparation"\)/,

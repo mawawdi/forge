@@ -4,6 +4,7 @@ import {
   type AgentRuntime,
   type BudgetPolicy,
 } from "../../agent-runtime/src/index.js";
+import { ImmutableJsonArtifactStore } from "../../artifact-store/src/index.js";
 import type { StudioSnapshotObservation } from "../../semantic-map/src/index.js";
 import {
   creatorOrientation,
@@ -85,7 +86,6 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
     prompt: string;
     budgets: BudgetPolicy;
   }): Promise<CreatorWorkerPlanResult> {
-    const started = Date.now();
     const result = await runCreatorPlanner({ ...input, runtime: this.runtime });
     const phase = await persistCreatorPhaseAgentRun({
       phase: "creator_planner",
@@ -104,12 +104,15 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
       runtimeResult: result.runtimeResult,
       toolHost: result.toolHost,
       budgets: input.budgets,
-      durationMs: Date.now() - started,
       directory: join(resolve(this.directory), "agent-runs"),
       traceDirectory: join(resolve(this.directory), "traces"),
       executionWorker: this.descriptor,
     });
-    const evidence = reference(phase, "creator_planner");
+    const evidence = await reference(
+      phase,
+      "creator_planner",
+      new ImmutableJsonArtifactStore(resolve(this.directory)),
+    );
     if (phase.run.status !== "locally_eligible")
       return {
         status: "unsealed",
@@ -152,7 +155,6 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
     verificationFeedback?: readonly string[];
     budgets: BudgetPolicy;
   }): Promise<CreatorWorkerBuildResult> {
-    const started = Date.now();
     const result = await runCreatorBuilder({ ...input, runtime: this.runtime });
     const phase = await persistCreatorPhaseAgentRun({
       phase: "creator_builder",
@@ -171,7 +173,6 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
       runtimeResult: result.runtimeResult,
       toolHost: result.toolHost,
       budgets: input.budgets,
-      durationMs: Date.now() - started,
       directory: join(resolve(this.directory), "agent-runs"),
       traceDirectory: join(resolve(this.directory), "traces"),
       executionWorker: this.descriptor,
@@ -180,7 +181,11 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
         hash: result.toolHost.contract.hash,
       },
     });
-    const evidence = reference(phase, "creator_builder");
+    const evidence = await reference(
+      phase,
+      "creator_builder",
+      new ImmutableJsonArtifactStore(resolve(this.directory)),
+    );
     if (phase.run.status !== "locally_eligible")
       return {
         status: "unsealed",
@@ -221,10 +226,11 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
   }
 }
 
-function reference(
+async function reference(
   result: Awaited<ReturnType<typeof persistCreatorPhaseAgentRun>>,
   phase: "creator_planner" | "creator_builder",
-): CreatorSessionBundle["agentRuns"][number] {
+  store: ImmutableJsonArtifactStore,
+): Promise<CreatorSessionBundle["agentRuns"][number]> {
   if (result.run.origin.kind !== "creator_session")
     throw new Error("Creator phase AgentRun lost its creator-session origin");
   if (!result.run.creatorPhaseOutcome)
@@ -237,14 +243,16 @@ function reference(
     throw new Error(
       "Creator phase trace persistence did not produce content-bound evidence",
     );
+  const [agentRun, trace] = await Promise.all([
+    store.write(result.run),
+    store.write(result.trace),
+  ]);
   return {
     phase,
     agentRunId: result.run.id,
-    agentRunArtifact: result.persistence.path,
-    agentRunArtifactHash: result.persistence.artifactHash,
+    agentRun,
     traceId: result.trace.id,
-    traceArtifact: result.tracePersistence.locator,
-    traceArtifactHash: result.tracePersistence.artifactHash,
+    trace,
     traceBuildKey: result.tracePersistence.buildKey,
     creatorSessionHash: result.run.origin.creatorSessionHash,
     ...(result.run.creatorBuildContract

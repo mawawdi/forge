@@ -16,6 +16,7 @@ Requirements: Node.js 22+, npm, `luau-compile`, `luau-analyze`, `luau-lsp`, Lune
 
 ```sh
 npm install
+npm --prefix dashboard install
 npm test
 ```
 
@@ -30,11 +31,11 @@ rojo build plugin/default.project.json -o /tmp/ForgeStudioPlugin.rbxmx
 node bin/forge.js creator serve --model openai/gpt-5.6-luna
 ```
 
-Then open a place in Studio, allow local HTTP and script injection, wait for the Forge connector to pair, enter the prompt, and follow the one primary/one secondary action shown by the coordinator. Plan approval, exact change approval plus apply, playtest initiation, and final acceptance remain separate decisions; a terminal UI displays content-bound AgentRun/trace references and returns to **Submit New Request**. The planner first inspects bounded exact-path Studio facts, then declares the initial-snapshot paths the builder may inspect. After plan approval, Forge compiles a content-addressed `CreatorBuildContract`: it derives every operation's ID, kind, path, parent, name, class, stable identity, precondition, and initialization while the builder supplies only `planChangeId` plus allowlisted property values, attributes, explicit removals, and source. Model-facing property values use natural JSON—primitive literals, `{x,y,z}`, `{r,g,b}`, or `{position,rotation}`—and Forge canonicalizes them to Studio's actual float and 8-bit color storage domain before change review, then emits the tagged representation accepted by the trusted Studio connector. For an approved replacement of an existing script, the builder can read only that exact current source. Creator-session state, prompts, observation history, contracts, content-bound `AgentRun` records, rejected batches, and traces are private under `.forge/creator-sessions` by default and form an authenticated evidence graph. A planner or builder that stops without a seal-ready artifact still produces an immutable incomplete `AgentRun` and trace before the session closes.
+Open the one-time dashboard URL printed by `creator serve`, then open a place in Studio, allow local HTTP and script injection, and wait for the thin Forge connector to pair. Submit the prompt and follow the exact primary/secondary actions in the dashboard. Plan approval, exact change approval plus apply, playtest initiation, and final acceptance remain separate decisions. Final acceptance or rejection requires a free-form creator report; Forge preserves it as creator-authority evidence and does not parse it into machine claims. The planner first inspects bounded exact-path Studio facts, then declares the initial-snapshot paths the builder may inspect. After plan approval, Forge compiles a content-addressed `CreatorBuildContract`: it derives every operation's ID, kind, path, parent, name, class, stable identity, precondition, and initialization while the builder supplies only `planChangeId` plus allowlisted property values, attributes, explicit removals, and source. Model-facing property values use natural JSON—primitive literals, `{x,y,z}`, `{r,g,b}`, or `{position,rotation}`—and Forge canonicalizes them to Studio's actual float and 8-bit color storage domain before change review, then emits the tagged representation accepted by the trusted Studio connector. For an approved replacement of an existing script, the builder can read only that exact current source. Current creator sessions and their content-addressed evidence are private under `.forge/creator`; historical `.forge/creator-sessions` bytes remain untouched and are not accepted by the current reader. A planner or builder that stops without a seal-ready artifact still produces an immutable incomplete `AgentRun` and trace before the session closes.
 
 Forge will not present a plan unless it is structurally executable: its goal is the exact canonical creator prompt, every declared inspection dependency was actually inspected, every step covers exact typed changes, newly created scripts commit to inline source in their create operation, every created or moved output has a class-aware existence check, and every source-bearing plan has a Luau syntax check. The review view shows those generated commitments and separates machine checks from creator judgment. Change review shows the complete typed creative payload and source diffs before mutation.
 
-The reproducible [Status Beacon fixture](examples/status-beacon/README.md) contains only a place seed and suggested prompt. It has no requirement, evaluator, acceptance, or prepared-solution JSON. Once built and opened, the session works from the Studio snapshot plus the creator prompt.
+The historical [Status Beacon fixture](examples/status-beacon/README.md) remains the first accepted creator proof. The distinct [Door Control fixture](examples/door-control/README.md) is the current solution-free live-proof seed. Neither contains requirements, evaluator material, acceptance JSON, or a prepared solution.
 
 If a live place contains subtrees owned by an external Rojo workflow, declare each as an exclusion zone:
 
@@ -61,14 +62,14 @@ node bin/forge.js experiment register path/to/seed \
   --output /tmp/experiment-registration.json
 ```
 
-Registered treatments are supplied outside `examples/`; the repository keeps only the prompt-only Status Beacon creator fixture. Synthetic tests construct benchmark material in memory so evaluator-isolation and registration coverage do not depend on a hand-authored product example.
+Registered treatments are supplied outside `examples/`; the repository keeps only solution-free creator fixtures. Synthetic tests construct benchmark material in memory so evaluator-isolation and registration coverage do not depend on a hand-authored product example.
 
 Forge has one current contract shape, distinguished by `kind` where a union needs a discriminator and bound by canonical content hashes where identity matters. Capability-set IDs and hashes establish connector compatibility. A shape change replaces the old reader outright. Historical evidence remains immutable bytes and is never relabeled as current.
 
 ## CLI
 
 ```text
-forge creator serve|start|status
+forge creator serve|start|status|replay-verification
 forge creator approve-plan|reject-plan
 forge creator approve-changes|reject-changes
 forge creator start-checks|cancel-changes

@@ -2,11 +2,11 @@
 
 This is the canonical status and next-work record. [ARCHITECTURE.md](ARCHITECTURE.md) defines architecture, [FORGE.md](FORGE.md) defines thesis and invariants, [EVALS.md](EVALS.md) defines claims, and [RESEARCH.md](RESEARCH.md) indexes evidence.
 
-## Current milestone: failure-complete creator phase evidence
+## Current milestone: auditable evidence and dashboard cutover
 
 The repository now implements the first product-shaped vertical slice:
 
-- one creator prompt entered from the Studio plugin or CLI control client;
+- one creator prompt entered from the local React dashboard or CLI control client;
 - fresh bounded Studio snapshot, explicit service-root parent facts, and stable identity enrollment;
 - Studio-only write authority, with optional explicit Rojo roots treated as read-only exclusion zones;
 - separate read-only planner and typed builder model phases behind the bound `CreatorAgentWorker` seam;
@@ -21,25 +21,30 @@ The repository now implements the first product-shaped vertical slice:
 - class-aware existence checks over exact safe Studio service roots, Workspace-only BasePart position checks, bounded subtree snapshot preservation, and whole-playtest error/warning counts plus message hashes;
 - cancellation on failure, at most two repairs without weakening the approved charter, and commit on pass;
 - final creator acceptance/rejection and exact-revision guarded Change History rollback;
-- private prompt/session persistence with bounded revision-to-observation history, reproducible plan/contract/change-set materialization, content-bound AgentRun/BuildTrace locators, and per-attempt verification-record linkage;
+- private current-session persistence under `.forge/creator`, with bounded revision-to-observation history and one root-relative `ArtifactReference` shape for immutable canonical JSON evidence; historical `.forge/creator-sessions` bytes remain untouched and are not read as current sessions;
 - a native tool-host completion contract that rejects a normal model `end_turn` unless the current planner or builder is seal-ready;
 - AgentRun creator phase outcomes that discriminate a sealed artifact from an unsealed attempt and bind the latter to its failure stage, code, detail hash, tool-history-derived attempt hash, model turns, and trace;
 - worker results that persist phase evidence before the coordinator transitions an incomplete session, including zero-tool, plan-only, rejected-stage, partial-coverage, missing-local-gate, provider-failure, and successful-seal paths;
 - bounded planner inspection, targeted builder inspection from declared paths, approved existing-source reads, structured expected-versus-received stage feedback with exact allowlists, rejected-batch evidence, and no-progress guards;
-- an authenticated evidence graph across session, contract, AgentRun, trace, change set, Studio lifecycle, verification, and checkpoint artifacts;
-- a canonical `CreatorControlView` consumed by both CLI and plugin, with one primary and one secondary creator action, exact change payload presentation, content-bound terminal evidence references, and **Submit New Request** at terminal UI states;
+- an authenticated evidence graph across session, contract, AgentRun, trace, change set, Studio lifecycle, verification, creator report, and checkpoint artifacts;
+- retrievable execution-plan and complete bounded runtime-observation artifacts, exact snapshot bindings, pure provider-free charter replay, and explicit non-replayability for incomplete connector runs;
+- runtime-owned rejected/executed tool-call evidence and real monotonic-backed phase, provider-turn, and tool-call intervals, materialized as contained trace spans;
+- a standalone loopback `CreatorControlServer` with one-time browser grants, host-only cookies, separate CLI bearer authentication, same-origin mutation, bounded SSE invalidations, authorized artifact retrieval, and replay;
+- a canonical `CreatorControlView` consumed by the dashboard and CLI, with one primary and one secondary creator action, exact change payload presentation, content-bound terminal evidence references, and no workflow legality inferred from status text;
+- a React evidence workbench with session history, five coordinator-produced stages, exact artifacts, Studio pairing and consent, required final report, explicit error/recovery states, keyboard-visible controls, reduced motion, and responsive stacking;
+- a thin Studio connector with creator workflow controls and protocol messages removed while pairing, observation, typed mutation, Play Solo, diagnostics, commit/cancel, and guarded undo remain;
 - approve-and-apply and one-click creator-authorized Play Solo initiation, while retaining the distinct consent boundaries;
 - one current clean-break artifact shape throughout Forge, with exact content hashes and capability-set identity.
 
-The automated suite covers the corrected invalid proposal, bounded planner inspection, same-run planner correction, executable initialization, approved existing-source reads, atomic move-plus-property changes, output-check and source-syntax closure, exact plan-change coverage, plan-bound builder-contract derivation, observation-history reproduction, content-bound AgentRun/trace locators, structured rejection and no-progress evidence, sealed and unsealed worker evidence, class-aware service-root resolution, view-bound action rejection, plugin UI mapping, evaluator isolation, workspace security, and historical evidence. These tests make no provider request and perform no Studio action. They do not validate a live creator run.
+The automated suite covers the corrected invalid proposal, bounded planner inspection, same-run planner correction, executable initialization, approved existing-source reads, atomic move-plus-property changes, output-check and source-syntax closure, exact plan-change coverage, plan-bound builder-contract derivation, immutable artifact safety, provider-free replay, real and impossible timing, runtime-owned rejected calls, content-bound AgentRun/trace artifacts, sealed and unsealed worker evidence, control authentication, dashboard state and report requirements, plugin cutover, evaluator isolation, workspace security, and historical evidence. These tests make no provider request and perform no Studio action. They do not validate a live creator run.
 
 ## What ordinary users provide
 
 The intended creator path needs the open Studio place and the prompt. It does not need `requirements.json`, `acceptance.json`, evaluator JSON, a prepared data plan, or a source-root manifest.
 
-`examples/status-beacon` is the first live-session seed. Its JSON exists only to reproducibly build a place for the milestone. Once opened, Forge consumes the Studio snapshot plus this suggested prompt:
+`examples/status-beacon` remains the historical accepted live-session seed. `examples/door-control` is the distinct current seed. Its JSON exists only to reproducibly build a place containing `Workspace/DoorAssembly/Door`, `ControlPanel`, and `Workspace/PreservedScenery`. Once opened, Forge consumes the Studio snapshot plus this exact prompt:
 
-> Add a status beacon above Generator that alternates green and red every second while the game is running. Preserve PreservedTree.
+> Add a ProximityPrompt to Workspace/DoorAssembly/ControlPanel labeled “Toggle Door”. Each time a player uses it, move Workspace/DoorAssembly/Door straight up 8 studs to open or back to its starting position to close. Use server-authoritative code, keep the door anchored, and preserve Workspace/PreservedScenery.
 
 No solution is present. No task or evaluator package exists for the fixture.
 
@@ -47,19 +52,23 @@ No solution is present. No task or evaluator package exists for the fixture.
 
 The Status Beacon vertical slice completed successfully in session `creator_session_ad50593a-e0f1-4651-95f4-c88b3b5f6242`. Plan `creator_plan_ea7f9617b3c2c33933fc2bc6` and change set `creator_change_set_9a546962a40226a512c86a76` sealed without repair. Planner AgentRun `agent_run_789d36a5-25a8-447e-9d04-fb417991fc21` and builder AgentRun `agent_run_a62cb929-4d7d-4f98-a2cb-b47356991d03` were both `locally_eligible`. Studio verification `creator_verification_f6a9c0c5f1b07e5a6b57eeb9` passed with no failure facts, checkpoint `creator_checkpoint_cb96fdbafb2f14f8aeac1e5d` committed revision `360c3e26d94c868fa2441badad2be1282b82ffa13f1729f7d88a523045c6aff3`, and creator review `creator_review_4ac1d95c5f5a797d8bc8bba9` accepted the result.
 
-This establishes one complete prompt/plan/change/apply/check/review path. The final snapshot binds the exact Part properties and Script source. The creator observed the visual placement and one-second green/red alternation; those remain creator-review facts rather than machine-observed color-series facts.
+This establishes one complete prompt/plan/change/apply/check/review path in the predecessor storage and UI shape. The final snapshot binds the exact Part properties and Script source. The creator observed the visual placement and one-second green/red alternation; those remain creator-review facts rather than machine-observed color-series facts. Its `.forge/creator-sessions` artifacts stay byte-for-byte historical and are intentionally not accepted by the new `.forge/creator` reader or represented as current replay evidence.
 
 ## Next evidence-producing task
 
-First make the successful evidence independently auditable:
+Run the distinct Door Control creator scenario through the new dashboard and current store. The visible plan must cover ProximityPrompt and server Script existence, Luau syntax, bounded diagnostics, preservation, and creator review of the interaction. Forge must not present the open/close behavior as machine-observed unless the fixed Studio observation plan actually records it.
 
-1. persist the complete bounded Studio runtime observation and diagnostics material, not only their hashes;
-2. bind retrievable artifact locators into the creator verification record and session graph;
-3. support provider-free replay of grading from the persisted charter, execution plan, observation, and diagnostics;
-4. record real planner, builder, provider-turn, and tool-call timing rather than zero-duration spans;
-5. add regressions for missing verification evidence and impossible trace timing.
+After automated validation and explicit model-call authorization:
 
-Then run one genuinely different prompt-only creator scenario. Do not rerun Status Beacon merely to accumulate a second success.
+1. build the plugin and Door Control place to temporary paths;
+2. open the place and install/open the connector in Studio;
+3. run `node bin/forge.js creator serve --model openai/gpt-5.6-luna`;
+4. open the printed one-time dashboard URL, submit the exact prompt, and review/approve the exact artifacts;
+5. during the approved Play Solo check, trigger the prompt twice and observe open/close behavior;
+6. record exactly what was observed in the required final report and accept or reject;
+7. run `node bin/forge.js creator replay-verification <session-id>` and preserve the replay result, report, artifact hashes, failure classification, and exact claim boundaries here and in `handoff.md`.
+
+This live Door Control run has not occurred yet. No current session ID, verification ID, replay result, or creator report exists to record.
 
 ## Current registered-experiment path
 
@@ -105,5 +114,5 @@ Only use the preserved result to choose the smallest next capability:
 - durable multi-checkpoint sessions;
 - calibrated qualitative evaluators;
 - reviewed failure mining and regression promotion;
-- a web dashboard over `CreatorControlView` and the control API, replacing creator workflow UI in the plugin;
+- cloud identity, deployment, and multi-user dashboard collaboration;
 - microVM builder/evaluator workers after the local worker boundary is demonstrated; real Roblox Studio remains a separate proof worker.

@@ -21,21 +21,30 @@ import {
   advanceSession,
   assertCreatorControlActionBinding,
   assertCreatorPlan,
+  assertCreatorReviewReport,
   assertCreatorSessionBundle,
   createCreatorApproval,
   createCreatorChangeSet,
   createCreatorControlView,
   createCreatorPlan,
+  createCreatorReviewReport,
   createCreatorSession,
   createStudioOwnershipMap,
   creatorOrientation,
   loadCreatorBundle,
   persistCreatorBundle,
+  persistCreatorPrompt,
   runCreatorBuilder,
   runCreatorPlanner,
+  type CreatorSession,
+  type StudioOwnershipMap,
 } from "../packages/creator-session/src/index.js";
-import { LocalCreatorAgentWorker } from "../packages/creator-session/src/worker.js";
 import {
+  LocalCreatorAgentWorker,
+  type CreatorAgentWorker,
+} from "../packages/creator-session/src/worker.js";
+import {
+  CreatorSessionCoordinator,
   createChangeReviewPresentation,
   reconcileAppliedChangeSet,
 } from "../packages/creator-session/src/coordinator.js";
@@ -45,6 +54,7 @@ import type {
   ModelTurnResult,
 } from "../packages/model-client/src/contracts.js";
 import type { StudioSnapshotObservation } from "../packages/semantic-map/src/index.js";
+import type { StudioBridgeConnection } from "../packages/studio-bridge/src/index.js";
 
 const REVISION = contentHash("creator-revision");
 const PROMPT =
@@ -146,7 +156,9 @@ class CreatorRuntime implements AgentRuntime {
       status: "completed",
       trialStarted: true,
       usage: { turns: 1, inputTokens: 10, outputTokens: 10, costUsd: 0 },
+      timing: { startedAt: "2026-08-31T00:00:00.000Z", endedAt: "2026-08-31T00:00:00.000Z", durationMs: 0 },
       turns: [],
+      toolCalls: [],
     };
   }
 }
@@ -827,11 +839,12 @@ test("prompt-only planner and builder expose Studio facts, respect ownership, an
         status: "completed",
         trialStarted: true,
         usage: { turns: 1, inputTokens: 10, outputTokens: 10, costUsd: 0 },
+        timing: { startedAt: "2026-08-31T00:00:00.000Z", endedAt: "2026-08-31T00:00:00.000Z", durationMs: 0 },
         turns: [],
+        toolCalls: [],
       },
       toolHost: built.toolHost,
       budgets: INITIAL_EXPERIMENT_BUDGETS,
-      durationMs: 12,
       directory,
       traceDirectory: join(directory, "traces"),
       executionWorker,
@@ -1344,6 +1357,162 @@ test("CreatorControlView exposes only current actions and rejects stale, unavail
   );
 });
 
+test("CreatorReviewReport preserves free-form creator authority and enforces bounded non-whitespace evidence", () => {
+  const input = {
+    sessionId: "creator_session_review",
+    changeSetId: "creator_change_set_review",
+    changeSetHash: contentHash("review-change-set"),
+    charterId: "verification_charter_review",
+    charterHash: contentHash("review-charter"),
+    decision: "accepted" as const,
+    report:
+      "I triggered Toggle Door twice in Play Solo and observed the anchored door open, then return to its starting position.",
+    reviewedObservationHash: contentHash("reviewed-observation"),
+    reviewedAt: "2026-09-01T00:00:00.000Z",
+  };
+  const report = createCreatorReviewReport(input);
+  assert.doesNotThrow(() => assertCreatorReviewReport(report));
+  assert.equal(report.authority, "creator");
+  assert.equal(report.report, input.report);
+  assert.throws(
+    () => createCreatorReviewReport({ ...input, report: " \n\t " }),
+    /Invalid CreatorReviewReport/,
+  );
+  assert.throws(
+    () => createCreatorReviewReport({ ...input, report: "x".repeat(4097) }),
+    /Invalid CreatorReviewReport/,
+  );
+});
+
+test("creator control startup classifies interrupted planning and keeps review states resumable", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "forge-creator-restart-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const ownership = createStudioOwnershipMap({
+    projectId: "studio_project_restart",
+    revisionHash: REVISION,
+    observation: OBSERVATION,
+  });
+  const interrupted = createCreatorSession({
+    prompt: PROMPT,
+    projectId: ownership.projectId,
+    revisionHash: REVISION,
+    ownership,
+    now: new Date("2026-09-01T00:00:00.000Z"),
+  });
+  await persistCreatorPrompt(interrupted, PROMPT, root);
+  await persistCreatorBundle(
+    {
+      session: interrupted,
+      ownership,
+      observation: OBSERVATION,
+      observationHistory: [{ revisionHash: REVISION, observation: OBSERVATION }],
+      buildContracts: [],
+      approvals: [],
+      changeSets: [],
+      verifications: [],
+      agentRuns: [],
+    },
+    root,
+  );
+  const coordinator = new CreatorSessionCoordinator(
+    dormantCoordinatorInputs(root),
+  );
+  context.after(() => coordinator.close());
+  await coordinator.initialize();
+  const interruptedState = await coordinator.dashboardState(interrupted.id);
+  assert.equal(interruptedState.controlView?.status, "incomplete");
+  assert.equal(interruptedState.sessions[0]?.failure?.code, "control_process_interrupted");
+  assert.equal(
+    interruptedState.stages.find((stage) => stage.id === "plan")?.status,
+    "failed",
+  );
+
+  const resumableRoot = await mkdtemp(
+    join(tmpdir(), "forge-creator-resumable-"),
+  );
+  context.after(() => rm(resumableRoot, { recursive: true, force: true }));
+  const resumableOwnership = createStudioOwnershipMap({
+    projectId: "studio_project_resumable",
+    revisionHash: REVISION,
+    observation: OBSERVATION,
+  });
+  const reviewSession = createCreatorSession({
+    prompt: PROMPT,
+    projectId: resumableOwnership.projectId,
+    revisionHash: REVISION,
+    ownership: resumableOwnership,
+  });
+  const plan = restartReviewPlan(reviewSession, resumableOwnership);
+  const awaitingPlan = advanceSession(reviewSession, {
+    status: "awaiting_plan_approval",
+    plan,
+  });
+  await persistCreatorPrompt(awaitingPlan, PROMPT, resumableRoot);
+  await persistCreatorBundle(
+    {
+      session: awaitingPlan,
+      ownership: resumableOwnership,
+      observation: OBSERVATION,
+      observationHistory: [{ revisionHash: REVISION, observation: OBSERVATION }],
+      plan,
+      buildContracts: [],
+      approvals: [],
+      changeSets: [],
+      verifications: [],
+      agentRuns: [],
+    },
+    resumableRoot,
+  );
+  const resumedCoordinator = new CreatorSessionCoordinator(
+    dormantCoordinatorInputs(resumableRoot),
+  );
+  context.after(() => resumedCoordinator.close());
+  await resumedCoordinator.initialize();
+  const resumedState = await resumedCoordinator.dashboardState(awaitingPlan.id);
+  assert.equal(resumedState.controlView?.status, "awaiting_plan_approval");
+  assert.equal(resumedState.controlView?.primaryAction?.id, "approve_plan");
+
+  resumedCoordinator.close();
+  const duplicateSession = createCreatorSession({
+    prompt: PROMPT,
+    projectId: resumableOwnership.projectId,
+    revisionHash: REVISION,
+    ownership: resumableOwnership,
+  });
+  const duplicatePlan = restartReviewPlan(
+    duplicateSession,
+    resumableOwnership,
+  );
+  const duplicateAwaitingPlan = advanceSession(duplicateSession, {
+    status: "awaiting_plan_approval",
+    plan: duplicatePlan,
+  });
+  await persistCreatorPrompt(duplicateAwaitingPlan, PROMPT, resumableRoot);
+  await persistCreatorBundle(
+    {
+      session: duplicateAwaitingPlan,
+      ownership: resumableOwnership,
+      observation: OBSERVATION,
+      observationHistory: [{ revisionHash: REVISION, observation: OBSERVATION }],
+      plan: duplicatePlan,
+      buildContracts: [],
+      approvals: [],
+      changeSets: [],
+      verifications: [],
+      agentRuns: [],
+    },
+    resumableRoot,
+  );
+  const duplicateCoordinator = new CreatorSessionCoordinator(
+    dormantCoordinatorInputs(resumableRoot),
+  );
+  context.after(() => duplicateCoordinator.close());
+  await assert.rejects(
+    duplicateCoordinator.initialize(),
+    /multiple nonterminal creator sessions/,
+  );
+});
+
 test("native creator completion contract turns a premature end_turn into a structured agent failure", async () => {
   const { ownership, session, plan, approval } = builderSetup();
   const client: ModelClient = {
@@ -1423,7 +1592,7 @@ test("LocalCreatorAgentWorker persists an unsealed planner attempt before return
     "PLAN_NOT_PUBLISHED",
   );
   const run = JSON.parse(
-    await readFile(result.evidence.agentRunArtifact, "utf8"),
+    await readFile(join(directory, result.evidence.agentRun.locator), "utf8"),
   ) as AgentRun;
   assertAgentRun(run);
   assert.equal(run.status, "incomplete");
@@ -1476,7 +1645,7 @@ test("LocalCreatorAgentWorker persists AgentRun and trace evidence for every bui
         await input.tools.execute("studio.stage", invalid);
       }),
       code: "BUILDER_NO_OPERATIONS",
-      toolCalls: 1,
+      toolCalls: 0,
     },
     {
       name: "partial coverage",
@@ -1485,7 +1654,7 @@ test("LocalCreatorAgentWorker persists AgentRun and trace evidence for every bui
         await input.tools.execute("forge.verify", {});
       }),
       code: "BUILDER_CHANGE_COVERAGE_INCOMPLETE",
-      toolCalls: 2,
+      toolCalls: 0,
     },
     {
       name: "local gate not run",
@@ -1494,7 +1663,7 @@ test("LocalCreatorAgentWorker persists AgentRun and trace evidence for every bui
         await input.tools.execute("studio.stage", script);
       }),
       code: "BUILDER_LOCAL_GATE_NOT_ELIGIBLE",
-      toolCalls: 2,
+      toolCalls: 0,
     },
     {
       name: "provider failure",
@@ -1510,7 +1679,9 @@ test("LocalCreatorAgentWorker persists AgentRun and trace evidence for every bui
             failureCode: "PROVIDER_503",
             error: "provider unavailable",
             usage: { turns: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
+            timing: { startedAt: "2026-08-31T00:00:00.000Z", endedAt: "2026-08-31T00:00:00.000Z", durationMs: 0 },
             turns: [],
+            toolCalls: [],
           };
         },
       },
@@ -1524,7 +1695,7 @@ test("LocalCreatorAgentWorker persists AgentRun and trace evidence for every bui
         await input.tools.execute("studio.stage", script);
         await input.tools.execute("forge.verify", {});
       }),
-      toolCalls: 3,
+      toolCalls: 0,
       sealed: true,
     },
   ];
@@ -1561,7 +1732,7 @@ test("LocalCreatorAgentWorker persists AgentRun and trace evidence for every bui
         );
       }
       const run = JSON.parse(
-        await readFile(result.evidence.agentRunArtifact, "utf8"),
+        await readFile(join(directory, result.evidence.agentRun.locator), "utf8"),
       ) as AgentRun;
       assertAgentRun(run);
       assert.equal(
@@ -1580,7 +1751,7 @@ test("LocalCreatorAgentWorker persists AgentRun and trace evidence for every bui
       assert.deepEqual(run.creatorPhaseOutcome, result.evidence.outcome);
       assert.deepEqual(run.creatorBuildContract, result.evidence.buildContract);
       assert.equal(
-        (await stat(result.evidence.agentRunArtifact)).mode & 0o777,
+        (await stat(join(directory, result.evidence.agentRun.locator))).mode & 0o777,
         0o600,
       );
       assert.equal(
@@ -1655,12 +1826,12 @@ test("creator bundle graph binds approved plan, build contract, sealed change se
   };
   assert.doesNotThrow(() => assertCreatorSessionBundle(bundle));
   assert.equal(
-    contentHash(await readFile(built.evidence.agentRunArtifact, "utf8")),
-    built.evidence.agentRunArtifactHash,
+    contentHash(await readFile(join(directory, built.evidence.agentRun.locator), "utf8")),
+    built.evidence.agentRun.artifactHash,
   );
   assert.equal(
-    contentHash(await readFile(built.evidence.traceArtifact, "utf8")),
-    built.evidence.traceArtifactHash,
+    contentHash(await readFile(join(directory, built.evidence.trace.locator), "utf8")),
+    built.evidence.trace.artifactHash,
   );
   const persisted = await persistCreatorBundle(bundle, directory);
   assert.equal(
@@ -1680,12 +1851,65 @@ test("creator bundle graph binds approved plan, build contract, sealed change se
       }),
     /CreatorChangeSet identity|build contract/,
   );
-  await writeFile(built.evidence.agentRunArtifact, "tampered\n", "utf8");
+  await writeFile(join(directory, built.evidence.agentRun.locator), "tampered\n", "utf8");
   await assert.rejects(
     () => loadCreatorBundle(persisted.path),
-    /content hash mismatch/,
+    /byte count|SHA-256 mismatch/,
   );
 });
+
+function restartReviewPlan(
+  session: CreatorSession,
+  ownership: StudioOwnershipMap,
+) {
+  return createCreatorPlan(
+    {
+      sessionId: session.id,
+      promptHash: session.promptHash,
+      projectRevisionHash: REVISION,
+      ownershipMapId: ownership.id,
+      ownershipMapHash: ownership.hash,
+      creatorPrompt: PROMPT,
+      inspectionPaths: ["Workspace"],
+      steps: [
+        {
+          id: "create_part_step",
+          statement: "Create the approved Part.",
+          changeIds: ["create_part"],
+        },
+      ],
+      changes: [
+        {
+          id: "create_part",
+          kind: "create",
+          path: "Workspace/RestartPart",
+          className: "Part",
+          initialization: "initial_properties",
+        },
+      ],
+      charter: {
+        clauses: [
+          {
+            id: "part_exists",
+            kind: "studio_check",
+            check: "instance_exists",
+            path: "Workspace/RestartPart",
+            expectedClass: "Part",
+          },
+          {
+            id: "diagnostics",
+            kind: "studio_check",
+            check: "playtest_diagnostics",
+            maximumErrors: 0,
+            maximumWarnings: 0,
+          },
+        ],
+      },
+    },
+    OBSERVATION,
+    ownership,
+  );
+}
 
 function builderSetup() {
   const ownership = createStudioOwnershipMap({
@@ -1771,4 +1995,33 @@ function builderSetup() {
     decidedAt: "2026-08-31T00:01:00.000Z",
   });
   return { ownership, session, plan, approval };
+}
+
+function dormantCoordinatorInputs(
+  directory: string,
+): ConstructorParameters<typeof CreatorSessionCoordinator>[0] {
+  const connection: StudioBridgeConnection = {
+    async send() {
+      throw new Error("Restart tests do not send Studio commands");
+    },
+    subscribeWithSession() {
+      return () => {};
+    },
+    async close() {},
+  };
+  const worker: CreatorAgentWorker = {
+    descriptor: {
+      kind: "CreatorAgentWorkerDescriptor",
+      name: "forge-local-creator-agent-worker",
+      environment: "local_process",
+      isolation: "none",
+    },
+    async plan() {
+      throw new Error("Restart tests do not call a model");
+    },
+    async build() {
+      throw new Error("Restart tests do not call a model");
+    },
+  };
+  return { connection, worker, directory };
 }

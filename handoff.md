@@ -10,32 +10,28 @@ This document is the operational handoff for continuing Forge development. The c
 
 ## Current position
 
-Forge now has a successful prompt-only creator vertical slice. A creator opened the Status Beacon fixture in Roblox Studio, submitted only a natural-language prompt, reviewed and approved a generated plan, reviewed and approved an exact typed change set, authorized Studio checks, visually reviewed the result, and accepted it. Studio remained the only persistent writer.
+Forge now implements the auditable-evidence and dashboard-cutover milestone. Current creator sessions live only under `.forge/creator`; every referenced JSON artifact is content-addressed, retrievable, verified, and root-relative. Completed verification can be replayed without Studio, a model, or network access. Runtime traces contain real phase, provider-turn, and tool-call intervals. A standalone loopback control server serves the local React evidence workbench, while the Studio plugin is reduced to the trusted connector.
 
-Repository baseline at handoff creation:
-
-- Branch: `main`
-- Commit: `93a4583201ea3f6d6d7381b8dec2097c1d1cc67f`
-- The working tree was clean before this file was added.
-- Forge intentionally has no schema, protocol, plugin, or release-version fields/readers. Contract identity comes from `kind`, canonical content hashes, capability-set identities, and clean replacement of old shapes.
+The accepted Status Beacon session remains important predecessor evidence, but it is not rewritten into the current shape. The next evidence-producing task is one distinct Door Control live run through the dashboard. That live run has not happened yet, so there is no current session ID, replay result, creator report, or new verification claim to preserve.
 
 Repository hygiene after the final cleanup:
 
-- `examples/status-beacon` is the only retained product example.
+- `examples/status-beacon` remains the historical accepted seed; `examples/door-control` is the new solution-free live-proof seed.
 - Moving Platform and Vertical Shuttle example packages were removed. Their names remain only where historical evidence is discussed.
 - Registered-experiment regressions construct synthetic treatments in test code rather than relying on hand-authored product examples.
 - Generated connector binaries are not retained in the repository or `.forge/artifacts`; build them to temporary output when needed.
-- `.forge/artifacts` retains only the Status Beacon place and its lock file.
-- Historical AgentRuns, traces, registrations, candidates, runtime evaluations, proofs, canaries, and creator sessions remain untouched.
+- Historical AgentRuns, traces, registrations, candidates, runtime evaluations, proofs, canaries, and `.forge/creator-sessions` remain untouched and are not accepted by current readers.
+- New sessions and immutable evidence use `.forge/creator`. Private CLI discovery for the dashboard server uses `.forge/creator-control.json`.
 
 ## Product boundaries
 
 The intended product split is:
 
-- A future web dashboard owns prompts, artifact review, approvals, progress, and history.
+- The local React dashboard owns prompts, artifact review, approvals, progress, history, replay, and the required final creator report.
 - The Forge control plane owns orchestration, model execution, policy, evidence, and grading.
 - The Studio plugin is a thin trusted connector for snapshots, typed mutation, ChangeHistory recording, Play Solo, diagnostics, and rollback.
 - A `CreatorAgentWorker` boundary isolates planner/builder execution from coordination. The current implementation is `LocalCreatorAgentWorker` with `local_process` and no isolation.
+- The standalone `CreatorControlServer` owns browser/CLI authentication and the creator API; `StudioBridgeServer` owns only trusted connector transport.
 - Future microVMs may isolate non-Studio agent and local-evaluation work. They cannot replace authoritative Roblox Studio runtime observation.
 
 The normal creator product requires only an open Studio place and a creator prompt. Registered experiments intentionally require preregistered evaluator, seed, budget, model, and implementation material; that scaffolding is not ordinary creator UX.
@@ -55,7 +51,7 @@ The current path is:
 9. The creator authorizes the exact Studio checks. Forge commits on machine-check success or cancels and repairs/rolls back on failure.
 10. The creator visually reviews the committed result and accepts it or rejects and rolls it back.
 
-Consent remains distinct at plan approval, exact change approval, playtest initiation, and final acceptance. The plugin and CLI consume the same `CreatorControlView`; workflow legality is coordinator-owned rather than inferred from display strings.
+Consent remains distinct at plan approval, exact change approval, playtest initiation, and final acceptance. The dashboard and CLI consume the same `CreatorControlView`; workflow legality is coordinator-owned rather than inferred from display strings. Final acceptance or rejection requires a 1–4096-byte non-whitespace creator report. That report is creator-authority evidence only and never upgrades Studio facts or machine-check claims.
 
 ## Demonstrated successful session
 
@@ -118,29 +114,32 @@ The saved final Studio snapshot establishes that:
 
 Do not overstate the claim. Alternation timing and visual quality were creator-reviewed facts, not machine-observed color-series facts. The AgentRun traces correctly say `runtimeGate: not_run` because they cover the planner and builder phases; Studio verification is represented separately by the creator verification record.
 
-## Immediate evidence gaps
+## Current evidence boundary and next live proof
 
-Two general audit-quality gaps were found while checking the successful run:
+The earlier audit gaps are closed in the implementation and automated suite:
 
-1. The creator-session bundle retains hashes for the Studio runtime observation and diagnostics but not their canonical bodies. The verification status and bindings are preserved, but a later auditor cannot independently replay grading from the saved bundle alone.
-2. Planner and builder traces report identical `startedAt` and `endedAt` timestamps and zero-duration spans even though their aggregate latencies are `14697 ms` and `13773 ms`. Content and hash linkage are intact, but trace timing is not useful.
+- immutable canonical JSON artifacts use atomic private writes, hash/byte verification, regular-file and symlink checks, relocation-safe locators, and conflict-safe deduplication;
+- verification records bind the exact snapshot, execution plan, complete bounded runtime envelope and diagnostics when Studio ran, status, and exact failure facts;
+- pure replay must reproduce both status and failure-fact hashes, while incomplete connector runs remain explicitly non-replayable;
+- `ForgeNativeAgentRuntime` alone records rejected and executed calls, and BuildTrace validates real monotonic-backed intervals and containment;
+- the dashboard/control-server cutover, restart classification, current-store discovery, required final report, and thin-plugin protocol surface are implemented.
 
-The next implementation should fix these generically rather than special-casing Status Beacon:
+The remaining evidence gap is live rather than structural: the new product shape has not yet been exercised in Roblox Studio. Use the exact solution-free Door Control prompt:
 
-- Persist the complete bounded `RuntimeObservationEnvelope` and diagnostics material as immutable evidence, or persist independently addressable canonical artifacts whose bytes are available by their recorded hashes.
-- Bind those artifact locators into `CreatorVerificationRecord` and the session evidence graph.
-- Make verification replayable from persisted charter, execution plan, observation, and diagnostics without contacting Studio.
-- Record real planner, builder, provider-turn, and tool-call start/end times and durations in traces.
-- Add regressions that fail if a trace has impossible timing or a passed Studio verification lacks retrievable observation material.
+> Add a ProximityPrompt to Workspace/DoorAssembly/ControlPanel labeled “Toggle Door”. Each time a player uses it, move Workspace/DoorAssembly/Door straight up 8 studs to open or back to its starting position to close. Use server-authoritative code, keep the door anchored, and preserve Workspace/PreservedScenery.
 
-After that, run one genuinely different prompt-only creator scenario. Do not repeat Status Beacon merely to accumulate another success.
+The plan must visibly cover prompt and Script existence, Luau syntax, bounded diagnostics, preservation, and creator review of the interaction. Trigger the prompt twice during the approved Play Solo check. Preserve the resulting current session, replay output, creator report, hashes, failure classification, and exact claim boundaries. Until that happens, do not claim that the dashboard cutover or door behavior has live Studio evidence.
 
 ## Important implementation files
 
 - `packages/creator-session/src/index.ts` — creator contracts and validation.
 - `packages/creator-session/src/coordinator.ts` — lifecycle, Studio actions, verification, checkpointing, and review.
 - `packages/creator-session/src/worker.ts` — planner/builder worker seam and local worker.
-- `packages/native-agent-runtime/src/` — model orchestration and trace materialization.
+- `packages/agent-runtime/src/` — model orchestration, runtime-owned tool evidence, and interval capture.
+- `packages/artifact-store/src/` — immutable current creator evidence.
+- `packages/creator-control/src/` — dashboard/API server and private discovery.
+- `packages/creator-session/src/verification.ts` — pure verification grading and replay.
+- `dashboard/` — React/Vite evidence workbench.
 - `packages/studio-capabilities/src/` — fixed Studio capability plans and runtime observation contracts.
 - `packages/studio-protocol/src/` — connector messages and authenticated session transport.
 - `plugin/src/Forge/StudioAuthoring.luau` — typed Studio mutation and storage-domain handling.
@@ -164,6 +163,7 @@ Also render every Mermaid block in `docs/ARCHITECTURE.md`, check local Markdown 
 ```sh
 rojo build plugin/default.project.json -o /tmp/ForgeStudioPlugin.rbxmx
 rojo build examples/status-beacon/default.project.json -o /tmp/StatusBeacon.rbxlx
+rojo build examples/door-control/default.project.json -o /tmp/DoorControl.rbxlx
 ```
 
 Only after explicit user authorization for a new live run:
@@ -172,7 +172,11 @@ Only after explicit user authorization for a new live run:
 node bin/forge.js creator serve --model openai/gpt-5.6-luna
 ```
 
-The user, not Forge or Codex, opens Studio, pairs the connector, approves artifacts, starts checks, observes the result, and accepts or rolls it back.
+Open the printed one-time dashboard URL. The user, not Forge or Codex, opens the Door Control place in Studio, pairs the connector, submits the exact prompt, approves artifacts, starts checks, triggers the prompt twice, records the observation in the required report, and accepts or rolls it back. Then run:
+
+```sh
+node bin/forge.js creator replay-verification <session-id>
+```
 
 ## Constraints for the next agent
 

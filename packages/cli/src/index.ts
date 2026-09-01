@@ -5,9 +5,12 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { FORGE_NATIVE_RUNTIME_IDENTITY, ForgeNativeAgentRuntime, loadWorkspaceCandidateArtifact } from "../../agent-runtime/src/index.js";
+import { ImmutableJsonArtifactStore } from "../../artifact-store/src/index.js";
 import { stableJson } from "../../contracts/src/index.js";
+import { CreatorControlServer, readCreatorControlDiscovery, removeCreatorControlDiscovery, writeCreatorControlDiscovery } from "../../creator-control/src/index.js";
 import { CreatorSessionCoordinator, type CreatorControlAction } from "../../creator-session/src/coordinator.js";
-import { assertCreatorControlView, type CreatorControlActionId, type CreatorControlView } from "../../creator-session/src/index.js";
+import { assertCreatorControlView, loadCreatorBundle, type CreatorControlActionId, type CreatorControlView } from "../../creator-session/src/index.js";
+import { replayCreatorVerification } from "../../creator-session/src/verification.js";
 import { LocalCreatorAgentWorker } from "../../creator-session/src/worker.js";
 import { assertExperimentRegistrationCurrent, assertRegisteredCandidate, loadExperimentRegistration, persistExperimentRegistration, registerExperiment, runRegisteredExperiment } from "../../experiments/src/index.js";
 import { defaultTraceDirectory, JsonFileTraceSink } from "../../flight-recorder/src/index.js";
@@ -26,6 +29,7 @@ async function main(): Promise<void> {
   if (command === "creator" && subcommand === "serve") return creatorServe(rest);
   if (command === "creator" && subcommand === "start") return creatorStart(rest);
   if (command === "creator" && subcommand === "status") return creatorStatus(rest[0], rest.slice(1));
+  if (command === "creator" && subcommand === "replay-verification") return creatorReplayVerification(rest[0], rest.slice(1));
   if (command === "creator" && ["approve-plan", "reject-plan", "approve-changes", "reject-changes", "start-checks", "cancel-changes", "accept", "reject-result"].includes(subcommand ?? "")) return creatorAction(subcommand!, rest[0], rest.slice(1));
   if (command === "experiment" && subcommand === "register") return experimentRegister(rest[0], rest.slice(1));
   if (command === "experiment" && subcommand === "build") return experimentBuild(rest[0], rest.slice(1));
@@ -40,24 +44,31 @@ async function main(): Promise<void> {
 
 async function creatorServe(optionArgs: string[]): Promise<void> {
   const options = parseCreatorServeOptions(optionArgs);
-  if (!options.valid || !options.model) { process.stderr.write("Usage: forge creator serve --model <exact-model-id> [--session-dir <path>] [--timeout-ms <ms>] [--external-rojo-root <StudioPath>]...\n"); process.exitCode = 2; return; }
+  if (!options.valid || !options.model) { process.stderr.write("Usage: forge creator serve --model <exact-model-id> [--session-dir <path>] [--timeout-ms <ms>] [--control-port <port>] [--external-rojo-root <StudioPath>]...\n"); process.exitCode = 2; return; }
   const bridge = new StudioBridgeServer();
   let coordinator: CreatorSessionCoordinator | undefined;
+  let control: CreatorControlServer | undefined;
+  let bridgeId: string | undefined;
+  let controlId: string | undefined;
   try {
     const apiKey = loadOpenRouterApiKey();
     const runtime = new ForgeNativeAgentRuntime(new OpenRouterModelClient({ apiKey, model: options.model }));
-    const directory = resolve(options.sessionDirectory ?? ".forge/creator-sessions");
+    const directory = resolve(options.sessionDirectory ?? ".forge/creator");
     coordinator = new CreatorSessionCoordinator({ connection: bridge, worker: new LocalCreatorAgentWorker(runtime, directory), directory, ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}), ...(options.externalRojoPaths.length > 0 ? { externalRojoPaths: options.externalRojoPaths } : {}) });
-    bridge.setControlHandler(coordinator);
+    await coordinator.initialize();
+    control = new CreatorControlServer({ coordinator, dashboardDirectory: resolve("dashboard/dist"), ...(options.controlPort ? { port: options.controlPort } : {}) });
     bridge.subscribe((messageValue) => { if (messageValue.type !== "Heartbeat") process.stdout.write(`\n[studio -> creator] ${messageValue.type}${messageValue.sessionId ? ` (${messageValue.sessionId})` : ""}\n`); });
     const address = await bridge.listen();
-    const discovery = { kind: "ForgeStudioBridgeDiscovery" as const, bridgeId: `bridge_${randomUUID()}`, host: address.host, port: address.port, controlToken: address.controlToken, pid: process.pid, startedAt: new Date().toISOString() };
-    await writeStudioBridgeDiscovery(discovery);
-    process.stdout.write(`Forge creator service listening at http://${address.host}:${address.port}\nThe Forge Studio connector will pair automatically. Studio is the only creator-session write authority.\n`);
+    bridgeId = `bridge_${randomUUID()}`;
+    await writeStudioBridgeDiscovery({ kind: "ForgeStudioBridgeDiscovery", bridgeId, host: address.host, port: address.port, controlToken: address.controlToken, pid: process.pid, startedAt: new Date().toISOString() });
+    const controlAddress = await control.listen();
+    controlId = `creator_control_${randomUUID()}`;
+    await writeCreatorControlDiscovery({ kind: "ForgeCreatorControlDiscovery", controlId, host: controlAddress.host, port: controlAddress.port, bearerToken: controlAddress.bearerToken, pid: process.pid, startedAt: new Date().toISOString() });
+    const launchUrl = control.createLaunchUrl(controlAddress.port);
+    process.stdout.write(`Forge Studio bridge listening at http://${address.host}:${address.port}\nForge creator dashboard: ${launchUrl}\nThe launch URL is one-time and expires after five minutes. Studio pairs automatically; prompts, evidence, consent, and reports stay in the dashboard.\n`);
     await new Promise<void>((done) => { process.once("SIGINT", done); process.once("SIGTERM", done); });
-    await removeStudioBridgeDiscovery(discovery.bridgeId);
   } catch (error) { process.stderr.write(`Forge creator service did not start: ${message(error)}\n`); process.exitCode = 2; }
-  finally { coordinator?.close(); await bridge.close(); }
+  finally { if (controlId) await removeCreatorControlDiscovery(controlId); if (bridgeId) await removeStudioBridgeDiscovery(bridgeId); await control?.close(); coordinator?.close(); await bridge.close(); }
 }
 
 async function creatorStart(optionArgs: string[]): Promise<void> {
@@ -76,14 +87,32 @@ async function creatorStatus(sessionId: string | undefined, optionArgs: string[]
 }
 
 async function creatorAction(command: string, sessionId: string | undefined, optionArgs: string[]): Promise<void> {
-  if (!sessionId || optionArgs.length > 0) { process.stderr.write(`Usage: forge creator ${command} <session-id>\n`); process.exitCode = 2; return; }
+  const reportOptions = parseCreatorReportOptions(optionArgs);
+  if (!sessionId || !reportOptions.valid) { process.stderr.write(`Usage: forge creator ${command} <session-id> [--report <text> | --report-file <path>]\n`); process.exitCode = 2; return; }
   try {
-    const viewValue = await creatorState(sessionId); assertCreatorControlView(viewValue); const view = viewValue as CreatorControlView;
+    const stateValue = await creatorState(sessionId); if (!isRecord(stateValue) || !stateValue.controlView) throw new Error("Creator session has no control view"); assertCreatorControlView(stateValue.controlView); const view = stateValue.controlView as CreatorControlView;
     const mapping: Record<string, CreatorControlActionId> = { "approve-plan": "approve_plan", "reject-plan": "reject_plan", "approve-changes": "approve_and_apply_changes", "reject-changes": "reject_changes", "start-checks": "start_checks", "cancel-changes": "cancel_changes", accept: "accept_result", "reject-result": "reject_and_rollback" };
     const actionId = mapping[command]; if (!actionId || ![view.primaryAction?.id, view.secondaryAction?.id].includes(actionId)) throw new Error(`${command} is not available in the current creator control view`);
-    const action: CreatorControlAction = { action: "act", sessionId, viewId: view.id, viewHash: view.hash, actionId };
+    const report = reportOptions.report ?? (reportOptions.reportPath ? await readFile(resolve(reportOptions.reportPath), "utf8") : undefined);
+    const action: CreatorControlAction = { action: "act", sessionId, viewId: view.id, viewHash: view.hash, actionId, ...(report !== undefined ? { report } : {}) };
     process.stdout.write(`${JSON.stringify(await creatorControl(action), null, 2)}\n`);
   } catch (error) { process.stderr.write(`Creator action failed: ${message(error)}\n`); process.exitCode = 2; }
+}
+
+async function creatorReplayVerification(sessionId: string | undefined, optionArgs: string[]): Promise<void> {
+  const options = parseCreatorReplayOptions(optionArgs);
+  if (!sessionId || !options.valid) { process.stderr.write("Usage: forge creator replay-verification <session-id> [--verification <id>] [--session-dir <path>]\n"); process.exitCode = 2; return; }
+  try {
+    const directory = resolve(options.sessionDirectory ?? ".forge/creator");
+    const bundle = await loadCreatorBundle(join(directory, `${sessionId}.json`));
+    const verification = options.verificationId
+      ? bundle.verifications.find((item) => item.id === options.verificationId)
+      : bundle.verifications.at(-1);
+    if (!verification) throw new Error("Creator verification evidence is missing");
+    const replay = await replayCreatorVerification(bundle, verification, new ImmutableJsonArtifactStore(directory));
+    process.stdout.write(`${JSON.stringify(replay, null, 2)}\n`);
+    process.exitCode = replay.result === "exact_match" ? 0 : replay.result === "mismatch" ? 1 : 2;
+  } catch (error) { process.stderr.write(`Creator verification replay unavailable: ${message(error)}\n`); process.exitCode = 2; }
 }
 
 async function experimentRegister(seedPath: string | undefined, optionArgs: string[]): Promise<void> {
@@ -236,17 +265,19 @@ function loadOpenRouterApiKey(): string {
 }
 
 function parseSimpleTraceOptions(values: string[]): { valid: boolean; traceDirectory?: string } { let traceDirectory: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--format" && next === "json") { index += 1; continue; } if (option === "--trace-dir" && next) { traceDirectory = next; index += 1; continue; } return { valid: false }; } return { valid: true, ...(traceDirectory ? { traceDirectory } : {}) }; }
-function parseCreatorServeOptions(values: string[]): { valid: boolean; model?: string; sessionDirectory?: string; timeoutMs?: number; externalRojoPaths: string[] } { let model: string | undefined; let sessionDirectory: string | undefined; let timeoutMs: number | undefined; const externalRojoPaths: string[] = []; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--model" && next) model = next; else if (option === "--session-dir" && next) sessionDirectory = next; else if (option === "--timeout-ms" && next && /^\d+$/.test(next)) timeoutMs = Number(next); else if (option === "--external-rojo-root" && next) externalRojoPaths.push(next); else return { valid: false, externalRojoPaths: [] }; index += 1; } return { valid: new Set(externalRojoPaths).size === externalRojoPaths.length, externalRojoPaths: [...externalRojoPaths].sort(), ...(model ? { model } : {}), ...(sessionDirectory ? { sessionDirectory } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}) }; }
+function parseCreatorServeOptions(values: string[]): { valid: boolean; model?: string; sessionDirectory?: string; timeoutMs?: number; controlPort?: number; externalRojoPaths: string[] } { let model: string | undefined; let sessionDirectory: string | undefined; let timeoutMs: number | undefined; let controlPort: number | undefined; const externalRojoPaths: string[] = []; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--model" && next) model = next; else if (option === "--session-dir" && next) sessionDirectory = next; else if (option === "--timeout-ms" && next && /^\d+$/.test(next)) timeoutMs = Number(next); else if (option === "--control-port" && next && /^\d+$/.test(next) && Number(next) > 0 && Number(next) <= 65_535) controlPort = Number(next); else if (option === "--external-rojo-root" && next) externalRojoPaths.push(next); else return { valid: false, externalRojoPaths: [] }; index += 1; } return { valid: new Set(externalRojoPaths).size === externalRojoPaths.length, externalRojoPaths: [...externalRojoPaths].sort(), ...(model ? { model } : {}), ...(sessionDirectory ? { sessionDirectory } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(controlPort !== undefined ? { controlPort } : {}) }; }
+function parseCreatorReportOptions(values: string[]): { valid: boolean; report?: string; reportPath?: string } { if (values.length === 0) return { valid: true }; if (values.length !== 2) return { valid: false }; if (values[0] === "--report" && values[1] !== undefined) return { valid: true, report: values[1] }; if (values[0] === "--report-file" && values[1]) return { valid: true, reportPath: values[1] }; return { valid: false }; }
+function parseCreatorReplayOptions(values: string[]): { valid: boolean; verificationId?: string; sessionDirectory?: string } { let verificationId: string | undefined; let sessionDirectory: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--verification" && next) verificationId = next; else if (option === "--session-dir" && next) sessionDirectory = next; else return { valid: false }; index += 1; } return { valid: true, ...(verificationId ? { verificationId } : {}), ...(sessionDirectory ? { sessionDirectory } : {}) }; }
 function parseCreatorStartOptions(values: string[]): { valid: boolean; prompt?: string; promptPath?: string } { let prompt: string | undefined; let promptPath: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--prompt" && next) prompt = next; else if (option === "--prompt-file" && next) promptPath = next; else return { valid: false }; index += 1; } return { valid: Boolean(prompt) !== Boolean(promptPath), ...(prompt ? { prompt } : {}), ...(promptPath ? { promptPath } : {}) }; }
-async function creatorControl(action: CreatorControlAction): Promise<unknown> { const discovery = await readStudioBridgeDiscovery(); return creatorRequest(discovery, "/control/action", { method: "POST", body: stableJson(action) }); }
-async function creatorState(sessionId?: string): Promise<unknown> { const discovery = await readStudioBridgeDiscovery(); return creatorRequest(discovery, `/control/state${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`, { method: "GET" }); }
-async function creatorRequest(discovery: Awaited<ReturnType<typeof readStudioBridgeDiscovery>>, path: string, input: { method: "GET" | "POST"; body?: string }): Promise<unknown> { const response = await fetch(`http://${discovery.host}:${discovery.port}${path}`, { method: input.method, headers: { "x-forge-control-token": discovery.controlToken, ...(input.body ? { "content-type": "application/json" } : {}) }, ...(input.body ? { body: input.body } : {}) }); const payload = await response.json() as unknown; if (!response.ok) throw new Error(isRecord(payload) && typeof payload.message === "string" ? payload.message : `Creator service returned HTTP ${response.status}`); return payload; }
+async function creatorControl(action: CreatorControlAction): Promise<unknown> { const discovery = await readCreatorControlDiscovery(); return creatorRequest(discovery, "/api/control/action", { method: "POST", body: stableJson(action) }); }
+async function creatorState(sessionId?: string): Promise<unknown> { const discovery = await readCreatorControlDiscovery(); return creatorRequest(discovery, `/api/control/state${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`, { method: "GET" }); }
+async function creatorRequest(discovery: Awaited<ReturnType<typeof readCreatorControlDiscovery>>, path: string, input: { method: "GET" | "POST"; body?: string }): Promise<unknown> { const response = await fetch(`http://${discovery.host}:${discovery.port}${path}`, { method: input.method, headers: { authorization: `Bearer ${discovery.bearerToken}`, ...(input.body ? { "content-type": "application/json" } : {}) }, ...(input.body ? { body: input.body } : {}) }); const payload = await response.json() as unknown; if (!response.ok) throw new Error(isRecord(payload) && typeof payload.message === "string" ? payload.message : `Creator service returned HTTP ${response.status}`); return payload; }
 async function readStdin(): Promise<string> { const chunks: Buffer[] = []; for await (const chunk of process.stdin) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); return Buffer.concat(chunks).toString("utf8"); }
 function parseExperimentRegisterOptions(values: string[]): { valid: boolean; promptPath?: string; requirementsPath?: string; acceptancePath?: string; definitionPath?: string; configurationPath?: string; model?: string; outputPath?: string; name?: string; hypothesis?: string } { let promptPath: string | undefined; let requirementsPath: string | undefined; let acceptancePath: string | undefined; let definitionPath: string | undefined; let configurationPath: string | undefined; let model: string | undefined; let outputPath: string | undefined; let name: string | undefined; let hypothesis: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--prompt-file" && next) promptPath = next; else if (option === "--requirements" && next) requirementsPath = next; else if (option === "--acceptance" && next) acceptancePath = next; else if (option === "--runtime-plan" && next) definitionPath = next; else if (option === "--runtime-configuration" && next) configurationPath = next; else if (option === "--model" && next) model = next; else if (option === "--output" && next) outputPath = next; else if (option === "--name" && next) name = next; else if (option === "--hypothesis" && next) hypothesis = next; else return { valid: false }; index += 1; } return { valid: true, ...(promptPath ? { promptPath } : {}), ...(requirementsPath ? { requirementsPath } : {}), ...(acceptancePath ? { acceptancePath } : {}), ...(definitionPath ? { definitionPath } : {}), ...(configurationPath ? { configurationPath } : {}), ...(model ? { model } : {}), ...(outputPath ? { outputPath } : {}), ...(name ? { name } : {}), ...(hypothesis ? { hypothesis } : {}) }; }
 function parseExperimentBuildOptions(values: string[]): { valid: boolean; registrationPath?: string; runDirectory?: string; traceDirectory?: string } { let registrationPath: string | undefined; let runDirectory: string | undefined; let traceDirectory: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--registration" && next) registrationPath = next; else if (option === "--run-dir" && next) runDirectory = next; else if (option === "--trace-dir" && next) traceDirectory = next; else if (option === "--format" && next === "json") { index += 1; continue; } else return { valid: false }; index += 1; } return { valid: true, ...(registrationPath ? { registrationPath } : {}), ...(runDirectory ? { runDirectory } : {}), ...(traceDirectory ? { traceDirectory } : {}) }; }
 function parseExperimentEvaluateOptions(values: string[]): { valid: boolean; registrationPath?: string; timeoutMs?: number; runDirectory?: string; traceDirectory?: string; proofDirectory?: string } { let registrationPath: string | undefined; let timeoutMs: number | undefined; let runDirectory: string | undefined; let traceDirectory: string | undefined; let proofDirectory: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--registration" && next) registrationPath = next; else if (option === "--timeout-ms" && next && /^\d+$/.test(next)) timeoutMs = Number(next); else if (option === "--run-dir" && next) runDirectory = next; else if (option === "--trace-dir" && next) traceDirectory = next; else if (option === "--proof-dir" && next) proofDirectory = next; else if (option === "--format" && next === "json") { index += 1; continue; } else return { valid: false }; index += 1; } return { valid: true, ...(registrationPath ? { registrationPath } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(runDirectory ? { runDirectory } : {}), ...(traceDirectory ? { traceDirectory } : {}), ...(proofDirectory ? { proofDirectory } : {}) }; }
 function parseStudioCanaryOptions(values: string[]): { valid: boolean; planPath?: string; timeoutMs?: number; runDirectory?: string } { let planPath: string | undefined; let timeoutMs: number | undefined; let runDirectory: string | undefined; for (let index = 0; index < values.length; index += 1) { const option = values[index]; const next = values[index + 1]; if (option === "--plan" && next) planPath = next; else if (option === "--timeout-ms" && next && /^\d+$/.test(next)) timeoutMs = Number(next); else if (option === "--run-dir" && next) runDirectory = next; else if (option === "--format" && next === "json") { index += 1; continue; } else return { valid: false }; index += 1; } return { valid: true, ...(planPath ? { planPath } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}), ...(runDirectory ? { runDirectory } : {}) }; }
-function usage(): void { process.stdout.write(`Forge commands:\n  forge creator serve --model <exact-model-id>\n  forge creator start (--prompt <request> | --prompt-file <file-or->)\n  forge creator status [session-id]\n  forge creator approve-plan|reject-plan <session-id>\n  forge creator approve-changes|reject-changes <session-id>\n  forge creator start-checks|cancel-changes <session-id>\n  forge creator accept|reject-result <session-id>\n  forge experiment register <seed> --prompt-file <file> --requirements <file> --acceptance <file> --runtime-plan <file> --runtime-configuration <file> --model <exact-model-id> --output <registration.json>\n  forge experiment build <seed> --registration <registration.json>\n  forge experiment evaluate <artifact> --registration <registration.json>\n  forge studio canary <seed> --plan <file>\n  forge studio bridge\n  forge verify <project>\n  forge trace show <trace-id>\n`); }
+function usage(): void { process.stdout.write(`Forge commands:\n  forge creator serve --model <exact-model-id>\n  forge creator start (--prompt <request> | --prompt-file <file-or->)\n  forge creator status [session-id]\n  forge creator replay-verification <session-id> [--verification <id>] [--session-dir <path>]\n  forge creator approve-plan|reject-plan <session-id>\n  forge creator approve-changes|reject-changes <session-id>\n  forge creator start-checks|cancel-changes <session-id>\n  forge creator accept|reject-result <session-id> --report <text>\n  forge experiment register <seed> --prompt-file <file> --requirements <file> --acceptance <file> --runtime-plan <file> --runtime-configuration <file> --model <exact-model-id> --output <registration.json>\n  forge experiment build <seed> --registration <registration.json>\n  forge experiment evaluate <artifact> --registration <registration.json>\n  forge studio canary <seed> --plan <file>\n  forge studio bridge\n  forge verify <project>\n  forge trace show <trace-id>\n`); }
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 

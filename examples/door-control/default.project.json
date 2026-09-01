@@ -1,0 +1,51 @@
+{
+  "name": "ForgeCreatorDoorControl",
+  "tree": {
+    "$className": "DataModel",
+    "Workspace": {
+      "$className": "Workspace",
+      "DoorAssembly": {
+        "$className": "Model",
+        "Door": {
+          "$className": "Part",
+          "$properties": {
+            "Anchored": true,
+            "CFrame": [0, 5, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "Color": [0.27, 0.31, 0.36],
+            "Size": [8, 10, 1]
+          }
+        },
+        "ControlPanel": {
+          "$className": "Part",
+          "$properties": {
+            "Anchored": true,
+            "CFrame": [6, 3, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "Color": [0.78, 0.42, 0.2],
+            "Size": [2, 3, 1]
+          }
+        }
+      },
+      "PreservedScenery": {
+        "$className": "Model",
+        "Ground": {
+          "$className": "Part",
+          "$properties": {
+            "Anchored": true,
+            "CFrame": [0, -0.5, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "Color": [0.25, 0.43, 0.24],
+            "Size": [48, 1, 32]
+          }
+        },
+        "Marker": {
+          "$className": "Part",
+          "$properties": {
+            "Anchored": true,
+            "CFrame": [-12, 3, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "Color": [0.19, 0.36, 0.58],
+            "Size": [3, 6, 3]
+          }
+        }
+      }
+    }
+  }
+}

@@ -30,6 +30,7 @@ import {
 } from "../packages/semantic-authority/src/index.js";
 import { compileAgentOrientation } from "../packages/context-compiler/src/index.js";
 import { createProjectSnapshot } from "../packages/semantic-map/src/index.js";
+import type { FlightRecorderClock } from "../packages/flight-recorder/src/index.js";
 
 const VULNERABLE = resolve(
   "test/fixtures/client-controlled-authoritative-state",
@@ -212,6 +213,21 @@ function rejectedToolResult(code: string, message: string): ToolResult {
   };
 }
 
+class ManualTimingClock implements FlightRecorderClock {
+  private milliseconds = 0;
+  now(): Date {
+    return new Date(
+      `2026-08-30T00:00:00.${String(this.milliseconds).padStart(3, "0")}Z`,
+    );
+  }
+  monotonicNow(): number {
+    return this.milliseconds;
+  }
+  advance(durationMs: number): void {
+    this.milliseconds += durationMs;
+  }
+}
+
 function recordlessRejectingToolHost(): AgentToolHost {
   return {
     definitions: () => [
@@ -239,7 +255,6 @@ function recordlessRejectingToolHost(): AgentToolHost {
     async execute(): Promise<ToolResult> {
       throw new Error("Rejected batches must not execute tools");
     },
-    records: () => [],
   };
 }
 
@@ -280,7 +295,6 @@ function readResetToolHost(): AgentToolHost {
         bytes: Buffer.byteLength(serialized, "utf8"),
       };
     },
-    records: () => [],
   };
 }
 
@@ -305,7 +319,6 @@ function executionFailingToolHost(): AgentToolHost {
         "The test host rejected execution.",
       );
     },
-    records: () => [],
   };
 }
 
@@ -335,7 +348,6 @@ function noProgressToolHost(): AgentToolHost {
         bytes: Buffer.byteLength(serialized, "utf8"),
       };
     },
-    records: () => [],
     progressToken: () => contentHash("unchanged-host-state"),
   };
 }
@@ -747,7 +759,7 @@ test("runtime persists rejected atomic-batch evidence when a tool host only retu
   });
   assert.equal(runtimeResult.status, "completed");
   assert.deepEqual(
-    runtimeResult.rejectedToolCalls?.map((call) => call.result.error?.code),
+    runtimeResult.toolCalls.map((call) => call.result.error?.code),
     ["TOOL_UNKNOWN"],
   );
   const phase = await persistCreatorPhaseAgentRun({
@@ -770,7 +782,6 @@ test("runtime persists rejected atomic-batch evidence when a tool host only retu
     runtimeResult,
     toolHost,
     budgets: INITIAL_EXPERIMENT_BUDGETS,
-    durationMs: 10,
     directory: runDirectory,
     traceDirectory: join(runDirectory, "traces"),
     executionWorker: {
@@ -786,11 +797,11 @@ test("runtime persists rejected atomic-batch evidence when a tool host only retu
   );
   assert.equal(
     phase.run.toolCalls[0]?.inputHash,
-    runtimeResult.rejectedToolCalls?.[0]?.inputHash,
+    runtimeResult.toolCalls[0]?.inputHash,
   );
   assert.equal(
     phase.run.toolCalls[0]?.resultHash,
-    runtimeResult.rejectedToolCalls?.[0]?.resultHash,
+    runtimeResult.toolCalls[0]?.resultHash,
   );
   assert.equal(phase.run.budgets.consumed.toolCalls, 1);
   assert.equal(
@@ -813,6 +824,139 @@ test("runtime persists rejected atomic-batch evidence when a tool host only retu
     span?.attributes["forge.tool.result_hash"],
     phase.run.toolCalls[0]?.resultHash,
   );
+});
+
+test("runtime owns exact monotonic timing for provider turns and executed tool calls", async () => {
+  const clock = new ManualTimingClock();
+  const workspace = await CandidateWorkspace.create(
+    GENERIC_SEED,
+    await directory(),
+    INITIAL_EXPERIMENT_BUDGETS,
+  );
+  const map = await workspace.semanticMap();
+  const requirementView = resolveRequirementView(requirements(), {
+    phase: "build",
+    environment: "production",
+    audience: "builder",
+  });
+  const orientation = compileAgentOrientation({
+    semanticMap: map,
+    projectSnapshotHash: createProjectSnapshot(map).projectSemanticHash,
+    requirementView,
+    sourceRoots: workspace.sourceRoots,
+  });
+  const readValue = { observed: true };
+  const runtime = new ForgeNativeAgentRuntime(
+    new ScriptedModelClient([
+      (request) => {
+        clock.advance(5);
+        return assistant(1, [
+          { id: "read_1", name: "project.read", arguments: {} },
+        ])(request);
+      },
+      (request) => {
+        clock.advance(2);
+        return assistant(2, [], "The bounded read completed.")(request);
+      },
+    ]),
+    { clock },
+  );
+  const result = await runtime.run({
+    systemPrompt: "Test runtime",
+    prompt: CREATOR_PROMPT,
+    orientation,
+    tools: {
+      definitions: () => [
+        {
+          name: "project.read",
+          description: "Read one fact.",
+          inputShape: {},
+          schema: { type: "object", additionalProperties: false },
+        },
+      ],
+      validateBatch: () => ({ valid: true, feedback: [], budgetExhausted: false }),
+      async execute() {
+        clock.advance(3);
+        const serialized = stableJson(readValue);
+        return {
+          ok: true,
+          value: readValue,
+          truncated: false,
+          resultHash: contentHash(serialized),
+          bytes: Buffer.byteLength(serialized, "utf8"),
+        };
+      },
+    },
+    budgets: INITIAL_EXPERIMENT_BUDGETS,
+    model: "fake/model",
+  });
+  assert.deepEqual(result.timing, {
+    startedAt: "2026-08-30T00:00:00.000Z",
+    endedAt: "2026-08-30T00:00:00.010Z",
+    durationMs: 10,
+  });
+  assert.deepEqual(
+    result.turns.map((turn) => turn.durationMs),
+    [5, 2],
+  );
+  assert.deepEqual(
+    result.toolCalls.map((call) => ({
+      toolCallId: call.toolCallId,
+      disposition: call.disposition,
+      durationMs: call.durationMs,
+      startedAt: call.startedAt,
+      endedAt: call.endedAt,
+    })),
+    [
+      {
+        toolCallId: "read_1",
+        disposition: "executed",
+        durationMs: 3,
+        startedAt: "2026-08-30T00:00:00.005Z",
+        endedAt: "2026-08-30T00:00:00.008Z",
+      },
+    ],
+  );
+
+  const zeroClock = new ManualTimingClock();
+  const zeroResult = await new ForgeNativeAgentRuntime(
+    new ScriptedModelClient([
+      assistant(1, [
+        { id: "read_zero", name: "project.read", arguments: {} },
+      ]),
+      assistant(2, [], "The zero-tick read completed."),
+    ]),
+    { clock: zeroClock },
+  ).run({
+    systemPrompt: "Test runtime",
+    prompt: CREATOR_PROMPT,
+    orientation,
+    tools: {
+      definitions: () => [
+        {
+          name: "project.read",
+          description: "Read one fact.",
+          inputShape: {},
+          schema: { type: "object", additionalProperties: false },
+        },
+      ],
+      validateBatch: () => ({ valid: true, feedback: [], budgetExhausted: false }),
+      async execute() {
+        const serialized = stableJson(readValue);
+        return {
+          ok: true,
+          value: readValue,
+          truncated: false,
+          resultHash: contentHash(serialized),
+          bytes: Buffer.byteLength(serialized, "utf8"),
+        };
+      },
+    },
+    budgets: INITIAL_EXPERIMENT_BUDGETS,
+    model: "fake/model",
+  });
+  assert.equal(zeroResult.toolCalls[0]?.durationMs, 0);
+  assert.equal(zeroResult.toolCalls[0]?.startedAt, zeroResult.toolCalls[0]?.endedAt);
 });
 
 test("repeating a semantically identical rejected batch terminates before the turn budget", async () => {
@@ -856,7 +1000,7 @@ test("repeating a semantically identical rejected batch terminates before the tu
   assert.equal(result.failureCode, "REPEATED_REJECTED_TOOL_BATCH");
   assert.equal(result.turns.length, 2);
   assert.deepEqual(
-    result.rejectedToolCalls?.map((call) => call.result.error?.code),
+    result.toolCalls.map((call) => call.result.error?.code),
     ["TOOL_UNKNOWN", "TOOL_UNKNOWN"],
   );
 });
@@ -905,7 +1049,7 @@ test("varied consecutive all-failed tool batches terminate before the turn budge
   assert.equal(result.failureCode, "CONSECUTIVE_ALL_FAILED_TOOL_BATCHES");
   assert.equal(result.turns.length, 3);
   assert.deepEqual(
-    result.rejectedToolCalls?.map((call) => call.inputHash),
+    result.toolCalls.map((call) => call.inputHash),
     [
       contentHash(stableJson({ target: "one" })),
       contentHash(stableJson({ target: "two" })),
@@ -1006,7 +1150,9 @@ test("a successful read resets the consecutive all-failed tool-batch streak", as
   assert.equal(result.status, "completed");
   assert.equal(result.turns.length, 6);
   assert.deepEqual(
-    result.rejectedToolCalls?.map((call) => call.result.error?.code),
+    result.toolCalls
+      .filter((call) => call.disposition === "rejected")
+      .map((call) => call.result.error?.code),
     ["TOOL_UNKNOWN", "TOOL_UNKNOWN", "TOOL_UNKNOWN", "TOOL_UNKNOWN"],
   );
 });
@@ -1134,6 +1280,7 @@ test("tool-call IDs are unique for the full run and valid batches execute sequen
 
 test("provider failures and model budget exhaustion normalize to incomplete outcomes", async () => {
   const failedDirectory = await directory();
+  const failureClock = new ManualTimingClock();
   const failureClient = new ScriptedModelClient([
     (request) => ({
       kind: "provider_error",
@@ -1160,7 +1307,7 @@ test("provider failures and model budget exhaustion normalize to incomplete outc
     seedRoot: GENERIC_SEED,
     creatorPrompt: CREATOR_PROMPT,
     requirementSet: requirements(),
-    runtime: new ForgeNativeAgentRuntime(failureClient),
+    runtime: new ForgeNativeAgentRuntime(failureClient, { clock: failureClock }),
     model: "fake/model",
     runDirectory: failedDirectory,
     traceDirectory: join(failedDirectory, "traces"),
@@ -1168,6 +1315,12 @@ test("provider failures and model budget exhaustion normalize to incomplete outc
   assert.equal(failed.status, "incomplete");
   assert.equal(failed.classification, "provider_failure");
   assert.equal(failed.run.trialStarted, false);
+  assert.equal(failed.run.modelTurns[0]?.durationMs, 0);
+  assert.deepEqual(failed.run.timing, {
+    startedAt: "2026-08-30T00:00:00.000Z",
+    endedAt: "2026-08-30T00:00:00.000Z",
+    durationMs: 0,
+  });
   const invalidDirectory = await directory();
   const invalidClient = new ScriptedModelClient([
     (request) => ({
