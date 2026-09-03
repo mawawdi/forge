@@ -8,9 +8,35 @@ Registered experiments are deliberately different. They bind evaluator-only crit
 
 ## Product contract
 
-An ordinary creator session follows these principles:
+An ordinary creator conversation follows these principles:
 
-- the creator enters one prompt in Studio;
+- the creator sends an immutable, hash-bound turn from the local Creator
+  Conversation dashboard. The host, rather than a provider, composes the
+  bounded context from durable turns, creator decisions, active
+  creator-authority memory, and the current project revision;
+- the conversation is a strict append-only chain of immutable commits. Its
+  atomically replaced private head can only point at a fully written,
+  cross-bound event snapshot; restart rebuilds that durable chronology and does
+  not recreate it from status strings;
+- agent prose may cite only host-issued handles from the AgentRun. Forge seals
+  their exact source-range or project-fact target and provenance; an agent
+  cannot mint a citation, current Studio fact, memory fact, or evaluator claim;
+- each provider-capable planner, builder, or repair job reserves one immutable
+  AgentRun/journal slot before execution. Its hash-chained
+  `AgentExecutionJournal` records request intent, response, batch, tool, and
+  terminal boundaries. It does not survive as background execution: restart
+  reads the exact journal. An unconfirmed request intent or a
+  `tool_execution_intent` without matching completion remains
+  `outcome_unknown` and needs an explicit fresh-slot **Retry work** action.
+  A fully persisted response plus completed tool records instead may be
+  consumed only by explicit creator **Resume work** in the same reserved
+  AgentRun/journal, without re-dispatching that response or reconstructing
+  opaque provider continuation. Forge never retries automatically, resends a
+  persisted response, or substitutes a provider/model;
+- the only initial model IDs are `meta/muse-spark-1.3-contributor`,
+  `z-ai/glm-5.3-flash`, `deepseek/deepseek-v4-flash-0731`, and
+  `openai/gpt-5.6-luna` (the default). Each requires tools, and model/provider
+  fallback is disabled. An unavailable selection is rejected, not substituted;
 - Forge first validates a complete sharded index of the open Studio document, including current Script Editor buffers, before any provider call; a read-only planner then sees bounded project facts and exact authoring constraints, and Forge derives the plan goal from the immutable creator prompt rather than accepting a model-authored substitute;
 - the planner may search and page source, symbols, references, and static require dependencies before selecting a target; a host-derived `CreatorSourceConsultation` binds the exact source ranges and graph closure it received, and every source-bearing plan is bound to that evidence;
 - every planned step binds exact change IDs, every create or move declares its initialization contract, and every new script commits to complete source in its single create operation rather than deferring behavior to an unavailable later phase;
@@ -26,8 +52,11 @@ An ordinary creator session follows these principles:
 - mutation projections carry one proof-requirement algebra and no duplicate project-delta authority; the allowed whole-project delta is derived from approved operations during reconciliation, and host-produced projection bytes must pass the production Luau recompiler in offline tests;
 - source-bearing mutation authority requires exact request-bound acknowledgement of every immutable source blob before Prepare, and every post-approval protocol failure before recording is preserved as an incomplete mutation attempt rather than an evidence-free status;
 - loopback HTTP is an at-least-once delivery substrate, not an execution receipt: the bridge retains each canonical command until the plugin acknowledges its exact content hash, the plugin replays a completed command's acknowledgement without repeating its effect, and reusing an identity with different bytes is rejected;
+- unlinked project authority is pairing-scoped through one generated host/connector recipe; a heartbeat cannot silently replace that authority, and Link/Fork controls from a previous connector epoch are stale;
+- a rejected Link/Fork command is not no-effect proof: only exact approved before-identity, empty transaction inventory, and a proven closed recording state release its reservation; uncertainty remains recovery-required, stale settlements cannot release other operations, and any retry needs fresh explicit creator authority;
+- identity-job failures preserve bounded readable diagnostics and their exact command/settlement, and remain visible even when no recovery action is legal; old heartbeat or pairing observations never authorize retry after an ambiguous command outcome;
 - control-plane presentation is not transaction evidence: reviewed changes are rendered from their immutable pre-mutation capture, current post-state is displayed separately, and a view, SSE, or socket failure after durable evidence cannot reclassify that evidence or terminate the creator service;
-- a lost browser response to a state-changing action is ambiguous rather than failed: Forge observes canonical state once and never automatically repeats the action;
+- a lost browser response to a state-changing action is ambiguous rather than failed: Forge observes canonical state once and never automatically repeats the action; an explicit retry sends the retained byte-identical request body with the same idempotency key;
 - exact projection hashes remain provenance, while comparable state revisions exclude projection/session/approval identity and include only the manifest, semantic coverage domain, and canonical facts; Forge persists both sides before claiming drift;
 - mutation stays provisional until direct engine readback and complete post-state evidence are persisted and pure reconciliation proves every projected postcondition plus the absence of observable unapproved drift;
 - every manifested project-index node carries the exact generated ordered property coverage for its class; missing, extra, duplicate, unsorted, or invalid values are incomplete observer evidence and can never be graded as a Studio mismatch;
@@ -56,6 +85,8 @@ The accepted Door Control ledger demonstrates the predecessor closed-evidence tr
 Forge keeps these sources distinct:
 
 - creator request: desired outcome and creator authority;
+- creator memory: explicitly revised creator preference, convention, vocabulary,
+  goal, or unresolved item; context only, never current project fact;
 - project observation: factual before-state;
 - platform policy: universal security or execution constraints;
 - agent plan: a hypothesis requiring creator approval;
@@ -67,6 +98,21 @@ Hidden evaluator bodies, expected observations, benchmark answers, successful so
 ## Ownership
 
 The default `studio_document` authority treats the complete place currently open in Studio as the single writer domain, regardless of whether a Rojo build originally produced the file. Existing objects need no Forge metadata merely to be indexed: a connector-epoch-bound opaque identity distinguishes duplicate-named objects, and targeting one enrolls a durable Forge attribute inside the same approved ChangeHistory recording. Display paths are review aids, never mutation authority.
+
+Project-conversation continuity is separate from object enrollment and authoring
+authority. A published place is identified only by its exact universe/place
+pair. A local place is unlinked until the dedicated identity transaction writes
+the reserved `_forgeProjectId` DataModel attribute: **Link** requires an absent
+attribute, while **Fork** requires an observed local ID and replaces it with a
+new one. Both are host-issued exact-state ChangeHistory transactions with
+direct readback, finalization receipt, acknowledgement, and fail-closed
+recovery. Saving a linked local place under another filename copies its ID and
+therefore continues the same local conversation until the creator explicitly
+forks. Publishing never silently carries that local identity forward: platform
+identity takes precedence and the embedded local ID is observational only. The
+current dashboard exposes Link, Fork, and the creator-facing
+local-to-published continuity choice as separate hash-bound actions. None is an
+automatic inference.
 
 An optional `rojo_source` adapter is declared by one private `--project-authority` manifest. Forge starts only the verified pinned Rojo 7.7.0 `sourcemap` command at service startup to generate the map; it never starts `rojo serve`, runs live sync, or accepts a user-authored sourcemap as authority. Exact mapped script paths and representable mapped script parents become Rojo-owned while every ordinary indexed object remains Studio-owned. Forge derives and seals one writer per plan/build/change set: mapped Luau work selects `rojo_source`, generic model/property work selects `studio_document`, and mixed authority is rejected before approval. Guarded filesystem writes require exact hash/absence preconditions and immutable receipts; success requires a later complete Studio index proving the mapped hashes and allowed delta. Timeout remains `awaiting_source_sync`, and reversion is a separate creator-authorized guarded transaction. A Studio or source transaction changes its authority state only; the creator must explicitly use **File → Save to File** to produce an `.rbxlx` output.
 
@@ -90,7 +136,7 @@ The plugin—not the model—interprets the final canonical change set. Roblox A
 
 The coordinator depends on `CreatorAgentWorker`, not directly on the model runtime. The only current implementation is `LocalCreatorAgentWorker` (`local_process`, no isolation), backed by `ForgeNativeAgentRuntime`. Studio tokens and mutation authority never enter the worker boundary. A future microVM worker isolates model-generated code, local tools, and evaluator execution; it does not emulate Roblox or replace the plugin-security Play Solo authority. Changing that worker changes the bound descriptor and content identity.
 
-`CreatorControlView` is the sole workflow-legality contract. Plan review includes the exact creator prompt and prompt hash, generated initialization commitments, output-check coverage, and separately labeled creator-review judgments. Change review includes the exact typed creative payload and source diffs, not only operation hashes. The local React dashboard renders this contract and may request only its current primary or secondary action; history and five-stage progress are coordinator-produced read models, never alternate action logic. Those read models are reconstructed from durable lifecycle evidence after restart: an interrupted or terminal session must identify its proven boundary and next legal step, never masquerade as ready merely because an in-memory view was lost. Final acceptance or rejection requires a bounded free-form `CreatorReviewReport`. Forge preserves that canonical creator-authority report without parsing it into machine claims. The standalone loopback creator control server owns dashboard authentication, state, invalidations, evidence retrieval, and replay. The plugin remains the trusted Studio capability adapter for pairing, observation, typed mutation, Play Solo, diagnostics, commit/cancel, and guarded undo.
+The public `CreatorControlView` is the sole workflow-legality contract. The lower `CreatorTransactionControlView` and its bounded ordered action array stay inside transaction coordination; they are not a second public contract. Plan review includes the exact creator prompt and prompt hash, generated initialization commitments, output-check coverage, and separately labeled creator-review judgments. Change review includes the exact typed creative payload and source diffs, not only operation hashes. The local React dashboard renders the public contract in the conversation timeline and may request only the exact action instance it currently authorizes; project rail, context rail, evidence seam, and Technical Details are read models, never alternate action logic. The Technical Details sheet may load raw JSON only for sealed attachments and returns keyboard focus to its source control. Those read models are reconstructed from durable lifecycle evidence after restart: an interrupted or terminal session must identify its proven boundary and next legal step, never masquerade as ready merely because an in-memory view was lost. Final acceptance or rejection requires a bounded free-form `CreatorReviewReport`. Forge preserves that canonical creator-authority report without parsing it into machine claims. The standalone loopback creator control server owns dashboard authentication, state, invalidations, evidence retrieval, and replay. The plugin remains the trusted Studio capability adapter for pairing, observation, typed mutation, Play Solo, diagnostics, commit/cancel, and guarded undo.
 
 The registered file-backed builder remains separate and exposes its eight bounded project/workspace tools for experiments.
 

@@ -44,7 +44,9 @@ export interface ModelTurnRequest {
 
 export interface ModelResponseFacts {
   requestedModel: string;
+  /** Exact model reported by the response envelope, never inferred from the request. */
   resolvedModel: string | null;
+  /** Exact serving provider reported by OpenRouter, or null when no response established it. */
   servingProvider: string | null;
   responseId: string | null;
   latencyMs: number;
@@ -87,7 +89,15 @@ export interface ModelClientDescriptor {
   configuration: {
     aiSdk: { package: string };
     providerAdapter: { package: string };
-    routing: { only: string[]; allowFallbacks: false; requireParameters: true };
+    routing: {
+      modelRegistryHash: string;
+      allowlistedModels: readonly string[];
+      providerAllowlist: "none";
+      modelFallbacks: false;
+      providerFallbacks: false;
+      requireParameters: true;
+      requireTools: true;
+    };
     reasoning: { effort: "medium"; exclude: false };
     request: {
       steps: 1;

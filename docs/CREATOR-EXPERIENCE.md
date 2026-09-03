@@ -1,7 +1,8 @@
 # Forge Creator Experience
 
-Status: final-product experience specification, grounded in the current
-existing-project, evidence, transaction, verification, and recovery contracts.
+Status: current Creator Conversation presentation milestone and longer-horizon
+experience specification, grounded in the current existing-project, evidence,
+transaction, verification, and recovery contracts.
 
 This document defines how Forge should feel, speak, and organize creator work
 over the long horizon. It is subordinate to
@@ -10,10 +11,18 @@ over the long horizon. It is subordinate to
 authority, evidence completeness, and Studio safety. This document does not
 weaken those rules to make the interface appear simpler.
 
-The current evidence-workbench dashboard is an implementation foundation, not
-the final product shape. The final product is a persistent conversation with a
-project-aware agent. Exact plans, source, diffs, evidence, replay, and recovery
-remain available as an audit layer behind that conversation.
+The evidence workbench has been clean-replaced by the Creator Conversation
+shell. It is a persistent, project-aware local conversation whose immutable
+history, current action legality, source citations, project context, and
+technical evidence are presented together. Exact plans, source, diffs,
+evidence, replay, and recovery remain an audit layer behind that conversation.
+
+This presentation milestone is not a new Studio verdict. Its automated tests
+exercise contracts, immutable history reconstruction, coordination boundaries,
+and browser rendering with synthetic data. They make no provider request and
+perform no Studio operation. A creator-run Studio canary remains required before
+claiming that this shell has carried a live project through indexing, mutation,
+Play, and review.
 
 ## North star
 
@@ -61,10 +70,16 @@ The agent must distinguish:
 - **machine observation:** produced by a complete bound evidence envelope;
 - **creator observation:** written in the creator's report.
 
-Project memory is reviewable. The creator can inspect, correct, pin, or forget a
-remembered preference. Forge never stores hidden evaluator material as memory,
-never treats a rejected proposal as project truth, and never uses an old project
-fact when a newer complete revision disagrees.
+Memory is creator authority. A `CreatorMemoryRevision` is an immutable,
+creator-authored revision with a category, active/forgotten state, and optional
+pin; later revisions name the prior revision. The host may include only active
+memory revisions in the bounded next-turn context. Memory is neither a current
+Studio fact nor a way to carry hidden evaluator material. It cannot overrule a
+newer complete revision, turn a rejected proposal into project truth, or create
+mutation authority. The current shell renders available memory and its sealed
+history and exposes hash-bound creator controls for remember, correct, pin,
+unpin, and forget. Those controls append revisions; forgetting changes future
+context without rewriting immutable conversation history.
 
 ## Experience principles
 
@@ -120,68 +135,96 @@ experience:
 - immutable artifacts and provider-free mutation/verification replay;
 - restart-safe recording recovery.
 
-The current dashboard presents those contracts as a three-column evidence
-workbench using `PromptComposer`, `SessionHistory`, `EvidenceSpine`,
-`ArtifactWorkbench`, `SourceExplorer`, `CapabilityExplorer`, and
-`StudioConsentDock`.
+The current dashboard is the conversation shell: `ProjectRail`,
+`ConversationTimeline`, `ChatComposer`, `ProjectSettings`, the journal-derived
+`AgentActivity`, and a lazy `TechnicalDetailsSheet`. It consumes one
+coordinator-produced conversation control read model; the browser does not
+derive workflow legality from status text. One module-level store owns the
+current snapshot, drafts, event-history paging, and a single SSE invalidation
+stream.
+On a temporary connection failure it leaves the last durable conversation on
+screen. If an action response is ambiguous, it performs one read-only reload
+and never replays the state-changing request automatically. An explicit retry
+resends the retained byte-identical request body with the same idempotency key;
+it does not construct a new mutation request.
 
-The following final-product capabilities do not exist yet and must not be
-implied by current UI:
+The durable conversation store is a clean break from session-history UI. Every
+append writes the immutable conversation snapshot, event, optional episode,
+turn, citation, memory, plan revision, and job artifacts before it atomically
+replaces the private per-conversation head. Each commit names the exact
+previous commit artifact and hash. Loading walks that chain backwards from the
+head to sequence one, verifies canonical bytes, content identities, sequence,
+snapshot progression, and every cross-artifact binding, then reconstructs the
+chronological read model. A failed publication leaves unreferenced immutable
+artifacts but no visible history; corrupt heads are reported separately. There
+is no legacy conversation reader, migration, or old workbench route.
 
-- a durable multi-turn conversation read model;
-- free-form plan refinement within one continuing thread;
-- project and creator memory with inspect/correct/forget controls;
-- conversation-native citations to indexed source and project facts;
-- a conversation shell that reconstructs its full history after restart;
-- background continuation beyond the current local task lifecycle.
+The current turn boundary is real but deliberately bounded. The creator may
+start new work or a follow-up when the current hash-bound turn contract allows
+it; clarification and plan refinement are allowed only in the matching active
+episode. A refinement supersedes the transaction candidate before requesting a
+new agent outcome, and the resulting plan revision records its predecessor.
+Structured approvals, rejection, refresh, retry, recovery, and rollback remain
+actions from the current `CreatorControlView`, never free-form text.
 
-Until those contracts exist, one creator session still begins with one immutable
-request. Current approvals and refresh successors remain the legal boundary.
+The following work is intentionally not claimed as implemented by this
+presentation milestone:
+
+- durable execution after the local creator service exits;
+- automatic resumption or retry of a foreground provider or Studio action;
+- live collaborative merging or concurrent writers;
+- a filesystem output before the creator explicitly uses Studio's Save to File
+  flow.
 
 ## Final information architecture
 
-The final desktop product has one project conversation and two supporting
-layers:
+Projects represent Studio places (including local `.rbxlx` files), identified by
+the explicit linked or published identity. Each project contains independent
+conversations. A conversation contains its own turns, decisions, evidence, and
+work episodes. The sidebar groups conversation titles under project filenames.
 
 ```text
-┌──────────────────────────────────────────────────────────────────────────┐
-│ Forge                  Orbital Freight Airlock                     Studio│
-├────────────────┬───────────────────────────────────────┬─────────────────┤
-│ Projects       │ Project conversation                  │ Project context │
-│                │                                       │                 │
-│ Door Control   │ creator request                       │ Studio health   │
-│ Airlock        │ agent exploration + source citations  │ current revision│
-│ Status Beacon  │ inline plan + decision                │ active work     │
-│                │ build activity                        │ remembered facts│
-│ Threads /      │ exact changes + source diff summary   │                 │
-│ milestones     │ Play guidance and result              │                 │
-│                │ creator report + decision             │                 │
-│                │ next creator message                  │                 │
-│                ├───────────────────────────────────────┤                 │
-│                │ [GPT-5.6 Luna ▾]  Message Forge…          Send         │
-└────────────────┴───────────────────────────────────────┴─────────────────┘
-                       Technical details opens as a drawer or full-height sheet
+┌────────────────┬──────────────────────────────────────────────┐
+│ Forge          │ game.rbxlx / conversation   Details  Settings │
+├────────────────┼──────────────────────────────────────────────┤
+│ Projects       │                                              │
+│ New conversation│           You / Forge messages              │
+│ game.rbxlx     │           Plans and decisions                 │
+│   Airlock fix  │           Actual agent steps                  │
+│   HUD layout   │                                              │
+│                ├──────────────────────────────────────────────┤
+│                │ Message Forge…                 Model   Send  │
+└────────────────┴──────────────────────────────────────────────┘
+                    Settings and details open only on demand.
 ```
 
-- The **project rail** lists long-lived project conversations, not raw
-  transaction sessions. Milestones and failed attempts are nested history.
-- The **conversation canvas** is the primary workspace. It holds creator and
-  agent turns plus inline plan, change, Play, review, refresh, sync, and
-  recovery cards.
-- The **project context rail** shows the paired Studio project, current revision,
-  index health, active work, and small inspectable memory set.
-- The **composer** remains anchored to the conversation. It accepts new work,
-  clarification, plan refinement, and follow-up only when the backend has a
-  corresponding hash-bound turn contract. Its model selector applies to the
-  next agent turn and keeps the current engine visible without turning provider
-  configuration into the primary task.
-- **Technical details** opens from any evidence-bearing event. It contains the
-  source explorer, full plan, exact diff, API coverage, evidence graph, raw JSON,
-  timing, and replay.
+- **New conversation** creates a separate durable chat under the same project.
+  It makes no Studio identity mutation and invokes no model. The action is
+  hash-bound and idempotent.
+- The **chat** has its own context. Only explicit project preferences are shared
+  across chats; other conversations' messages and evidence are excluded.
+- **Project settings** is a one-click, focus-managed modal with Preferences,
+  Connection, and Advanced tabs. Escape, the close button, or the backdrop
+  dismisses it. Memory forms never appear in the conversation timeline.
+- The **composer** is anchored below the independently scrolling chat. The
+  coordinator chooses the permitted turn kind; the UI has no New work,
+  Follow-up, or Message type selector. Enter sends and Shift+Enter adds a line.
+  The textarea grows with the draft, keeps the selected model after sending,
+  and accepts a draft while the agent works without admitting a second turn.
+- **Agent activity** reports the exact reserved execution journal's completed
+  tools, elapsed time, and present step. A single service invalidation interval
+  updates the existing SSE/store path while work runs. It invents no reasoning,
+  completion percentage, or tool result.
+- **Details** retains event authority, exact model IDs, hashes, citations,
+  traces, source inspection, artifacts, and replay in a lazy sheet.
+- A different chat with unfinished project work blocks new provider admission.
+  The existing lower coordinator remains the final single-writer authority.
 
-On narrower desktop layouts, project context becomes a drawer. On mobile, the
-project rail becomes navigation, the conversation occupies the full width, and
-technical details becomes a full-height sheet.
+The project sidebar collapses into a drawer below 900 px. Settings is hidden
+by default at every width, and the composer remains reachable on small screens.
+Navigation, dialogs, and messages use short transitions; reduced-motion users
+receive the same state changes without animation. Keyboard focus stays inside
+open dialogs and returns to the invoking control when they close.
 
 ## The conversational model
 
@@ -203,10 +246,61 @@ the exact creator session, plan, change set, evidence artifact, or control-view
 hash. Ephemeral typing and animation may disappear after restart; durable
 conversation history may not.
 
-`CreatorControlView` remains the sole action-legality contract. A conversation
-card can render only the primary and secondary actions present in that view.
-Changing a label or moving an action into a conversational card does not permit
-React to infer that the action is legal.
+### Durable chronology, context, and foreground work
+
+`CreatorConversationStore` keeps one append-only commit chain per conversation.
+The mutable head is only a private pointer to the latest immutable commit; it
+is not a transcript cache and cannot skip an event. A commit binds the current
+conversation snapshot, one exact event, and the optional record introduced or
+updated at that event. The head and every predecessor are revalidated on load.
+This lets the shell rebuild history after a normal service restart without
+inventing a card from current status strings.
+
+The model does not compose the durable context or mint citations. Before an
+agent turn, the host seals a `CreatorConversationContext` artifact containing
+the selected model, current project identity/revision, active memory revisions,
+the latest 20 durable turns, the latest 20 creator decisions, and the exact
+current turn. It is capped at 128 KiB and explicitly labels quoted history as
+creator context, not evaluator authority. The model can select only citation
+handles issued by the host for that exact AgentRun. Project and source tools
+issue current-fact and hash-verified source-range handles; the bounded
+conversation context issues handles for the exact memory revisions and prior
+evidence attachments it includes. Forge resolves only those issued handles
+into immutable conversation citations and records their revision/hash
+provenance with the agent turn. The model cannot mint an unbound claim by
+spelling a handle-shaped string.
+
+Admitted work is foreground-only. Before a planner, builder, or repair phase
+can call a provider, its `CreatorWorkJob` reserves an immutable
+`AgentExecutionSlot` for one AgentRun and the journal ID derived from that run.
+The append-only `AgentExecutionJournal` seals `request_intent`,
+`response_received`, `batch_validated`, `tool_completed`, and `terminal`
+boundaries with the exact host state. The coordinator runs that job only in the
+live local creator service. There is no worker daemon, detached queue, or
+automatic restart execution.
+
+On restart, Forge reads—not synthesizes—the journal. No head is
+`never_dispatched` and exposes **Resume work**, which creates a fresh job,
+AgentRun, and journal slot. A `request_intent` without a persisted response, or
+a `tool_execution_intent` without matching `tool_completed`, remains
+`outcome_unknown` and exposes **Retry work** with a fresh slot rather than an
+ambiguous resend. A fully persisted response with all completed tool records
+and no pending execution intent exposes **Resume work** instead: only explicit
+creator authorization consumes that exact response/tool-completion boundary in
+the same reserved AgentRun and journal, without re-dispatching the response.
+Forge does not reconstruct opaque provider continuation. A terminal journal may
+only publish already-persisted deterministic local output; it never dispatches
+the provider again. Neither recovery path inherits Studio mutation authority.
+The UI says to keep Forge running while activity is active; closing the browser
+is harmless, but service exit stops work and is never represented as background
+completion.
+
+The public `CreatorControlView` remains the sole action-legality contract. A
+conversation card can render only the bounded action descriptors present in
+that view. `CreatorTransactionControlView` and its primary/secondary actions
+belong to the lower transaction coordinator; they are not a second public
+control surface. Changing a label or moving an action into a conversational
+card does not permit React to infer that the action is legal.
 
 ### Turn semantics
 
@@ -253,10 +347,13 @@ The composer includes a compact **Model** selector with these initial choices:
 | DeepSeek V4 Flash | `deepseek/deepseek-v4-flash-0731` |
 | GPT-5.6 Luna      | `openai/gpt-5.6-luna`             |
 
-`openai/gpt-5.6-luna` is the initial default because it matches the current
-creator-service launch path. The list must not be hardcoded inside a React
-component: the control server supplies the ordered available-model registry,
-stable labels, selected default, and availability state.
+`openai/gpt-5.6-luna` is the initial default. This is an exact four-entry,
+host-owned allowlist, not a suggestion list. The list is not hardcoded inside a
+React component: the control server serves a sealed ordered registry with the
+stable labels, default, required `tools` capability, and availability state.
+An OpenRouter catalog probe can establish `available` or `unavailable`; an
+absent, malformed, duplicated, or incomplete catalog result is `unknown` in
+the dashboard and is not selectable there.
 
 Selection rules:
 
@@ -272,18 +369,27 @@ Selection rules:
 - planner and builder use the selected work-episode model unless a future
   reviewed policy explicitly exposes separate role choices;
 - model unavailability produces a directed error and preserves the unsent
-  message; Forge never falls back to another model silently;
+  message; the registry, model client, and agent attribution all disable model
+  and provider fallback;
 - every model receives the same authority-bounded context for its role.
   Selecting a model never expands source access, tool access, Studio authority,
   budgets, or hidden evaluator access;
 - conversation continuity and project memory belong to Forge's durable host
   state, not to a provider session.
 
+The CLI has the same bound refinement choice:
+`forge creator act <conversation-id> <action-instance-id> --model
+<registered-model-id>`. `--model` is accepted only by the current **Change the
+plan** action; omitting it selects the current sealed registry default. It
+cannot replace the model sealed into an already approved plan's builder or
+repair run, and it never falls back to another model/provider.
+
 The collapsed selector shows the friendly display name. The menu shows both the
 display name and exact provider/model ID so a technical creator can distinguish
-similarly named releases. Technical details records provider, model ID, role,
-turn interval, token and latency evidence when available, and the exact
-AgentRun.
+similarly named releases. An agent outcome is accepted only when the persisted
+response reports the requested model and an exact serving provider; the durable
+agent turn records both. Technical details records the resulting agent run and
+its attached trace when the coordinator has sealed them.
 
 ## End-to-end conversation
 
@@ -302,6 +408,58 @@ The header communicates the ordinary state in creator language:
   requires exact recovery.
 
 Pairing is not mutation consent.
+
+### Studio connector presentation
+
+The native plugin uses the dashboard's charcoal surfaces, lavender accent,
+rounded controls, and plain language. Its main view contains the place name,
+connection state, current Studio activity, and up to three recent steps. Actual
+command boundaries drive activity; receiving a result never implies that a
+test passed. Full conversation progress remains in the dashboard.
+
+**Settings** opens a dismissible popup with **Connection** and **Details** tabs.
+The service address, disconnect control, motion preference, and copyable raw
+diagnostics live there. Project preferences remain in dashboard project settings.
+The plugin toolbar toggles the panel without disconnecting it. Narrow panels
+scroll, controls have at least 44-pixel targets, and motion follows the system's
+accessibility preference or an explicit reduced-motion choice.
+
+The plugin only shows **Run approved test** when the existing runtime authority
+permits it. A creator-driven Play check continues to ask the creator to use
+Studio's Play and Stop controls. Retained recovery state stays visible across
+connection changes; invalid saved test data has an explicit discard action.
+
+### Project continuity is explicit
+
+Published and local places have different authority keys. A published place is
+the exact `(universeId, placeId)` pair. A local place has no platform identity
+and cannot start a durable conversation until it carries an observed reserved
+DataModel attribute, `_forgeProjectId`. The dedicated identity protocol is
+separate from the generated authoring manifest and permits only two
+host-issued, exact-state operations for a local place:
+
+- **Link** writes a fresh Forge project ID only when the attribute is absent.
+- **Fork** writes a different fresh Forge project ID only when an observed
+  local ID already exists.
+
+Both operations bind the connector epoch and complete before/after identity
+observations, use their own visible ChangeHistory recording, directly read back
+the DataModel attribute, persist a finalization receipt, and require an exact
+host acknowledgement. An opening/open/finalizing identity cursor is recovery,
+not permission to repeat the operation. Identity work cannot overlap a creator
+recording or an unknown Studio recording.
+
+Consequently, **File → Save As** of a linked local place preserves the copied
+local ID until the creator explicitly forks it; it is not silently treated as a
+new project. Publishing is a clean continuity decision in the other direction:
+platform identity becomes authoritative and an embedded local ID remains
+observable only. Forge does not silently bind a published place to that local
+conversation, and the local identity protocol cannot mutate a published place.
+The current coordinator exposes **Link project** for an absent local identity
+and **Fork project** for an observed local identity. Published places carrying
+an embedded local identity receive the explicit **Continue this conversation**
+or **Start a new project conversation** choice. None of these identity outcomes
+is inferred from a filename.
 
 ### 2. Ask for a change
 
@@ -578,7 +736,15 @@ coordinator contract, not translated opportunistically in React.
 
 ## Technical details
 
-Technical details retains Forge's full auditability:
+Technical details is a lazy, focus-managed modal sheet. It displays the
+selected event's sequence, authority, hashes, revision/control-view bindings,
+host-issued citation targets, and the event/control-view attachments. A creator
+may load raw JSON only for an attachment the coordinator sealed and authorized;
+the sheet does not manufacture missing source, coverage, diff, timing, or replay
+data. Escape and backdrop close it, focus returns to the triggering control,
+and keyboard focus remains within the open sheet.
+
+The attached evidence can retain Forge's full auditability:
 
 - complete project-index identity, health, roots, counts, bytes, and artifacts;
 - current editor-source hashes and chunk manifests;
@@ -597,9 +763,10 @@ Raw JSON is lazy-loaded. Monospace is reserved for source, paths, hashes,
 timings, identities, and compact data. Every technical view links back to the
 conversation event it supports.
 
-The current `SourceExplorer` and `CapabilityExplorer` become views inside this
-layer. Source-edit cards link directly to their sealed diff; creators should not
-need to copy operation IDs manually.
+The removed `SourceExplorer` and `CapabilityExplorer` are not parallel routes.
+A richer source/API browser can be added inside this sheet only when it remains
+bound to the same sealed attachments and does not become alternate workflow
+authority.
 
 ## Truth and evidence boundaries
 
@@ -639,59 +806,27 @@ Use a human consequence before a technical code:
 Do not apologize, celebrate prematurely, hide a meaningful failure behind
 “Something went wrong,” or place an unbounded stack trace in the primary card.
 
-## Visual direction: Night Blueprint
+## Visual system: focused workspace
 
-The final surface combines a focused creative workspace with the precision of
-an engineering drawing. The conversation lives in a dark Studio-like shell;
-evidence opens as crisp, light blueprint sheets. This carries the current
-evidence-workbench identity forward without making the audit UI the whole
-product.
+The visual hierarchy follows the requested Codex-like workflow: a quiet
+project sidebar, a readable chat, restrained decision cards, and an anchored
+composer. The grid background, permanent context column, and decorative
+evidence seam are removed.
 
-### Palette
+| Token     | Value     | Use                            |
+| --------- | --------- | ------------------------------ |
+| Canvas    | `#202126` | conversation background        |
+| Sidebar   | `#191A1E` | project navigation             |
+| Text      | `#EEEFF3` | primary text                   |
+| Muted     | `#A1A6B2` | secondary text                 |
+| Focus     | `#A6B7FF` | keyboard focus and active work |
+| Confirmed | `#7EC9B0` | connection and completed steps |
 
-| Token         | Value     | Use                                           |
-| ------------- | --------- | --------------------------------------------- |
-| Night         | `#0B1018` | application canvas                            |
-| Slate         | `#131C29` | project rail, context rail, recessed cards    |
-| Paper         | `#E7EDF2` | plans, diffs, evidence sheets                 |
-| Blueprint     | `#5E82F3` | creator authority, focus, links, active state |
-| Forge copper  | `#C86B32` | agent activity and restrained warmth          |
-| Verdict green | `#2D7B68` | proven completion and healthy Studio state    |
-
-Failure red `#B44750` is semantic, not a brand accent. Every semantic color has
-a text or icon companion.
-
-### Typography
-
-- Spline Sans Variable remains the interface and conversation family.
-- IBM Plex Mono is reserved for source, paths, hashes, timings, and evidence
-  metadata.
-- Agent messages use weight and spacing—not a novelty typeface—to establish a
-  recognizable voice.
-- Body copy stays within a readable conversation measure rather than spanning
-  the full desktop canvas.
-
-### Signature: the evidence seam
-
-The current five-stage evidence spine becomes a vertical **evidence seam**
-running through the conversation. Request, plan, change, Studio, and review
-events attach to it with their real authority color. Ordinary discussion sits
-beside the seam without pretending to be an approval or proof event.
-
-The seam makes a long conversation navigable and preserves Forge's defining
-idea: every important claim has an owner and a place in the chain.
-
-### Shape and motion
-
-- Creator messages are compact and direct; Forge work appears as structured
-  cards, not a wall of identical chat bubbles.
-- Plans and evidence sheets use crisp borders and restrained depth.
-- The active evidence joint receives one blue-to-copper pulse when a real phase
-  changes. It never simulates percentage progress.
-- Success uses one short settle animation. Failure and recovery do not shake,
-  flash, or demand attention through motion.
-- `prefers-reduced-motion: reduce` removes travel, shimmer, smooth scrolling,
-  and transform-based transitions.
+Spline Sans carries the interface; IBM Plex Mono is confined to code and
+technical evidence. Main text is left aligned within an 820 px maximum
+column. Creator messages have a subdued inset background; agent messages
+remain open text. Only decisions need bordered cards. The active work dot
+has a restrained pulse, removed under reduced motion.
 
 ## Accessibility and responsive behavior
 
@@ -714,8 +849,7 @@ The current module-level store, `useSyncExternalStore`, single SSE invalidation
 source, and one-refetch-per-invalidation behavior remain. The redesign must not
 open one event stream per card.
 
-The final product needs a durable coordinator-produced conversation read model.
-It should include:
+The coordinator produces the durable conversation read model. It includes:
 
 - project conversation identity and current Studio project identity;
 - ordered immutable turns and workflow events;
@@ -732,50 +866,47 @@ The read model is presentation data, not alternate workflow authority. The UI
 may render history and memory from it, but may render a state-changing action
 only from the exact current control view.
 
-## Current-to-target component cutover
+## Completed component cutover
 
-| Current component    | Final responsibility                                                                                           |
-| -------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `PromptComposer`     | `ChatComposer` with model selection and real new-work, clarification, refinement, and follow-up turn contracts |
-| `SessionHistory`     | project conversation rail with nested work episodes                                                            |
-| `EvidenceSpine`      | vertical evidence seam inside the conversation                                                                 |
-| `ArtifactWorkbench`  | inline plan/change/Play/review cards plus Technical details                                                    |
-| `StudioConsentDock`  | compact project context and inline hash-bound decisions                                                        |
-| `SourceExplorer`     | Technical details source browser and citation target                                                           |
-| `CapabilityExplorer` | Technical details Roblox API and connector-health view                                                         |
-| `DashboardNotice`    | bounded conversation-level connection, incomplete, and recovery event                                          |
+| Removed workbench component | Conversation responsibility                                                                                          |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `PromptComposer`            | `ChatComposer` with model selection and hash-bound new-work, clarification, refinement, and follow-up turn contracts |
+| `SessionHistory`            | `ProjectRail` with places and independent conversations                                                              |
+| `EvidenceSpine`             | Event details and journal-derived activity                                                                           |
+| `ArtifactWorkbench`         | inline plan/change/Play/review cards plus `TechnicalDetailsSheet`                                                    |
+| `StudioConsentDock`         | `ProjectSettings` modal and inline hash-bound decisions                                                              |
+| `SourceExplorer`            | host-issued citation target and sealed technical attachment                                                          |
+| `CapabilityExplorer`        | sealed technical attachment; no primary-route explorer                                                               |
+| `DashboardNotice`           | bounded connection notice and durable incomplete/recovery event                                                      |
 
 This is a clean replacement. Do not retain the old evidence dashboard as a
 parallel route or introduce old/new conversation schemas.
 
-## Implementation sequence
+## Next implementation sequence
 
-1. **Durable conversation read model.** Reconstruct current request, plan,
-   change, decisions, status, refresh, Play, review, and terminal events from
-   the existing evidence graph without changing legality.
-2. **Conversation shell and model registry.** Replace the workbench layout with
-   project rail, conversation canvas, compact context rail, composer, model
-   selector, and Technical details. Serve the ordered model registry and bind
-   the selected model to every new AgentRun.
-3. **Evidence-native cards.** Move current plan/change/mutation/verification
-   presentations into inline cards; link source citations and diffs directly.
-4. **Project continuity.** Group refresh successors, repair attempts, and later
-   requests into one project conversation while retaining exact work episodes.
-5. **Plan clarification and revision.** Add explicit immutable turn and plan
-   revision contracts; only then enable free-form refinement before approval.
-6. **Inspectable memory.** Add project and creator preference memory with
-   provenance plus inspect/correct/pin/forget controls.
-7. **Long-running continuity.** Persist activity and resumable agent work before
-   implying that Forge continues while the local process is absent.
-8. **Terminal output guidance.** Make Studio Save to File and source-sync output
-   boundaries visible in the final conversation.
+1. **Identity canary.** Creator-run Link, Save to File, close/reopen, pair, and
+   then Fork/published-continuity choices must prove that explicit identity
+   receipts survive the documented place-file boundary without filename
+   inference.
+2. **Conversation canary.** Run one selected-model turn, refine its plan,
+   build, Apply, Play/Stop, report, and keep/undo through the conversation
+   surface while the foreground service stays running. Record exact journals,
+   artifacts, and claim boundaries.
+3. **Evidence-native expansion.** Add source/diff/API views inside Technical
+   details only from sealed attachments; do not recreate a workbench route.
+4. **Long-running continuity.** A daemon/background executor remains deferred.
+   It needs a separately designed and proven authority model before any claim
+   that work survives `creator serve` exit; the current exact-journal/fresh-run
+   recovery rule remains in force.
+5. **Studio canary ledger.** Preserve the resulting user-run evidence before
+   promoting this shell from presentation-ready to Studio-demonstrated.
 
 Each phase replaces its superseded surface outright. No compatibility reader,
 dual UI path, or status-derived action logic is added.
 
 ## Acceptance criteria
 
-The final creator experience is complete only when:
+The long-horizon creator experience is complete only when:
 
 - a creator can return after days or weeks and understand what happened, what
   the agent remembers, and what the project currently contains;
@@ -831,5 +962,6 @@ The final creator experience is complete only when:
 - [Execution isolation boundaries](research/execution-isolation-boundaries.md)
 - [Mutation reconciliation](research/mutation-reconciliation.md)
 - [Studio capability completeness](research/studio-capability-completeness.md)
+- [Durable Creator Conversation](research/durable-creator-conversation.md)
 - [Lemonade](https://lemonade.gg/)
 - [Lemonade Roblox Developer Forum walkthrough](https://devforum.roblox.com/t/ai-gameday-with-lemonade-day-1-herding-cats/4083155)

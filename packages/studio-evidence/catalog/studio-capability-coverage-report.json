@@ -2,7 +2,7 @@
   "kind": "StudioCapabilityCoverageReport",
   "catalogHash": "142406530e50b9c65fee0d7792e48aa22001e8697399820b43382dc5fdfe490e",
   "policyHash": "0d049865294d384a90c1c4add2b8dea946c723d155b2ff4e3423f3a835978d04",
-  "manifestHash": "01bb51931d2bf35bb7b502e92fe7d453db1711caaa1fb1b42a7499129a331e5c",
+  "manifestHash": "c87e33dbcc0774c4ec6bb04156b284aa800feaa5fd14abe500bff7d73a921889",
   "entries": [
     {
       "catalogEntryId": "class_member:Accessory:property:AccessoryType",
@@ -78191,5 +78191,5 @@
     "authorableClasses": 33,
     "authorableProperties": 364
   },
-  "contentHash": "cae2a4bf1f249ea5b13b3724bf26065ef789b78cf9bad89227f5a269f4c49bbe"
+  "contentHash": "3ab82be5b16d0b31e021a2838c32b00dbca980955b948b8aa050e7d4477662d9"
 }

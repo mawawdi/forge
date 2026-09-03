@@ -1,17 +1,23 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { contentHash, stableJson } from "../packages/contracts/src/index.js";
+import { ImmutableJsonArtifactStore } from "../packages/artifact-store/src/index.js";
 import {
   advanceSession,
-  assertCreatorControlActionBinding,
+  assertCreatorTransactionControlActionBinding,
   assertCreatorBuildContract,
   assertCreatorChangeSet,
+  assertCreatorRequestArtifact,
   assertOwnershipMap,
   canonicalizeCreatorPropertyInput,
   createCreatorApproval,
   createCreatorBuildContract,
   createCreatorPlan,
-  createCreatorControlView,
+  createCreatorTransactionControlView,
+  createCreatorAgentContextCitation,
   assertCreatorSessionBundle,
   creatorOrientation,
   createCreatorSession,
@@ -31,10 +37,14 @@ import {
   type SourceDocumentInput,
 } from "../packages/source-intelligence/src/index.js";
 import {
-  assertCreatorControlAction,
+  assertCreatorTransactionControlAction,
   restoredCreatorControlDetail,
 } from "../packages/creator-session/src/coordinator.js";
 import { CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS } from "../packages/studio-capabilities/src/index.js";
+import {
+  OpenRouterModelClient,
+  DEFAULT_CREATOR_MODEL_ID,
+} from "../packages/model-client/src/index.js";
 
 const revisionHash = contentHash("initial evidence revision");
 function captureHashFor(revision: string): string {
@@ -496,15 +506,14 @@ test("project-authority adapter selects exactly one writer per change set", () =
   assert.equal(orientation.content.writerSelection, "per_change_set");
   assert.deepEqual(orientation.content.availableAuthorities, ["rojo_source", "studio_document"]);
   assert.equal(orientation.content.studioAuthoring.available, true);
-  assert.equal(
-    orientation.content.instances.find((entry) => entry.path === "Workspace/StudioDoor")?.owner,
-    "studio_document",
-  );
-  assert.equal(
-    orientation.content.scripts.find((entry) => entry.path === "Workspace/RojoSystem/Controller")
-      ?.owner,
-    "rojo_source",
-  );
+  assert.equal(orientation.content.overview.instanceCount, projectIndex.instances.length);
+  assert.equal(orientation.content.overview.scriptCount, projectIndex.scripts.length);
+  assert.deepEqual(orientation.content.exploration.projectTools, [
+    "project.search",
+    "project.children",
+    "project.inspect",
+  ]);
+  assert.equal(orientation.content.exploration.exactFactsRequireToolConsultation, true);
 
   const sources = sourceEvidence(projectIndex, projectCaptureHash, [
     {
@@ -645,22 +654,32 @@ test("project-authority adapter selects exactly one writer per change set", () =
 });
 
 test("technical Play incompleteness exposes only exact retry and cancellation authority", () => {
-  const view = createCreatorControlView({
+  const agentExecutions = [
+    {
+      purpose: "repair" as const,
+      ordinal: 1,
+      agentRunId: "agent_run_retry_play_verification",
+      journalId: "agent_execution_journal:agent_run_retry_play_verification",
+    },
+  ];
+  const view = createCreatorTransactionControlView({
     creatorSessionId: "creator_session_retry",
     creatorSessionHash: "a".repeat(64),
     status: "awaiting_verification_retry",
     title: "Play Evidence Incomplete",
     detail: "The completed Play interval has read errors.",
-    primaryAction: {
-      id: "retry_play_verification",
-      label: "Retry Play Verification",
-      intent: "primary",
-    },
-    secondaryAction: {
-      id: "cancel_changes",
-      label: "Cancel Changes",
-      intent: "secondary",
-    },
+    actions: [
+      {
+        id: "transaction_retry_play_verification",
+        label: "Retry Play Verification",
+        intent: "primary",
+      },
+      {
+        id: "transaction_cancel_changes",
+        label: "Cancel Changes",
+        intent: "secondary",
+      },
+    ],
     verification: {
       id: "creator_verification_retry",
       status: "incomplete",
@@ -684,39 +703,89 @@ test("technical Play incompleteness exposes only exact retry and cancellation au
       },
     },
   });
+  assert.equal(view.kind, "CreatorTransactionControlView");
+  assert.deepEqual(
+    view.actions.map((action) => action.id),
+    ["transaction_retry_play_verification", "transaction_cancel_changes"],
+  );
   assert.doesNotThrow(() =>
-    assertCreatorControlActionBinding(view, {
+    assertCreatorTransactionControlActionBinding(view, {
       creatorSessionId: view.creatorSessionId,
       viewId: view.id,
       viewHash: view.hash,
-      actionId: "retry_play_verification",
+      actionId: "transaction_retry_play_verification",
     }),
   );
   assert.throws(
     () =>
-      assertCreatorControlActionBinding(view, {
+      assertCreatorTransactionControlActionBinding(view, {
         creatorSessionId: view.creatorSessionId,
         viewId: view.id,
         viewHash: "b".repeat(64),
-        actionId: "retry_play_verification",
+        actionId: "transaction_retry_play_verification",
       }),
     /stale or bound to a different/,
   );
   assert.deepEqual(
-    assertCreatorControlAction({
+    assertCreatorTransactionControlAction({
       action: "act",
       sessionId: view.creatorSessionId,
       viewId: view.id,
       viewHash: view.hash,
-      actionId: "retry_play_verification",
+      actionId: "transaction_retry_play_verification",
+      agentExecutions,
     }),
     {
       action: "act",
       sessionId: view.creatorSessionId,
       viewId: view.id,
       viewHash: view.hash,
-      actionId: "retry_play_verification",
+      actionId: "transaction_retry_play_verification",
+      agentExecutions,
     },
+  );
+});
+
+test("creator start keeps exact creator authority separate from host-authored model context", () => {
+  const execution = {
+    purpose: "planner" as const,
+    ordinal: 1,
+    agentRunId: "agent_run_creator_authority_split",
+    journalId: "agent_execution_journal:agent_run_creator_authority_split",
+  };
+  const creatorText = "Change the door safely.";
+  const agentPrompt = `Host-authored conversation context.\n\nExact creator request: ${creatorText}`;
+  assert.deepEqual(
+    assertCreatorTransactionControlAction({
+      action: "start",
+      creatorText,
+      agentPrompt,
+      model: "openai/gpt-5.6-luna",
+      creatorSessionId: "creator_session_authority-split",
+      contextCitations: [],
+      agentExecutions: [execution],
+    }),
+    {
+      action: "start",
+      creatorText,
+      agentPrompt,
+      model: "openai/gpt-5.6-luna",
+      creatorSessionId: "creator_session_authority-split",
+      contextCitations: [],
+      agentExecutions: [execution],
+    },
+  );
+  assert.throws(
+    () =>
+      assertCreatorTransactionControlAction({
+        action: "start",
+        prompt: agentPrompt,
+        model: "openai/gpt-5.6-luna",
+        creatorSessionId: "creator_session_authority-split",
+        contextCitations: [],
+        agentExecutions: [execution],
+      }),
+    /Invalid creator transaction control action/,
   );
 });
 
@@ -783,6 +852,280 @@ test("creator planner exposes bounded pinned Roblox API context", async () => {
   const invalid = await host.execute("studio.api_lookup", {});
   assert.equal(invalid.ok, false);
   assert.equal(invalid.error?.code, "ROBLOX_API_LOOKUP_INVALID");
+});
+
+test("provider wire preserves omitted planner fields and host-issued pagination without weakening query guards", async () => {
+  const projectIndex: CreatorProjectIndexView = {
+    ...observation,
+    instances: [
+      ...observation.instances,
+      ...[1, 2].map((index) => ({
+        objectId: `forge_attribute:folder-${index}`,
+        identity: { kind: "forge_attribute" as const, stableId: `folder-${index}` },
+        parentIdentity: observation.instances[0]!.identity,
+        path: `Workspace/Folder${index}`,
+        name: `Folder${index}`,
+        className: "Folder",
+        properties: {},
+        attributes: {},
+        tags: [],
+      })),
+    ],
+  };
+  const ownership = createStudioOwnershipMap({
+    projectId: "project-wire-query",
+    revisionHash,
+    projectIndex,
+  });
+  const prompt = "Inspect the project before proposing a plan.";
+  const session = createCreatorSession({
+    prompt,
+    projectId: ownership.projectId,
+    revisionHash,
+    projectCaptureHash,
+    ownership,
+  });
+  const sources = sourceEvidence(projectIndex, projectCaptureHash);
+  const host = new CreatorPlannerToolHost({ session, ownership, projectIndex, ...sources, prompt });
+  let calls = 0;
+  const client = new OpenRouterModelClient({
+    apiKey: "offline-test-key",
+    fetchImpl: async (_url, init) => {
+      calls++;
+      const body = JSON.parse(String(init?.body));
+      for (const entry of body.tools) {
+        // OpenAI Responses may normalize optional fields when strict is absent.
+        // Inspect the actual HTTP payload, after the pinned SDK adapter runs.
+        assert.equal(entry.function.strict, false);
+      }
+      const searchSchema = body.tools.find(
+        (entry: { function: { name: string } }) => entry.function.name === "project_search",
+      ).function.parameters;
+      assert.deepEqual(searchSchema.required, ["query"]);
+      const childrenSchema = body.tools.find(
+        (entry: { function: { name: string } }) => entry.function.name === "project_children",
+      ).function.parameters;
+      assert.equal(childrenSchema.required, undefined);
+      return new Response(
+        JSON.stringify({
+          id: "offline-inspection-response",
+          model: DEFAULT_CREATOR_MODEL_ID,
+          provider: "OpenAI",
+          choices: [
+            {
+              index: 0,
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: [
+                  {
+                    id: "search-first",
+                    type: "function",
+                    function: { name: "project_search", arguments: '{"query":"Folder","limit":1}' },
+                  },
+                  {
+                    id: "children-first",
+                    type: "function",
+                    function: {
+                      name: "project_children",
+                      arguments: '{"rootPath":"Workspace","limit":1}',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    },
+  });
+  const result = await client.complete({
+    model: DEFAULT_CREATOR_MODEL_ID,
+    system: "Inspect only.",
+    messages: [{ role: "user", content: prompt }],
+    tools: host.definitions().map((definition) => ({
+      name: definition.name,
+      description: definition.description,
+      parameters: definition.schema,
+    })),
+    maxOutputTokens: 512,
+    timeoutMs: 1000,
+  });
+  assert.equal(result.kind, "assistant");
+  if (result.kind !== "assistant") return;
+  assert.equal(host.validateBatch(result.message.toolCalls, new Set()).valid, true);
+  for (const call of result.message.toolCalls) {
+    assert.equal(Object.hasOwn(call.arguments as object, "cursor"), false);
+    const first = await host.execute(call.name, call.arguments);
+    assert.equal(first.ok, true);
+    const page = first.value as { results: { objectId: string }[]; nextCursor: string };
+    assert.equal(page.results[0]?.objectId, "forge_attribute:folder-1");
+    assert.ok(page.nextCursor);
+    const next = await host.execute(call.name, {
+      ...(call.arguments as object),
+      cursor: page.nextCursor,
+    });
+    assert.equal(next.ok, true);
+    assert.equal((next.value as typeof page).results[0]?.objectId, "forge_attribute:folder-2");
+    const stale = await host.execute(call.name, { ...(call.arguments as object), cursor: "0" });
+    assert.equal(stale.error?.code, "PROJECT_CURSOR_STALE");
+    assert.match(stale.error?.message ?? "", /Omit cursor/);
+  }
+  const conflicting = await host.execute("project.children", {
+    rootPath: "Workspace",
+    parentObjectId: "root",
+  });
+  assert.equal(conflicting.error?.code, "PROJECT_PARENT_INVALID");
+  assert.match(conflicting.error?.message ?? "", /omit parentObjectId/);
+  const byId = await host.execute("project.children", {
+    parentObjectId: observation.instances[0]!.objectId,
+  });
+  assert.equal(byId.ok, true);
+  assert.equal((byId.value as { results: unknown[] }).results.length, 2);
+  assert.equal(calls, 1);
+});
+
+test("creator planner admits only host-issued memory and prior-evidence citation handles", async () => {
+  const ownership = createStudioOwnershipMap({
+    projectId: "project-conversation-citations",
+    revisionHash,
+    projectIndex: observation,
+  });
+  const prompt = "Explain the retained project convention.";
+  const session = createCreatorSession({
+    prompt,
+    projectId: ownership.projectId,
+    revisionHash,
+    projectCaptureHash,
+    ownership,
+  });
+  const sources = sourceEvidence(observation, projectCaptureHash);
+  const memory = createCreatorAgentContextCitation({
+    projectRevisionHash: revisionHash,
+    label: "Creator memory memory-door-style",
+    subject: {
+      kind: "memory",
+      memoryItemId: "memory-door-style",
+      revisionId: "memory_revision_door_style",
+      revisionHash: contentHash("memory revision door style"),
+    },
+  });
+  const evidenceHash = contentHash("prior conversation evidence");
+  const priorEvidence = createCreatorAgentContextCitation({
+    projectRevisionHash: revisionHash,
+    label: "Prior evidence: approved door plan",
+    subject: {
+      kind: "prior_evidence",
+      eventId: "creator_event_prior_plan",
+      eventHash: contentHash("prior plan event"),
+      evidence: {
+        id: "creator_plan_prior",
+        hash: evidenceHash,
+        artifact: {
+          artifactHash: evidenceHash,
+          locator: `artifacts/${evidenceHash}.json`,
+          bytes: 1,
+        },
+      },
+    },
+  });
+  const host = new CreatorPlannerToolHost({
+    session,
+    ownership,
+    projectIndex: observation,
+    sourceIndex: sources.sourceIndex,
+    sourceResolver: sources.sourceResolver,
+    prompt,
+    contextCitations: [memory, priorEvidence],
+  });
+  const accepted = await host.execute("creator.answer", {
+    text: "I will keep the saved door convention and the approved plan evidence in view.",
+    citationHandles: [memory.citation.handle, priorEvidence.citation.handle],
+  });
+  assert.equal(accepted.ok, true);
+  const outcome = host.getOutcome();
+  assert.equal(outcome?.kind, "answer");
+  if (outcome?.kind !== "answer") throw new Error("Expected a creator answer outcome");
+  assert.deepEqual(
+    outcome.citations.map((citation) => citation.subject.kind),
+    ["memory", "prior_evidence"],
+  );
+
+  const isolatedHost = new CreatorPlannerToolHost({
+    session,
+    ownership,
+    projectIndex: observation,
+    sourceIndex: sources.sourceIndex,
+    sourceResolver: sources.sourceResolver,
+    prompt,
+  });
+  const forged = await isolatedHost.execute("creator.answer", {
+    text: "This must not turn a deterministic-looking handle into a citation.",
+    citationHandles: [memory.citation.handle],
+  });
+  assert.equal(forged.ok, false);
+  assert.equal(forged.error?.code, "CREATOR_CITATION_NOT_ISSUED");
+
+  assert.doesNotThrow(() =>
+    assertCreatorRequestArtifact({
+      kind: "CreatorRequest",
+      sessionId: session.id,
+      promptHash: session.promptHash,
+      creatorText: prompt,
+      agentPrompt: "Host-authored context.\n\n" + prompt,
+      contextCitations: [memory, priorEvidence],
+    }),
+  );
+  assert.throws(
+    () =>
+      assertCreatorRequestArtifact({
+        kind: "CreatorRequest",
+        sessionId: session.id,
+        promptHash: session.promptHash,
+        creatorText: prompt,
+        agentPrompt: "Host-authored context.\n\n" + prompt,
+        contextCitations: [memory, memory],
+      }),
+    /must be unique/,
+  );
+});
+
+test("creator request retains exact conversation citations across artifact-store restart", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "forge-creator-request-citations-"));
+  try {
+    const prompt = "Keep the established project convention.";
+    const memory = createCreatorAgentContextCitation({
+      projectRevisionHash: revisionHash,
+      label: "Creator memory memory-convention",
+      subject: {
+        kind: "memory",
+        memoryItemId: "memory-convention",
+        revisionId: "memory_revision_convention",
+        revisionHash: contentHash("memory revision convention"),
+      },
+    });
+    const store = new ImmutableJsonArtifactStore(directory);
+    const reference = await store.write({
+      kind: "CreatorRequest",
+      sessionId: "creator_session_context_restart",
+      promptHash: contentHash(prompt),
+      creatorText: prompt,
+      agentPrompt: "Host-authored context.\n\n" + prompt,
+      contextCitations: [memory],
+    });
+    const restarted = new ImmutableJsonArtifactStore(directory);
+    const restored = await restarted.read(reference, assertCreatorRequestArtifact);
+    assert.equal(restored.creatorText, prompt);
+    assert.equal(restored.promptHash, contentHash(restored.creatorText));
+    assert.notEqual(restored.agentPrompt, restored.creatorText);
+    assert.deepEqual(restored.contextCitations, [memory]);
+    assert.equal(restored.contextCitations[0]?.citation.handle, memory.citation.handle);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("engine-owned authoring containers are valid parents without entering mutable project evidence", async () => {
@@ -992,7 +1335,7 @@ test("engine-owned authoring containers are valid parents without entering mutab
   assert.match(rejected.error?.message ?? "", /parent identity is absent or stale/i);
   const completion = host.completionStatus();
   assert.equal(completion.ready, false);
-  if (!completion.ready) assert.match(completion.message, /Last proposal failure/);
+  if (!completion.ready) assert.match(completion.message, /Last outcome failure/);
 });
 
 test("indexed non-authorable classes remain exact structural parents without gaining mutation authority", async () => {
@@ -1538,7 +1881,10 @@ test("creator verification retains unchanged ModuleScript source and passes vali
   assert.equal(host.completionStatus().ready, true);
 });
 
-test("creator session history is bound to immutable project-index captures", () => {
+test("creator session history is bound to immutable project-index captures", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "forge-outcome-binding-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const artifactStore = new ImmutableJsonArtifactStore(directory);
   const ownership = createStudioOwnershipMap({
     projectId: "project-evidence-first",
     revisionHash,
@@ -1583,6 +1929,98 @@ test("creator session history is bound to immutable project-index captures", () 
     agentRuns: [],
   };
   assert.doesNotThrow(() => assertCreatorSessionBundle(bundle));
+  // The planner publishes a conversational outcome (answer, question, or plan).
+  // A truncated response must retain its real failure instead of failing bundle validation.
+  const reference = {
+    phase: "creator_planner" as const,
+    agentRunId: "agent_run_phase_regression",
+    agentRun: bundle.creatorRequest,
+    traceId: "trace_phase_regression",
+    trace: bundle.creatorRequest,
+    traceBuildKey: "trace_build_phase_regression",
+    creatorSessionHash: session.hash,
+    outcome: {
+      status: "unsealed" as const,
+      intendedArtifactKind: "creator_outcome" as const,
+      failureStage: "runtime" as const,
+      failureCode: "RUNTIME_BUDGET_EXHAUSTED",
+      detailHash: contentHash("Model stopped at the output-token limit"),
+      attemptHash: "b".repeat(64),
+    },
+  };
+  assert.doesNotThrow(() => assertCreatorSessionBundle({ ...bundle, agentRuns: [reference] }));
+  assert.throws(
+    () =>
+      assertCreatorSessionBundle({
+        ...bundle,
+        agentRuns: [
+          { ...reference, outcome: { ...reference.outcome, intendedArtifactKind: "change_set" } },
+        ],
+      }),
+    /does not match its referenced phase/,
+  );
+  for (const payload of [
+    { kind: "answer" as const, text: "This place contains Workspace.", citations: [] },
+    {
+      kind: "clarification_requested" as const,
+      question: "Which door should change?",
+      citations: [],
+    },
+  ]) {
+    const hash = contentHash(stableJson(payload));
+    const outcome = { ...payload, id: `creator_agent_outcome_${hash.slice(0, 24)}`, hash };
+    const artifact = await artifactStore.write(outcome);
+    const withOutcome = {
+      ...bundle,
+      agentOutcome: {
+        outcome,
+        artifact,
+      },
+      agentRuns: [
+        {
+          ...reference,
+          outcome: {
+            status: "sealed" as const,
+            artifact: { kind: "creator_outcome" as const, id: outcome.id, hash },
+            attemptHash: "b".repeat(64),
+          },
+        },
+      ],
+    };
+    assert.doesNotThrow(() => assertCreatorSessionBundle(withOutcome));
+    assert.deepEqual(await artifactStore.read(artifact), outcome);
+    assert.throws(
+      () =>
+        assertCreatorSessionBundle({
+          ...withOutcome,
+          agentOutcome: {
+            outcome,
+            artifact: {
+              ...artifact,
+              locator: `artifacts/${contentHash(stableJson(outcome))}.json`,
+              artifactHash: contentHash(stableJson(outcome)),
+            },
+          },
+        }),
+      /artifact binding mismatch/,
+    );
+    assert.throws(
+      () =>
+        assertCreatorSessionBundle({
+          ...withOutcome,
+          agentRuns: [
+            {
+              ...withOutcome.agentRuns[0]!,
+              outcome: {
+                ...withOutcome.agentRuns[0]!.outcome,
+                artifact: { kind: "creator_outcome", id: outcome.id, hash: "e".repeat(64) },
+              },
+            },
+          ],
+        }),
+      /not linked to its outcome/,
+    );
+  }
   assert.throws(
     () =>
       assertCreatorSessionBundle({

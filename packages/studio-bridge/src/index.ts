@@ -14,7 +14,12 @@ import {
   type PluginProjectIdentity,
   type PluginToBackendMessage,
   type StudioCapability,
+  type StudioProjectIdentityOperation,
+  type StudioProjectIdentityRejectionEvidence,
+  type StudioProjectIdentityState,
+  type StudioProjectIdentityTransactionInventory,
   type StudioTransport,
+  identityRejectionProvesNoEffect,
 } from "../../studio-protocol/src/index.js";
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 import {
@@ -22,6 +27,7 @@ import {
   STUDIO_CAPABILITY_MANIFEST_HASH,
   STUDIO_CONNECTOR_BUILD_HASH,
   createStudioEvidenceProjection,
+  deriveStudioProjectIdentityAuthority,
   serializeStudioEvidenceProjection,
   studioEvidenceFactKey,
   type StudioEvidenceProjection,
@@ -36,6 +42,12 @@ export interface StudioBridgeOptions {
   host?: string;
   port?: number;
   pairingTtlMs?: number;
+  /**
+   * Maximum authenticated transport silence before a session reservation is
+   * released. Durable Studio transaction cursors live in the plugin and are
+   * deliberately unaffected by transport expiry.
+   */
+  sessionIdleTtlMs?: number;
   now?: () => Date;
   /** Required to use backend control endpoints. Never sent to the Studio plugin. */
   controlToken?: string;
@@ -129,7 +141,10 @@ function assertStudioBridgeDiscovery(value: unknown): asserts value is StudioBri
 export interface StudioBridgeSession {
   sessionId: string;
   projectId: string;
+  conversationProjectId: string;
   project: PluginProjectIdentity;
+  projectIdentity: StudioProjectIdentityState;
+  projectIdentityTransaction: StudioProjectIdentityTransactionInventory;
   capabilities: StudioCapability[];
   manifestHash: string;
   connectorBuildHash: string;
@@ -182,6 +197,7 @@ type CommandSettlement = Extract<
 >["payload"];
 
 interface CommandSettlementWaiter {
+  readonly command: BackendToPluginMessage;
   readonly commandHash: string;
   readonly resolve: () => void;
   readonly reject: (error: Error) => void;
@@ -193,10 +209,46 @@ interface RetainedCommandSettlements {
   readonly order: string[];
 }
 
+function identityCommandOperation(
+  command: BackendToPluginMessage,
+): StudioProjectIdentityOperation | undefined {
+  return command.type === "LinkStudioProject" || command.type === "ForkStudioProject"
+    ? command.payload.operation
+    : undefined;
+}
+
+/**
+ * A terminal plugin rejection with the exact command and transport receipt
+ * that caused it. Identity callers must inspect `identityNoEffectProven`; a
+ * rejected command alone never establishes that Studio remained unchanged.
+ */
+export class StudioCommandRejectedError extends Error {
+  readonly command: BackendToPluginMessage;
+  readonly settlement: Extract<CommandSettlement, { disposition: "rejected" }>;
+  readonly identityNoEffectProven: boolean;
+
+  constructor(
+    command: BackendToPluginMessage,
+    settlement: Extract<CommandSettlement, { disposition: "rejected" }>,
+  ) {
+    if (settlement.commandHash !== messageFingerprint(command))
+      throw new Error("Studio command rejection does not bind the exact command body");
+    super(`Studio command rejected (${settlement.classification}): ${settlement.detail}`);
+    this.name = "StudioCommandRejectedError";
+    this.command = command;
+    this.settlement = settlement;
+    const operation = identityCommandOperation(command);
+    this.identityNoEffectProven =
+      operation !== undefined &&
+      identityRejectionProvesNoEffect(operation, settlement.identityRejection);
+  }
+}
+
 function rejectedCommandError(
+  command: BackendToPluginMessage,
   settlement: Extract<CommandSettlement, { disposition: "rejected" }>,
-): Error {
-  return new Error(`Studio command rejected (${settlement.classification}): ${settlement.detail}`);
+): StudioCommandRejectedError {
+  return new StudioCommandRejectedError(command, settlement);
 }
 
 export interface StudioBridgeConnection {
@@ -216,12 +268,14 @@ export class StudioBridgeServer implements StudioTransport {
   private readonly host: string;
   private readonly port: number;
   private readonly pairingTtlMs: number;
+  private readonly sessionIdleTtlMs: number;
   private readonly now: () => Date;
   private readonly controlToken: string;
   private readonly maxRetainedEvents: number;
   private readonly server: Server;
   private readonly handlers = new Set<MessageHandler>();
   private readonly sessions = new Map<string, StudioBridgeSession>();
+  private readonly sessionLastSeen = new Map<string, number>();
   /** Commands remain until the plugin sends the exact hash-bound settlement. */
   private readonly outbound = new Map<string, RetainedOutboundCommand[]>();
   private readonly outboundMessageIds = new Map<string, RetainedOutboundMessageIds>();
@@ -237,6 +291,8 @@ export class StudioBridgeServer implements StudioTransport {
     { baseCursor: number; messages: PluginToBackendMessage[] }
   >();
   private readonly pairings = new Map<string, PairingCode>();
+  /** Link/Fork target ids stay reserved until exact final evidence or disconnect. */
+  private readonly projectIdentityReservations = new Map<string, string>();
 
   constructor(options: StudioBridgeOptions = {}) {
     this.host = options.host ?? "127.0.0.1";
@@ -244,6 +300,9 @@ export class StudioBridgeServer implements StudioTransport {
       throw new Error("Forge Studio bridge supports loopback host 127.0.0.1 only");
     this.port = options.port ?? 8787;
     this.pairingTtlMs = options.pairingTtlMs ?? 10 * 60 * 1000;
+    this.sessionIdleTtlMs = options.sessionIdleTtlMs ?? 45_000;
+    if (!Number.isSafeInteger(this.sessionIdleTtlMs) || this.sessionIdleTtlMs < 5_000)
+      throw new Error("Studio session idle TTL must be an integer of at least five seconds");
     this.now = options.now ?? (() => new Date());
     this.controlToken = options.controlToken ?? randomBytes(24).toString("base64url");
     this.maxRetainedEvents = options.maxRetainedEvents ?? 512;
@@ -257,6 +316,7 @@ export class StudioBridgeServer implements StudioTransport {
   }
 
   createPairing(): PairingCode {
+    this.pruneExpiredSessions();
     this.prunePairings();
     const expiresAt = new Date(this.now().getTime() + this.pairingTtlMs).toISOString();
     const pairing = { token: randomBytes(18).toString("base64url"), expiresAt };
@@ -313,6 +373,7 @@ export class StudioBridgeServer implements StudioTransport {
   }
 
   async send(message: BackendToPluginMessage): Promise<void> {
+    this.pruneExpiredSessions();
     assertBackendToPluginMessage(message);
     const sessionId = message.sessionId;
     if (!sessionId || !this.sessions.has(sessionId))
@@ -327,6 +388,8 @@ export class StudioBridgeServer implements StudioTransport {
     }
     this.assertCommandDeliveryFits(sessionId, message, commandHash);
     if (queue.length >= 128) throw new Error("Studio outbound command queue is full");
+    this.assertProjectIdentityCommandMatchesSession(sessionId, message);
+    this.assertIdentityOperationReservationAvailable(sessionId, message);
     this.rememberOutbound(sessionId, message.messageId, commandHash);
     queue.push({ message, commandHash });
     this.outbound.set(sessionId, queue);
@@ -341,6 +404,7 @@ export class StudioBridgeServer implements StudioTransport {
   }
 
   getSessions(): StudioBridgeSession[] {
+    this.pruneExpiredSessions();
     return [...this.sessions.values()].map((session) => ({ ...session }));
   }
 
@@ -414,12 +478,14 @@ export class StudioBridgeServer implements StudioTransport {
   }
 
   private poll(request: IncomingMessage, response: ServerResponse): void {
+    this.pruneExpiredSessions();
     const url = new URL(request.url ?? "/", "http://forge.local");
     const sessionId = url.searchParams.get("sessionId") ?? "";
     const sessionToken = request.headers["x-forge-session-token"];
     const session = this.sessions.get(sessionId);
     if (!session || typeof sessionToken !== "string" || session.sessionToken !== sessionToken)
       throw new ProtocolHttpError(401, "Invalid Studio session");
+    this.touchSession(sessionId);
     const command = (this.outbound.get(sessionId) ?? [])[0];
     // Delivery is intentionally non-destructive. A poll carries at most one
     // command, so the plugin settles its exact body before the next
@@ -440,6 +506,7 @@ export class StudioBridgeServer implements StudioTransport {
   }
 
   private eventsFor(request: IncomingMessage, response: ServerResponse): void {
+    this.pruneExpiredSessions();
     const url = new URL(request.url ?? "/", "http://forge.local");
     const sessionId = url.searchParams.get("sessionId") ?? "";
     const after = Number(url.searchParams.get("after") ?? "0");
@@ -465,6 +532,7 @@ export class StudioBridgeServer implements StudioTransport {
   }
 
   private async command(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    this.pruneExpiredSessions();
     const message = JSON.parse(await readBody(request)) as unknown;
     this.assertActivePeer(request, response);
     assertBackendToPluginMessage(message);
@@ -490,6 +558,8 @@ export class StudioBridgeServer implements StudioTransport {
     const queue = this.outbound.get(sessionId) ?? [];
     if (queue.length >= 128)
       throw new ProtocolHttpError(429, "Studio outbound command queue is full");
+    this.assertProjectIdentityCommandMatchesSession(sessionId, message);
+    this.assertIdentityOperationReservationAvailable(sessionId, message);
     this.rememberOutbound(sessionId, message.messageId, commandHash);
     queue.push({ message, commandHash });
     this.outbound.set(sessionId, queue);
@@ -504,6 +574,7 @@ export class StudioBridgeServer implements StudioTransport {
     this.assertActivePeer(request, response);
     assertPluginToBackendMessage(message);
     if (message.type === "PairProject") return await this.pair(message, response);
+    this.pruneExpiredSessions();
     const session = message.sessionId ? this.sessions.get(message.sessionId) : undefined;
     if (!session) throw new ProtocolHttpError(401, "Studio message requires a connected session");
     const sessionToken = request.headers["x-forge-session-token"];
@@ -514,11 +585,16 @@ export class StudioBridgeServer implements StudioTransport {
         400,
         "Studio semantic evidence must use the bounded start/chunk/complete transport",
       );
+    if (message.type === "Heartbeat") this.assertHeartbeatProjectTransition(message, session);
     if (
-      message.type === "Heartbeat" &&
-      !sameProjectIdentity(message.payload.project, session.project)
+      message.type === "StudioProjectIdentityFinalized" &&
+      !sameProjectIdentity(message.payload.receipt.operation.project, session.project)
     )
-      throw new ProtocolHttpError(409, "Studio evidence project does not match its paired session");
+      throw new ProtocolHttpError(
+        409,
+        "Studio project identity receipt belongs to another project",
+      );
+    this.touchSession(session.sessionId);
     if (message.type === "UnpairProject") {
       await Promise.all([...this.handlers].map((handler) => handler(message, session)));
       this.dropSession(session.sessionId);
@@ -586,6 +662,12 @@ export class StudioBridgeServer implements StudioTransport {
           this.semanticStreams.delete(`${session.sessionId}:${message.payload.transferId}`);
         }
       } else {
+        // Identity observations are transport authority, not a handler-derived
+        // read model. Publish the new authority on the session before semantic
+        // subscribers see the receipt, so a successful Link/Fork cannot leave
+        // the host issuing commands against the provisional unlinked id.
+        this.assertIncomingProjectIdentityAvailable(message, session);
+        this.updateSessionProjectIdentity(message, session);
         await Promise.all([...this.handlers].map((handler) => handler(message, session)));
         this.retainEvent(session.sessionId, message);
       }
@@ -605,10 +687,238 @@ export class StudioBridgeServer implements StudioTransport {
     }
   }
 
+  private updateSessionProjectIdentity(
+    message: PluginToBackendMessage,
+    session: StudioBridgeSession,
+  ): void {
+    updateBridgeSessionProjectIdentity(message, session);
+    if (
+      message.type === "Heartbeat" &&
+      message.payload.projectIdentity.reservedAttribute.status === "observed"
+    ) {
+      const forgeProjectId = message.payload.projectIdentity.reservedAttribute.forgeProjectId;
+      if (this.projectIdentityReservations.get(forgeProjectId) === session.sessionId)
+        this.projectIdentityReservations.delete(forgeProjectId);
+    }
+    if (message.type === "StudioProjectIdentityFinalized") {
+      const forgeProjectId = message.payload.receipt.operation.assignedForgeProjectId;
+      if (this.projectIdentityReservations.get(forgeProjectId) === session.sessionId)
+        this.projectIdentityReservations.delete(forgeProjectId);
+    }
+  }
+
+  private assertHeartbeatProjectTransition(
+    message: Extract<PluginToBackendMessage, { type: "Heartbeat" }>,
+    session: StudioBridgeSession,
+  ): void {
+    const prior = session.project;
+    const next = message.payload.project;
+    const samePlatform = prior.placeId === next.placeId && prior.universeId === next.universeId;
+    if (samePlatform) return;
+    const priorIsLocal = prior.placeId === 0 && prior.universeId === 0;
+    const nextIsPublished = next.placeId > 0 && next.universeId > 0;
+    const beforeAttribute = session.projectIdentity.reservedAttribute;
+    const afterAttribute = message.payload.projectIdentity.reservedAttribute;
+    const preservesEmbeddedIdentity =
+      beforeAttribute.status === "observed" &&
+      afterAttribute.status === "observed" &&
+      beforeAttribute.forgeProjectId === afterAttribute.forgeProjectId;
+    if (
+      priorIsLocal &&
+      nextIsPublished &&
+      preservesEmbeddedIdentity &&
+      session.projectIdentityTransaction.status === "none"
+    )
+      return;
+    throw new ProtocolHttpError(
+      409,
+      "Studio heartbeat attempted a project-authority transition outside the paired identity",
+    );
+  }
+
+  private assertIncomingProjectIdentityAvailable(
+    message: PluginToBackendMessage,
+    session: StudioBridgeSession,
+  ): void {
+    const identity =
+      message.type === "Heartbeat"
+        ? message.payload.projectIdentity
+        : message.type === "StudioProjectIdentityFinalized"
+          ? message.payload.receipt.afterIdentity
+          : undefined;
+    const project =
+      message.type === "Heartbeat"
+        ? message.payload.project
+        : message.type === "StudioProjectIdentityFinalized"
+          ? message.payload.receipt.afterIdentity.project
+          : undefined;
+    if (!identity || !project || !hasDurableProjectIdentity(project, identity)) return;
+    const key = studioProjectKey(project, identity);
+    for (const existing of this.sessions.values()) {
+      if (
+        existing.sessionId !== session.sessionId &&
+        hasDurableProjectIdentity(existing.project, existing.projectIdentity) &&
+        studioProjectKey(existing.project, existing.projectIdentity) === key
+      )
+        throw new ProtocolHttpError(
+          409,
+          "This durable Studio project identity is already connected; close the other place or explicitly fork it",
+        );
+    }
+  }
+
+  private assertProjectIdentityCommandMatchesSession(
+    sessionId: string,
+    message: BackendToPluginMessage,
+  ): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new ProtocolHttpError(401, "Studio session is not connected");
+    if (message.type === "LinkStudioProject" || message.type === "ForkStudioProject") {
+      const operation = message.payload.operation;
+      const expectedConnectorEpoch = deriveStudioProjectIdentityAuthority({
+        sessionId: session.sessionId,
+        connectorBuildHash: session.connectorBuildHash,
+        identity: session.projectIdentity,
+      }).connectorEpoch;
+      if (
+        !sameProjectIdentity(operation.project, session.project) ||
+        operation.expectedIdentity.hash !== session.projectIdentity.hash ||
+        operation.connectorEpoch !== expectedConnectorEpoch
+      )
+        throw new ProtocolHttpError(
+          409,
+          "Studio project identity command does not continue the paired authority",
+        );
+      return;
+    }
+    if (message.type === "AbandonOpeningStudioProjectIdentity") {
+      const inventory = session.projectIdentityTransaction;
+      const payload = message.payload;
+      if (
+        inventory.status !== "pending" ||
+        inventory.operation.id !== payload.operationId ||
+        inventory.operation.hash !== payload.operationHash ||
+        inventory.cursorHash !== payload.transactionCursorHash ||
+        payload.expectedIdentityStateHash !== session.projectIdentity.hash
+      )
+        throw new ProtocolHttpError(
+          409,
+          "Project identity recovery command does not match the exact paired cursor",
+        );
+      if (inventory.phase !== "opening" || inventory.recordingState !== "not_open")
+        throw new ProtocolHttpError(
+          409,
+          "Opening project identity abandonment lacks exact no-recording proof",
+        );
+      return;
+    }
+    if (
+      message.type === "CancelInterruptedStudioProjectIdentity" ||
+      message.type === "SettleClosedStudioProjectIdentity"
+    ) {
+      const inventory = session.projectIdentityTransaction;
+      const payload = message.payload;
+      if (
+        inventory.status !== "pending" ||
+        inventory.operation.id !== payload.operationId ||
+        inventory.operation.hash !== payload.operationHash ||
+        inventory.cursorHash !== payload.transactionCursorHash ||
+        inventory.recordingId !== payload.recordingId ||
+        payload.expectedIdentityStateHash !== session.projectIdentity.hash
+      )
+        throw new ProtocolHttpError(
+          409,
+          "Project identity recovery command does not match the exact paired cursor",
+        );
+      if (message.type === "SettleClosedStudioProjectIdentity") {
+        if (
+          inventory.phase !== "finalizing" ||
+          inventory.recordingState !== "not_open" ||
+          inventory.finalization !== message.payload.expectedFinalization
+        )
+          throw new ProtocolHttpError(
+            409,
+            "Closed project identity settlement does not match the exact paired cursor",
+          );
+      } else if (inventory.phase === "opening" || inventory.recordingState !== "open")
+        throw new ProtocolHttpError(
+          409,
+          "Project identity cancellation does not match the exact paired open cursor",
+        );
+      return;
+    }
+    if (message.type === "AcknowledgeStudioProjectIdentityFinalization") {
+      const inventory = session.projectIdentityTransaction;
+      if (
+        inventory.status !== "finalized" ||
+        inventory.receipt.id !== message.payload.receiptId ||
+        inventory.receipt.hash !== message.payload.receiptHash
+      )
+        throw new ProtocolHttpError(
+          409,
+          "Project identity acknowledgement does not match the retained terminal receipt",
+        );
+    }
+  }
+
+  private assertIdentityOperationReservationAvailable(
+    sessionId: string,
+    message: BackendToPluginMessage,
+  ): void {
+    if (message.type !== "LinkStudioProject" && message.type !== "ForkStudioProject") return;
+    const assigned = message.payload.operation.assignedForgeProjectId;
+    const reservedBy = this.projectIdentityReservations.get(assigned);
+    if (reservedBy !== undefined)
+      throw new ProtocolHttpError(
+        409,
+        reservedBy === sessionId
+          ? "The prior project identity transaction outcome is not yet finalized for this Studio session"
+          : "This durable Studio project identity is reserved by another exact transaction",
+      );
+    if ([...this.projectIdentityReservations.values()].includes(sessionId))
+      throw new ProtocolHttpError(
+        409,
+        "The prior project identity transaction outcome is not yet finalized for this Studio session",
+      );
+    for (const existing of this.sessions.values()) {
+      if (
+        existing.sessionId !== sessionId &&
+        ((existing.projectIdentity.reservedAttribute.status === "observed" &&
+          existing.projectIdentity.reservedAttribute.forgeProjectId === assigned) ||
+          (existing.projectIdentityTransaction.status === "pending" &&
+            existing.projectIdentityTransaction.operation.assignedForgeProjectId === assigned))
+      )
+        throw new ProtocolHttpError(
+          409,
+          "This durable Studio project identity is already connected or reserved by another exact transaction",
+        );
+    }
+    for (const [queuedSessionId, commands] of this.outbound) {
+      for (const queued of commands) {
+        if (
+          (queued.message.type === "LinkStudioProject" ||
+            queued.message.type === "ForkStudioProject") &&
+          queued.message.payload.operation.assignedForgeProjectId === assigned
+        )
+          throw new ProtocolHttpError(
+            409,
+            queuedSessionId === sessionId
+              ? "A project identity transaction is already queued for this Studio session"
+              : "This durable Studio project identity is reserved by another queued transaction",
+          );
+      }
+    }
+    this.projectIdentityReservations.set(assigned, sessionId);
+  }
+
   private async pair(
     message: Extract<PluginToBackendMessage, { type: "PairProject" }>,
     response: ServerResponse,
   ): Promise<void> {
+    // A grant may have been issued before the prior connector's lease expired.
+    // Recheck liveness at admission instead of letting a stale in-memory
+    // session indefinitely block the durable project identity.
+    this.pruneExpiredSessions();
     this.prunePairings();
     const pairing = this.pairings.get(message.payload.pairingToken);
     if (!pairing)
@@ -616,7 +926,12 @@ export class StudioBridgeServer implements StudioTransport {
     this.pairings.delete(pairing.token);
     const sessionId = `studio_${randomUUID()}`;
     const sessionToken = randomBytes(24).toString("base64url");
-    const projectId = studioProjectId(message.payload.project);
+    const authority = deriveStudioProjectIdentityAuthority({
+      sessionId,
+      connectorBuildHash: STUDIO_CONNECTOR_BUILD_HASH,
+      identity: message.payload.projectIdentity,
+    });
+    const { projectId, conversationProjectId } = authority;
     if (message.payload.manifestHash !== STUDIO_CAPABILITY_MANIFEST_HASH)
       throw new ProtocolHttpError(
         409,
@@ -641,7 +956,10 @@ export class StudioBridgeServer implements StudioTransport {
     const session: StudioBridgeSession = {
       sessionId,
       projectId,
+      conversationProjectId,
       project: message.payload.project,
+      projectIdentity: message.payload.projectIdentity,
+      projectIdentityTransaction: message.payload.projectIdentityTransaction,
       capabilities: [...message.payload.capabilities],
       manifestHash: message.payload.manifestHash,
       connectorBuildHash: STUDIO_CONNECTOR_BUILD_HASH,
@@ -649,12 +967,63 @@ export class StudioBridgeServer implements StudioTransport {
       sessionToken,
       connectedAt: this.now().toISOString(),
     };
-    for (const [existingId, existing] of this.sessions) {
-      if (studioProjectKey(existing.project) === studioProjectKey(session.project)) {
-        this.dropSession(existingId);
+    for (const existing of this.sessions.values()) {
+      if (
+        hasDurableProjectIdentity(session.project, session.projectIdentity) &&
+        studioProjectKey(existing.project, existing.projectIdentity) ===
+          studioProjectKey(session.project, session.projectIdentity)
+      )
+        throw new ProtocolHttpError(
+          409,
+          "This durable Studio project identity is already connected; close the other place or explicitly fork it",
+        );
+    }
+    if (message.payload.projectIdentity.reservedAttribute.status === "observed") {
+      const forgeProjectId = message.payload.projectIdentity.reservedAttribute.forgeProjectId;
+      if (this.projectIdentityReservations.has(forgeProjectId))
+        throw new ProtocolHttpError(
+          409,
+          "This durable Studio project identity is reserved by another exact transaction",
+        );
+      for (const existing of this.sessions.values()) {
+        if (
+          existing.projectIdentityTransaction.status === "pending" &&
+          existing.projectIdentityTransaction.operation.assignedForgeProjectId === forgeProjectId
+        )
+          throw new ProtocolHttpError(
+            409,
+            "This durable Studio project identity is reserved by another exact transaction",
+          );
+      }
+    }
+    if (message.payload.projectIdentityTransaction.status === "pending") {
+      const assigned = message.payload.projectIdentityTransaction.operation.assignedForgeProjectId;
+      const reservedBy = this.projectIdentityReservations.get(assigned);
+      if (reservedBy !== undefined)
+        throw new ProtocolHttpError(
+          409,
+          "This durable Studio project identity is reserved by another exact transaction",
+        );
+      for (const existing of this.sessions.values()) {
+        if (
+          (existing.projectIdentity.reservedAttribute.status === "observed" &&
+            existing.projectIdentity.reservedAttribute.forgeProjectId === assigned) ||
+          (existing.projectIdentityTransaction.status === "pending" &&
+            existing.projectIdentityTransaction.operation.assignedForgeProjectId === assigned)
+        )
+          throw new ProtocolHttpError(
+            409,
+            "This durable Studio project identity is already connected or reserved by another exact transaction",
+          );
       }
     }
     this.sessions.set(sessionId, session);
+    this.touchSession(sessionId);
+    if (message.payload.projectIdentityTransaction.status === "pending")
+      this.projectIdentityReservations.set(
+        message.payload.projectIdentityTransaction.operation.assignedForgeProjectId,
+        sessionId,
+      );
     this.outbound.set(sessionId, []);
     this.outboundMessageIds.set(sessionId, { hashes: new Map(), order: [] });
     this.events.set(sessionId, { baseCursor: 0, messages: [] });
@@ -666,6 +1035,9 @@ export class StudioBridgeServer implements StudioTransport {
       sessionId,
       sessionToken,
       projectId,
+      conversationProjectId,
+      projectIdentity: message.payload.projectIdentity,
+      projectIdentityTransaction: message.payload.projectIdentityTransaction,
       manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
       connectorBuildHash: STUDIO_CONNECTOR_BUILD_HASH,
       capabilityAttestationProjectionJson,
@@ -695,11 +1067,14 @@ export class StudioBridgeServer implements StudioTransport {
       new Error("Studio session disconnected before command settlement"),
     );
     this.sessions.delete(sessionId);
+    this.sessionLastSeen.delete(sessionId);
     this.outbound.delete(sessionId);
     this.outboundMessageIds.delete(sessionId);
     this.settledOutbound.delete(sessionId);
     this.events.delete(sessionId);
     this.receivedMessageIds.delete(sessionId);
+    for (const [forgeProjectId, reservedSessionId] of this.projectIdentityReservations)
+      if (reservedSessionId === sessionId) this.projectIdentityReservations.delete(forgeProjectId);
     for (const key of this.semanticStreams.keys())
       if (key.startsWith(`${sessionId}:`)) this.semanticStreams.delete(key);
   }
@@ -720,6 +1095,20 @@ export class StudioBridgeServer implements StudioTransport {
     const now = this.now().getTime();
     for (const [token, pairing] of this.pairings)
       if (new Date(pairing.expiresAt).getTime() <= now) this.pairings.delete(token);
+  }
+
+  private touchSession(sessionId: string): void {
+    this.sessionLastSeen.set(sessionId, this.now().getTime());
+  }
+
+  private pruneExpiredSessions(): void {
+    const now = this.now().getTime();
+    for (const [sessionId, lastSeen] of this.sessionLastSeen) {
+      const processing = [
+        ...(this.receivedMessageIds.get(sessionId)?.messages.values() ?? []),
+      ].some((message) => message.status === "processing");
+      if (!processing && now - lastSeen >= this.sessionIdleTtlMs) this.dropSession(sessionId);
+    }
   }
 
   private rememberOutbound(sessionId: string, messageId: string, commandHash: string): void {
@@ -790,7 +1179,7 @@ export class StudioBridgeServer implements StudioTransport {
         );
       return settled.disposition === "executed"
         ? Promise.resolve()
-        : Promise.reject(rejectedCommandError(settled));
+        : Promise.reject(rejectedCommandError(message, settled));
     }
     const waiters = this.settlementWaiters.get(sessionId) ?? new Map();
     const existing = waiters.get(message.messageId);
@@ -809,7 +1198,7 @@ export class StudioBridgeServer implements StudioTransport {
         if (current.size === 0) this.settlementWaiters.delete(sessionId);
         reject(new Error("Timed out waiting for exact Studio command settlement"));
       }, timeoutMs);
-      waiters.set(message.messageId, { commandHash, resolve, reject, timeout });
+      waiters.set(message.messageId, { command: message, commandHash, resolve, reject, timeout });
       this.settlementWaiters.set(sessionId, waiters);
     });
   }
@@ -849,7 +1238,7 @@ export class StudioBridgeServer implements StudioTransport {
         clearTimeout(waiter.timeout);
         this.settlementWaiters.get(sessionId)!.delete(messageId);
         if (settlement.disposition === "executed") waiter.resolve();
-        else waiter.reject(rejectedCommandError(settlement));
+        else waiter.reject(rejectedCommandError(waiter.command, settlement));
       }
       if (this.settlementWaiters.get(sessionId)?.size === 0)
         this.settlementWaiters.delete(sessionId);
@@ -893,19 +1282,103 @@ export class StudioBridgeServer implements StudioTransport {
         "Studio command settlement hash conflicts with the retained command",
       );
     const queue = this.outbound.get(session.sessionId) ?? [];
+    const queueHead = queue[0];
     const retained = this.settledOutbound.get(session.sessionId)?.settlements.get(commandMessageId);
-    if (retained === undefined) {
-      const head = queue[0];
-      if (head?.message.messageId !== commandMessageId || head.commandHash !== commandHash)
-        throw new ProtocolHttpError(
-          409,
-          "Studio command settlement does not name the current delivery head",
-        );
+    if (retained !== undefined) {
+      // A duplicate settlement is a transport retry, not a new identity
+      // observation. In particular, it must not release a reservation created
+      // by a later command in this session.
+      const duplicate = this.rememberSettlement(
+        session.sessionId,
+        commandMessageId,
+        message.payload,
+      );
+      if (!duplicate)
+        throw new ProtocolHttpError(409, "Studio command settlement retention is inconsistent");
+      return { duplicate: true };
     }
+    if (queueHead?.message.messageId !== commandMessageId || queueHead.commandHash !== commandHash)
+      throw new ProtocolHttpError(
+        409,
+        "Studio command settlement does not name the current delivery head",
+      );
+    this.acceptRejectedIdentitySettlement(session, queueHead.message, message.payload);
+    if (
+      message.payload.disposition === "executed" &&
+      queueHead?.message.type === "AcknowledgeStudioProjectIdentityFinalization" &&
+      session.projectIdentityTransaction.status === "finalized" &&
+      queueHead.message.payload.receiptId === session.projectIdentityTransaction.receipt.id &&
+      queueHead.message.payload.receiptHash === session.projectIdentityTransaction.receipt.hash
+    )
+      session.projectIdentityTransaction = { status: "none" };
     const duplicate = this.rememberSettlement(session.sessionId, commandMessageId, message.payload);
     const remaining = queue.filter((command) => command.message.messageId !== commandMessageId);
     this.outbound.set(session.sessionId, remaining);
     return { duplicate };
+  }
+
+  /**
+   * A Link/Fork handler rejection is terminal only after it captures an exact
+   * identity/recovery boundary. This is deliberately evaluated before the
+   * transport settlement is retained, so malformed, stale, or generic proof
+   * cannot consume the queued command or release any durable-id reservation.
+   */
+  private acceptRejectedIdentitySettlement(
+    session: StudioBridgeSession,
+    command: BackendToPluginMessage,
+    settlement: CommandSettlement,
+  ): void {
+    const operation = identityCommandOperation(command);
+    if (operation === undefined) {
+      if (settlement.disposition === "rejected" && settlement.identityRejection !== undefined)
+        throw new ProtocolHttpError(
+          409,
+          "Only rejected Link/Fork commands may carry project identity rejection evidence",
+        );
+      return;
+    }
+    if (settlement.disposition !== "rejected") return;
+    const proof = settlement.identityRejection;
+    if (proof === undefined)
+      throw new ProtocolHttpError(
+        409,
+        "Rejected Link/Fork command lacks exact project identity rejection evidence",
+      );
+    this.assertIdentityRejectionBoundToCommand(session, operation, proof);
+    if (proof.status === "observed") {
+      // Retain the exact Studio inventory for recovery even when it does not
+      // prove no effect. It comes from a command-bound observation, not from
+      // the rejected disposition.
+      session.projectIdentity = proof.identity;
+      session.projectIdentityTransaction = proof.transaction;
+      applyStudioProjectIdentityAuthority(session, session.project, proof.identity);
+    }
+    if (
+      identityRejectionProvesNoEffect(operation, proof) &&
+      this.projectIdentityReservations.get(operation.assignedForgeProjectId) === session.sessionId
+    )
+      this.projectIdentityReservations.delete(operation.assignedForgeProjectId);
+  }
+
+  private assertIdentityRejectionBoundToCommand(
+    session: StudioBridgeSession,
+    operation: StudioProjectIdentityOperation,
+    proof: StudioProjectIdentityRejectionEvidence,
+  ): void {
+    if (proof.operationId !== operation.id || proof.operationHash !== operation.hash)
+      throw new ProtocolHttpError(
+        409,
+        "Studio project identity rejection evidence does not bind the exact command operation",
+      );
+    if (
+      proof.status === "observed" &&
+      (!sameProjectIdentity(proof.identity.project, operation.project) ||
+        !sameProjectIdentity(proof.identity.project, session.project))
+    )
+      throw new ProtocolHttpError(
+        409,
+        "Studio project identity rejection evidence belongs to another paired project",
+      );
   }
 
   private retainEvent(sessionId: string, message: PluginToBackendMessage): void {
@@ -1276,6 +1749,7 @@ export class StudioBridgeClient implements StudioBridgeConnection {
     message: PluginToBackendMessage,
     session: StudioBridgeSession,
   ): Promise<void> {
+    updateBridgeSessionProjectIdentity(message, session);
     await Promise.all([...this.handlers].map((handler) => handler(message, session)));
   }
 
@@ -1298,7 +1772,7 @@ export class StudioBridgeClient implements StudioBridgeConnection {
         );
       return settled.disposition === "executed"
         ? Promise.resolve()
-        : Promise.reject(rejectedCommandError(settled));
+        : Promise.reject(rejectedCommandError(message, settled));
     }
     const waiters = this.settlementWaiters.get(sessionId) ?? new Map();
     const existing = waiters.get(message.messageId);
@@ -1317,7 +1791,7 @@ export class StudioBridgeClient implements StudioBridgeConnection {
         if (current.size === 0) this.settlementWaiters.delete(sessionId);
         reject(new Error("Timed out waiting for exact Studio command settlement"));
       }, timeoutMs);
-      waiters.set(message.messageId, { commandHash, resolve, reject, timeout });
+      waiters.set(message.messageId, { command: message, commandHash, resolve, reject, timeout });
       this.settlementWaiters.set(sessionId, waiters);
     });
   }
@@ -1354,7 +1828,7 @@ export class StudioBridgeClient implements StudioBridgeConnection {
     if (waiter.commandHash !== commandHash)
       waiter.reject(new Error("Studio command settlement hash conflicts with the waiter"));
     else if (message.payload.disposition === "executed") waiter.resolve();
-    else waiter.reject(rejectedCommandError(message.payload));
+    else waiter.reject(rejectedCommandError(waiter.command, message.payload));
   }
 
   private rejectSettlementWaiters(error: Error): void {
@@ -1426,10 +1900,26 @@ function delay(milliseconds: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-function studioProjectKey(project: PluginProjectIdentity): string {
+function studioProjectKey(
+  project: PluginProjectIdentity,
+  identity: StudioProjectIdentityState,
+): string {
   if (project.placeId !== 0 || project.universeId !== 0)
     return `published:${project.universeId}:${project.placeId}`;
-  return `local:${project.name.normalize("NFC")}`;
+  if (identity.reservedAttribute.status === "observed")
+    return `linked:${identity.reservedAttribute.forgeProjectId}`;
+  return `local-unlinked:${identity.hash}`;
+}
+
+function hasDurableProjectIdentity(
+  project: PluginProjectIdentity,
+  identity: StudioProjectIdentityState,
+): boolean {
+  return (
+    project.placeId !== 0 ||
+    project.universeId !== 0 ||
+    identity.reservedAttribute.status === "observed"
+  );
 }
 
 function sameProjectIdentity(left: PluginProjectIdentity, right: PluginProjectIdentity): boolean {
@@ -1440,8 +1930,51 @@ function sameProjectIdentity(left: PluginProjectIdentity, right: PluginProjectId
   );
 }
 
-function studioProjectId(project: PluginProjectIdentity): string {
-  return `studio_project_${createHash("sha256").update(studioProjectKey(project)).digest("hex").slice(0, 24)}`;
+function updateBridgeSessionProjectIdentity(
+  message: PluginToBackendMessage,
+  session: StudioBridgeSession,
+): void {
+  if (message.type === "Heartbeat") {
+    // The authenticated heartbeat may update display metadata, or carry the
+    // one authority-preserving local-linked -> published transition admitted
+    // above. Adopt the exact observed project before deriving host authority.
+    applyStudioProjectIdentityAuthority(
+      session,
+      message.payload.project,
+      message.payload.projectIdentity,
+    );
+    return;
+  }
+  if (message.type !== "StudioProjectIdentityFinalized") return;
+  const receipt = message.payload.receipt;
+  session.projectIdentityTransaction = { status: "finalized", receipt };
+  if (
+    session.projectIdentity.hash !== receipt.beforeIdentity.hash &&
+    session.projectIdentity.hash !== receipt.afterIdentity.hash
+  )
+    throw new ProtocolHttpError(
+      409,
+      "Studio project identity receipt does not continue the paired identity state",
+    );
+  applyStudioProjectIdentityAuthority(session, session.project, receipt.afterIdentity);
+}
+
+function applyStudioProjectIdentityAuthority(
+  session: StudioBridgeSession,
+  project: PluginProjectIdentity,
+  identity: StudioProjectIdentityState,
+): void {
+  if (!sameProjectIdentity(project, identity.project))
+    throw new ProtocolHttpError(409, "Studio project identity does not match the paired project");
+  const authority = deriveStudioProjectIdentityAuthority({
+    sessionId: session.sessionId,
+    connectorBuildHash: session.connectorBuildHash,
+    identity,
+  });
+  session.project = project;
+  session.projectIdentity = identity;
+  session.projectId = authority.projectId;
+  session.conversationProjectId = authority.conversationProjectId;
 }
 
 function compileCapabilityAttestationProjection(
@@ -1516,6 +2049,12 @@ export type BackendPayloadByType = {
   CancelInterruptedRecording: import("../../studio-protocol/src/index.js").CancelInterruptedRecordingPayload;
   AcknowledgeCreatorChangeFinalization: import("../../studio-protocol/src/index.js").AcknowledgeCreatorChangeFinalizationPayload;
   RollbackCreatorCheckpoint: import("../../studio-protocol/src/index.js").RollbackCreatorCheckpointPayload;
+  LinkStudioProject: import("../../studio-protocol/src/index.js").StudioProjectIdentityCommandPayload;
+  ForkStudioProject: import("../../studio-protocol/src/index.js").StudioProjectIdentityCommandPayload;
+  AbandonOpeningStudioProjectIdentity: import("../../studio-protocol/src/index.js").AbandonOpeningStudioProjectIdentityPayload;
+  CancelInterruptedStudioProjectIdentity: import("../../studio-protocol/src/index.js").CancelInterruptedStudioProjectIdentityPayload;
+  SettleClosedStudioProjectIdentity: import("../../studio-protocol/src/index.js").SettleClosedStudioProjectIdentityPayload;
+  AcknowledgeStudioProjectIdentityFinalization: import("../../studio-protocol/src/index.js").AcknowledgeStudioProjectIdentityFinalizationPayload;
 };
 
 async function readBody(request: IncomingMessage): Promise<string> {

@@ -4,13 +4,38 @@ local StudioAuthoring = require("../plugin/src/Forge/StudioAuthoring")
 local StudioEvidenceCollector = require("../plugin/src/Forge/StudioEvidenceCollector")
 local StudioInstancePolicy = require("../plugin/src/Forge/StudioInstancePolicy")
 local StudioProjectChangeMonitor = require("../plugin/src/Forge/StudioProjectChangeMonitor")
+local StudioProjectIdentity = require("../plugin/src/Forge/StudioProjectIdentity")
 local StudioProjectIndexCanonical = require("../plugin/src/Forge/StudioProjectIndexCanonical")
 local StudioSemanticTransport = require("../plugin/src/Forge/StudioSemanticTransport")
 local SerializedStudioWorker = require("../plugin/src/Forge/SerializedStudioWorker")
 local Utf8Transport = require("../plugin/src/Forge/Utf8Transport")
 local DirectRuntimeObserver = require("../plugin/src/Forge/DirectRuntimeObserver")
 local Constants = require("../plugin/src/Forge/Constants")
+local ConnectorPresentation = require("../plugin/src/Forge/ConnectorPresentation")
 local fs = require("@lune/fs")
+
+do
+	local connected = ConnectorPresentation.connection("connected")
+	assert(not connected.showPrimary and connected.action == "Disconnect", "a healthy connector must keep disconnection in settings instead of making it the main action")
+	for _, mode in { "reserved", "connecting" } do
+		local control = ConnectorPresentation.connection(mode)
+		assert(not control.enabled and not control.showPrimary, "connection UI must not offer a second action during pairing or a reserved Play session")
+	end
+	local invalid = ConnectorPresentation.connection("invalid_receipt")
+	assert(invalid.enabled and invalid.showPrimary and invalid.action == "Discard invalid test data", "discarding invalid test data must remain an explicitly named creator action")
+	assert(string.find(ConnectorPresentation.status("INVALID PLAY DATA").description, "does not undo", 1, true), "invalid-test recovery must explain that place changes are not undone")
+	for _, code in { "PLAY EVIDENCE READY", "PLAY EVIDENCE RETURNED", "PLAY RECEIPT ACKNOWLEDGED", "RUNTIME COMPLETE" } do
+		local status = ConnectorPresentation.status(code)
+		assert(not status.working and string.find(status.description, "does not mean the test passed", 1, true), "collected runtime evidence must not be represented as a passed test")
+	end
+	for _, code in { "PLAY EVIDENCE INCOMPLETE", "RUNTIME INCOMPLETE", "RUNTIME REJECTED", "RECOVERY REQUIRED" } do
+		local status = ConnectorPresentation.status(code)
+		assert(status.tone == "attention" and not status.working, "incomplete or recovery state must not appear successful or still running")
+	end
+	local reading = assert(ConnectorPresentation.command("CollectStudioProjectIndex"))
+	assert(ConnectorPresentation.status(reading.started).working and not ConnectorPresentation.status(reading.finished).working, "only an active Studio command should present a working indicator")
+	assert(ConnectorPresentation.command("Heartbeat") == nil, "transport traffic must not fabricate agent work")
+end
 
 local runtimeExecutorSource = fs.readFile("plugin/src/Forge/RuntimeCapabilityExecutor.luau")
 local generatedEvidenceSource = fs.readFile("plugin/src/Forge/GeneratedStudioEvidence.luau")
@@ -20,10 +45,339 @@ local evidenceCollectorSource = fs.readFile("plugin/src/Forge/StudioEvidenceColl
 local scriptSource = fs.readFile("plugin/src/Forge/StudioScriptSource.luau")
 local projectIndexSource = fs.readFile("plugin/src/Forge/StudioProjectIndexCollector.luau")
 local projectChangeMonitorSource = fs.readFile("plugin/src/Forge/StudioProjectChangeMonitor.luau")
+local projectIdentitySource = fs.readFile("plugin/src/Forge/StudioProjectIdentity.luau")
 local identityRegistrySource = fs.readFile("plugin/src/Forge/IdentityRegistry.luau")
 local authoringSource = fs.readFile("plugin/src/Forge/StudioAuthoring.luau")
 local semanticTransportSource = fs.readFile("plugin/src/Forge/StudioSemanticTransport.luau")
 local utf8TransportSource = fs.readFile("plugin/src/Forge/Utf8Transport.luau")
+
+do
+Hash.setDigestForTest(function(value: string): string
+	local bytes = table.create(32, 0)
+	for index = 1, #value do
+		local slot = ((index - 1) % 32) + 1
+		bytes[slot] = (bytes[slot] + string.byte(value, index) + index) % 256
+	end
+	local result = table.create(32)
+	for index = 1, 32 do result[index] = string.char(bytes[index]) end
+	return table.concat(result)
+end)
+assert(StudioProjectIdentity.settingKeyForTest() == "ForgeStudioProjectIdentityTransactionV1", "project identity must have one clean-break durable setting")
+assert(not string.find(projectIdentitySource, "GeneratedStudioEvidence", 1, true) and not string.find(projectIdentitySource, "Generated.", 1, true), "reserved project identity must stay outside generic manifest authoring")
+assert(not pcall(function()
+	Generated.validateAttributes({ [Constants.PROJECT_IDENTITY_ATTRIBUTE] = "forge_project_00000000000000000000000000000000" })
+end), "generic authoring must reject the reserved project identity attribute")
+local identityIntent = assert(string.find(projectIdentitySource, 'persist(self.plugin, { kind = "StudioProjectIdentityTransactionCursor", operation = operation, beforeIdentity = before, phase = "opening" })', 1, true), "identity transaction must persist an opening intent")
+local identityBegin = assert(string.find(projectIdentitySource, "TryBeginRecording", identityIntent, true), "identity transaction must use ChangeHistoryService")
+assert(identityIntent < identityBegin, "project identity intent must be durable before TryBeginRecording can affect Studio")
+assert(string.find(projectIdentitySource, "SetAttribute(Constants.PROJECT_IDENTITY_ATTRIBUTE", 1, true) and string.find(projectIdentitySource, "local observed = self:observe()", 1, true), "project identity writes must use the reserved DataModel attribute and direct readback")
+assert(string.find(projectIdentitySource, "IsRecordingInProgress(recordingId)", 1, true) and string.find(projectIdentitySource, "FinishRecording", 1, true), "project identity finalization must prove exact recording closure")
+assert(string.find(runtimeSource, 'message.type == "LinkStudioProject"', 1, true) and string.find(runtimeSource, 'message.type == "ForkStudioProject"', 1, true) and string.find(runtimeSource, 'message.type == "AbandonOpeningStudioProjectIdentity"', 1, true) and string.find(runtimeSource, 'message.type == "CancelInterruptedStudioProjectIdentity"', 1, true) and string.find(runtimeSource, 'message.type == "SettleClosedStudioProjectIdentity"', 1, true), "Runtime must expose only the dedicated identity transaction and recovery commands")
+assert(string.find(runtimeSource, 'postMessage(messageFor("UnpairProject", { reason = "plugin_unload" }', 1, true), "plugin unload must release only its bridge lease while retaining durable Studio recovery evidence")
+assert(string.find(runtimeSource, 'if studioWorker:isBusy() then', 1, true) and string.find(runtimeSource, 'request("GET", "/poll?sessionId="', 1, true), "long cooperative Studio work must renew the exact bridge transport lease without consuming its retained command")
+assert(string.find(projectIdentitySource, "function StudioProjectIdentity:settleClosed", 1, true) and string.find(projectIdentitySource, 'exactRecordingState(self.changeHistory, stored.recordingId) ~= "not_open"', 1, true), "closed identity settlement must be explicit and prove the exact recording is no longer open")
+assert(string.find(runtimeSource, "adoptFinalizedProjectIdentity", 1, true) and string.find(runtimeSource, "registry:setConnectorEpoch", 1, true), "a successful Link/Fork must rotate project and opaque-handle authority together")
+local boundedIdentityFailure = StudioProjectIdentity.boundedFailureDetailForTest(string.rep("🙂", Constants.MAX_DIAGNOSTIC_CHARS))
+assert(#boundedIdentityFailure <= Constants.MAX_DIAGNOSTIC_CHARS and utf8.len(boundedIdentityFailure) ~= nil, "identity failure detail truncation must preserve UTF-8 and its protocol byte bound")
+
+local function identityRoot(initial: any?)
+	local root = { Name = "Identity Test", PlaceId = 0, GameId = 0, value = initial }
+	function root:GetAttribute(name: string): any
+		assert(name == Constants.PROJECT_IDENTITY_ATTRIBUTE)
+		return self.value
+	end
+	function root:SetAttribute(name: string, value: any)
+		assert(name == Constants.PROJECT_IDENTITY_ATTRIBUTE)
+		self.value = value
+	end
+	return root
+end
+
+local function identityOperation(root: any, action: string, assigned: string): any
+	local expected = StudioProjectIdentity.observeForTest(root)
+	local semantic = {
+		kind = "StudioProjectIdentityOperation",
+		action = action,
+		project = expected.project,
+		connectorEpoch = string.rep("a", 64),
+		expectedIdentity = expected,
+		assignedForgeProjectId = assigned,
+	}
+	local hash = Hash.sha256(StudioProjectIndexCanonical.material(semantic))
+	semantic.id = "studio_project_identity_operation_" .. string.sub(hash, 1, 24)
+	semantic.hash = hash
+	return StudioProjectIdentity.canonicalOperationForTest(semantic)
+end
+
+local identityEvents, identitySettings = {}, {}
+local linkedRoot = identityRoot(nil)
+local identityPlugin = {
+	GetSetting = function(_self: any, key: string): any return identitySettings[key] end,
+	SetSetting = function(_self: any, key: string, value: any)
+		identitySettings[key] = value
+		table.insert(identityEvents, "setting:" .. (value and value.kind .. ":" .. (value.phase or value.status) or "cleared"))
+	end,
+}
+local identityHistory = { open = false }
+function identityHistory:IsRecordingInProgress(recordingId: any?): boolean
+	if recordingId ~= nil then assert(recordingId == "identity-recording") end
+	return self.open
+end
+function identityHistory:TryBeginRecording(_name: string): string
+	table.insert(identityEvents, "begin")
+	self.open = true
+	return "identity-recording"
+end
+function identityHistory:FinishRecording(recordingId: string, operation: any)
+	assert(recordingId == "identity-recording")
+	table.insert(identityEvents, "finish:" .. operation)
+	self.open = false
+end
+local identityManager = StudioProjectIdentity.new(identityPlugin, {
+	root = linkedRoot,
+	changeHistory = identityHistory,
+	now = function() return "2026-09-03T00:00:00.000Z" end,
+	finishRecordingOperation = { Commit = "commit", Cancel = "cancel" },
+})
+local linkOperation = identityOperation(linkedRoot, "link", "forge_project_11111111111111111111111111111111")
+assert(not pcall(function() identityManager:execute(linkOperation, string.rep("b", 64), function() return true end) end), "an epoch mismatch must reject before recording")
+local rejectedLinkEvidence = identityManager:rejectionEvidence(linkOperation)
+assert(rejectedLinkEvidence.kind == "StudioProjectIdentityRejectionEvidence" and rejectedLinkEvidence.status == "observed" and rejectedLinkEvidence.operationHash == linkOperation.hash and rejectedLinkEvidence.identity.hash == linkOperation.expectedIdentity.hash and rejectedLinkEvidence.transaction.status == "none" and rejectedLinkEvidence.recordingState == "not_open", "a pre-recording rejection must capture exact bound no-effect evidence")
+assert(#identityEvents == 0 and linkedRoot.value == nil, "capturing rejection evidence must never write settings, open a recording or mutate identity")
+local linkReceipt = identityManager:execute(linkOperation, string.rep("a", 64), function() return true end)
+assert(linkReceipt.status == "linked" and linkedRoot.value == linkOperation.assignedForgeProjectId, "Link must commit only the exact assigned local project id")
+assert(identityEvents[1] == "setting:StudioProjectIdentityTransactionCursor:opening" and identityEvents[2] == "begin", "the durable identity intent must precede the recording effect")
+assert(identityEvents[#identityEvents] == "setting:StudioProjectIdentityFinalizationReceipt:linked" and not identityHistory.open, "Link must retain a terminal receipt only after direct closure proof")
+local finalizedRejectionEvidence = identityManager:rejectionEvidence(linkOperation)
+assert(finalizedRejectionEvidence.status == "observed" and finalizedRejectionEvidence.transaction.status == "finalized" and finalizedRejectionEvidence.identity.hash ~= linkOperation.expectedIdentity.hash, "a rejected follow-up after effects must retain the actual receipt and changed identity rather than claim no effects")
+identityManager:acknowledge({ requestId = "identity-ack-test", receiptId = linkReceipt.id, receiptHash = linkReceipt.hash })
+assert(identitySettings.ForgeStudioProjectIdentityTransactionV1 == nil, "only an exact receipt acknowledgement may clear settled identity evidence")
+
+local failedWriteSettings = {}
+local failedWriteRoot = identityRoot(nil)
+function failedWriteRoot:SetAttribute(_name: string, _value: any) error("injected identity write failure") end
+local failedWritePlugin = {
+	GetSetting = function(_self: any, key: string): any return failedWriteSettings[key] end,
+	SetSetting = function(_self: any, key: string, value: any) failedWriteSettings[key] = value end,
+}
+local failedWriteHistory = { open = false }
+function failedWriteHistory:IsRecordingInProgress(_recordingId: any?): boolean return self.open end
+function failedWriteHistory:TryBeginRecording(_name: string): string self.open = true; return "failed-write-recording" end
+function failedWriteHistory:FinishRecording(_recordingId: string, operation: any)
+	assert(operation == "cancel")
+	self.open = false
+end
+local failedWriteManager = StudioProjectIdentity.new(failedWritePlugin, {
+	root = failedWriteRoot,
+	changeHistory = failedWriteHistory,
+	now = function() return "2026-09-03T00:00:00.000Z" end,
+	finishRecordingOperation = { Commit = "commit", Cancel = "cancel" },
+})
+local failedWriteOperation = identityOperation(failedWriteRoot, "link", "forge_project_33333333333333333333333333333333")
+local failedWriteReceipt = failedWriteManager:execute(failedWriteOperation, string.rep("a", 64), function() return true end)
+assert(failedWriteReceipt.status == "cancelled" and failedWriteReceipt.finalization == "ordinary" and failedWriteReceipt.afterIdentity.hash == failedWriteReceipt.beforeIdentity.hash and not failedWriteHistory.open, "a proven write failure must cancel the same recording and retain an exact ordinary-cancellation receipt")
+
+local intentBeginCalls = 0
+local intentFailureManager = StudioProjectIdentity.new({
+	GetSetting = function(): any return nil end,
+	SetSetting = function() error("injected identity intent persistence failure") end,
+}, {
+	root = identityRoot(nil),
+	changeHistory = {
+		IsRecordingInProgress = function(): boolean return false end,
+		TryBeginRecording = function(): string intentBeginCalls += 1; return "must-not-open" end,
+	},
+	now = function() return "2026-09-03T00:00:00.000Z" end,
+	finishRecordingOperation = { Commit = "commit", Cancel = "cancel" },
+})
+local intentFailureOperation = identityOperation(intentFailureManager.root, "link", "forge_project_44444444444444444444444444444444")
+assert(not pcall(function() intentFailureManager:execute(intentFailureOperation, string.rep("a", 64), function() return true end) end) and intentBeginCalls == 0, "an identity recording must never open before its durable intent is readable")
+
+local openingSettings = {}
+local openingRoot = identityRoot(nil)
+local openingWrites = 0
+local openingSetAttribute = openingRoot.SetAttribute
+function openingRoot:SetAttribute(name: string, value: any)
+	openingWrites += 1
+	openingSetAttribute(self, name, value)
+end
+local openingPlugin = {
+	GetSetting = function(_self: any, key: string): any return openingSettings[key] end,
+	SetSetting = function(_self: any, key: string, value: any) openingSettings[key] = value end,
+}
+local openingHistory = { globallyOpen = false, beginCalls = 0, finishCalls = 0 }
+function openingHistory:IsRecordingInProgress(): boolean return self.globallyOpen end
+function openingHistory:TryBeginRecording(_name: string): any
+	self.beginCalls += 1
+	return nil
+end
+function openingHistory:FinishRecording(_recordingId: string, _operation: any)
+	self.finishCalls += 1
+end
+local openingManager = StudioProjectIdentity.new(openingPlugin, {
+	root = openingRoot,
+	changeHistory = openingHistory,
+	now = function() return "2026-09-03T00:00:00.000Z" end,
+	finishRecordingOperation = { Commit = "commit", Cancel = "cancel" },
+})
+local openingOperation = identityOperation(openingRoot, "link", "forge_project_66666666666666666666666666666666")
+assert(not pcall(function() openingManager:execute(openingOperation, string.rep("a", 64), function() return true end) end), "a recording-open outcome without an exact recording id must remain recoverable")
+local openingInventory = openingManager:inventory()
+local pendingRejectionEvidence = openingManager:rejectionEvidence(openingOperation)
+assert(pendingRejectionEvidence.status == "observed" and pendingRejectionEvidence.transaction.status == "pending", "a durable opening intent prevents no-effect reservation release even if the recording is not open")
+assert(openingInventory.status == "pending" and openingInventory.phase == "opening" and openingInventory.recordingState == "not_open" and openingInventory.recordingId == nil, "an interrupted pre-recording identity intent must expose exact global no-recording evidence")
+local openingReceipt = openingManager:abandonOpening({
+	requestId = "identity-opening-abandon-test",
+	operationId = openingOperation.id,
+	operationHash = openingOperation.hash,
+	transactionCursorHash = openingInventory.cursorHash,
+	expectedIdentityStateHash = StudioProjectIdentity.observeForTest(openingRoot).hash,
+}, function() return true end)
+assert(openingReceipt.status == "cancelled" and openingReceipt.finalization == "recovery_abandon" and openingReceipt.recordingId == nil and openingWrites == 0 and openingHistory.beginCalls == 1 and openingHistory.finishCalls == 0, "creator-authorized opening abandonment must persist a no-effect receipt without writing identity or finalizing a recording")
+assert(not pcall(function()
+	openingManager:abandonOpening({
+		requestId = "identity-opening-abandon-repeat",
+		operationId = openingOperation.id,
+		operationHash = openingOperation.hash,
+		transactionCursorHash = openingInventory.cursorHash,
+		expectedIdentityStateHash = openingReceipt.afterIdentity.hash,
+	}, function() return true end)
+end), "a settled opening abandonment must never execute twice")
+
+local uncertainOpeningSettings = {}
+local uncertainOpeningHistory = { open = false }
+function uncertainOpeningHistory:IsRecordingInProgress(): boolean return self.open end
+function uncertainOpeningHistory:TryBeginRecording(_name: string): any
+	self.open = true
+	return nil
+end
+local uncertainOpeningManager = StudioProjectIdentity.new({
+	GetSetting = function(_self: any, key: string): any return uncertainOpeningSettings[key] end,
+	SetSetting = function(_self: any, key: string, value: any) uncertainOpeningSettings[key] = value end,
+}, {
+	root = identityRoot(nil),
+	changeHistory = uncertainOpeningHistory,
+	now = function() return "2026-09-03T00:00:00.000Z" end,
+	finishRecordingOperation = { Commit = "commit", Cancel = "cancel" },
+})
+local uncertainOpeningOperation = identityOperation(uncertainOpeningManager.root, "link", "forge_project_77777777777777777777777777777777")
+assert(not pcall(function() uncertainOpeningManager:execute(uncertainOpeningOperation, string.rep("a", 64), function() return true end) end), "an unknown recording-open outcome must remain fail-closed")
+local uncertainOpeningInventory = uncertainOpeningManager:inventory()
+local uncertainRejectionEvidence = uncertainOpeningManager:rejectionEvidence(uncertainOpeningOperation)
+assert(uncertainRejectionEvidence.status == "observed" and uncertainRejectionEvidence.recordingState == "unknown", "an unidentifiable open recording must remain unknown in rejected-command evidence")
+assert(uncertainOpeningInventory.recordingState == "unknown", "a globally open recording must never be presented as safe opening abandonment")
+assert(not pcall(function()
+	uncertainOpeningManager:abandonOpening({
+		requestId = "identity-opening-abandon-unsafe",
+		operationId = uncertainOpeningOperation.id,
+		operationHash = uncertainOpeningOperation.hash,
+		transactionCursorHash = uncertainOpeningInventory.cursorHash,
+		expectedIdentityStateHash = StudioProjectIdentity.observeForTest(uncertainOpeningManager.root).hash,
+	}, function() return true end)
+end), "opening abandonment must reject every state without exact no-recording proof")
+
+local recoveryEvents, recoverySettings = {}, {}
+local recoveryRoot = identityRoot(nil)
+local recoveryPlugin = {
+	GetSetting = function(_self: any, key: string): any return recoverySettings[key] end,
+	SetSetting = function(_self: any, key: string, value: any) recoverySettings[key] = value; table.insert(recoveryEvents, value and value.kind or "cleared") end,
+}
+local recoveryHistory = { open = false, failFinish = true }
+function recoveryHistory:IsRecordingInProgress(recordingId: any?): boolean
+	if recordingId ~= nil then assert(recordingId == "identity-recording") end
+	return self.open
+end
+function recoveryHistory:TryBeginRecording(_name: string): string self.open = true; return "identity-recording" end
+function recoveryHistory:FinishRecording(_recordingId: string, operation: any)
+	if self.failFinish then error("injected uncertain finish") end
+	if operation == "cancel" then recoveryRoot.value = nil end
+	self.open = false
+end
+local recoveryManager = StudioProjectIdentity.new(recoveryPlugin, {
+	root = recoveryRoot,
+	changeHistory = recoveryHistory,
+	now = function() return "2026-09-03T00:00:00.000Z" end,
+	finishRecordingOperation = { Commit = "commit", Cancel = "cancel" },
+})
+local interruptedOperation = identityOperation(recoveryRoot, "link", "forge_project_22222222222222222222222222222222")
+assert(not pcall(function() recoveryManager:execute(interruptedOperation, string.rep("a", 64), function() return true end) end), "an uncertain commit must remain recovery-required")
+local interruptedInventory = recoveryManager:inventory()
+assert(interruptedInventory.status == "pending" and interruptedInventory.phase == "finalizing" and interruptedInventory.finalization == "commit" and interruptedInventory.recordingState == "open", "restart inventory must report the exact open finalization cursor without mutating Studio")
+recoveryHistory.failFinish = false
+local recoveryReceipt = recoveryManager:cancelInterrupted({
+	requestId = "identity-recovery-test",
+	operationId = interruptedOperation.id,
+	operationHash = interruptedOperation.hash,
+	transactionCursorHash = interruptedInventory.cursorHash,
+	recordingId = interruptedInventory.recordingId,
+	expectedIdentityStateHash = StudioProjectIdentity.observeForTest(recoveryRoot).hash,
+}, function() return true end)
+assert(recoveryReceipt.status == "cancelled" and recoveryReceipt.finalization == "recovery_cancel" and recoveryRoot.value == nil and not recoveryHistory.open, "creator-authorized recovery must cancel only the exact proven-open identity recording")
+assert(not pcall(function()
+	recoveryManager:cancelInterrupted({
+		requestId = "identity-recovery-stale-test",
+		operationId = interruptedOperation.id,
+		operationHash = interruptedOperation.hash,
+		transactionCursorHash = string.rep("0", 64),
+		recordingId = interruptedInventory.recordingId,
+		expectedIdentityStateHash = recoveryReceipt.afterIdentity.hash,
+	}, function() return true end)
+end), "a stale or forged recovery cursor must never repeat identity finalization")
+
+local settleSettings = {}
+local settleRoot = identityRoot(nil)
+local settleWrites = 0
+local settleSetAttribute = settleRoot.SetAttribute
+function settleRoot:SetAttribute(name: string, value: any)
+	settleWrites += 1
+	settleSetAttribute(self, name, value)
+end
+local settlePlugin = {
+	GetSetting = function(_self: any, key: string): any return settleSettings[key] end,
+	SetSetting = function(_self: any, key: string, value: any) settleSettings[key] = value end,
+}
+local settleHistory = { open = false, finishCalls = 0 }
+function settleHistory:IsRecordingInProgress(_recordingId: any?): boolean return self.open end
+function settleHistory:TryBeginRecording(_name: string): string self.open = true; return "closed-identity-recording" end
+function settleHistory:FinishRecording(_recordingId: string, _operation: any)
+	self.finishCalls += 1
+	self.open = false
+	error("injected post-close receipt gap")
+end
+local settleManager = StudioProjectIdentity.new(settlePlugin, {
+	root = settleRoot,
+	changeHistory = settleHistory,
+	now = function() return "2026-09-03T00:00:00.000Z" end,
+	finishRecordingOperation = { Commit = "commit", Cancel = "cancel" },
+})
+local settleOperation = identityOperation(settleRoot, "link", "forge_project_55555555555555555555555555555555")
+assert(not pcall(function() settleManager:execute(settleOperation, string.rep("a", 64), function() return true end) end), "a post-close receipt gap must remain explicit")
+local closedInventory = settleManager:inventory()
+assert(closedInventory.status == "pending" and closedInventory.phase == "finalizing" and closedInventory.finalization == "commit" and closedInventory.recordingState == "not_open", "restart inventory must distinguish an exactly closed finalization cursor")
+local settlePayload = {
+	requestId = "identity-closed-settle-test",
+	operationId = settleOperation.id,
+	operationHash = settleOperation.hash,
+	transactionCursorHash = closedInventory.cursorHash,
+	recordingId = closedInventory.recordingId,
+	expectedIdentityStateHash = StudioProjectIdentity.observeForTest(settleRoot).hash,
+	expectedFinalization = "commit",
+}
+local staleSettlePayload = table.clone(settlePayload)
+staleSettlePayload.transactionCursorHash = string.rep("0", 64)
+assert(not pcall(function() settleManager:settleClosed(staleSettlePayload, function() return true end) end), "closed settlement must reject a stale cursor")
+local settledReceipt = settleManager:settleClosed(settlePayload, function() return true end)
+assert(settledReceipt.status == "linked" and settledReceipt.finalization == "recovery_settle" and settleWrites == 1 and settleHistory.finishCalls == 1, "closed settlement must persist a terminal receipt without another Studio write or recording finalization")
+assert(not pcall(function() settleManager:settleClosed(settlePayload, function() return true end) end), "closed settlement must reject duplicate terminalization")
+local unreadableManager = StudioProjectIdentity.new({ GetSetting = function() error("durable settings unavailable") end }, {
+	root = identityRoot(nil), changeHistory = { IsRecordingInProgress = function() return false end },
+	finishRecordingOperation = { Commit = "commit", Cancel = "cancel" },
+})
+local unreadableProof = unreadableManager:rejectionEvidence(identityOperation(unreadableManager.root, "link", "forge_project_88888888888888888888888888888888"))
+assert(unreadableProof.status == "unavailable" and string.find(unreadableProof.detail, "durable settings unavailable", 1, true), "failed reads must produce explicit unavailable rejection evidence, never an empty transaction")
+assert(string.find(runtimeSource, "settlement.identityRejection = projectIdentity:rejectionEvidence(command.payload.operation)", 1, true), "Runtime must attach exact rejection evidence before caching/sending the terminal Link/Fork settlement")
+Hash.setDigestForTest(nil)
+end
 
 assert(string.find(runtimeSource, 'message.type == "CollectStudioProjectIndex"', 1, true), "the connector must accept the bounded project-index request")
 assert(not string.find(runtimeSource, "RequestStudioProjectIndex", 1, true), "the superseded project-index request must be absent")
@@ -253,7 +607,7 @@ assert(string.find(runtimeSource, 'recordingState = "not_open",\n\t\t}, requestI
 assert(not string.find(runtimeSource, "mutationFailed(nil", 1, true) and string.find(runtimeSource, "mutationFailed({ binding = bindingOrFailure }", 1, true) and string.find(runtimeSource, "mutationFailed({ binding = stored }", 1, true), "every post-recording cancellation/finalization failure must retain the exact named recording binding")
 assert(string.find(authoringSource, "prepared.beforeProjectIndexManifestId ~= beforeCapture.indexManifest.id", 1, true) and string.find(authoringSource, "prepared.beforeProjectDetectorEpoch ~= beforeCapture.detectorEpoch", 1, true) and string.find(authoringSource, "prepared.changeSet.expectedRevisionHash ~= beforeCapture.revision.hash", 1, true), "Apply must independently bind the entire prepared project-index tuple before opening a recording")
 assert(string.find(authoringSource, 'instance.Parent == oldParent and instance.Name == operation.name end, function() return instance.Parent == parent and instance.Name == operation.name', 1, true), "a move-and-rename cancellation must match DescendantAdded after the parent is restored but before ChangeHistory reverses the rename")
-assert(string.find(runtimeSource, "StudioProjectIndexCanonical.material", 1, true) and string.find(runtimeSource, 'kind = "StudioConnectorEpoch"', 1, true) and string.find(runtimeSource, "projectId = projectId", 1, true), "opaque identities must use the shared project-index canonical connector epoch")
+assert(string.find(runtimeSource, "StudioProjectAuthority.derive", 1, true) and not string.find(runtimeSource, 'kind = "StudioConnectorEpoch"', 1, true), "pairing and identity adoption must use the generated authority derivation, never a second epoch recipe")
 assert(not string.find(runtimeSource, 'sessionId .. ":" .. connectorBuildHash()', 1, true), "connector epochs must not use an ad hoc concatenation")
 assert(string.find(evidenceCollectorSource, "StudioScriptSource.read", 1, true), "index/evidence source reads must observe current editor state")
 assert(not string.find(evidenceCollectorSource, "project_state", 1, true), "the removed project-state envelope collector must be absent")
@@ -276,7 +630,7 @@ assert(string.find(runtimeSource, 'studioWorker:enqueue("project-change-notice"'
 assert(string.find(runtimeSource, 'outcomeMessageId("StudioProjectChangeDetected"', 1, true) and string.find(runtimeSource, "retainPending({ message = noticeMessage", 1, true), "a transient dirty-notice transport failure must retain and retry the exact notice identity")
 assert(string.find(identityRegistrySource, "function IdentityRegistry:indexProject(cooperate", 1, true) and not string.find(identityRegistrySource, ":GetDescendants(", 1, true), "identity bootstrap must use one cooperative traversal with no mutation-time whole-project fallback")
 assert(string.find(evidenceCollectorSource, "function StudioEvidenceCollector:attestation(projection: any, cooperate", 1, true), "capability reflection must yield cooperatively between bounded reads")
-assert(string.find(runtimeSource, "Discard invalid receipt & recover", 1, true) and string.find(runtimeSource, "RECOVERY PAIRING", 1, true), "the connector must expose explicit invalid-receipt recovery instead of deadlocking pairing")
+assert(string.find(runtimeSource, 'state("INVALID PLAY DATA"', 1, true) and string.find(runtimeSource, "RECOVERY PAIRING", 1, true), "the connector must expose explicit invalid-receipt recovery instead of deadlocking pairing")
 assert(not string.find(runtimeExecutorSource, "Instance.new(\"Script\")", 1, true) and not string.find(runtimeExecutorSource, "checkpoint", 1, true), "runtime observation must not inject a runner Script or use log checkpoints")
 assert(string.find(directObserverSource, "resolveTarget", 1, true) and string.find(directObserverSource, "_forgeStableId", 1, true), "Play targets must bind a Forge identity rather than a display path")
 assert(string.find(directObserverSource, '"unavailable"', 1, true), "non-Forge Play identities must fail as unavailable rather than invented absence")

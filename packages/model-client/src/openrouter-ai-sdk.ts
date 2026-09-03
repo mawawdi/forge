@@ -7,6 +7,7 @@ import {
   modelMessageSchema,
   stepCountIs,
   tool,
+  type JSONValue,
   type ModelMessage as AiModelMessage,
   type ToolSet,
 } from "ai";
@@ -23,9 +24,10 @@ import {
   type ModelTurnResult,
   type ModelUsage,
 } from "./contracts.js";
+import { CREATOR_MODEL_REGISTRY, isCreatorModelId } from "./model-registry.js";
 
-export const CANONICAL_OPENROUTER_MODEL = "openai/gpt-5.6-luna";
 const TRANSPORT = "openrouter-ai-sdk-core";
+const ALLOWLISTED_MODELS = Object.freeze(CREATOR_MODEL_REGISTRY.models.map((model) => model.id));
 
 /** Public, secret-free transport identity used to preregister a treatment. */
 export const OPENROUTER_MODEL_CLIENT_DESCRIPTOR = {
@@ -33,7 +35,15 @@ export const OPENROUTER_MODEL_CLIENT_DESCRIPTOR = {
   configuration: {
     aiSdk: { package: "ai" },
     providerAdapter: { package: "@openrouter/ai-sdk-provider" },
-    routing: { only: ["openai"], allowFallbacks: false as const, requireParameters: true as const },
+    routing: {
+      modelRegistryHash: CREATOR_MODEL_REGISTRY.hash,
+      allowlistedModels: ALLOWLISTED_MODELS,
+      providerAllowlist: "none" as const,
+      modelFallbacks: false as const,
+      providerFallbacks: false as const,
+      requireParameters: true as const,
+      requireTools: true as const,
+    },
     reasoning: { effort: "medium" as const, exclude: false as const },
     request: {
       steps: 1 as const,
@@ -41,10 +51,11 @@ export const OPENROUTER_MODEL_CLIENT_DESCRIPTOR = {
       providerParallelToolCalls: "not_requested" as const,
       toolBatchExecution: "atomic_validate_then_sequential" as const,
       toolNameEncoding: "openai_function_slug" as const,
+      toolSchemaMode: "explicit_non_strict" as const,
       maxRetries: 0 as const,
       telemetry: false as const,
       timeoutPolicy: "remaining_runtime_budget" as const,
-      maxOutputTokensPerTurn: 4096,
+      maxOutputTokensPerTurn: 32_768,
     },
     continuation: { maxBytes: MODEL_CONTINUATION_MAX_BYTES },
   },
@@ -54,18 +65,15 @@ export interface OpenRouterAiSdkClientOptions {
   apiKey: string;
   fetchImpl?: typeof fetch;
   baseURL?: string;
-  model?: string;
 }
 
 export class OpenRouterModelClient implements ModelClient {
   readonly descriptor = OPENROUTER_MODEL_CLIENT_DESCRIPTOR;
 
   private readonly provider: ReturnType<typeof createOpenRouter>;
-  private readonly model: string;
 
   constructor(options: OpenRouterAiSdkClientOptions) {
     if (!options.apiKey) throw new Error("OPENROUTER_API_KEY is required");
-    this.model = options.model ?? CANONICAL_OPENROUTER_MODEL;
     this.provider = createOpenRouter({
       apiKey: options.apiKey,
       ...(options.fetchImpl ? { fetch: options.fetchImpl } : {}),
@@ -87,10 +95,10 @@ export class OpenRouterModelClient implements ModelClient {
         transport: this.descriptor,
       }),
     );
-    if (request.model !== this.model) {
+    if (!isCreatorModelId(request.model)) {
       return providerFailure(
-        "model_configuration",
-        `Configured OpenRouter model is ${this.model}; received ${request.model}.`,
+        "model_not_allowlisted",
+        `Requested model ${request.model.slice(0, 200)} is not in the creator model registry.`,
         false,
         requestHash,
         emptyUsage(),
@@ -128,13 +136,17 @@ export class OpenRouterModelClient implements ModelClient {
     try {
       const result = await generateText({
         model: this.provider.chat(request.model, {
-          provider: { only: ["openai"], allow_fallbacks: false, require_parameters: true },
+          provider: { allow_fallbacks: false, require_parameters: true },
           reasoning: { effort: "medium", exclude: false },
           usage: { include: true },
         }),
         system: request.system,
         messages,
         tools: wireTools.tools,
+        // The pinned OpenRouter adapter drops AI SDK's per-tool `strict` flag.
+        // Its documented call-level passthrough must carry the exact same tools
+        // with strict:false, preserving omission in Forge's optional fields.
+        providerOptions: { openrouter: { tools: wireTools.providerTools } },
         toolOrder: wireTools.order,
         toolChoice: "auto",
         stopWhen: stepCountIs(1),
@@ -145,6 +157,25 @@ export class OpenRouterModelClient implements ModelClient {
       });
 
       const latencyMs = Date.now() - startedAt;
+      const usage = usageFrom(result.usage, result.providerMetadata);
+      const servingProvider = providerName(result.providerMetadata);
+      if (result.response.modelId !== request.model || servingProvider === null) {
+        return providerFailure(
+          "response_identity_mismatch",
+          "OpenRouter response did not establish the exact requested model and serving provider.",
+          false,
+          requestHash,
+          usage,
+          responseFacts(
+            request.model,
+            result.response.modelId,
+            servingProvider,
+            result.response.id,
+            latencyMs,
+            result.finishReason,
+          ),
+        );
+      }
       const continuation = createContinuation(result.responseMessages);
       if (!continuation.ok) {
         return providerFailure(
@@ -152,11 +183,11 @@ export class OpenRouterModelClient implements ModelClient {
           continuation.message,
           false,
           requestHash,
-          usageFrom(result.usage, result.providerMetadata),
+          usage,
           responseFacts(
             request.model,
             result.response.modelId,
-            providerName(result.providerMetadata),
+            servingProvider,
             result.response.id,
             latencyMs,
             result.finishReason,
@@ -175,11 +206,10 @@ export class OpenRouterModelClient implements ModelClient {
         toolCalls: calls,
         continuation: continuation.value,
       };
-      const usage = usageFrom(result.usage, result.providerMetadata);
       const facts = responseFacts(
         request.model,
         result.response.modelId,
-        providerName(result.providerMetadata),
+        servingProvider,
         result.response.id,
         latencyMs,
         result.finishReason,
@@ -258,6 +288,7 @@ export class OpenRouterModelClient implements ModelClient {
 
 interface WireTools {
   tools: ToolSet;
+  providerTools: JSONValue[];
   order: string[];
   publicToWire: ReadonlyMap<string, string>;
   wireToPublic: ReadonlyMap<string, string>;
@@ -265,6 +296,7 @@ interface WireTools {
 
 function toWireTools(definitions: ModelToolDefinition[]): WireTools {
   const tools: ToolSet = {};
+  const providerTools: JSONValue[] = [];
   const order: string[] = [];
   const publicToWire = new Map<string, string>();
   const wireToPublic = new Map<string, string>();
@@ -279,12 +311,19 @@ function toWireTools(definitions: ModelToolDefinition[]): WireTools {
     publicToWire.set(definition.name, wireName);
     wireToPublic.set(wireName, definition.name);
     order.push(wireName);
+    const description = `Forge tool ${definition.name}. ${definition.description}`;
+    const parameters = providerJsonSchema(definition.parameters, definition.name);
     tools[wireName] = tool({
-      description: `Forge tool ${definition.name}. ${definition.description}`,
-      inputSchema: jsonSchema(providerJsonSchema(definition.parameters, definition.name)),
+      description,
+      inputSchema: jsonSchema(parameters),
+      strict: false,
+    });
+    providerTools.push({
+      type: "function",
+      function: { name: wireName, description, parameters: parameters as JSONValue, strict: false },
     });
   }
-  return { tools, order, publicToWire, wireToPublic };
+  return { tools, providerTools, order, publicToWire, wireToPublic };
 }
 
 /**

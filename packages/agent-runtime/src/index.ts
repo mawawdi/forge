@@ -49,6 +49,26 @@ import {
   FilesystemProjectSourceAdapter,
 } from "../../semantic-map/src/index.js";
 import { verifyProject, type VerificationRun } from "../../verifier/src/index.js";
+import {
+  AgentExecutionJournalStore,
+  createBatchValidatedCheckpoint,
+  createRequestIntentCheckpoint,
+  createResponseReceivedCheckpoint,
+  createTerminalCheckpoint,
+  createToolCompletedCheckpoint,
+  createToolExecutionIntentCheckpoint,
+  type AgentExecutionBoundaryState,
+  type AgentExecutionJournalSink,
+  type AgentExecutionJournalResume,
+  type LoadedAgentExecutionJournal,
+} from "./execution-journal.js";
+import {
+  assertArtifactReference,
+  type ArtifactReference,
+  type ImmutableJsonArtifactStore,
+} from "../../artifact-store/src/index.js";
+
+export * from "./execution-journal.js";
 
 export type AgentRunStatus = "locally_eligible" | "rejected" | "incomplete";
 export type AgentFailureClassification =
@@ -359,6 +379,9 @@ export interface AgentRuntimeInput {
   tools: AgentToolHost;
   budgets: BudgetPolicy;
   model: string;
+  executionJournal?: AgentExecutionJournalSink;
+  /** Explicit creator-authorized consumption of a durable response boundary. */
+  resumeFromJournal?: AgentExecutionJournalResume;
 }
 export interface AgentRuntimeResult {
   status: "completed" | "failed" | "budget_exhausted";
@@ -395,50 +418,156 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
   }
 
   async run(input: AgentRuntimeInput): Promise<AgentRuntimeResult> {
-    const messages: ModelMessage[] = [
-      {
-        role: "user",
-        content: stableJson({
-          creatorRequest: input.prompt,
-          orientation: input.orientation,
-        }),
-      },
-    ];
-    const turns: AgentModelTurn[] = [];
-    const seenToolCallIds = new Set<string>();
-    const toolCalls: ToolCallRecord[] = [];
-    const rejectedBatchCounts = new Map<string, number>();
-    const noProgressBatchCounts = new Map<string, number>();
-    let prematureCompletionRepairs = 0;
-    const timeline = createRuntimeTimeline(this.clock);
-    const runtimeStarted = startTiming(timeline);
-    const finish = (
-      outcome: Omit<AgentRuntimeResult, "timing" | "toolCalls">,
-    ): AgentRuntimeResult => ({
-      ...outcome,
-      timing: finishTiming(timeline, runtimeStarted),
-      toolCalls: toolCalls.map(copyToolCallRecord),
+    const resumed = input.resumeFromJournal;
+    if (resumed !== undefined && input.executionJournal === undefined)
+      throw new Error("A resumed runtime requires its durable execution-journal sink");
+    if (
+      resumed !== undefined &&
+      input.executionJournal?.journalId !== undefined &&
+      input.executionJournal.journalId !== resumed.journalId
+    )
+      throw new Error("Runtime resume journal does not match its checkpoint sink");
+    const initialMessage = stableJson({
+      creatorRequest: input.prompt,
+      orientation: input.orientation,
     });
-    let trialStarted = false;
-    let usage: RuntimeUsage = emptyRuntimeUsage();
+    const messages: ModelMessage[] =
+      resumed === undefined
+        ? [{ role: "user", content: initialMessage }]
+        : resumeMessages(resumed.request.messages);
+    if (resumed !== undefined) assertRuntimeResumeInput(input, resumed, initialMessage);
+    const turns: AgentModelTurn[] =
+      resumed === undefined ? [] : resumed.modelTurns.map((turn) => ({ ...turn }));
+    const seenToolCallIds = new Set<string>(resumed?.state.seenToolCallIds ?? []);
+    const toolCalls: ToolCallRecord[] =
+      resumed === undefined ? [] : resumed.toolCalls.map(copyToolCallRecord);
+    const rejectedBatchCounts = new Map<string, number>(
+      (resumed?.state.rejectedBatchRepeats ?? []).map((counter) => [
+        counter.fingerprint,
+        counter.count,
+      ]),
+    );
+    const noProgressBatchCounts = new Map<string, number>(
+      (resumed?.state.noProgressBatchRepeats ?? []).map((counter) => [
+        counter.fingerprint,
+        counter.count,
+      ]),
+    );
+    let prematureCompletionRepairs = resumed?.state.prematureCompletionRepairs ?? 0;
+    const timeline = createRuntimeTimeline(this.clock);
+    const invocationStarted = startTiming(timeline);
+    const runtimeStarted =
+      resumed === undefined
+        ? invocationStarted
+        : startTimingAt(timeline, resumed.state.runtimeStartedAt);
+    const invocationDurationBudgetMs =
+      resumed?.state.remaining.durationMs ?? input.budgets.maxDurationMs;
+    const opaqueContinuationHashes = new Set<string>(resumed?.opaqueContinuationHashes ?? []);
+    const finish = async (
+      outcome: Omit<AgentRuntimeResult, "timing" | "toolCalls">,
+    ): Promise<AgentRuntimeResult> => {
+      const completed = {
+        ...outcome,
+        timing: finishTiming(timeline, runtimeStarted),
+        toolCalls: toolCalls.map(copyToolCallRecord),
+      };
+      await input.executionJournal?.checkpoint(
+        createTerminalCheckpoint(runtimeNowIso(timeline), completed, [...opaqueContinuationHashes]),
+      );
+      return completed;
+    };
+    let trialStarted = resumed?.state.trialStarted ?? false;
+    let usage: RuntimeUsage =
+      resumed === undefined ? emptyRuntimeUsage() : { ...resumed.state.usage };
+    const executionBoundaryState = (
+      turnSequence: number,
+      toolHostProgressToken: string | undefined,
+    ): AgentExecutionBoundaryState => {
+      const materializedToolResultBytes = toolCalls.reduce(
+        (sum, toolCall) => sum + toolCall.bytes,
+        0,
+      );
+      return {
+        runtimeStartedAt: timingStartIso(timeline, runtimeStarted),
+        usage: { ...usage },
+        trialStarted,
+        remaining: {
+          turns: Math.max(0, input.budgets.maxTurns - turnSequence + 1),
+          toolCalls: Math.max(0, input.budgets.maxToolCalls - toolCalls.length),
+          toolResultBytes: Math.max(
+            0,
+            input.budgets.maxToolResultBytes - materializedToolResultBytes,
+          ),
+          durationMs: Math.max(
+            0,
+            invocationDurationBudgetMs - elapsedSince(timeline, invocationStarted),
+          ),
+          inputTokens:
+            usage.inputTokens === null
+              ? null
+              : Math.max(0, input.budgets.maxInputTokens - usage.inputTokens),
+          outputTokens:
+            usage.outputTokens === null
+              ? null
+              : Math.max(0, input.budgets.maxOutputTokens - usage.outputTokens),
+          budgetUsd:
+            usage.costUsd === null ? null : Math.max(0, input.budgets.maxBudgetUsd - usage.costUsd),
+        },
+        seenToolCallIds: [...seenToolCallIds].sort(),
+        rejectedBatchRepeats: repeatCounterSnapshot(rejectedBatchCounts),
+        noProgressBatchRepeats: repeatCounterSnapshot(noProgressBatchCounts),
+        prematureCompletionRepairs,
+        toolHostProgressTokenHash:
+          toolHostProgressToken === undefined ? null : contentHash(toolHostProgressToken),
+        materializedToolCalls: toolCalls.length,
+        materializedToolResultBytes,
+      };
+    };
     const tools = input.tools.definitions().map((tool) => ({
       name: tool.name,
       description: tool.description,
       parameters: tool.schema,
     }));
-    for (let sequence = 1; sequence <= input.budgets.maxTurns; sequence += 1) {
-      const remainingMs = input.budgets.maxDurationMs - elapsedSince(timeline, runtimeStarted);
+    if (resumed !== undefined && stableJson(tools) !== stableJson(resumed.request.tools))
+      throw new Error("Runtime resume no longer matches its declared tool authority");
+    let pendingResponse = resumed;
+    for (
+      let sequence = resumed?.turnSequence ?? 1;
+      sequence <= input.budgets.maxTurns;
+      sequence += 1
+    ) {
+      const remainingMs = invocationDurationBudgetMs - elapsedSince(timeline, invocationStarted);
       if (remainingMs <= 0)
         return finish(runtimeBudgetResult("Duration budget exhausted", usage, turns, trialStarted));
       const remainingOutput = input.budgets.maxOutputTokens - (usage.outputTokens ?? 0);
-      if (remainingOutput <= 0)
+      if (remainingOutput <= 0 && pendingResponse === undefined)
         return finish(
           runtimeBudgetResult("Output-token budget exhausted", usage, turns, trialStarted),
         );
+      const consumingPersistedResponse = pendingResponse !== undefined;
+      const persistedResponseHasOpaqueContinuation =
+        pendingResponse?.response.kind === "assistant" &&
+        pendingResponse.response.message.continuation.present;
+      const opaqueContinuationResumeFailure = () =>
+        finish({
+          status: "failed",
+          trialStarted,
+          failureKind: "provider",
+          failureCode: "OPAQUE_CONTINUATION_NEW_RUN_REQUIRED",
+          error:
+            "The durable provider response carried an opaque continuation that Forge did not persist. The stored response and tool records were consumed, but any further provider turn requires an explicit creator-authorized retry_work/new AgentRun.",
+          usage,
+          turns,
+        });
       let result: ModelTurnResult;
-      const modelTurnStarted = startTiming(timeline);
-      try {
-        result = await this.modelClient.complete({
+      let requestIntent: { readonly intentHash: string };
+      if (pendingResponse !== undefined) {
+        result = resumeResult(pendingResponse.response);
+        requestIntent = { intentHash: pendingResponse.intentHash };
+        pendingResponse = undefined;
+      } else {
+        const modelTurnStarted = startTiming(timeline);
+        const request = {
           model: input.model,
           system: input.systemPrompt,
           messages,
@@ -448,55 +577,79 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
             remainingOutput,
           ),
           timeoutMs: remainingMs,
-        });
-      } catch (error) {
-        const timing = finishTiming(timeline, modelTurnStarted);
-        turns.push({
+        };
+        const checkpoint = createRequestIntentCheckpoint(
           sequence,
-          ...timing,
-          requestHash: contentHash(
-            stableJson({
-              model: input.model,
-              systemPromptHash: contentHash(input.systemPrompt),
-              messageCount: messages.length,
-            }),
-          ),
-          resultKind: "provider_error",
-          toolCallIds: [],
-          usage: { inputTokens: null, outputTokens: null, costUsd: null },
-          errorClass: "provider_exception",
-        });
-        return finish({
-          status: "failed",
-          trialStarted,
-          failureKind: "provider",
-          error: error instanceof Error ? error.message : String(error),
-          usage,
-          turns,
-        });
+          runtimeNowIso(timeline),
+          request,
+          executionBoundaryState(sequence, input.tools.progressToken?.()),
+        );
+        requestIntent = checkpoint;
+        await input.executionJournal?.checkpoint(checkpoint);
+        try {
+          result = await this.modelClient.complete(request);
+        } catch (error) {
+          const timing = finishTiming(timeline, modelTurnStarted);
+          turns.push({
+            sequence,
+            ...timing,
+            requestHash: contentHash(
+              stableJson({
+                model: input.model,
+                systemPromptHash: contentHash(input.systemPrompt),
+                messageCount: messages.length,
+              }),
+            ),
+            resultKind: "provider_error",
+            toolCallIds: [],
+            usage: { inputTokens: null, outputTokens: null, costUsd: null },
+            errorClass: "provider_exception",
+          });
+          return finish({
+            status: "failed",
+            trialStarted,
+            failureKind: "provider",
+            error: error instanceof Error ? error.message : String(error),
+            usage,
+            turns,
+          });
+        }
+        if (result.kind === "assistant" && result.message.continuation !== undefined)
+          opaqueContinuationHashes.add(result.message.continuation.hash);
+        const modelTurnTiming = finishTiming(timeline, modelTurnStarted);
+        if (result.kind !== "provider_error" || result.responseFacts.responseId !== null)
+          trialStarted = true;
+        usage = addUsage(usage, result.usage);
+        const turn: AgentModelTurn = {
+          sequence,
+          ...modelTurnTiming,
+          requestHash: result.requestHash,
+          resultKind: result.kind,
+          ...(result.kind === "assistant"
+            ? {
+                responseHash: result.responseHash,
+                stopReason: result.stopReason,
+                toolCallIds: result.message.toolCalls.map((call) => call.id),
+              }
+            : { errorClass: result.errorClass, toolCallIds: [] }),
+          ...(result.responseFacts ? { responseFacts: { ...result.responseFacts } } : {}),
+          ...(result.providerMetadataHash
+            ? { providerMetadataHash: result.providerMetadataHash }
+            : {}),
+          usage: { ...result.usage },
+        };
+        turns.push(turn);
+        await input.executionJournal?.checkpoint(
+          createResponseReceivedCheckpoint({
+            turnSequence: sequence,
+            occurredAt: runtimeNowIso(timeline),
+            intentHash: requestIntent.intentHash,
+            result,
+            state: executionBoundaryState(sequence, input.tools.progressToken?.()),
+            turn,
+          }),
+        );
       }
-      const modelTurnTiming = finishTiming(timeline, modelTurnStarted);
-      if (result.kind !== "provider_error" || result.responseFacts.responseId !== null)
-        trialStarted = true;
-      usage = addUsage(usage, result.usage);
-      turns.push({
-        sequence,
-        ...modelTurnTiming,
-        requestHash: result.requestHash,
-        resultKind: result.kind,
-        ...(result.kind === "assistant"
-          ? {
-              responseHash: result.responseHash,
-              stopReason: result.stopReason,
-              toolCallIds: result.message.toolCalls.map((call) => call.id),
-            }
-          : { errorClass: result.errorClass, toolCallIds: [] }),
-        ...(result.responseFacts ? { responseFacts: { ...result.responseFacts } } : {}),
-        ...(result.providerMetadataHash
-          ? { providerMetadataHash: result.providerMetadataHash }
-          : {}),
-        usage: { ...result.usage },
-      });
       if (exceedsModelBudgets(input.budgets, usage))
         return finish(
           runtimeBudgetResult(
@@ -571,6 +724,7 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
                     "The required phase artifact is still unsealed. Continue with the available tools and do not end the turn until the host reports completion.",
                 }),
               });
+              if (persistedResponseHasOpaqueContinuation) return opaqueContinuationResumeFailure();
               continue;
             }
           } catch (error) {
@@ -593,26 +747,72 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
           turns,
         });
       }
+      const recoveredBatch = consumingPersistedResponse ? resumed?.batch : undefined;
       const progressBefore = input.tools.progressToken?.();
-      const validationStarted = startTiming(timeline);
-      const hostDecision = input.tools.validateBatch(result.message.toolCalls, seenToolCallIds);
-      const validationTiming = finishTiming(timeline, validationStarted);
-      const decision =
-        toolCalls.length + result.message.toolCalls.length > input.budgets.maxToolCalls
-          ? rejectedToolBudgetDecision(result.message.toolCalls)
-          : hostDecision;
-      for (const call of result.message.toolCalls)
-        if (call.id.length > 0) seenToolCallIds.add(call.id);
+      if (consumingPersistedResponse) assertResumeHostBoundary(resumed!, progressBefore);
+      let validationTiming: RuntimeTiming;
+      let decision: ToolBatchDecision;
+      if (recoveredBatch) {
+        validationTiming = zeroTiming(runtimeNowIso(timeline));
+        decision = recoveredBatch.decision;
+      } else {
+        const validationStarted = startTiming(timeline);
+        const hostDecision = input.tools.validateBatch(result.message.toolCalls, seenToolCallIds);
+        validationTiming = finishTiming(timeline, validationStarted);
+        decision =
+          toolCalls.length + result.message.toolCalls.length > input.budgets.maxToolCalls
+            ? rejectedToolBudgetDecision(result.message.toolCalls)
+            : hostDecision;
+      }
+      if (!recoveredBatch)
+        for (const call of result.message.toolCalls)
+          if (call.id.length > 0) seenToolCallIds.add(call.id);
       if (!decision.valid) {
-        toolCalls.push(
-          ...materializeRejectedToolCalls(
-            result.message.toolCalls,
+        const fingerprint = rejectedBatchFingerprint(
+          result.message.toolCalls,
+          decision.feedback,
+          progressBefore,
+        );
+        const repeats = recoveredBatch
+          ? (rejectedBatchCounts.get(fingerprint) ?? 0)
+          : (rejectedBatchCounts.get(fingerprint) ?? 0) + 1;
+        if (!recoveredBatch) {
+          rejectedBatchCounts.set(fingerprint, repeats);
+          await input.executionJournal?.checkpoint(
+            createBatchValidatedCheckpoint({
+              turnSequence: sequence,
+              occurredAt: runtimeNowIso(timeline),
+              intentHash: requestIntent.intentHash,
+              responseHash: result.responseHash,
+              calls: result.message.toolCalls,
+              decision,
+              state: executionBoundaryState(sequence, progressBefore),
+            }),
+          );
+        }
+        const completed = new Set(consumingPersistedResponse ? resumed!.completedToolCallIds : []);
+        for (const call of result.message.toolCalls) {
+          if (completed.has(call.id)) continue;
+          const [toolCall] = materializeRejectedToolCalls(
+            [call],
             decision.feedback,
             validationTiming,
             toolCalls,
             input.budgets,
-          ),
-        );
+          );
+          if (!toolCall) throw new Error("Rejected tool batch did not materialize its tool record");
+          toolCalls.push(toolCall);
+          await input.executionJournal?.checkpoint(
+            createToolCompletedCheckpoint({
+              turnSequence: sequence,
+              occurredAt: runtimeNowIso(timeline),
+              intentHash: requestIntent.intentHash,
+              responseHash: result.responseHash,
+              toolCall,
+              state: executionBoundaryState(sequence, progressBefore),
+            }),
+          );
+        }
         messages.push({
           role: "user",
           content: stableJson({
@@ -621,18 +821,11 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
             feedback: decision.feedback,
           }),
         });
-        const fingerprint = rejectedBatchFingerprint(
-          result.message.toolCalls,
-          decision.feedback,
-          progressBefore,
-        );
-        const repeats = (rejectedBatchCounts.get(fingerprint) ?? 0) + 1;
-        rejectedBatchCounts.set(fingerprint, repeats);
         const accountedToolCalls = toolCalls.length;
         const accountedToolResultBytes = toolCalls.reduce((sum, record) => sum + record.bytes, 0);
-        const rejectedOutputBudgetExceeded = toolCalls
-          .slice(toolCalls.length - result.message.toolCalls.length)
-          .some((record) => record.result.error?.code === "TOOL_OUTPUT_BUDGET_EXHAUSTED");
+        const rejectedOutputBudgetExceeded = result.message.toolCalls
+          .map((call) => toolCalls.find((record) => record.toolCallId === call.id))
+          .some((record) => record?.result.error?.code === "TOOL_OUTPUT_BUDGET_EXHAUSTED");
         if (
           decision.budgetExhausted ||
           rejectedOutputBudgetExceeded ||
@@ -658,11 +851,53 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
             turns,
           });
         }
+        if (persistedResponseHasOpaqueContinuation) return opaqueContinuationResumeFailure();
         continue;
       }
+      if (!recoveredBatch)
+        await input.executionJournal?.checkpoint(
+          createBatchValidatedCheckpoint({
+            turnSequence: sequence,
+            occurredAt: runtimeNowIso(timeline),
+            intentHash: requestIntent.intentHash,
+            responseHash: result.responseHash,
+            calls: result.message.toolCalls,
+            decision,
+            state: executionBoundaryState(sequence, progressBefore),
+          }),
+        );
       messages.push(result.message);
       const batchResults: ToolResult[] = [];
+      const completedRecords = new Map(
+        (consumingPersistedResponse
+          ? toolCalls.filter((toolCall) =>
+              resumed!.completedToolCallIds.includes(toolCall.toolCallId),
+            )
+          : []
+        ).map((toolCall) => [toolCall.toolCallId, toolCall] as const),
+      );
       for (const call of result.message.toolCalls) {
+        const completedRecord = completedRecords.get(call.id);
+        if (completedRecord !== undefined) {
+          batchResults.push(structuredClone(completedRecord.result));
+          messages.push({
+            role: "tool",
+            toolCallId: call.id,
+            name: call.name,
+            content: stableJson(completedRecord.result),
+          });
+          continue;
+        }
+        await input.executionJournal?.checkpoint(
+          createToolExecutionIntentCheckpoint({
+            turnSequence: sequence,
+            occurredAt: runtimeNowIso(timeline),
+            intentHash: requestIntent.intentHash,
+            responseHash: result.responseHash,
+            toolCall: call,
+            state: executionBoundaryState(sequence, input.tools.progressToken?.()),
+          }),
+        );
         const toolStarted = startTiming(timeline);
         let toolResult: ToolResult;
         try {
@@ -675,8 +910,23 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
         }
         const toolTiming = finishTiming(timeline, toolStarted);
         toolResult = enforceToolResultBudget(toolResult, toolCalls, input.budgets);
-        toolCalls.push(
-          materializeToolCall(call, toolResult, "executed", toolTiming, toolCalls.length + 1),
+        const toolCall = materializeToolCall(
+          call,
+          toolResult,
+          "executed",
+          toolTiming,
+          toolCalls.length + 1,
+        );
+        toolCalls.push(toolCall);
+        await input.executionJournal?.checkpoint(
+          createToolCompletedCheckpoint({
+            turnSequence: sequence,
+            occurredAt: runtimeNowIso(timeline),
+            intentHash: requestIntent.intentHash,
+            responseHash: result.responseHash,
+            toolCall,
+            state: executionBoundaryState(sequence, input.tools.progressToken?.()),
+          }),
         );
         batchResults.push(toolResult);
         messages.push({
@@ -753,6 +1003,7 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
         noProgressBatchCounts.clear();
         rejectedBatchCounts.clear();
       }
+      if (persistedResponseHasOpaqueContinuation) return opaqueContinuationResumeFailure();
     }
     return finish(runtimeBudgetResult("Turn budget exhausted", usage, turns, trialStarted));
   }
@@ -785,7 +1036,7 @@ export interface CreatorAgentExecutionWorker {
   isolation: "none";
 }
 export type CreatorPhaseArtifact = {
-  kind: "plan" | "change_set";
+  kind: "creator_outcome" | "change_set";
   id: string;
   hash: string;
 };
@@ -862,7 +1113,27 @@ export interface AgentRun {
   error?: string;
   creatorPhaseOutcome?: CreatorPhaseOutcome;
   executionWorker?: CreatorAgentExecutionWorker;
+  executionJournal?: AgentExecutionJournalBinding;
   creatorBuildContract?: { id: string; hash: string };
+}
+export interface AgentExecutionJournalBinding {
+  journalId: string;
+  sequence: number;
+  entryHash: string;
+  entry: ArtifactReference;
+  terminalResultHash: string;
+}
+
+/**
+ * Creator-owned reservation for exactly one lower runtime invocation.  The
+ * reservation is durable before dispatch; the runtime may only materialize
+ * the journal derived from this exact AgentRun identity.
+ */
+export interface AgentExecutionSlot {
+  readonly purpose: "planner" | "builder" | "repair";
+  readonly ordinal: number;
+  readonly agentRunId: string;
+  readonly journalId: string;
 }
 export interface ExperimentRegistrationBinding {
   id: string;
@@ -990,6 +1261,8 @@ export function assertAgentRun(value: unknown): asserts value is AgentRun {
     throw new Error("Workspace AgentRun cannot carry a creator phase outcome");
   if (value.phase === "workspace_build" && value.executionWorker !== undefined)
     throw new Error("Workspace AgentRun cannot carry a creator worker descriptor");
+  if (value.phase === "workspace_build" && value.executionJournal !== undefined)
+    throw new Error("Workspace AgentRun cannot carry a creator execution journal");
   if (value.phase !== "creator_builder" && value.creatorBuildContract !== undefined)
     throw new Error("Only creator-builder AgentRun may carry a build contract");
   if (
@@ -1003,6 +1276,11 @@ export function assertAgentRun(value: unknown): asserts value is AgentRun {
     throw new Error("Creator phase AgentRun requires a sealed or unsealed phase outcome");
   if (value.phase !== "workspace_build" && !isCurrentCreatorWorker(value.executionWorker))
     throw new Error("Creator phase AgentRun requires the current execution-worker binding");
+  if (value.phase !== "workspace_build") {
+    assertAgentExecutionJournalBinding(value.executionJournal);
+    if (value.executionJournal.journalId !== agentExecutionJournalIdForAgentRun(value.id))
+      throw new Error("Creator phase AgentRun has another execution journal identity");
+  }
   if (value.origin.kind === "creator_session") {
     if (!isIdentifier(value.origin.creatorSessionId) || !isHash(value.origin.creatorSessionHash))
       throw new Error("Invalid AgentRun creator session origin");
@@ -1014,6 +1292,75 @@ export function assertAgentRun(value: unknown): asserts value is AgentRun {
     !isHash(value.origin.experimentRegistrationHash)
   )
     throw new Error("Invalid AgentRun origin");
+}
+
+export function agentExecutionJournalIdForAgentRun(agentRunId: string): string {
+  if (!isIdentifier(agentRunId)) throw new Error("Invalid AgentRun ID for execution journal");
+  return `agent_execution_journal:${agentRunId}`;
+}
+
+export function createAgentExecutionSlot(input: {
+  purpose: AgentExecutionSlot["purpose"];
+  ordinal: number;
+  agentRunId?: string;
+}): AgentExecutionSlot {
+  const slot: AgentExecutionSlot = {
+    purpose: input.purpose,
+    ordinal: input.ordinal,
+    agentRunId: input.agentRunId ?? `agent_run_${randomUUID()}`,
+    journalId: "",
+  };
+  const result = { ...slot, journalId: agentExecutionJournalIdForAgentRun(slot.agentRunId) };
+  assertAgentExecutionSlot(result);
+  return result;
+}
+
+export function assertAgentExecutionSlot(value: unknown): asserts value is AgentExecutionSlot {
+  if (
+    !isRecord(value) ||
+    !["planner", "builder", "repair"].includes(String(value.purpose)) ||
+    !Number.isSafeInteger(value.ordinal) ||
+    Number(value.ordinal) <= 0 ||
+    !isIdentifier(value.agentRunId) ||
+    !String(value.agentRunId).startsWith("agent_run_") ||
+    value.journalId !== agentExecutionJournalIdForAgentRun(String(value.agentRunId))
+  )
+    throw new Error("Invalid preassigned agent execution slot");
+}
+
+export function assertAgentExecutionJournalBinding(
+  value: unknown,
+): asserts value is AgentExecutionJournalBinding {
+  if (
+    !isRecord(value) ||
+    typeof value.journalId !== "string" ||
+    !/^agent_execution_journal:agent_run_[A-Za-z0-9_-]+$/.test(value.journalId) ||
+    !Number.isSafeInteger(value.sequence) ||
+    Number(value.sequence) <= 0 ||
+    !isHash(value.entryHash) ||
+    !isHash(value.terminalResultHash)
+  )
+    throw new Error("Invalid creator execution journal binding");
+  assertArtifactReference(value.entry);
+}
+
+export async function verifyAgentRunExecutionJournal(
+  run: AgentRun,
+  artifactStore: ImmutableJsonArtifactStore,
+): Promise<void> {
+  assertAgentRun(run);
+  if (run.phase === "workspace_build") return;
+  const binding = run.executionJournal!;
+  const loaded = await new AgentExecutionJournalStore(artifactStore).load(binding.journalId);
+  const terminal = loaded.entries.at(-1);
+  if (
+    loaded.head.sequence !== binding.sequence ||
+    loaded.head.entryHash !== binding.entryHash ||
+    stableJson(loaded.head.entry) !== stableJson(binding.entry) ||
+    terminal?.checkpoint.checkpointType !== "terminal" ||
+    contentHash(stableJson(terminal.checkpoint.result)) !== binding.terminalResultHash
+  )
+    throw new Error("Creator AgentRun execution-journal evidence does not match its binding");
 }
 
 export function assertWorkspaceCandidateArtifact(
@@ -1412,6 +1759,7 @@ export async function runBoundedAgent(request: AgentBuildRequest): Promise<Agent
 
 /** Persist one prompt-only creator planner or builder phase as an AgentRun. */
 export async function persistCreatorPhaseAgentRun(input: {
+  agentRunId: string;
   phase: "creator_planner" | "creator_builder";
   creatorSession: { id: string; hash: string };
   promptHash: string;
@@ -1422,21 +1770,47 @@ export async function persistCreatorPhaseAgentRun(input: {
   finalization: CreatorPhaseFinalization;
   runtime: AgentRuntime;
   runtimeResult: AgentRuntimeResult;
+  /** Exact registry-selected model requested for this phase, even when no
+   * provider response exists from which to recover attribution. */
+  model: string;
   toolHost: AgentToolHost;
   budgets: BudgetPolicy;
   directory: string;
   traceDirectory: string;
   executionWorker: CreatorAgentExecutionWorker;
+  executionJournal: LoadedAgentExecutionJournal;
   creatorBuildContract?: { id: string; hash: string };
 }): Promise<CreatorPhaseAgentRunResult> {
   if (
+    !isIdentifier(input.agentRunId) ||
+    !input.agentRunId.startsWith("agent_run_") ||
     !isIdentifier(input.creatorSession.id) ||
     !isHash(input.creatorSession.hash) ||
     !isHash(input.promptHash) ||
     !isIdentifier(input.projectId) ||
-    !isHash(input.revisionHash)
+    !isHash(input.revisionHash) ||
+    typeof input.model !== "string" ||
+    input.model.length === 0 ||
+    input.model.length > 256
   )
     throw new Error("Invalid creator phase AgentRun binding");
+  const terminalJournalEntry = input.executionJournal.entries.at(-1);
+  if (
+    input.executionJournal.head.journalId !==
+      agentExecutionJournalIdForAgentRun(input.agentRunId) ||
+    input.executionJournal.head.sequence !== input.executionJournal.entries.length ||
+    terminalJournalEntry?.hash !== input.executionJournal.head.entryHash ||
+    terminalJournalEntry.checkpoint.checkpointType !== "terminal" ||
+    stableJson(terminalJournalEntry.checkpoint.result) !== stableJson(input.runtimeResult)
+  )
+    throw new Error("Creator phase AgentRun requires its exact terminal execution journal");
+  if (
+    input.runtimeResult.turns.some(
+      (turn) =>
+        turn.responseFacts !== undefined && turn.responseFacts.requestedModel !== input.model,
+    )
+  )
+    throw new Error("Creator phase model-turn attribution does not match the requested model");
   if (input.finalization.status === "sealed") {
     if (!isIdentifier(input.finalization.artifact.id) || !isHash(input.finalization.artifact.hash))
       throw new Error("Invalid sealed creator artifact binding");
@@ -1445,7 +1819,7 @@ export async function persistCreatorPhaseAgentRun(input: {
     input.finalization.detail.length === 0
   )
     throw new Error("Invalid unsealed creator phase outcome");
-  const intendedArtifactKind = input.phase === "creator_planner" ? "plan" : "change_set";
+  const intendedArtifactKind = input.phase === "creator_planner" ? "creator_outcome" : "change_set";
   if (
     (input.phase === "creator_builder") !== (input.creatorBuildContract !== undefined) ||
     (input.creatorBuildContract &&
@@ -1488,7 +1862,7 @@ export async function persistCreatorPhaseAgentRun(input: {
     runtime: { ...input.runtime.identity },
     model: {
       transport: input.runtime.modelClientDescriptor.transport,
-      name: input.runtimeResult.turns[0]?.responseFacts?.requestedModel ?? "openai/gpt-5.6-luna",
+      name: input.model,
       transportConfiguration: input.runtime.modelClientDescriptor.configuration,
     },
   });
@@ -1512,6 +1886,7 @@ export async function persistCreatorPhaseAgentRun(input: {
   const attemptHash = contentHash(
     stableJson({
       phase: input.phase,
+      model: input.model,
       intendedArtifactKind,
       runtime: {
         status: input.runtimeResult.status,
@@ -1542,6 +1917,13 @@ export async function persistCreatorPhaseAgentRun(input: {
               detail: undefined,
               detailHash: contentHash(input.finalization.detail),
             },
+      executionJournal: {
+        journalId: input.executionJournal.head.journalId,
+        sequence: input.executionJournal.head.sequence,
+        entryHash: input.executionJournal.head.entryHash,
+        artifactHash: input.executionJournal.head.entry.artifactHash,
+        terminalResultHash: contentHash(stableJson(input.runtimeResult)),
+      },
       ...(input.creatorBuildContract ? { creatorBuildContract: input.creatorBuildContract } : {}),
     }),
   );
@@ -1596,7 +1978,7 @@ export async function persistCreatorPhaseAgentRun(input: {
               : input.runtimeResult.failureKind === "harness"
                 ? "harness_failure"
                 : "agent_failure";
-  const runId = `agent_run_${randomUUID()}`;
+  const runId = input.agentRunId;
   const recorder = new FlightRecorder({
     projectId: input.projectId,
     references: {
@@ -1628,7 +2010,7 @@ export async function persistCreatorPhaseAgentRun(input: {
       },
       model: {
         provider: input.runtime.modelClientDescriptor.transport,
-        name: "openai/gpt-5.6-luna",
+        name: input.model,
         configurationHash: configuration.hash,
       },
     },
@@ -1642,6 +2024,8 @@ export async function persistCreatorPhaseAgentRun(input: {
       "forge.creator.session_id": input.creatorSession.id,
       "forge.creator.phase_outcome": phaseOutcome.status,
       "forge.creator.attempt_hash": attemptHash,
+      "forge.agent.execution_journal_id": input.executionJournal.head.journalId,
+      "forge.agent.execution_journal_entry_hash": input.executionJournal.head.entryHash,
       ...(input.creatorBuildContract
         ? {
             "forge.creator.build_contract_id": input.creatorBuildContract.id,
@@ -1744,7 +2128,7 @@ export async function persistCreatorPhaseAgentRun(input: {
     timing: { ...input.runtimeResult.timing },
     model: {
       transport: input.runtime.modelClientDescriptor.transport,
-      name: "openai/gpt-5.6-luna",
+      name: input.model,
       transportConfiguration: input.runtime.modelClientDescriptor.configuration,
     },
     modelTurns: input.runtimeResult.turns,
@@ -1760,6 +2144,13 @@ export async function persistCreatorPhaseAgentRun(input: {
     studio: "not_run",
     creatorPhaseOutcome: phaseOutcome,
     executionWorker: { ...input.executionWorker },
+    executionJournal: {
+      journalId: input.executionJournal.head.journalId,
+      sequence: input.executionJournal.head.sequence,
+      entryHash: input.executionJournal.head.entryHash,
+      entry: { ...input.executionJournal.head.entry },
+      terminalResultHash: contentHash(stableJson(input.runtimeResult)),
+    },
     ...(input.creatorBuildContract
       ? { creatorBuildContract: { ...input.creatorBuildContract } }
       : {}),
@@ -2839,14 +3230,136 @@ function createRuntimeTimeline(clock: FlightRecorderClock): RuntimeTimeline {
   };
 }
 
+function resumeMessages(
+  messages: AgentExecutionJournalResume["request"]["messages"],
+): ModelMessage[] {
+  return messages.map((message) => {
+    if (message.role === "user") return { role: "user", content: message.content };
+    if (message.role === "tool")
+      return {
+        role: "tool",
+        toolCallId: message.toolCallId,
+        name: message.name,
+        content: message.content,
+      };
+    return {
+      role: "assistant",
+      content: message.content,
+      toolCalls: message.toolCalls.map((call) => ({
+        id: call.id,
+        name: call.name,
+        arguments: structuredClone(call.arguments),
+      })),
+    };
+  });
+}
+
+function resumeResult(response: AgentExecutionJournalResume["response"]): ModelTurnResult {
+  if (response.kind === "assistant")
+    return {
+      kind: "assistant",
+      message: {
+        role: "assistant",
+        content: response.message.content,
+        toolCalls: response.message.toolCalls.map((call) => ({
+          id: call.id,
+          name: call.name,
+          arguments: structuredClone(call.arguments),
+        })),
+      },
+      stopReason: response.stopReason,
+      requestHash: response.providerRequestHash,
+      responseHash: response.responseHash,
+      responseFacts: structuredClone(response.responseFacts),
+      ...(response.providerMetadataHash === undefined
+        ? {}
+        : { providerMetadataHash: response.providerMetadataHash }),
+      usage: structuredClone(response.usage),
+    };
+  const common = {
+    errorClass: response.errorClass,
+    message: response.message,
+    requestHash: response.providerRequestHash,
+    responseFacts: structuredClone(response.responseFacts),
+    ...(response.providerMetadataHash === undefined
+      ? {}
+      : { providerMetadataHash: response.providerMetadataHash }),
+    usage: structuredClone(response.usage),
+  };
+  return response.kind === "provider_error"
+    ? { kind: "provider_error", retryable: response.retryable ?? false, ...common }
+    : { kind: "invalid_model_response", ...common };
+}
+
+function assertRuntimeResumeInput(
+  input: AgentRuntimeInput,
+  resume: AgentExecutionJournalResume,
+  initialMessage: string,
+): void {
+  if (
+    resume.request.model !== input.model ||
+    resume.request.systemHash !== contentHash(input.systemPrompt)
+  )
+    throw new Error("Runtime resume no longer matches its model or system authority");
+  const first = resume.request.messages[0];
+  if (first?.role !== "user" || first.content !== initialMessage)
+    throw new Error("Runtime resume no longer matches its creator request authority");
+  if (
+    resume.state.materializedToolCalls !== resume.toolCalls.length ||
+    resume.state.materializedToolResultBytes !==
+      resume.toolCalls.reduce((total, toolCall) => total + toolCall.bytes, 0)
+  )
+    throw new Error("Runtime resume tool boundary does not match its durable records");
+}
+
+function assertResumeHostBoundary(
+  resume: AgentExecutionJournalResume,
+  progressToken: string | undefined,
+): void {
+  const expected = resume.state.toolHostProgressTokenHash;
+  if (expected !== null && (progressToken === undefined || contentHash(progressToken) !== expected))
+    throw new Error(
+      "Runtime resume host state changed after its durable boundary; explicit creator-authorized retry_work is required",
+    );
+}
+
 function startTiming(timeline: RuntimeTimeline): TimingStart {
   return {
     monotonicStartedAt: timeline.clock.monotonicNow(),
   };
 }
 
+function startTimingAt(timeline: RuntimeTimeline, startedAt: string): TimingStart {
+  const elapsedMs = Math.max(0, timeline.wallOriginMs - Date.parse(startedAt));
+  return { monotonicStartedAt: timeline.monotonicOriginMs - elapsedMs };
+}
+
+function timingStartIso(timeline: RuntimeTimeline, started: TimingStart): string {
+  return new Date(
+    timeline.wallOriginMs + Math.floor(started.monotonicStartedAt - timeline.monotonicOriginMs),
+  ).toISOString();
+}
+
+function zeroTiming(at: string): RuntimeTiming {
+  return { startedAt: at, endedAt: at, durationMs: 0 };
+}
+
+function runtimeNowIso(timeline: RuntimeTimeline): string {
+  return new Date(
+    timeline.wallOriginMs + elapsedFromTimeline(timeline, timeline.clock.monotonicNow()),
+  ).toISOString();
+}
+
+function repeatCounterSnapshot(
+  counts: ReadonlyMap<string, number>,
+): Array<{ fingerprint: string; count: number }> {
+  return [...counts.entries()]
+    .map(([fingerprint, count]) => ({ fingerprint, count }))
+    .sort((left, right) => left.fingerprint.localeCompare(right.fingerprint));
+}
+
 function finishTiming(timeline: RuntimeTimeline, started: TimingStart): RuntimeTiming {
-  const startedOffsetMs = elapsedFromTimeline(timeline, started.monotonicStartedAt);
+  const startedOffsetMs = Math.floor(started.monotonicStartedAt - timeline.monotonicOriginMs);
   const durationMs = elapsedSince(timeline, started);
   const startedAt = new Date(timeline.wallOriginMs + startedOffsetMs).toISOString();
   return {
@@ -3060,13 +3573,13 @@ function isCreatorPhaseOutcome(value: unknown): value is CreatorPhaseOutcome {
   if (value.status === "sealed")
     return (
       isRecord(value.artifact) &&
-      ["plan", "change_set"].includes(String(value.artifact.kind)) &&
+      ["creator_outcome", "change_set"].includes(String(value.artifact.kind)) &&
       isIdentifier(value.artifact.id) &&
       isHash(value.artifact.hash)
     );
   return (
     value.status === "unsealed" &&
-    ["plan", "change_set"].includes(String(value.intendedArtifactKind)) &&
+    ["creator_outcome", "change_set"].includes(String(value.intendedArtifactKind)) &&
     ["runtime", "finalization"].includes(String(value.failureStage)) &&
     isIdentifier(value.failureCode) &&
     isHash(value.detailHash)

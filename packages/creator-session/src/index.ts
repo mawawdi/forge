@@ -5,6 +5,8 @@ import { z, type ZodRawShape } from "zod";
 import type {
   AgentRuntime,
   AgentRuntimeResult,
+  AgentExecutionJournalSink,
+  AgentExecutionJournalResume,
   AgentToolCompletionStatus,
   AgentToolDefinition,
   AgentToolHost,
@@ -13,10 +15,16 @@ import type {
   ToolBatchDecision,
   ToolResult,
 } from "../../agent-runtime/src/index.js";
-import { DEFAULT_AGENT_BUDGETS, assertCreatorPhaseOutcome } from "../../agent-runtime/src/index.js";
+import {
+  DEFAULT_AGENT_BUDGETS,
+  assertAgentRun,
+  assertCreatorPhaseOutcome,
+  verifyAgentRunExecutionJournal,
+} from "../../agent-runtime/src/index.js";
 import {
   ImmutableJsonArtifactStore,
   assertArtifactReference,
+  serializeCanonicalJson,
   type ArtifactReference,
 } from "../../artifact-store/src/index.js";
 import { contentHash, stableJson, type VerificationIssue } from "../../contracts/src/index.js";
@@ -133,6 +141,8 @@ export type StudioOwner = ProjectWriteAuthority;
 export type CreatorSessionStatus =
   | "indexing"
   | "planning"
+  | "awaiting_clarification"
+  | "refining_plan"
   | "awaiting_plan_approval"
   | "building"
   | "awaiting_change_approval"
@@ -149,6 +159,7 @@ export type CreatorSessionStatus =
   | "superseded"
   | "awaiting_source_sync"
   | "awaiting_review"
+  | "answered"
   | "creator_accepted"
   | "creator_rejected"
   | "rolled_back"
@@ -770,12 +781,26 @@ export interface CreatorRequestArtifact {
   kind: "CreatorRequest";
   sessionId: string;
   promptHash: string;
-  text: string;
+  /** Exact creator-authored request. This alone defines `promptHash`. */
+  creatorText: string;
+  /** Host-authored model input; may include bounded conversation context. */
+  agentPrompt: string;
+  /**
+   * Host-issued, immutable conversation citations available to the planner
+   * before it opens any project/source tool.  This is always present (and is
+   * empty for a transaction that was not started from a conversation).
+   */
+  contextCitations: readonly CreatorAgentContextCitation[];
 }
 
 export interface CreatorSessionBundle {
   session: CreatorSession;
   creatorRequest: ArtifactReference;
+  /** Host-validated conversational outcome produced by the planner phase. */
+  agentOutcome?: {
+    outcome: CreatorAgentOutcome;
+    artifact: ArtifactReference;
+  };
   projectIndices: import("./project-refresh.js").CreatorProjectIndexArtifactBinding[];
   projectChanges: Array<{
     notice: import("./project-refresh.js").CreatorProjectChangeNotice;
@@ -908,27 +933,27 @@ export interface CreatorActiveMutation {
   finalIndexCapture?: import("./mutation-evidence.js").CreatorMutationArtifactIndexCapture;
 }
 
-export type CreatorControlActionId =
-  | "approve_plan"
-  | "reject_plan"
-  | "approve_and_apply_changes"
-  | "reject_changes"
-  | "accept_result"
-  | "reject_and_rollback"
-  | "cancel_changes"
-  | "retry_play_verification"
-  | "refresh_project"
-  | "check_source_sync"
-  | "revert_source_changes"
-  | "cancel_interrupted_recording";
-export interface CreatorControlActionDescriptor {
-  id: CreatorControlActionId;
+export type CreatorTransactionControlActionId =
+  | "transaction_approve_plan"
+  | "transaction_reject_plan"
+  | "transaction_approve_and_apply_changes"
+  | "transaction_reject_changes"
+  | "transaction_accept_result"
+  | "transaction_reject_and_rollback"
+  | "transaction_cancel_changes"
+  | "transaction_retry_play_verification"
+  | "transaction_refresh_project"
+  | "transaction_check_source_sync"
+  | "transaction_revert_source_changes"
+  | "transaction_cancel_interrupted_recording";
+export interface CreatorTransactionControlActionDescriptor {
+  id: CreatorTransactionControlActionId;
   label: string;
   intent: "primary" | "secondary";
   requiresReport?: boolean;
 }
-export interface CreatorControlView {
-  kind: "CreatorControlView";
+export interface CreatorTransactionControlView {
+  kind: "CreatorTransactionControlView";
   id: string;
   hash: string;
   creatorSessionId: string;
@@ -1047,19 +1072,19 @@ export interface CreatorControlView {
     attemptId: string;
     artifact?: ArtifactReference;
   };
-  primaryAction?: CreatorControlActionDescriptor;
-  secondaryAction?: CreatorControlActionDescriptor;
+  /** The ordered, bounded transaction actions currently authorized by this view. */
+  actions: CreatorTransactionControlActionDescriptor[];
 }
 
-export type CreatorProgressStageId = "request" | "plan" | "change" | "studio" | "review";
-export interface CreatorProgressStage {
-  id: CreatorProgressStageId;
+export type CreatorTransactionStageId = "request" | "plan" | "change" | "studio" | "review";
+export interface CreatorTransactionStage {
+  id: CreatorTransactionStageId;
   label: "Request" | "Plan" | "Change" | "Studio" | "Review";
   status: "pending" | "active" | "complete" | "blocked" | "failed";
   authority: "creator" | "agent" | "forge" | "studio";
   detail: string;
 }
-export interface CreatorSessionSummary {
+export interface CreatorTransactionSummary {
   id: string;
   hash: string;
   projectId: string;
@@ -1071,12 +1096,12 @@ export interface CreatorSessionSummary {
   latestVerificationStatus?: "passed" | "failed" | "incomplete" | "not_run";
   failure?: { code: string; detailHash: string };
 }
-export interface CreatorDashboardState {
-  kind: "CreatorDashboardState";
+export interface CreatorTransactionState {
+  kind: "CreatorTransactionState";
   selectedSessionId?: string;
-  sessions: CreatorSessionSummary[];
-  controlView?: CreatorControlView;
-  stages: CreatorProgressStage[];
+  sessions: CreatorTransactionSummary[];
+  controlView?: CreatorTransactionControlView;
+  stages: CreatorTransactionStage[];
   pairedStudio: {
     status: "paired" | "unpaired" | "connecting";
     projectId?: string;
@@ -1096,6 +1121,89 @@ export interface CreatorDashboardState {
   serverTime: string;
 }
 
+/**
+ * A host-issued citation is the only project/source reference agent prose may
+ * carry into the durable creator conversation. The model chooses among
+ * handles it has actually received; it cannot manufacture the bound fact.
+ */
+export interface CreatorAgentCitation {
+  kind: "CreatorAgentCitation";
+  id: string;
+  hash: string;
+  handle: string;
+  projectRevisionHash: string;
+  authority: "project_index" | "static_analysis" | "creator_memory" | "conversation_evidence";
+  subject:
+    | {
+        kind: "project_fact";
+        objectId: string;
+        path: string;
+        className: string;
+        factHash: string;
+      }
+    | {
+        kind: "source_ranges";
+        tool:
+          | "source.search"
+          | "source.read"
+          | "source.symbols"
+          | "source.references"
+          | "source.dependencies";
+        resultHash: string;
+        ranges: Array<{
+          documentId: string;
+          path: string;
+          sourceHash: string;
+          startByte: number;
+          endByte: number;
+        }>;
+      }
+    | {
+        kind: "memory";
+        memoryItemId: string;
+        revisionId: string;
+        revisionHash: string;
+      }
+    | {
+        kind: "prior_evidence";
+        eventId: string;
+        eventHash: string;
+        evidence: {
+          id: string;
+          hash: string;
+          artifact: ArtifactReference;
+        };
+      };
+}
+
+export interface CreatorAgentContextCitation {
+  readonly label: string;
+  readonly citation: CreatorAgentCitation;
+}
+
+export type CreatorAgentOutcome =
+  | {
+      kind: "answer";
+      id: string;
+      hash: string;
+      text: string;
+      citations: CreatorAgentCitation[];
+    }
+  | {
+      kind: "clarification_requested";
+      id: string;
+      hash: string;
+      question: string;
+      citations: CreatorAgentCitation[];
+    }
+  | {
+      kind: "plan_proposed";
+      id: string;
+      hash: string;
+      plan: CreatorPlan;
+      citations: CreatorAgentCitation[];
+    };
+
 export interface CreatorAgentWorkerDescriptor {
   kind: "CreatorAgentWorkerDescriptor";
   name: "forge-local-creator-agent-worker";
@@ -1108,7 +1216,7 @@ export type CreatorPlannerExecution = {
   toolHost: CreatorPlannerToolHost;
   systemPrompt: string;
   finalization: CreatorPhaseFinalization;
-  plan?: CreatorPlan;
+  outcome?: CreatorAgentOutcome;
 };
 
 export type CreatorBuilderExecution = {
@@ -1120,28 +1228,30 @@ export type CreatorBuilderExecution = {
   sourceWriteBlobs?: readonly CreatorSourceWriteBlobCapture[];
 };
 
-export function createCreatorControlView(
-  input: Omit<CreatorControlView, "kind" | "id" | "hash">,
-): CreatorControlView {
+export function createCreatorTransactionControlView(
+  input: Omit<CreatorTransactionControlView, "kind" | "id" | "hash">,
+): CreatorTransactionControlView {
   const canonical = JSON.parse(stableJson(input)) as Omit<
-    CreatorControlView,
+    CreatorTransactionControlView,
     "kind" | "id" | "hash"
   >;
   const hash = contentHash(stableJson(canonical));
-  const view: CreatorControlView = {
-    kind: "CreatorControlView",
-    id: `creator_control_view_${hash.slice(0, 24)}`,
+  const view: CreatorTransactionControlView = {
+    kind: "CreatorTransactionControlView",
+    id: `creator_transaction_control_view_${hash.slice(0, 24)}`,
     hash,
     ...canonical,
   };
-  assertCreatorControlView(view);
+  assertCreatorTransactionControlView(view);
   return view;
 }
 
-export function assertCreatorControlView(value: unknown): asserts value is CreatorControlView {
+export function assertCreatorTransactionControlView(
+  value: unknown,
+): asserts value is CreatorTransactionControlView {
   if (
     !isRecord(value) ||
-    value.kind !== "CreatorControlView" ||
+    value.kind !== "CreatorTransactionControlView" ||
     !isId(value.id) ||
     !isHash(value.hash) ||
     !isId(value.creatorSessionId) ||
@@ -1150,24 +1260,26 @@ export function assertCreatorControlView(value: unknown): asserts value is Creat
     typeof value.title !== "string" ||
     typeof value.detail !== "string"
   )
-    throw new Error("Invalid CreatorControlView");
-  const actions: unknown[] = [value.primaryAction, value.secondaryAction].filter(
-    (action) => action !== undefined,
-  );
-  if (actions.length > 2 || !actions.every(isControlActionDescriptor))
-    throw new Error("Invalid CreatorControlView actions");
+    throw new Error("Invalid CreatorTransactionControlView");
+  if (
+    !Array.isArray(value.actions) ||
+    value.actions.length > 2 ||
+    !value.actions.every(isTransactionControlActionDescriptor)
+  )
+    throw new Error("Invalid CreatorTransactionControlView actions");
+  const actions = value.actions;
   if (new Set(actions.map((action) => action.id)).size !== actions.length)
-    throw new Error("Invalid CreatorControlView actions");
+    throw new Error("Invalid CreatorTransactionControlView actions");
   if (
-    value.primaryAction !== undefined &&
-    (!isRecord(value.primaryAction) || value.primaryAction.intent !== "primary")
+    actions.filter((action) => action.intent === "primary").length > 1 ||
+    actions.filter((action) => action.intent === "secondary").length > 1 ||
+    actions.some(
+      (action, index) =>
+        action.intent === "primary" &&
+        actions.slice(0, index).some((earlier) => earlier.intent === "secondary"),
+    )
   )
-    throw new Error("Invalid CreatorControlView primary action");
-  if (
-    value.secondaryAction !== undefined &&
-    (!isRecord(value.secondaryAction) || value.secondaryAction.intent !== "secondary")
-  )
-    throw new Error("Invalid CreatorControlView secondary action");
+    throw new Error("Invalid CreatorTransactionControlView action order");
   if (value.artifact !== undefined) {
     if (
       !isRecord(value.artifact) ||
@@ -1177,13 +1289,13 @@ export function assertCreatorControlView(value: unknown): asserts value is Creat
       !isHash(value.artifact.presentationHash) ||
       contentHash(stableJson(value.artifact.presentation)) !== value.artifact.presentationHash
     )
-      throw new Error("Invalid CreatorControlView artifact");
+      throw new Error("Invalid CreatorTransactionControlView artifact");
   }
   if (
     value.evidence !== undefined &&
     (!Array.isArray(value.evidence) || !value.evidence.every(isCreatorEvidencePresentation))
   )
-    throw new Error("Invalid CreatorControlView evidence");
+    throw new Error("Invalid CreatorTransactionControlView evidence");
   if (
     value.creatorReviewPrompts !== undefined &&
     (!Array.isArray(value.creatorReviewPrompts) ||
@@ -1192,9 +1304,10 @@ export function assertCreatorControlView(value: unknown): asserts value is Creat
         (prompt) => typeof prompt === "string" && prompt.trim().length > 0 && prompt.length <= 4096,
       ))
   )
-    throw new Error("Invalid CreatorControlView review prompts");
+    throw new Error("Invalid CreatorTransactionControlView review prompts");
   if (value.artifacts !== undefined) {
-    if (!isRecord(value.artifacts)) throw new Error("Invalid CreatorControlView artifacts");
+    if (!isRecord(value.artifacts))
+      throw new Error("Invalid CreatorTransactionControlView artifacts");
     for (const reference of Object.values(value.artifacts)) assertArtifactReference(reference);
   }
   if (value.verification !== undefined) {
@@ -1208,7 +1321,7 @@ export function assertCreatorControlView(value: unknown): asserts value is Creat
         (fact) => isRecord(fact) && typeof fact.statement === "string" && isHash(fact.hash),
       )
     )
-      throw new Error("Invalid CreatorControlView verification");
+      throw new Error("Invalid CreatorTransactionControlView verification");
     if (value.verification.runtimeSummary !== undefined) {
       const summary = value.verification.runtimeSummary;
       if (
@@ -1234,7 +1347,7 @@ export function assertCreatorControlView(value: unknown): asserts value is Creat
             issue.code.length > 0,
         )
       )
-        throw new Error("Invalid CreatorControlView runtime summary");
+        throw new Error("Invalid CreatorTransactionControlView runtime summary");
     }
   }
   if (
@@ -1268,7 +1381,7 @@ export function assertCreatorControlView(value: unknown): asserts value is Creat
           isHash(fact.hash),
       ))
   )
-    throw new Error("Invalid CreatorControlView mutation evidence");
+    throw new Error("Invalid CreatorTransactionControlView mutation evidence");
   if (
     value.sourceSync !== undefined &&
     (!isRecord(value.sourceSync) ||
@@ -1279,33 +1392,36 @@ export function assertCreatorControlView(value: unknown): asserts value is Creat
       (value.sourceSync.artifact !== undefined &&
         !validArtifactReference(value.sourceSync.artifact)))
   )
-    throw new Error("Invalid CreatorControlView source sync evidence");
+    throw new Error("Invalid CreatorTransactionControlView source sync evidence");
   const { kind: _kind, id: _id, hash: _hash, ...payload } = value;
   const expected = contentHash(stableJson(payload));
-  if (value.hash !== expected || value.id !== `creator_control_view_${expected.slice(0, 24)}`)
-    throw new Error("Invalid CreatorControlView identity");
+  if (
+    value.hash !== expected ||
+    value.id !== `creator_transaction_control_view_${expected.slice(0, 24)}`
+  )
+    throw new Error("Invalid CreatorTransactionControlView identity");
 }
 
-export function assertCreatorControlActionBinding(
-  view: CreatorControlView,
+export function assertCreatorTransactionControlActionBinding(
+  view: CreatorTransactionControlView,
   action: {
     creatorSessionId: string;
     viewId: string;
     viewHash: string;
-    actionId: CreatorControlActionId;
+    actionId: CreatorTransactionControlActionId;
   },
   replayed = false,
 ): void {
-  assertCreatorControlView(view);
+  assertCreatorTransactionControlView(view);
   if (
     action.creatorSessionId !== view.creatorSessionId ||
     action.viewId !== view.id ||
     action.viewHash !== view.hash
   )
-    throw new Error("Creator action is stale or bound to a different control view");
-  if (replayed) throw new Error("Creator control view action was already consumed");
-  if (![view.primaryAction?.id, view.secondaryAction?.id].includes(action.actionId))
-    throw new Error("Creator action is not available in the current control view");
+    throw new Error("Creator transaction action is stale or bound to a different control view");
+  if (replayed) throw new Error("Creator transaction control view action was already consumed");
+  if (!view.actions.some((candidate) => candidate.id === action.actionId))
+    throw new Error("Creator transaction action is not available in the current control view");
 }
 
 export function createStudioOwnershipMap(input: {
@@ -1387,6 +1503,7 @@ function resolveProjectAuthorityAvailability(input: {
 }
 
 export function createCreatorSession(input: {
+  id?: string;
   prompt: string;
   projectId: string;
   revisionHash: string;
@@ -1406,7 +1523,9 @@ export function createCreatorSession(input: {
   assertHash(input.projectCaptureHash, "Creator session project-index capture");
   const now = (input.now ?? new Date()).toISOString();
   const promptHash = contentHash(input.prompt);
-  const id = `creator_session_${randomUUID()}`;
+  const id = input.id ?? `creator_session_${randomUUID()}`;
+  if (!isId(id) || !id.startsWith("creator_session_"))
+    throw new Error("Creator session identity is invalid");
   return sealSession({
     kind: "CreatorSession",
     id,
@@ -2341,51 +2460,6 @@ abstract class BaseCreatorToolHost implements AgentToolHost {
   protected abstract dispatch(name: string, input: unknown): Promise<unknown>;
 }
 
-function inspectSnapshot(
-  observation: CreatorProjectIndexView,
-  ownership: StudioOwnershipMap,
-  paths: string[],
-): unknown {
-  const unique = [...new Set(paths.map(canonicalStudioPath))];
-  if (unique.length !== paths.length)
-    throw correctiveFailure(
-      "INSPECTION_PATH_DUPLICATE",
-      "Studio inspection paths must be unique and canonical",
-      { receivedPaths: paths },
-    );
-  const missing = unique.filter(
-    (path) => !observation.instances.some((instance) => instance.path === path),
-  );
-  if (missing.length > 0)
-    throw correctiveFailure(
-      "INSPECTION_PATH_ABSENT",
-      "Studio inspection accepts only exact paths present in the initial snapshot",
-      { missingPaths: missing },
-    );
-  const owner = (objectId: string): StudioOwner =>
-    ownership.entries.find((entry) => entry.objectId === objectId)?.owner ?? "studio_document";
-  const instances = observation.instances
-    .filter((instance) => unique.includes(instance.path))
-    .map((instance) => ({
-      objectId: instance.objectId,
-      identity: instance.identity,
-      path: instance.path,
-      className: instance.className,
-      instanceHash: contentHash(stableJson(instance)),
-      owner: owner(instance.objectId),
-      ...(instance.position ? { position: instance.position } : {}),
-      properties: instance.properties,
-      attributes: instance.attributes,
-    }));
-  const scripts = observation.scripts
-    .filter((script) => unique.includes(script.path))
-    .map((script) => ({
-      ...script,
-      owner: owner(script.documentId),
-    }));
-  return { paths: unique, instances, scripts };
-}
-
 function creatorRobloxApiLookup(
   input: z.infer<z.ZodObject<typeof ROBLOX_API_LOOKUP_SHAPE>>,
 ): unknown {
@@ -2403,10 +2477,217 @@ function creatorRobloxApiLookup(
   }
 }
 
+const CREATOR_PROJECT_QUERY_LIMIT = 100;
+const CREATOR_CITATION_LIMIT = 32;
+const CREATOR_CONVERSATION_TEXT_MAX_BYTES = 16_000;
+const CREATOR_CITATION_HANDLE_SCHEMA = z.string().regex(/^creator_citation_[a-f0-9]{24}$/);
+const CREATOR_CITATION_HANDLES_SCHEMA = z
+  .array(CREATOR_CITATION_HANDLE_SCHEMA)
+  .max(CREATOR_CITATION_LIMIT)
+  .refine((handles) => new Set(handles).size === handles.length, "citation handles must be unique");
+const CREATOR_ANSWER_SHAPE = {
+  text: z
+    .string()
+    .min(1)
+    .refine(
+      (text) => Buffer.byteLength(text, "utf8") <= CREATOR_CONVERSATION_TEXT_MAX_BYTES,
+      "answer exceeds the creator conversation text bound",
+    ),
+  citationHandles: CREATOR_CITATION_HANDLES_SCHEMA,
+} satisfies ZodRawShape;
+const CREATOR_CLARIFICATION_SHAPE = {
+  question: z
+    .string()
+    .min(1)
+    .refine(
+      (text) => Buffer.byteLength(text, "utf8") <= CREATOR_CONVERSATION_TEXT_MAX_BYTES,
+      "clarification exceeds the creator conversation text bound",
+    ),
+  citationHandles: CREATOR_CITATION_HANDLES_SCHEMA,
+} satisfies ZodRawShape;
+
+function projectCursor(input: {
+  revisionHash: string;
+  operation: "search" | "children";
+  query: unknown;
+  offset: number;
+}): string {
+  const binding = contentHash(
+    stableJson({
+      revisionHash: input.revisionHash,
+      operation: input.operation,
+      query: input.query,
+    }),
+  );
+  return `creator_project_cursor_${binding.slice(0, 24)}_${input.offset}`;
+}
+
+function projectCursorOffset(input: {
+  cursor?: string;
+  revisionHash: string;
+  operation: "search" | "children";
+  query: unknown;
+}): number {
+  if (input.cursor === undefined) return 0;
+  const match = /^creator_project_cursor_([a-f0-9]{24})_(\d+)$/.exec(input.cursor);
+  const expected = projectCursor({ ...input, offset: 0 })
+    .split("_")
+    .at(-2);
+  if (!match || match[1] !== expected)
+    throw new ToolFailure(
+      "PROJECT_CURSOR_STALE",
+      "Project cursor is stale or belongs to another query or revision. Omit cursor to start at the first page; for later pages copy nextCursor from this exact query. Never invent a cursor.",
+    );
+  const offset = Number(match[2]);
+  if (!Number.isSafeInteger(offset) || offset < 0)
+    throw new ToolFailure("PROJECT_CURSOR_INVALID", "Project cursor offset is invalid");
+  return offset;
+}
+
+function sealCreatorAgentCitation(
+  input: Omit<CreatorAgentCitation, "kind" | "id" | "hash" | "handle">,
+): CreatorAgentCitation {
+  const canonical = JSON.parse(stableJson(input)) as typeof input;
+  const hash = contentHash(stableJson(canonical));
+  return {
+    kind: "CreatorAgentCitation",
+    id: `creator_agent_citation_${hash.slice(0, 24)}`,
+    hash,
+    handle: `creator_citation_${hash.slice(0, 24)}`,
+    ...canonical,
+  };
+}
+
+/**
+ * Materialize a host-owned citation for conversation context that is already
+ * immutable before an AgentRun starts. Project/source citations are still
+ * issued only by their bounded tools; this entry point deliberately accepts
+ * only creator memory or prior durable evidence.
+ */
+export function createCreatorAgentContextCitation(input: {
+  projectRevisionHash: string;
+  label: string;
+  subject:
+    | {
+        kind: "memory";
+        memoryItemId: string;
+        revisionId: string;
+        revisionHash: string;
+      }
+    | {
+        kind: "prior_evidence";
+        eventId: string;
+        eventHash: string;
+        evidence: {
+          id: string;
+          hash: string;
+          artifact: ArtifactReference;
+        };
+      };
+}): CreatorAgentContextCitation {
+  assertHash(input.projectRevisionHash, "conversation citation project revision");
+  const label = input.label.normalize("NFC").trim();
+  if (label.length === 0 || Buffer.byteLength(label, "utf8") > 512)
+    throw new Error("Conversation citation label is invalid");
+  const authority =
+    input.subject.kind === "memory"
+      ? ("creator_memory" as const)
+      : ("conversation_evidence" as const);
+  const citation = sealCreatorAgentCitation({
+    projectRevisionHash: input.projectRevisionHash,
+    authority,
+    subject: input.subject,
+  });
+  assertCreatorAgentCitation(citation);
+  return { label, citation };
+}
+
+function sealCreatorAgentOutcome(
+  input:
+    | { kind: "answer"; text: string; citations: CreatorAgentCitation[] }
+    | { kind: "clarification_requested"; question: string; citations: CreatorAgentCitation[] }
+    | { kind: "plan_proposed"; plan: CreatorPlan; citations: CreatorAgentCitation[] },
+): CreatorAgentOutcome {
+  const canonical = JSON.parse(stableJson(input)) as typeof input;
+  const hash = contentHash(stableJson(canonical));
+  return {
+    ...canonical,
+    id: `creator_agent_outcome_${hash.slice(0, 24)}`,
+    hash,
+  } as CreatorAgentOutcome;
+}
+
+function citationRanges(value: unknown): Array<{
+  documentId: string;
+  path: string;
+  sourceHash: string;
+  startByte: number;
+  endByte: number;
+}> {
+  const ranges = new Map<
+    string,
+    {
+      documentId: string;
+      path: string;
+      sourceHash: string;
+      startByte: number;
+      endByte: number;
+    }
+  >();
+  const visit = (candidate: unknown): void => {
+    if (Array.isArray(candidate)) {
+      for (const entry of candidate) visit(entry);
+      return;
+    }
+    if (!isRecord(candidate)) return;
+    const document = isRecord(candidate.document)
+      ? candidate.document
+      : isRecord(candidate.source)
+        ? candidate.source
+        : undefined;
+    const range = isRecord(candidate.range)
+      ? candidate.range
+      : isRecord(candidate.snippetRange)
+        ? candidate.snippetRange
+        : isRecord(candidate.location)
+          ? candidate.location
+          : undefined;
+    if (
+      document &&
+      range &&
+      typeof document.documentId === "string" &&
+      typeof document.path === "string" &&
+      typeof document.sourceHash === "string" &&
+      Number.isSafeInteger(range.startByte) &&
+      Number.isSafeInteger(range.endByte) &&
+      Number(range.startByte) >= 0 &&
+      Number(range.endByte) >= Number(range.startByte)
+    ) {
+      const item = {
+        documentId: document.documentId,
+        path: document.path,
+        sourceHash: document.sourceHash,
+        startByte: Number(range.startByte),
+        endByte: Number(range.endByte),
+      };
+      ranges.set(`${item.documentId}:${item.startByte}:${item.endByte}`, item);
+    }
+    for (const child of Object.values(candidate)) visit(child);
+  };
+  visit(value);
+  return [...ranges.values()].sort(
+    (left, right) =>
+      left.path.localeCompare(right.path) ||
+      left.startByte - right.startByte ||
+      left.endByte - right.endByte,
+  );
+}
+
 export class CreatorPlannerToolHost extends BaseCreatorToolHost {
-  private proposal?: CreatorPlan;
+  private outcome?: CreatorAgentOutcome;
   private lastProposalFailure: ToolFailure | undefined;
   private readonly inspectedPaths = new Set<string>();
+  private readonly citations = new Map<string, CreatorAgentCitation>();
   private readonly sourceIndex: StudioSourceIndex;
   private readonly sourceRecorder: SourceConsultationRecorder;
   constructor(
@@ -2417,6 +2698,7 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
       sourceIndex: StudioSourceIndex;
       sourceResolver: VerifiedSourceResolver;
       prompt: string;
+      contextCitations?: readonly CreatorAgentContextCitation[];
       budgets?: BudgetPolicy;
     },
   ) {
@@ -2424,6 +2706,14 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
     assertProductionStudioSourceIndex(input.sourceIndex);
     if (input.sourceIndex.snapshotHash !== input.session.currentProjectCaptureHash)
       throw new Error("Planner source index does not bind the current project-index capture");
+    if ((input.contextCitations?.length ?? 0) > CREATOR_CITATION_LIMIT)
+      throw new Error("Conversation context citation bound exceeded");
+    for (const entry of input.contextCitations ?? []) {
+      assertCreatorAgentContextCitation(entry);
+      if (this.citations.has(entry.citation.handle))
+        throw new Error("Conversation context citation handles must be unique");
+      this.citations.set(entry.citation.handle, structuredClone(entry.citation));
+    }
     this.sourceIndex = structuredClone(input.sourceIndex);
     this.sourceRecorder = new SourceConsultationRecorder(this.sourceIndex, input.sourceResolver);
   }
@@ -2435,10 +2725,39 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
         ROBLOX_API_LOOKUP_SHAPE,
       ),
       definition(
-        "studio.inspect",
-        "Inspect bounded properties, attributes, positions, ownership, and script hashes for exact paths in the initial Studio snapshot. Source bodies are never returned. Any path declared as a builder inspection dependency must first be inspected here.",
+        "project.search",
+        "Search the exact current project index by display path, instance name, or class. Results are bounded, revision-cursor paged, and carry host-issued project-fact citation handles.",
         {
-          paths: z.array(z.string().min(1)).min(1).max(CREATOR_MAX_INSPECTION_PATHS),
+          query: z.string().min(1).max(512),
+          limit: z.number().int().min(1).max(CREATOR_PROJECT_QUERY_LIMIT).optional(),
+          cursor: PROJECT_QUERY_CURSOR_SCHEMA,
+        },
+      ),
+      definition(
+        "project.children",
+        'List exact children of one opaque object identity, or one top-level Studio root. Supply exactly one of parentObjectId and rootPath; omit the other field. First-page example: {"rootPath":"Workspace"}. Use only object IDs returned by project.search or project.children. Results are bounded, revision-cursor paged, and carry host-issued project-fact citation handles.',
+        {
+          parentObjectId: z
+            .string()
+            .min(1)
+            .max(1024)
+            .describe("Exact objectId returned by a project tool. Omit when using rootPath.")
+            .optional(),
+          rootPath: z
+            .string()
+            .min(1)
+            .max(512)
+            .describe("Top-level Studio root, e.g. Workspace. Omit when using parentObjectId.")
+            .optional(),
+          limit: z.number().int().min(1).max(CREATOR_PROJECT_QUERY_LIMIT).optional(),
+          cursor: PROJECT_QUERY_CURSOR_SCHEMA,
+        },
+      ),
+      definition(
+        "project.inspect",
+        "Inspect covered properties, attributes, tags, positions, ownership, and source metadata for exact opaque object identities from the current project index. Source bodies are never returned. Returned facts carry host-issued citation handles.",
+        {
+          objectIds: z.array(z.string().min(1).max(1024)).min(1).max(CREATOR_MAX_INSPECTION_PATHS),
         },
       ),
       definition(
@@ -2499,13 +2818,23 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
       ),
       definition(
         "creator.propose_plan",
-        `Propose typed changes and a creator-visible verification charter for the immutable creator request. Explore relevant source with source.search, source.read, source.symbols, source.references, and source.dependencies before selecting an existing source target; Forge records the exact consulted closure. Explicitly list every already-inspected initial-index path whose facts the builder may inspect; this list is creator-reviewed and contract-bound. Forge, not the model, derives the plan goal from that request. Each step must bind exact changeIds, covering every change once. Every create or move parent must be either a manifest-declared engine-owned authoring container or an exact Studio-document-owned structural anchor in the initial index; parent authority never grants mutation authority over the parent. Planned instances cannot parent other planned instances. A Script, LocalScript, or ModuleScript create must declare initialization inline_source_required: its one create operation will carry complete initial source. edit_source is only for a Script, LocalScript, or ModuleScript present in the initial index; it cannot author a newly planned script. Non-script creation uses initial_properties. Machine-check language is generated by Forge. Every position_series clause must satisfy (sampleCount - 1) * intervalMs >= ${CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS}; the manifest bounds each field and the concurrent runtime window.`,
+        `Propose typed changes and a creator-visible verification charter for the immutable creator request. Explore relevant source with source.search, source.read, source.symbols, source.references, and source.dependencies before selecting an existing source target; Forge records the exact consulted closure. Explicitly list every already-inspected initial-index path whose facts the builder may inspect; this list is creator-reviewed and contract-bound. Forge, not the model, derives the plan goal from that request. Each step must bind exact changeIds, covering every change once. Use citationHandles only for relevant host-issued conversation-memory or prior-evidence context; current project/source facts consulted by the plan are bound automatically. Every create or move parent must be either a manifest-declared engine-owned authoring container or an exact Studio-document-owned structural anchor in the initial index; parent authority never grants mutation authority over the parent. Planned instances cannot parent other planned instances. A Script, LocalScript, or ModuleScript create must declare initialization inline_source_required: its one create operation will carry complete initial source. edit_source is only for a Script, LocalScript, or ModuleScript present in the initial index; it cannot author a newly planned script. Non-script creation uses initial_properties. Machine-check language is generated by Forge. Every position_series clause must satisfy (sampleCount - 1) * intervalMs >= ${CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS}; the manifest bounds each field and the concurrent runtime window.`,
         PLAN_SHAPE,
+      ),
+      definition(
+        "creator.answer",
+        "Answer the creator without proposing or applying a change. Cite only host-issued handles returned during this run; uncited prose remains explicit agent interpretation.",
+        CREATOR_ANSWER_SHAPE,
+      ),
+      definition(
+        "creator.request_clarification",
+        "Ask one material question when a safe, useful plan cannot yet be selected. Cite only host-issued handles returned during this run.",
+        CREATOR_CLARIFICATION_SHAPE,
       ),
     ];
   }
-  getPlan(): CreatorPlan | undefined {
-    return this.proposal;
+  getOutcome(): CreatorAgentOutcome | undefined {
+    return this.outcome === undefined ? undefined : structuredClone(this.outcome);
   }
   getSourceIndex(): StudioSourceIndex {
     return structuredClone(this.sourceIndex);
@@ -2514,48 +2843,56 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
     return this.sourceRecorder.seal();
   }
   progressToken(): string {
-    return this.proposal?.hash ?? "creator-plan-unpublished";
+    return this.outcome?.hash ?? "creator-outcome-unpublished";
   }
   completionStatus(): AgentToolCompletionStatus {
-    return this.proposal
+    return this.outcome
       ? { ready: true }
       : {
           ready: false,
-          code: "PLAN_NOT_PUBLISHED",
+          code: "CREATOR_OUTCOME_NOT_PUBLISHED",
           message: this.lastProposalFailure
-            ? `Creator planner ended without publishing a valid plan. Last proposal failure: ${this.lastProposalFailure.message}`
-            : "Creator planner ended without publishing a valid plan",
+            ? `Creator agent ended without publishing a valid outcome. Last outcome failure: ${this.lastProposalFailure.message}`
+            : "Creator agent ended without publishing an answer, clarification, or plan",
         };
   }
   protected override async dispatch(name: string, input: unknown): Promise<unknown> {
     if (name === "studio.api_lookup")
       return creatorRobloxApiLookup(input as z.infer<z.ZodObject<typeof ROBLOX_API_LOOKUP_SHAPE>>);
-    if (name === "studio.inspect") {
-      const paths = (input as { paths: string[] }).paths;
-      const inspected = inspectSnapshot(this.input.projectIndex, this.input.ownership, paths);
-      for (const path of paths) this.inspectedPaths.add(path);
-      return inspected;
+    if (name === "project.search") return this.searchProject(input as never);
+    if (name === "project.children") return this.projectChildren(input as never);
+    if (name === "project.inspect") return this.inspectProject(input as never);
+    if (
+      name === "source.search" ||
+      name === "source.read" ||
+      name === "source.symbols" ||
+      name === "source.references" ||
+      name === "source.dependencies"
+    )
+      return this.sourceTool(name, input);
+    if (name === "creator.answer") {
+      const value = input as z.infer<z.ZodObject<typeof CREATOR_ANSWER_SHAPE>>;
+      this.requireNoOutcome();
+      this.outcome = sealCreatorAgentOutcome({
+        kind: "answer",
+        text: value.text.normalize("NFC"),
+        citations: this.resolveCitations(value.citationHandles),
+      });
+      return { outcomeId: this.outcome.id, outcomeHash: this.outcome.hash };
     }
-    if (name === "source.search")
-      return this.sourceRecorder.search(
-        input as Parameters<SourceConsultationRecorder["search"]>[0],
-      );
-    if (name === "source.read")
-      return this.sourceRecorder.read(input as Parameters<SourceConsultationRecorder["read"]>[0]);
-    if (name === "source.symbols")
-      return this.sourceRecorder.symbols(
-        input as Parameters<SourceConsultationRecorder["symbols"]>[0],
-      );
-    if (name === "source.references")
-      return this.sourceRecorder.references(
-        input as Parameters<SourceConsultationRecorder["references"]>[0],
-      );
-    if (name === "source.dependencies")
-      return this.sourceRecorder.dependenciesPage(
-        input as Parameters<SourceConsultationRecorder["dependenciesPage"]>[0],
-      );
+    if (name === "creator.request_clarification") {
+      const value = input as z.infer<z.ZodObject<typeof CREATOR_CLARIFICATION_SHAPE>>;
+      this.requireNoOutcome();
+      this.outcome = sealCreatorAgentOutcome({
+        kind: "clarification_requested",
+        question: value.question.normalize("NFC"),
+        citations: this.resolveCitations(value.citationHandles),
+      });
+      return { outcomeId: this.outcome.id, outcomeHash: this.outcome.hash };
+    }
     if (name !== "creator.propose_plan")
       throw new ToolFailure("TOOL_UNKNOWN", `Unknown planner tool ${name}`);
+    this.requireNoOutcome();
     const value = input as z.infer<z.ZodObject<typeof PLAN_SHAPE>>;
     const uninspected = value.inspectionPaths.filter((path) => !this.inspectedPaths.has(path));
     if (uninspected.length > 0)
@@ -2623,7 +2960,7 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
             sourceIndexHash: this.sourceIndex.hash,
           },
         );
-      this.proposal = createCreatorPlan(
+      const plan = createCreatorPlan(
         {
           sessionId: this.input.session.id,
           promptHash: this.input.session.promptHash,
@@ -2644,6 +2981,22 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
         this.input.projectIndex,
         this.input.ownership,
       );
+      const contextual = this.resolveCitations(value.citationHandles ?? []).filter((citation) =>
+        ["creator_memory", "conversation_evidence"].includes(citation.authority),
+      );
+      const grounded = [...this.citations.values()].filter((citation) =>
+        ["project_index", "static_analysis"].includes(citation.authority),
+      );
+      const citations = new Map(
+        [...grounded, ...contextual].map((citation) => [citation.handle, citation]),
+      );
+      this.outcome = sealCreatorAgentOutcome({
+        kind: "plan_proposed",
+        plan,
+        citations: [...citations.values()].sort((left, right) =>
+          left.handle.localeCompare(right.handle),
+        ),
+      });
     } catch (error) {
       this.lastProposalFailure =
         error instanceof CreatorValidationFailure
@@ -2652,12 +3005,238 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
       throw this.lastProposalFailure;
     }
     this.lastProposalFailure = undefined;
+    if (!this.outcome || this.outcome.kind !== "plan_proposed")
+      throw new Error("Creator plan outcome was not retained");
     return {
-      planId: this.proposal.id,
-      planHash: this.proposal.hash,
-      charterId: this.proposal.charter.id,
-      charterHash: this.proposal.charter.hash,
+      outcomeId: this.outcome.id,
+      outcomeHash: this.outcome.hash,
+      planId: this.outcome.plan.id,
+      planHash: this.outcome.plan.hash,
+      charterId: this.outcome.plan.charter.id,
+      charterHash: this.outcome.plan.charter.hash,
     };
+  }
+
+  private requireNoOutcome(): void {
+    if (this.outcome)
+      throw new ToolFailure(
+        "CREATOR_OUTCOME_ALREADY_PUBLISHED",
+        "Exactly one creator outcome may be published in an AgentRun",
+      );
+  }
+
+  private resolveCitations(handles: readonly string[]): CreatorAgentCitation[] {
+    return handles.map((handle) => {
+      const citation = this.citations.get(handle);
+      if (!citation)
+        throw new ToolFailure(
+          "CREATOR_CITATION_NOT_ISSUED",
+          `Citation handle ${handle} was not issued during this AgentRun`,
+        );
+      return citation;
+    });
+  }
+
+  private issueProjectCitation(
+    instance: CreatorProjectIndexView["instances"][number],
+  ): CreatorAgentCitation {
+    const citation = sealCreatorAgentCitation({
+      projectRevisionHash: this.input.session.currentRevisionHash,
+      authority: "project_index",
+      subject: {
+        kind: "project_fact",
+        objectId: instance.objectId,
+        path: instance.path,
+        className: instance.className,
+        factHash: contentHash(stableJson(instance)),
+      },
+    });
+    this.citations.set(citation.handle, citation);
+    return citation;
+  }
+
+  private projectSummary(instance: CreatorProjectIndexView["instances"][number]): unknown {
+    const citation = this.issueProjectCitation(instance);
+    return {
+      objectId: instance.objectId,
+      path: instance.path,
+      name: instance.name,
+      className: instance.className,
+      owner:
+        this.input.ownership.entries.find((entry) => entry.objectId === instance.objectId)?.owner ??
+        "studio_document",
+      citationHandle: citation.handle,
+    };
+  }
+
+  private searchProject(input: { query: string; limit?: number; cursor?: string }): unknown {
+    const query = input.query.normalize("NFC").toLocaleLowerCase("en-US");
+    const queryBinding = { query };
+    const offset = projectCursorOffset({
+      ...(input.cursor ? { cursor: input.cursor } : {}),
+      revisionHash: this.input.session.currentRevisionHash,
+      operation: "search",
+      query: queryBinding,
+    });
+    const limit = input.limit ?? 40;
+    const matches = this.input.projectIndex.instances.filter((instance) =>
+      [instance.path, instance.name, instance.className].some((value) =>
+        value.toLocaleLowerCase("en-US").includes(query),
+      ),
+    );
+    const page = matches.slice(offset, offset + limit);
+    return {
+      revisionHash: this.input.session.currentRevisionHash,
+      results: page.map((instance) => this.projectSummary(instance)),
+      ...(offset + page.length < matches.length
+        ? {
+            nextCursor: projectCursor({
+              revisionHash: this.input.session.currentRevisionHash,
+              operation: "search",
+              query: queryBinding,
+              offset: offset + page.length,
+            }),
+          }
+        : {}),
+    };
+  }
+
+  private projectChildren(input: {
+    parentObjectId?: string;
+    rootPath?: string;
+    limit?: number;
+    cursor?: string;
+  }): unknown {
+    if ((input.parentObjectId === undefined) === (input.rootPath === undefined))
+      throw new ToolFailure(
+        "PROJECT_PARENT_INVALID",
+        'project.children requires exactly one parentObjectId or rootPath. For a root, send {"rootPath":"Workspace"} and omit parentObjectId. For an object, use its returned objectId and omit rootPath. Omit cursor for the first page.',
+      );
+    const queryBinding = {
+      ...(input.parentObjectId ? { parentObjectId: input.parentObjectId } : {}),
+      ...(input.rootPath ? { rootPath: canonicalStudioPath(input.rootPath) } : {}),
+    };
+    const offset = projectCursorOffset({
+      ...(input.cursor ? { cursor: input.cursor } : {}),
+      revisionHash: this.input.session.currentRevisionHash,
+      operation: "children",
+      query: queryBinding,
+    });
+    const limit = input.limit ?? 40;
+    const children = this.input.projectIndex.instances.filter((instance) => {
+      if (input.parentObjectId)
+        return (
+          instance.parentIdentity !== undefined &&
+          studioObjectIdentityKey(instance.parentIdentity) === input.parentObjectId
+        );
+      const path = instance.path.split("/");
+      return path.length === 2 && path[0] === queryBinding.rootPath;
+    });
+    const page = children.slice(offset, offset + limit);
+    return {
+      revisionHash: this.input.session.currentRevisionHash,
+      results: page.map((instance) => this.projectSummary(instance)),
+      ...(offset + page.length < children.length
+        ? {
+            nextCursor: projectCursor({
+              revisionHash: this.input.session.currentRevisionHash,
+              operation: "children",
+              query: queryBinding,
+              offset: offset + page.length,
+            }),
+          }
+        : {}),
+    };
+  }
+
+  private inspectProject(input: { objectIds: string[] }): unknown {
+    if (new Set(input.objectIds).size !== input.objectIds.length)
+      throw new ToolFailure(
+        "PROJECT_INSPECTION_DUPLICATE",
+        "Project object identities must be unique",
+      );
+    const missing = input.objectIds.filter(
+      (objectId) => !this.input.projectIndex.instances.some((entry) => entry.objectId === objectId),
+    );
+    if (missing.length > 0)
+      throw new ToolFailure(
+        "PROJECT_INSPECTION_ABSENT",
+        `Project index has no object for: ${missing.join(", ")}`,
+      );
+    const instances = this.input.projectIndex.instances
+      .filter((instance) => input.objectIds.includes(instance.objectId))
+      .map((instance) => {
+        this.inspectedPaths.add(instance.path);
+        const citation = this.issueProjectCitation(instance);
+        const script = this.input.projectIndex.scripts.find(
+          (candidate) => candidate.documentId === instance.objectId,
+        );
+        return {
+          objectId: instance.objectId,
+          path: instance.path,
+          name: instance.name,
+          className: instance.className,
+          owner:
+            this.input.ownership.entries.find((entry) => entry.objectId === instance.objectId)
+              ?.owner ?? "studio_document",
+          ...(instance.position ? { position: instance.position } : {}),
+          properties: instance.properties,
+          attributes: instance.attributes,
+          tags: instance.tags,
+          ...(script
+            ? {
+                source: {
+                  documentId: script.documentId,
+                  sourceHash: script.sourceHash,
+                  utf8Bytes: script.utf8Bytes,
+                  executionContext: script.executionContext,
+                },
+              }
+            : {}),
+          citationHandle: citation.handle,
+        };
+      });
+    return { revisionHash: this.input.session.currentRevisionHash, instances };
+  }
+
+  private sourceTool(
+    name:
+      | "source.search"
+      | "source.read"
+      | "source.symbols"
+      | "source.references"
+      | "source.dependencies",
+    input: unknown,
+  ): unknown {
+    const result =
+      name === "source.search"
+        ? this.sourceRecorder.search(input as Parameters<SourceConsultationRecorder["search"]>[0])
+        : name === "source.read"
+          ? this.sourceRecorder.read(input as Parameters<SourceConsultationRecorder["read"]>[0])
+          : name === "source.symbols"
+            ? this.sourceRecorder.symbols(
+                input as Parameters<SourceConsultationRecorder["symbols"]>[0],
+              )
+            : name === "source.references"
+              ? this.sourceRecorder.references(
+                  input as Parameters<SourceConsultationRecorder["references"]>[0],
+                )
+              : this.sourceRecorder.dependenciesPage(
+                  input as Parameters<SourceConsultationRecorder["dependenciesPage"]>[0],
+                );
+    const ranges = citationRanges(result);
+    const citation = sealCreatorAgentCitation({
+      projectRevisionHash: this.input.session.currentRevisionHash,
+      authority: "static_analysis",
+      subject: {
+        kind: "source_ranges",
+        tool: name,
+        resultHash: contentHash(stableJson(result)),
+        ranges,
+      },
+    });
+    this.citations.set(citation.handle, citation);
+    return { result, citationHandle: citation.handle };
   }
 }
 
@@ -3127,11 +3706,16 @@ export async function runCreatorPlanner(input: {
   projectIndex: CreatorProjectIndexView;
   sourceIndex: StudioSourceIndex;
   sourceResolver: VerifiedSourceResolver;
-  prompt: string;
+  creatorPrompt: string;
+  agentPrompt: string;
+  contextCitations?: readonly CreatorAgentContextCitation[];
   runtime: AgentRuntime;
+  executionJournal: AgentExecutionJournalSink;
+  /** Exact durable response boundary authorized by the creator to continue. */
+  resumeFromJournal?: AgentExecutionJournalResume;
   budgets?: BudgetPolicy;
 }): Promise<CreatorPlannerExecution> {
-  if (contentHash(input.prompt) !== input.session.promptHash)
+  if (contentHash(input.creatorPrompt) !== input.session.promptHash)
     throw new Error("Creator prompt does not match the session");
   const host = new CreatorPlannerToolHost({
     session: input.session,
@@ -3139,12 +3723,13 @@ export async function runCreatorPlanner(input: {
     projectIndex: input.projectIndex,
     sourceIndex: input.sourceIndex,
     sourceResolver: input.sourceResolver,
-    prompt: input.prompt,
+    prompt: input.creatorPrompt,
+    ...(input.contextCitations ? { contextCitations: input.contextCitations } : {}),
     budgets: input.budgets ?? DEFAULT_AGENT_BUDGETS,
   });
   const result = await invokeCreatorRuntime(input.runtime, {
     systemPrompt: CREATOR_PLANNER_SYSTEM_PROMPT,
-    prompt: input.prompt,
+    prompt: input.agentPrompt,
     orientation: creatorOrientation({
       session: input.session,
       ownership: input.ownership,
@@ -3153,37 +3738,39 @@ export async function runCreatorPlanner(input: {
     tools: host,
     budgets: input.budgets ?? DEFAULT_AGENT_BUDGETS,
     model: input.session.model,
+    executionJournal: input.executionJournal,
+    ...(input.resumeFromJournal ? { resumeFromJournal: input.resumeFromJournal } : {}),
   });
-  const plan = host.getPlan();
+  const outcome = host.getOutcome();
   if (result.status !== "completed")
     return {
       runtimeResult: result,
       toolHost: host,
       systemPrompt: CREATOR_PLANNER_SYSTEM_PROMPT,
-      finalization: runtimeFinalization("plan", result),
+      finalization: runtimeFinalization("creator_outcome", result),
     };
-  if (!plan)
+  if (!outcome)
     return {
       runtimeResult: result,
       toolHost: host,
       systemPrompt: CREATOR_PLANNER_SYSTEM_PROMPT,
       finalization: {
         status: "unsealed",
-        intendedArtifactKind: "plan",
+        intendedArtifactKind: "creator_outcome",
         failureStage: "finalization",
-        failureCode: "PLAN_NOT_PUBLISHED",
-        detail: "Creator planner ended without publishing a valid plan",
+        failureCode: "CREATOR_OUTCOME_NOT_PUBLISHED",
+        detail: "Creator agent ended without publishing an answer, clarification, or plan",
         failureKind: "model",
       },
     };
   return {
-    plan,
+    outcome,
     runtimeResult: result,
     toolHost: host,
     systemPrompt: CREATOR_PLANNER_SYSTEM_PROMPT,
     finalization: {
       status: "sealed",
-      artifact: { kind: "plan", id: plan.id, hash: plan.hash },
+      artifact: { kind: "creator_outcome", id: outcome.id, hash: outcome.hash },
     },
   };
 }
@@ -3192,7 +3779,8 @@ export async function runCreatorBuilder(input: {
   session: CreatorSession;
   ownership: StudioOwnershipMap;
   projectIndex: CreatorProjectIndexView;
-  prompt: string;
+  creatorPrompt: string;
+  agentPrompt: string;
   plan: CreatorPlan;
   planApproval: CreatorApproval;
   sourceIndex: StudioSourceIndex;
@@ -3200,9 +3788,10 @@ export async function runCreatorBuilder(input: {
   sourceConsultation: CreatorSourceConsultation;
   verificationFeedback?: readonly string[];
   runtime: AgentRuntime;
+  executionJournal: AgentExecutionJournalSink;
   budgets?: BudgetPolicy;
 }): Promise<CreatorBuilderExecution> {
-  if (contentHash(input.prompt) !== input.session.promptHash)
+  if (contentHash(input.creatorPrompt) !== input.session.promptHash)
     throw new Error("Creator prompt does not match the session");
   if (
     input.planApproval.decision !== "approved" ||
@@ -3218,7 +3807,7 @@ export async function runCreatorBuilder(input: {
   );
   const result = await invokeCreatorRuntime(input.runtime, {
     systemPrompt,
-    prompt: input.prompt,
+    prompt: input.agentPrompt,
     orientation: creatorOrientation({
       session: input.session,
       ownership: input.ownership,
@@ -3227,6 +3816,7 @@ export async function runCreatorBuilder(input: {
     tools: host,
     budgets: input.budgets ?? DEFAULT_AGENT_BUDGETS,
     model: input.session.model,
+    executionJournal: input.executionJournal,
   });
   if (result.status !== "completed")
     return {
@@ -3312,8 +3902,24 @@ export async function loadCreatorBundle(path: string): Promise<CreatorSessionBun
     creatorRequest.promptHash !== value.session.promptHash
   )
     throw new Error("Creator request artifact does not bind its session");
+  if (value.agentOutcome) {
+    const outcome = await store.read(value.agentOutcome.artifact, assertCreatorAgentOutcome);
+    if (stableJson(outcome) !== stableJson(value.agentOutcome.outcome))
+      throw new Error("Creator agent outcome artifact body mismatch");
+  }
   for (const reference of value.agentRuns) {
-    await Promise.all([store.verify(reference.agentRun), store.verify(reference.trace)]);
+    const [agentRun] = await Promise.all([
+      store.read(reference.agentRun, assertAgentRun),
+      store.verify(reference.trace),
+    ]);
+    if (
+      agentRun.id !== reference.agentRunId ||
+      agentRun.phase !== reference.phase ||
+      agentRun.origin.kind !== "creator_session" ||
+      agentRun.origin.creatorSessionHash !== reference.creatorSessionHash
+    )
+      throw new Error("Creator bundle AgentRun binding mismatch");
+    await verifyAgentRunExecutionJournal(agentRun, store);
   }
   for (const binding of value.projectIndices) {
     const capture = await readCreatorProjectIndexArtifacts(store, binding);
@@ -3508,6 +4114,16 @@ export async function loadCreatorBundle(path: string): Promise<CreatorSessionBun
 export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
   assertCreatorSession(value.session);
   assertArtifactReference(value.creatorRequest);
+  if (value.agentOutcome !== undefined) {
+    if (!isRecord(value.agentOutcome)) throw new Error("Invalid creator agent outcome binding");
+    assertCreatorAgentOutcome(value.agentOutcome.outcome);
+    assertArtifactReference(value.agentOutcome.artifact);
+    if (
+      value.agentOutcome.artifact.artifactHash !==
+      contentHash(serializeCanonicalJson(value.agentOutcome.outcome))
+    )
+      throw new Error("Creator agent outcome artifact binding mismatch");
+  }
   assertOwnershipMap(value.ownership);
   if (
     !Array.isArray(value.projectIndices) ||
@@ -3909,7 +4525,7 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
     assertArtifactReference(reference.agentRun);
     assertArtifactReference(reference.trace);
     assertCreatorPhaseOutcome(reference.outcome);
-    const intended = reference.phase === "creator_planner" ? "plan" : "change_set";
+    const intended = reference.phase === "creator_planner" ? "creator_outcome" : "change_set";
     if (
       (reference.outcome.status === "sealed"
         ? reference.outcome.artifact.kind
@@ -3919,11 +4535,12 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
     if (
       reference.phase === "creator_planner" &&
       reference.outcome.status === "sealed" &&
-      (!value.plan ||
-        reference.outcome.artifact.id !== value.plan.id ||
-        reference.outcome.artifact.hash !== value.plan.hash)
+      value.session.status !== "refresh_required" &&
+      (!value.agentOutcome ||
+        reference.outcome.artifact.id !== value.agentOutcome.outcome.id ||
+        reference.outcome.artifact.hash !== value.agentOutcome.outcome.hash)
     )
-      throw new Error("Sealed creator planner AgentRun is not linked to its plan");
+      throw new Error("Sealed creator planner AgentRun is not linked to its outcome");
     if (reference.phase === "creator_builder") {
       if (
         !isRecord(reference.buildContract) ||
@@ -3998,12 +4615,26 @@ export function assertCreatorRequestArtifact(
     typeof value.sessionId !== "string" ||
     value.sessionId.length === 0 ||
     !isHash(value.promptHash) ||
-    typeof value.text !== "string" ||
-    value.text.trim().length === 0 ||
-    value.text !== value.text.trim() ||
-    contentHash(value.text) !== value.promptHash
+    typeof value.creatorText !== "string" ||
+    value.creatorText.trim().length === 0 ||
+    value.creatorText !== value.creatorText.trim() ||
+    Buffer.byteLength(value.creatorText, "utf8") > CREATOR_CONVERSATION_TEXT_MAX_BYTES ||
+    contentHash(value.creatorText) !== value.promptHash ||
+    typeof value.agentPrompt !== "string" ||
+    value.agentPrompt.trim().length === 0 ||
+    value.agentPrompt !== value.agentPrompt.trim() ||
+    Buffer.byteLength(value.agentPrompt, "utf8") > 256 * 1024 ||
+    !Array.isArray(value.contextCitations) ||
+    value.contextCitations.length > 32
   )
     throw new Error("Invalid CreatorRequest artifact");
+  const citationHandles = new Set<string>();
+  for (const citation of value.contextCitations) {
+    assertCreatorAgentContextCitation(citation);
+    if (citationHandles.has(citation.citation.handle))
+      throw new Error("Creator request context citations must be unique");
+    citationHandles.add(citation.citation.handle);
+  }
 }
 
 function mutationAttemptArtifactReferences(
@@ -4164,6 +4795,134 @@ export function assertCreatorSession(value: unknown): asserts value is CreatorSe
   const { hash: _hash, ...payload } = value;
   if (value.hash !== contentHash(stableJson(payload)))
     throw new Error("Invalid CreatorSession identity");
+}
+
+export function assertCreatorAgentCitation(value: unknown): asserts value is CreatorAgentCitation {
+  if (
+    !isRecord(value) ||
+    value.kind !== "CreatorAgentCitation" ||
+    !isId(value.id) ||
+    !isHash(value.hash) ||
+    value.handle !== `creator_citation_${value.hash.slice(0, 24)}` ||
+    !isHash(value.projectRevisionHash) ||
+    !["project_index", "static_analysis", "creator_memory", "conversation_evidence"].includes(
+      String(value.authority),
+    ) ||
+    !isRecord(value.subject)
+  )
+    throw new Error("Invalid CreatorAgentCitation");
+  if (value.subject.kind === "project_fact") {
+    if (
+      value.authority !== "project_index" ||
+      !isId(value.subject.objectId) ||
+      typeof value.subject.path !== "string" ||
+      typeof value.subject.className !== "string" ||
+      !isHash(value.subject.factHash)
+    )
+      throw new Error("Invalid project-fact creator citation");
+  } else if (value.subject.kind === "source_ranges") {
+    if (
+      value.authority !== "static_analysis" ||
+      ![
+        "source.search",
+        "source.read",
+        "source.symbols",
+        "source.references",
+        "source.dependencies",
+      ].includes(String(value.subject.tool)) ||
+      !isHash(value.subject.resultHash) ||
+      !Array.isArray(value.subject.ranges) ||
+      !value.subject.ranges.every(
+        (range) =>
+          isRecord(range) &&
+          isId(range.documentId) &&
+          typeof range.path === "string" &&
+          isHash(range.sourceHash) &&
+          Number.isSafeInteger(range.startByte) &&
+          Number.isSafeInteger(range.endByte) &&
+          Number(range.startByte) >= 0 &&
+          Number(range.endByte) >= Number(range.startByte),
+      )
+    )
+      throw new Error("Invalid source-range creator citation");
+  } else if (value.subject.kind === "memory") {
+    if (
+      value.authority !== "creator_memory" ||
+      !isId(value.subject.memoryItemId) ||
+      !isId(value.subject.revisionId) ||
+      !isHash(value.subject.revisionHash)
+    )
+      throw new Error("Invalid creator-memory citation");
+  } else if (value.subject.kind === "prior_evidence") {
+    if (
+      value.authority !== "conversation_evidence" ||
+      !isId(value.subject.eventId) ||
+      !isHash(value.subject.eventHash) ||
+      !isRecord(value.subject.evidence) ||
+      !isId(value.subject.evidence.id) ||
+      !isHash(value.subject.evidence.hash)
+    )
+      throw new Error("Invalid prior-evidence creator citation");
+    assertArtifactReference(value.subject.evidence.artifact);
+  } else throw new Error("Invalid creator citation subject");
+  const { kind: _kind, id: _id, hash: _hash, handle: _handle, ...payload } = value;
+  const expected = contentHash(stableJson(payload));
+  if (
+    value.hash !== expected ||
+    value.id !== `creator_agent_citation_${expected.slice(0, 24)}` ||
+    value.handle !== `creator_citation_${expected.slice(0, 24)}`
+  )
+    throw new Error("Invalid CreatorAgentCitation identity");
+}
+
+export function assertCreatorAgentContextCitation(
+  value: unknown,
+): asserts value is CreatorAgentContextCitation {
+  if (
+    !isRecord(value) ||
+    typeof value.label !== "string" ||
+    value.label.trim().length === 0 ||
+    value.label !== value.label.normalize("NFC").trim() ||
+    Buffer.byteLength(value.label, "utf8") > 512
+  )
+    throw new Error("Invalid conversation-context citation label");
+  assertCreatorAgentCitation(value.citation);
+  if (!["creator_memory", "conversation_evidence"].includes(String(value.citation.authority)))
+    throw new Error("Conversation context cannot preissue project or source citations");
+}
+
+export function assertCreatorAgentOutcome(value: unknown): asserts value is CreatorAgentOutcome {
+  if (
+    !isRecord(value) ||
+    !["answer", "clarification_requested", "plan_proposed"].includes(String(value.kind)) ||
+    !isId(value.id) ||
+    !isHash(value.hash) ||
+    !Array.isArray(value.citations) ||
+    value.citations.length > CREATOR_CITATION_LIMIT
+  )
+    throw new Error("Invalid CreatorAgentOutcome");
+  for (const citation of value.citations) assertCreatorAgentCitation(citation);
+  if (new Set(value.citations.map((citation) => citation.handle)).size !== value.citations.length)
+    throw new Error("CreatorAgentOutcome citations must be unique");
+  if (
+    value.kind === "answer" &&
+    (typeof value.text !== "string" ||
+      value.text.trim().length === 0 ||
+      Buffer.byteLength(value.text, "utf8") > CREATOR_CONVERSATION_TEXT_MAX_BYTES)
+  )
+    throw new Error("Invalid creator answer outcome");
+  if (
+    value.kind === "clarification_requested" &&
+    (typeof value.question !== "string" ||
+      value.question.trim().length === 0 ||
+      Buffer.byteLength(value.question, "utf8") > CREATOR_CONVERSATION_TEXT_MAX_BYTES)
+  )
+    throw new Error("Invalid creator clarification outcome");
+  if (value.kind === "plan_proposed") assertCreatorPlan(value.plan);
+  const { id: _id, hash: _hash, ...payload } = value;
+  const expected = contentHash(stableJson(payload));
+  if (value.hash !== expected || value.id !== `creator_agent_outcome_${expected.slice(0, 24)}`)
+    throw new Error("Invalid CreatorAgentOutcome identity");
 }
 
 export function assertOwnershipMap(value: unknown): asserts value is StudioOwnershipMap {
@@ -4588,6 +5347,7 @@ const PLAN_CHANGE_SCHEMA = z.union([
 ]);
 
 const PLAN_SHAPE = {
+  citationHandles: CREATOR_CITATION_HANDLES_SCHEMA.optional(),
   inspectionPaths: z.array(z.string().min(1)).max(CREATOR_MAX_INSPECTION_PATHS),
   steps: z
     .array(
@@ -4855,10 +5615,30 @@ const STAGE_PAYLOAD_SCHEMA = z
   })
   .strict();
 const ROBLOX_API_LOOKUP_SHAPE = {
-  className: z.string().min(1).max(128).optional(),
-  query: z.string().min(1).max(160).optional(),
+  className: z
+    .string()
+    .min(1)
+    .max(128)
+    .describe("One exact class name, e.g. ProximityPrompt. Omit query to browse its members.")
+    .optional(),
+  query: z
+    .string()
+    .min(1)
+    .max(160)
+    .describe(
+      "One literal search phrase or member name, e.g. Triggered. Multiple member names require separate calls; do not join them into one query.",
+    )
+    .optional(),
   limit: z.number().int().min(1).max(20).optional(),
 } satisfies ZodRawShape;
+const PROJECT_QUERY_CURSOR_SCHEMA = z
+  .string()
+  .min(1)
+  .max(256)
+  .describe(
+    "Omit for the first page. For later pages, copy nextCursor returned by the same tool and query. Never send 0, START, null, a revision hash, or an invented cursor.",
+  )
+  .optional();
 const BUILDER_DEFINITIONS: AgentToolDefinition[] = [
   definition(
     "studio.api_lookup",
@@ -4940,7 +5720,7 @@ async function invokeCreatorRuntime(
   }
 }
 function runtimeFinalization(
-  intendedArtifactKind: "plan" | "change_set",
+  intendedArtifactKind: "creator_outcome" | "change_set",
   result: AgentRuntimeResult,
 ): Extract<CreatorPhaseFinalization, { status: "unsealed" }> {
   return {
@@ -4952,7 +5732,7 @@ function runtimeFinalization(
       (result.status === "budget_exhausted" ? "RUNTIME_BUDGET_EXHAUSTED" : "RUNTIME_FAILED"),
     detail:
       result.error ??
-      `Creator ${intendedArtifactKind === "plan" ? "planner" : "builder"} did not complete`,
+      `Creator ${intendedArtifactKind === "creator_outcome" ? "agent" : "builder"} did not complete`,
     failureKind: result.failureKind ?? "harness",
   };
 }
@@ -7049,22 +7829,24 @@ function hasIndexedChildNameCollision(
 function isScriptClass(value: StudioWritableClass): value is StudioScriptClass {
   return value === "Script" || value === "LocalScript" || value === "ModuleScript";
 }
-function isControlActionDescriptor(value: unknown): value is CreatorControlActionDescriptor {
+function isTransactionControlActionDescriptor(
+  value: unknown,
+): value is CreatorTransactionControlActionDescriptor {
   return (
     isRecord(value) &&
     [
-      "approve_plan",
-      "reject_plan",
-      "approve_and_apply_changes",
-      "reject_changes",
-      "accept_result",
-      "reject_and_rollback",
-      "cancel_changes",
-      "retry_play_verification",
-      "refresh_project",
-      "check_source_sync",
-      "revert_source_changes",
-      "cancel_interrupted_recording",
+      "transaction_approve_plan",
+      "transaction_reject_plan",
+      "transaction_approve_and_apply_changes",
+      "transaction_reject_changes",
+      "transaction_accept_result",
+      "transaction_reject_and_rollback",
+      "transaction_cancel_changes",
+      "transaction_retry_play_verification",
+      "transaction_refresh_project",
+      "transaction_check_source_sync",
+      "transaction_revert_source_changes",
+      "transaction_cancel_interrupted_recording",
     ].includes(String(value.id)) &&
     typeof value.label === "string" &&
     value.label.length > 0 &&
@@ -7094,8 +7876,29 @@ function validArtifactReference(value: unknown): value is ArtifactReference {
 function assertTransition(from: CreatorSessionStatus, to: CreatorSessionStatus): void {
   const allowed: Record<CreatorSessionStatus, CreatorSessionStatus[]> = {
     indexing: ["planning", "refresh_required", "incomplete"],
-    planning: ["awaiting_plan_approval", "refresh_required", "incomplete"],
-    awaiting_plan_approval: ["building", "refresh_required", "creator_rejected", "incomplete"],
+    planning: [
+      "awaiting_clarification",
+      "awaiting_plan_approval",
+      "answered",
+      "refresh_required",
+      "incomplete",
+    ],
+    awaiting_clarification: ["refining_plan", "refresh_required", "incomplete"],
+    refining_plan: [
+      "awaiting_clarification",
+      "awaiting_plan_approval",
+      "answered",
+      "refresh_required",
+      "superseded",
+      "incomplete",
+    ],
+    awaiting_plan_approval: [
+      "refining_plan",
+      "building",
+      "refresh_required",
+      "creator_rejected",
+      "incomplete",
+    ],
     building: ["awaiting_change_approval", "refresh_required", "incomplete"],
     awaiting_change_approval: [
       "preflighting",
@@ -7158,6 +7961,7 @@ function assertTransition(from: CreatorSessionStatus, to: CreatorSessionStatus):
       "rolled_back",
       "incomplete",
     ],
+    answered: [],
     creator_accepted: [],
     creator_rejected: ["rolled_back"],
     rolled_back: [],
@@ -7173,6 +7977,8 @@ function isStatus(value: unknown): value is CreatorSessionStatus {
     [
       "indexing",
       "planning",
+      "awaiting_clarification",
+      "refining_plan",
       "awaiting_plan_approval",
       "building",
       "awaiting_change_approval",
@@ -7189,6 +7995,7 @@ function isStatus(value: unknown): value is CreatorSessionStatus {
       "superseded",
       "awaiting_source_sync",
       "awaiting_review",
+      "answered",
       "creator_accepted",
       "creator_rejected",
       "rolled_back",
@@ -7298,7 +8105,7 @@ function correctiveFailure(code: string, message: string, details: unknown): Too
   return new ToolFailure(code, stableJson({ message, details }));
 }
 
-export const CREATOR_PLANNER_SYSTEM_PROMPT = `You are Forge's read-only creator planner. Use studio.api_lookup to ground Roblox APIs and use source.search, source.read, source.symbols, source.references, and source.dependencies to explore an existing project before selecting source targets. Those results are static analysis, not runtime proof, and Forge records the exact consulted source ranges and graph closure. Use studio.inspect for exact initial-index paths whose non-source facts matter, then publish one typed plan and visible charter with creator.propose_plan. Forge derives the immutable goal. Every step binds exact changeIds and covers every change once. Script creation carries complete initial source; edit_source targets only an existing consulted script and requires luau_syntax. Every create or move parent must be a manifest-declared authoring container or an exact Studio-document-owned structural anchor in the initial index; that does not authorize changing the parent itself. Supply only typed machine-check fields; put client-only output, visual quality, causal attribution, and unsupported gameplay judgments in creator_review. Do not stage changes or invent hidden criteria.`;
+export const CREATOR_PLANNER_SYSTEM_PROMPT = `You are Forge's project-aware conversational agent. The orientation is deliberately bounded: explore exact current project facts with project.search, project.children, and project.inspect, and explore hash-verified Luau with source.search, source.read, source.symbols, source.references, and source.dependencies. Tool facts include host-issued citation handles. You must publish exactly one outcome: creator.answer for a read-only answer, creator.request_clarification for one material blocking question, or creator.propose_plan for reviewed Studio work. Cite only handles issued during this AgentRun; uncited prose remains agent interpretation. Use studio.api_lookup to ground Roblox APIs. Project facts are current-index evidence; source results are static analysis, never runtime proof. Before selecting an existing source target, inspect its source and dependency closure. Before declaring an initial-index path as a builder dependency, inspect its opaque object identity with project.inspect. Forge derives the immutable goal. Every plan step binds exact changeIds and covers every change once. Script creation carries complete initial source; edit_source targets only an existing consulted script and requires luau_syntax. Every create or move parent must be a manifest-declared authoring container or an exact Studio-document-owned structural anchor in the initial index; that does not authorize changing the parent itself. Supply only typed machine-check fields; put client-only output, visual quality, causal attribution, and unsupported gameplay judgments in creator_review. Do not stage changes or invent hidden criteria.`;
 export const CREATOR_BUILDER_SYSTEM_PROMPT =
   "You are Forge's bounded Studio builder. The immutable CreatorBuildContract fixes all structural authority and binds the planner's source consultation. Use source.read only inside that approved closure. For edit_source, stage sorted non-overlapping UTF-8 byte edits against the exact before-source hash; Forge materializes the full candidate, verifies its final hash and byte count, shows the exact diff, and applies it through Studio only after creator approval. New scripts still carry complete source. Use studio.stage only with planChangeId and the allowed creative payload, inspect studio.diff, then run forge.verify. Use studio.api_lookup for API context, never as mutation or behavioral proof. Never execute project source, invent structural fields, access source outside the consultation closure, or claim Studio mutation before approval.";
 

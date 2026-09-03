@@ -13,6 +13,7 @@ import {
   createStudioProjectIndexCapture,
   createStudioProjectIndexProjection,
 } from "../packages/studio-evidence/src/index.js";
+import { createStudioProjectIdentityState } from "../packages/studio-protocol/src/index.js";
 import type {
   BackendToPluginMessage,
   PluginToBackendMessage,
@@ -40,12 +41,19 @@ const capabilities: StudioCapability[] = [
   "recording_recovery",
   "studio_play_mode",
   "bounded_diagnostics",
+  "project_identity",
   "http_polling",
 ];
 const session: StudioBridgeSession = {
   sessionId: "studio_session_recovery",
   projectId: "studio_project_recovery",
+  conversationProjectId: "studio_project_recovery",
   project,
+  projectIdentity: createStudioProjectIdentityState({
+    project,
+    reservedAttribute: { status: "absent" },
+  }),
+  projectIdentityTransaction: { status: "none" },
   capabilities,
   manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
   connectorBuildHash: "1".repeat(64),
@@ -263,6 +271,11 @@ test("an orphaned proved-closed recording is blocked until its exact acknowledge
         payload: {
           pairingToken: "pairing-token-recovery",
           project,
+          projectIdentity: createStudioProjectIdentityState({
+            project,
+            reservedAttribute: { status: "absent" },
+          }),
+          projectIdentityTransaction: { status: "none" },
           capabilities,
           connectorBuildHash: session.connectorBuildHash,
           manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,

@@ -8,18 +8,21 @@ import {
   parseCreatorServeOptions,
 } from "../packages/cli/src/creator-serve-options.js";
 
-test("creator serve accepts one project-authority manifest", () => {
+test("creator serve accepts an optional default model and rejects the removed --model option", () => {
   const parsed = parseCreatorServeOptions([
-    "--model",
+    "--default-model",
     "openai/gpt-5.6-luna",
     "--project-authority",
     "project-authority.json",
   ]);
   assert.equal(parsed.valid, true);
+  assert.equal(parsed.defaultModel, "openai/gpt-5.6-luna");
   assert.equal(parsed.projectAuthorityManifestPath, "project-authority.json");
+  assert.equal(parseCreatorServeOptions([]).valid, true);
+  assert.equal(parseCreatorServeOptions(["--model", "openai/gpt-5.6-luna"]).valid, false);
   assert.equal(
     parseCreatorServeOptions([
-      "--model",
+      "--default-model",
       "openai/gpt-5.6-luna",
       "--legacy-authority-root",
       "Workspace/Legacy",
@@ -28,7 +31,7 @@ test("creator serve accepts one project-authority manifest", () => {
   );
   assert.equal(
     parseCreatorServeOptions([
-      "--model",
+      "--default-model",
       "openai/gpt-5.6-luna",
       "--project-authority",
       "one.json",
@@ -55,7 +58,7 @@ test("creator serve loads only a valid regular ProjectAuthorityManifest", async 
   );
   const loaded = await loadCreatorServeOptions(
     parseCreatorServeOptions([
-      "--model",
+      "--default-model",
       "openai/gpt-5.6-luna",
       "--project-authority",
       manifestPath,
@@ -70,7 +73,7 @@ test("creator serve loads only a valid regular ProjectAuthorityManifest", async 
     () =>
       loadCreatorServeOptions(
         parseCreatorServeOptions([
-          "--model",
+          "--default-model",
           "openai/gpt-5.6-luna",
           "--project-authority",
           manifestPath,
@@ -91,7 +94,7 @@ test("creator serve loads only a valid regular ProjectAuthorityManifest", async 
     () =>
       loadCreatorServeOptions(
         parseCreatorServeOptions([
-          "--model",
+          "--default-model",
           "openai/gpt-5.6-luna",
           "--project-authority",
           manifestPath,
@@ -117,7 +120,7 @@ test("creator serve loads only a valid regular ProjectAuthorityManifest", async 
     () =>
       loadCreatorServeOptions(
         parseCreatorServeOptions([
-          "--model",
+          "--default-model",
           "openai/gpt-5.6-luna",
           "--project-authority",
           manifestPath,
@@ -132,7 +135,7 @@ test("creator serve loads only a valid regular ProjectAuthorityManifest", async 
     () =>
       loadCreatorServeOptions(
         parseCreatorServeOptions([
-          "--model",
+          "--default-model",
           "openai/gpt-5.6-luna",
           "--project-authority",
           linkedManifestPath,

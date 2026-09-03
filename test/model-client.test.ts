@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { contentHash, stableJson } from "../packages/contracts/src/index.js";
 import {
-  CANONICAL_OPENROUTER_MODEL,
+  CREATOR_MODEL_IDS,
+  CREATOR_MODEL_REGISTRY,
+  DEFAULT_CREATOR_MODEL_ID,
   MODEL_CONTINUATION_MAX_BYTES,
   OpenRouterModelClient,
   type ModelTurnRequest,
 } from "../packages/model-client/src/index.js";
 
 const REQUEST: ModelTurnRequest = {
-  model: CANONICAL_OPENROUTER_MODEL,
+  model: DEFAULT_CREATOR_MODEL_ID,
   system: "Use only bounded tools.",
   messages: [{ role: "user", content: "Inspect the project." }],
   tools: [
@@ -43,7 +46,7 @@ function response(message: Record<string, unknown>, finishReason: string, id: st
   return new Response(
     JSON.stringify({
       id,
-      model: CANONICAL_OPENROUTER_MODEL,
+      model: DEFAULT_CREATOR_MODEL_ID,
       provider: "OpenAI",
       choices: [
         { index: 0, finish_reason: finishReason, message: { role: "assistant", ...message } },
@@ -89,8 +92,8 @@ test("AI SDK Core sends one locked-down OpenRouter step and replays opaque reaso
   ]);
   assert.equal(first.stopReason, "tool_calls");
   assert.deepEqual(first.usage, { inputTokens: 12, outputTokens: 4, costUsd: 0.002 });
-  assert.equal(first.responseFacts.requestedModel, CANONICAL_OPENROUTER_MODEL);
-  assert.equal(first.responseFacts.resolvedModel, CANONICAL_OPENROUTER_MODEL);
+  assert.equal(first.responseFacts.requestedModel, DEFAULT_CREATOR_MODEL_ID);
+  assert.equal(first.responseFacts.resolvedModel, DEFAULT_CREATOR_MODEL_ID);
   assert.equal(first.responseFacts.servingProvider, "OpenAI");
   assert.equal(first.responseFacts.responseId, "response-1");
   assert.equal(first.responseFacts.retryCount, 0);
@@ -112,23 +115,25 @@ test("AI SDK Core sends one locked-down OpenRouter step and replays opaque reaso
   assert.equal(JSON.stringify(bodies).includes("secret-one"), false);
 
   const firstBody = bodies[0]!;
-  assert.equal(firstBody.model, CANONICAL_OPENROUTER_MODEL);
+  assert.equal(firstBody.model, DEFAULT_CREATOR_MODEL_ID);
   assert.equal("parallel_tool_calls" in firstBody, false);
   assert.equal(firstBody.tool_choice, "auto");
   assert.equal(firstBody.max_tokens, 512);
   assert.deepEqual(firstBody.usage, { include: true });
   assert.deepEqual(firstBody.provider, {
-    only: ["openai"],
     allow_fallbacks: false,
     require_parameters: true,
   });
   assert.deepEqual(firstBody.reasoning, { effort: "medium", exclude: false });
-  const sentTools = firstBody.tools as Array<{ function: { name: string; parameters: unknown } }>;
+  const sentTools = firstBody.tools as Array<{
+    function: { name: string; parameters: unknown; strict: boolean };
+  }>;
   assert.deepEqual(
     sentTools.map((entry) => entry.function.name),
     ["project_read", "project_list"],
   );
   assert.deepEqual(sentTools[0]?.function.parameters, REQUEST.tools[0]?.parameters);
+  assert.ok(sentTools.every((entry) => entry.function.strict === false));
   assert.equal(JSON.stringify(bodies[1]).includes("opaque-reasoning-block"), true);
   const replayed = (bodies[1]!.messages as Array<Record<string, unknown>>).find(
     (message) => message.role === "assistant",
@@ -152,6 +157,20 @@ test("AI SDK Core sends one locked-down OpenRouter step and replays opaque reaso
       ),
   }).complete(REQUEST);
   assert.equal(otherKey.requestHash, first.requestHash);
+  assert.equal(
+    first.requestHash,
+    contentHash(
+      stableJson({
+        model: REQUEST.model,
+        system: REQUEST.system,
+        messages: REQUEST.messages,
+        tools: REQUEST.tools,
+        maxOutputTokens: REQUEST.maxOutputTokens,
+        timeoutMs: REQUEST.timeoutMs,
+        transport: client.descriptor,
+      }),
+    ),
+  );
   assert.equal(client.descriptor.configuration.aiSdk.package, "ai");
   assert.equal(client.descriptor.configuration.request.providerParallelToolCalls, "not_requested");
   assert.equal(
@@ -159,10 +178,118 @@ test("AI SDK Core sends one locked-down OpenRouter step and replays opaque reaso
     "atomic_validate_then_sequential",
   );
   assert.equal(client.descriptor.configuration.request.toolNameEncoding, "openai_function_slug");
+  assert.equal(client.descriptor.configuration.request.toolSchemaMode, "explicit_non_strict");
   assert.equal(
     client.descriptor.configuration.providerAdapter.package,
     "@openrouter/ai-sdk-provider",
   );
+  assert.deepEqual(client.descriptor.configuration.routing, {
+    modelRegistryHash: CREATOR_MODEL_REGISTRY.hash,
+    allowlistedModels: [...CREATOR_MODEL_IDS],
+    providerAllowlist: "none",
+    modelFallbacks: false,
+    providerFallbacks: false,
+    requireParameters: true,
+    requireTools: true,
+  });
+});
+
+test("one client admits each registry model per request and rejects all other models before transport", async () => {
+  const bodies: Array<Record<string, unknown>> = [];
+  const client = new OpenRouterModelClient({
+    apiKey: "secret",
+    fetchImpl: async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      bodies.push(body);
+      return new Response(
+        JSON.stringify({
+          id: `response-${bodies.length}`,
+          model: body.model,
+          provider: "Exact Provider",
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: { role: "assistant", content: "done" },
+            },
+          ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    },
+  });
+
+  const hashes = new Set<string>();
+  for (const model of CREATOR_MODEL_IDS) {
+    const result = await client.complete({ ...REQUEST, model });
+    assert.equal(result.kind, "assistant");
+    hashes.add(result.requestHash);
+    assert.equal(result.responseFacts.requestedModel, model);
+    assert.equal(result.responseFacts.resolvedModel, model);
+    assert.equal(result.responseFacts.servingProvider, "Exact Provider");
+  }
+  assert.deepEqual(
+    bodies.map((body) => body.model),
+    [...CREATOR_MODEL_IDS],
+  );
+  assert.equal(hashes.size, CREATOR_MODEL_IDS.length);
+
+  const rejected = await client.complete({ ...REQUEST, model: "openai/not-allowlisted" });
+  assert.equal(rejected.kind, "provider_error");
+  if (rejected.kind !== "provider_error") return;
+  assert.equal(rejected.errorClass, "model_not_allowlisted");
+  assert.equal(rejected.responseFacts.requestedModel, "openai/not-allowlisted");
+  assert.equal(rejected.responseFacts.resolvedModel, null);
+  assert.equal(rejected.responseFacts.servingProvider, null);
+  assert.equal(bodies.length, CREATOR_MODEL_IDS.length);
+});
+
+test("response attribution cannot silently substitute a model or omit its provider", async () => {
+  const mismatched = await new OpenRouterModelClient({
+    apiKey: "secret",
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          id: "response-mismatch",
+          model: CREATOR_MODEL_IDS[1],
+          provider: "Unexpected Provider",
+          choices: [
+            { index: 0, finish_reason: "stop", message: { role: "assistant", content: "done" } },
+          ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+  }).complete(REQUEST);
+  assert.equal(mismatched.kind, "provider_error");
+  if (mismatched.kind !== "provider_error") return;
+  assert.equal(mismatched.errorClass, "response_identity_mismatch");
+  assert.equal(mismatched.responseFacts.requestedModel, DEFAULT_CREATOR_MODEL_ID);
+  assert.equal(mismatched.responseFacts.resolvedModel, CREATOR_MODEL_IDS[1]);
+  assert.equal(mismatched.responseFacts.servingProvider, "Unexpected Provider");
+
+  const unattributed = await new OpenRouterModelClient({
+    apiKey: "secret",
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          id: "response-unattributed",
+          model: DEFAULT_CREATOR_MODEL_ID,
+          choices: [
+            { index: 0, finish_reason: "stop", message: { role: "assistant", content: "done" } },
+          ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+  }).complete(REQUEST);
+  assert.equal(unattributed.kind, "provider_error");
+  if (unattributed.kind === "provider_error") {
+    assert.equal(unattributed.errorClass, "response_identity_mismatch");
+    assert.equal(unattributed.responseFacts.resolvedModel, DEFAULT_CREATOR_MODEL_ID);
+    assert.equal(unattributed.responseFacts.servingProvider, null);
+  }
 });
 
 test("AI SDK Core performs one HTTP attempt and normalizes bounded provider errors", async () => {

@@ -20,6 +20,7 @@ import type {
   BackendToPluginMessage,
   PluginToBackendMessage,
 } from "../packages/studio-protocol/src/index.js";
+import { createStudioProjectIdentityState } from "../packages/studio-protocol/src/index.js";
 import {
   StudioProjectIndexStreamRouter,
   executeCreatorVerificationPlan,
@@ -36,7 +37,13 @@ const project = { name: "Runtime Failure Vector", placeId: 0, universeId: 0 };
 const session: StudioBridgeSession = {
   sessionId: "studio_session_runtime_failure",
   projectId: "studio_project_runtime_failure",
+  conversationProjectId: "studio_project_runtime_failure",
   project,
+  projectIdentity: createStudioProjectIdentityState({
+    project,
+    reservedAttribute: { status: "absent" },
+  }),
+  projectIdentityTransaction: { status: "none" },
   capabilities: ["studio_play_mode"],
   manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
   connectorBuildHash: hash,

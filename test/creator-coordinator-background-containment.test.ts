@@ -26,12 +26,19 @@ import {
   type StudioProjectIndexCapture,
 } from "../packages/studio-evidence/src/index.js";
 import type { StudioBridgeSession } from "../packages/studio-bridge/src/index.js";
+import { createStudioProjectIdentityState } from "../packages/studio-protocol/src/index.js";
 
 const project = { name: "Deferred coordinator follow-up", placeId: 901, universeId: 902 };
 const studio: StudioBridgeSession = {
   sessionId: "studio_session_deferred_follow_up",
   projectId: "studio_project_deferred_follow_up",
+  conversationProjectId: "studio_project_deferred_follow_up",
   project,
+  projectIdentity: createStudioProjectIdentityState({
+    project,
+    reservedAttribute: { status: "absent" },
+  }),
+  projectIdentityTransaction: { status: "none" },
   capabilities: [],
   manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
   connectorBuildHash: "a".repeat(64),

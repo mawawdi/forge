@@ -53,20 +53,30 @@ export interface CreatorOrientationContent {
    * the presence of an optional project-authority manifest. */
   writerSelection: "per_change_set";
   availableAuthorities: CreatorProjectAuthority[];
-  instances: Array<{
-    objectId: string;
-    path: string;
-    className: string;
-    owner: CreatorProjectAuthority;
-    position?: { x: number; y: number; z: number };
-  }>;
-  scripts: Array<{
-    documentId: string;
-    path: string;
-    executionContext: string;
-    sourceHash: string;
-    owner: CreatorProjectAuthority;
-  }>;
+  /**
+   * Deliberately bounded orientation. Exact instances and source are available
+   * only through cursor-bound tools so large places do not become an implicit,
+   * unreviewable model-context dump.
+   */
+  overview: {
+    instanceCount: number;
+    scriptCount: number;
+    topLevelRoots: Array<{ path: string; descendantCount: number }>;
+    classCounts: Array<{ className: string; count: number }>;
+    omittedClassCount: number;
+  };
+  exploration: {
+    projectTools: ["project.search", "project.children", "project.inspect"];
+    sourceTools: [
+      "source.search",
+      "source.read",
+      "source.symbols",
+      "source.references",
+      "source.dependencies",
+    ];
+    exactFactsRequireToolConsultation: true;
+    cursorsBoundToRevision: true;
+  };
   studioAuthoring: {
     available: boolean;
     writableOwner: "studio_document";
@@ -168,6 +178,19 @@ export function compileCreatorOrientation(input: {
     !availableAuthorities.includes("studio_document")
   )
     throw new Error("Creator orientation authority availability is invalid");
+  const rootCounts = new Map<string, number>();
+  const classCounts = new Map<string, number>();
+  for (const instance of input.projectIndex.instances) {
+    const root = instance.path.split("/")[0] ?? instance.path;
+    rootCounts.set(root, (rootCounts.get(root) ?? 0) + 1);
+    classCounts.set(instance.className, (classCounts.get(instance.className) ?? 0) + 1);
+  }
+  const sortedClassCounts = [...classCounts]
+    .map(([className, count]) => ({ className, count }))
+    .sort(
+      (left, right) => right.count - left.count || left.className.localeCompare(right.className),
+    );
+  const visibleClassCounts = sortedClassCounts.slice(0, 64);
   const content: CreatorOrientationContent = {
     mode: "creator_session",
     projectId: input.projectId,
@@ -176,30 +199,27 @@ export function compileCreatorOrientation(input: {
     revisionHash: input.revisionHash,
     writerSelection: "per_change_set",
     availableAuthorities,
-    instances: input.projectIndex.instances
-      .map((instance) => ({
-        objectId: instance.objectId,
-        path: instance.path,
-        className: instance.className,
-        owner: input.ownership.get(instance.objectId) ?? "studio_document",
-        ...(instance.position ? { position: { ...instance.position } } : {}),
-      }))
-      .sort(
-        (left, right) =>
-          left.path.localeCompare(right.path) || left.objectId.localeCompare(right.objectId),
-      ),
-    scripts: input.projectIndex.scripts
-      .map((script) => ({
-        documentId: script.documentId,
-        path: script.path,
-        executionContext: script.executionContext,
-        sourceHash: script.sourceHash,
-        owner: input.ownership.get(script.documentId) ?? "studio_document",
-      }))
-      .sort(
-        (left, right) =>
-          left.path.localeCompare(right.path) || left.documentId.localeCompare(right.documentId),
-      ),
+    overview: {
+      instanceCount: input.projectIndex.instances.length,
+      scriptCount: input.projectIndex.scripts.length,
+      topLevelRoots: [...rootCounts]
+        .map(([path, descendantCount]) => ({ path, descendantCount }))
+        .sort((left, right) => left.path.localeCompare(right.path)),
+      classCounts: visibleClassCounts,
+      omittedClassCount: sortedClassCounts.length - visibleClassCounts.length,
+    },
+    exploration: {
+      projectTools: ["project.search", "project.children", "project.inspect"],
+      sourceTools: [
+        "source.search",
+        "source.read",
+        "source.symbols",
+        "source.references",
+        "source.dependencies",
+      ],
+      exactFactsRequireToolConsultation: true,
+      cursorsBoundToRevision: true,
+    },
     studioAuthoring: {
       available: availableAuthorities.includes("studio_document"),
       writableOwner: "studio_document",

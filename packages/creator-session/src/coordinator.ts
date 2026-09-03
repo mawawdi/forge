@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { DEFAULT_AGENT_BUDGETS } from "../../agent-runtime/src/index.js";
+import {
+  DEFAULT_AGENT_BUDGETS,
+  assertAgentExecutionSlot,
+  type AgentExecutionSlot,
+} from "../../agent-runtime/src/index.js";
 import {
   ImmutableJsonArtifactStore,
   type ArtifactReference,
@@ -95,10 +99,11 @@ import {
 } from "../../studio-evidence/src/index.js";
 import {
   advanceSession,
-  assertCreatorControlActionBinding,
+  assertCreatorTransactionControlActionBinding,
+  assertCreatorAgentContextCitation,
   assertCreatorRequestArtifact,
   assertCreatorVerificationRecord,
-  createCreatorControlView,
+  createCreatorTransactionControlView,
   createCreatorApproval,
   createCreatorReviewReport,
   createCreatorSession,
@@ -108,13 +113,14 @@ import {
   serializeCreatorChangeSet,
   type CreatorChangeSet,
   type CreatorCheckpoint,
-  type CreatorDashboardState,
-  type CreatorProgressStage,
+  type CreatorTransactionState,
+  type CreatorTransactionStage,
   type CreatorSessionStatus,
   type CreatorSessionBundle,
   type CreatorActiveMutation,
-  type CreatorControlActionId,
-  type CreatorControlView,
+  type CreatorAgentContextCitation,
+  type CreatorTransactionControlActionId,
+  type CreatorTransactionControlView,
   type CreatorPlanChange,
   type CreatorVerificationRecord,
   assertCreatorTransactionTopologyOrder,
@@ -168,15 +174,39 @@ import {
 } from "./mutation-evidence.js";
 import type { CreatorAgentWorker } from "./worker.js";
 
-export type CreatorControlAction =
-  | { action: "start"; prompt: string }
+export type CreatorTransactionControlAction =
+  | {
+      action: "start";
+      /** Exact creator-authored request. */
+      creatorText: string;
+      /** Host-authored model input, including any bounded conversation context. */
+      agentPrompt: string;
+      model: string;
+      creatorSessionId: string;
+      /** Host-issued conversation evidence, retained with the request. */
+      contextCitations: readonly CreatorAgentContextCitation[];
+      /** Exact provider execution reserved before the foreground job was published. */
+      agentExecutions: readonly AgentExecutionSlot[];
+    }
+  | {
+      /**
+       * Consume a previously received, durable planner response. This is only
+       * reachable after the conversation layer records explicit creator
+       * authority; it never constructs a new provider request for that turn.
+       */
+      action: "resume";
+      creatorSessionId: string;
+      agentExecutions: readonly AgentExecutionSlot[];
+    }
   | {
       action: "act";
       sessionId: string;
       viewId: string;
       viewHash: string;
-      actionId: CreatorControlActionId;
+      actionId: CreatorTransactionControlActionId;
       report?: string;
+      /** Empty unless this exact action is allowed to invoke a planner/builder/repair. */
+      agentExecutions: readonly AgentExecutionSlot[];
     };
 
 export interface CreatorSourceAnalysisHost {
@@ -380,7 +410,9 @@ export class CreatorSessionCoordinator {
   >();
   private readonly inFlight = new Set<string>();
   private readonly automaticVerifications = new Set<string>();
-  private readonly views = new Map<string, CreatorControlView>();
+  /** One creator-job-owned repair reservation retained across passive Play. */
+  private readonly pendingRepairExecutions = new Map<string, AgentExecutionSlot>();
+  private readonly views = new Map<string, CreatorTransactionControlView>();
   private readonly viewPublicationEpochs = new Map<string, number>();
   private readonly consumedViewHashes = new Set<string>();
   private readonly listeners = new Set<() => void>();
@@ -508,6 +540,7 @@ export class CreatorSessionCoordinator {
     this.finalizedTransactionProjectChangeCaptures.clear();
     this.transactionProjectConfirmationRequestedAfterLockRelease.clear();
     this.bundlePersistQueues.clear();
+    this.pendingRepairExecutions.clear();
   }
 
   subscribe(listener: () => void): () => void {
@@ -569,9 +602,15 @@ export class CreatorSessionCoordinator {
         };
         await this.persist(bundle);
       } else if (
-        ["indexing", "planning", "building", "repairing", "refreshing", "preflighting"].includes(
-          bundle.session.status,
-        )
+        [
+          "indexing",
+          "planning",
+          "refining_plan",
+          "building",
+          "repairing",
+          "refreshing",
+          "preflighting",
+        ].includes(bundle.session.status)
       ) {
         bundle = {
           ...bundle,
@@ -784,7 +823,7 @@ export class CreatorSessionCoordinator {
     );
   }
 
-  async dashboardState(sessionId?: string): Promise<CreatorDashboardState> {
+  async dashboardState(sessionId?: string): Promise<CreatorTransactionState> {
     const bundles = [...this.bundles.values()].sort((left, right) =>
       right.session.updatedAt.localeCompare(left.session.updatedAt),
     );
@@ -794,7 +833,7 @@ export class CreatorSessionCoordinator {
         id: bundle.session.id,
         hash: bundle.session.hash,
         projectId: bundle.session.projectId,
-        prompt: await this.prompt(bundle),
+        prompt: await this.creatorPrompt(bundle),
         promptHash: bundle.session.promptHash,
         status: bundle.session.status,
         createdAt: bundle.session.createdAt,
@@ -834,7 +873,7 @@ export class CreatorSessionCoordinator {
     )
       this.views.set(selected.session.id, selectedView);
     return {
-      kind: "CreatorDashboardState",
+      kind: "CreatorTransactionState",
       ...(selected ? { selectedSessionId: selected.session.id } : {}),
       sessions,
       ...(selectedView ? { controlView: selectedView } : {}),
@@ -884,11 +923,98 @@ export class CreatorSessionCoordinator {
     };
   }
 
+  /**
+   * Read-only bridge for the durable conversation layer. The transaction
+   * bundle remains the authoritative lower-level evidence; callers receive a
+   * clone so presentation code cannot mutate coordinator state.
+   */
+  async conversationSnapshot(sessionId: string): Promise<{
+    readonly bundle: CreatorSessionBundle;
+    readonly prompt: string;
+  }> {
+    const bundle = await this.bundle(sessionId);
+    return { bundle: structuredClone(bundle), prompt: await this.creatorPrompt(bundle) };
+  }
+
+  /**
+   * Refinement and clarification revoke the prior candidate before another
+   * provider turn can start. No plan approval or Studio authority crosses
+   * this boundary.
+   */
+  async supersedeConversationCandidate(sessionId: string): Promise<void> {
+    const bundle = await this.bundle(sessionId);
+    await this.lock(bundle.session.id, async () => {
+      const live = await this.bundle(sessionId);
+      if (!["awaiting_clarification", "awaiting_plan_approval"].includes(live.session.status))
+        throw new Error("The current creator candidate cannot be refined");
+      const refining = {
+        ...live,
+        session: advanceSession(live.session, { status: "refining_plan" }),
+      };
+      const superseded = {
+        ...refining,
+        session: advanceSession(refining.session, { status: "superseded" }),
+      };
+      this.bundles.set(sessionId, superseded);
+      await this.persist(superseded);
+      await this.publishView(
+        superseded,
+        "This candidate was superseded for explicit conversational refinement. No approval or Studio authority was inherited.",
+      );
+    });
+  }
+
+  /**
+   * Close an interrupted pre-mutation agent transaction before an explicitly
+   * authorized conversation retry starts another provider request. This is a
+   * host-state finalization only: it cannot apply, commit, cancel, or otherwise
+   * touch Studio. A persisted agent outcome must be recovered instead.
+   */
+  async abandonInterruptedConversationCandidate(sessionId: string): Promise<void> {
+    if (!this.bundles.has(sessionId)) return;
+    await this.lock(sessionId, async () => {
+      const live = await this.bundle(sessionId);
+      if (isTerminalStatus(live.session.status)) return;
+      if (
+        !["indexing", "planning", "refining_plan"].includes(live.session.status) ||
+        live.agentOutcome !== undefined ||
+        live.activeMutation !== undefined ||
+        live.session.planApproval !== undefined ||
+        live.session.changeSet !== undefined ||
+        live.session.changeApproval !== undefined
+      )
+        throw new Error(
+          "Interrupted creator work has a deterministic or Studio-affecting boundary and cannot be abandoned as an unknown provider attempt",
+        );
+      const incomplete = {
+        ...live,
+        session: advanceSession(live.session, {
+          status: "incomplete",
+          failure: {
+            code: "provider_retry_authorized",
+            detail:
+              "The creator explicitly authorized a new request after the prior pre-mutation provider outcome could not be confirmed.",
+          },
+        }),
+      };
+      this.bundles.set(sessionId, incomplete);
+      await this.persist(incomplete);
+      await this.publishView(
+        incomplete,
+        "The interrupted pre-mutation provider attempt was closed without any Studio effect. A separate creator-authorized retry may now begin.",
+      );
+    });
+  }
+
   async sourceDocuments(
     sessionId: string,
+    sourceIndexHash: string,
     input: { limit?: number; cursor?: string },
   ): Promise<unknown> {
-    return listStudioSourceDocuments(await this.dashboardSourceIndex(sessionId), input);
+    return listStudioSourceDocuments(
+      await this.sealedSourceIndex(sessionId, sourceIndexHash),
+      input,
+    );
   }
 
   private connectorEpoch(session: StudioBridgeSession): string {
@@ -1443,6 +1569,7 @@ export class CreatorSessionCoordinator {
 
   async sourceSearch(
     sessionId: string,
+    sourceIndexHash: string,
     input: {
       query: string;
       pathPrefix?: string;
@@ -1451,15 +1578,16 @@ export class CreatorSessionCoordinator {
       cursor?: string;
     },
   ): Promise<unknown> {
-    const { index, resolver } = await this.dashboardSourceMaterial(sessionId);
+    const { index, resolver } = await this.sealedSourceMaterial(sessionId, sourceIndexHash);
     return searchStudioSourceAsync(index, resolver, input);
   }
 
   async sourceRead(
     sessionId: string,
+    sourceIndexHash: string,
     input: { documentId: string; maximumUtf8Bytes?: number; cursor?: string },
   ): Promise<unknown> {
-    const { index, resolver } = await this.dashboardSourceMaterial(sessionId);
+    const { index, resolver } = await this.sealedSourceMaterial(sessionId, sourceIndexHash);
     return readStudioSourceAsync(index, resolver, input);
   }
 
@@ -1472,6 +1600,7 @@ export class CreatorSessionCoordinator {
   async sourceDiff(
     sessionId: string,
     input: {
+      readonly sourceIndexHash: string;
       readonly operationId: string;
       readonly changeSetId?: string;
       readonly cursor?: string;
@@ -1505,6 +1634,8 @@ export class CreatorSessionCoordinator {
       sourceIndexBinding.artifact,
       assertStudioSourceIndex,
     );
+    if (sourceIndex.hash !== input.sourceIndexHash)
+      throw new Error("Exact source diff does not match the sealed source-index anchor");
     if (sourceIndex.snapshotHash !== plan.projectCaptureHash)
       throw new Error("Exact source diff source index does not bind the plan project capture");
     const projectBinding = bundle.projectIndices.find(
@@ -1632,6 +1763,7 @@ export class CreatorSessionCoordinator {
 
   async sourceSymbols(
     sessionId: string,
+    sourceIndexHash: string,
     input: {
       query: string;
       pathPrefix?: string;
@@ -1639,11 +1771,12 @@ export class CreatorSessionCoordinator {
       cursor?: string;
     },
   ): Promise<unknown> {
-    return findStudioSourceSymbols(await this.dashboardSourceIndex(sessionId), input);
+    return findStudioSourceSymbols(await this.sealedSourceIndex(sessionId, sourceIndexHash), input);
   }
 
   async sourceReferences(
     sessionId: string,
+    sourceIndexHash: string,
     input: {
       symbol: string;
       pathPrefix?: string;
@@ -1651,11 +1784,15 @@ export class CreatorSessionCoordinator {
       cursor?: string;
     },
   ): Promise<unknown> {
-    return findStudioSourceReferences(await this.dashboardSourceIndex(sessionId), input);
+    return findStudioSourceReferences(
+      await this.sealedSourceIndex(sessionId, sourceIndexHash),
+      input,
+    );
   }
 
   async sourceDependencies(
     sessionId: string,
+    sourceIndexHash: string,
     input: {
       documentId: string;
       direction: "imports" | "importers" | "closure";
@@ -1664,7 +1801,10 @@ export class CreatorSessionCoordinator {
       cursor?: string;
     },
   ): Promise<unknown> {
-    return inspectStudioSourceDependencies(await this.dashboardSourceIndex(sessionId), input);
+    return inspectStudioSourceDependencies(
+      await this.sealedSourceIndex(sessionId, sourceIndexHash),
+      input,
+    );
   }
 
   async readAuthorizedArtifact(hash: string): Promise<unknown> {
@@ -1686,22 +1826,28 @@ export class CreatorSessionCoordinator {
     return this.artifactStore.read(reference);
   }
 
-  async replayVerification(verificationId: string) {
+  async replayVerification(verificationId: string, verificationHash: string) {
+    if (!/^[a-f0-9]{64}$/.test(verificationHash))
+      throw new Error("Invalid creator verification hash");
     for (const bundle of this.bundles.values()) {
       const verification = bundle.verifications.find(
-        (candidate) => candidate.id === verificationId,
+        (candidate) => candidate.id === verificationId && candidate.hash === verificationHash,
       );
       if (verification) return replayCreatorVerification(bundle, verification, this.artifactStore);
     }
     throw new Error("Creator verification was not found");
   }
 
-  async replayMutation(attemptId: string) {
+  async replayMutation(attemptId: string, attemptHash: string) {
+    if (!/^[a-f0-9]{64}$/.test(attemptHash))
+      throw new Error("Invalid creator mutation-attempt hash");
     for (const bundle of this.bundles.values()) {
-      const attempt = bundle.mutationAttempts.find((candidate) => candidate.id === attemptId);
+      const attempt = bundle.mutationAttempts.find(
+        (candidate) => candidate.id === attemptId && candidate.hash === attemptHash,
+      );
       if (attempt) return replayCreatorMutation(attempt, this.artifactStore);
       const rojo = bundle.rojoSourceMutations.find(
-        (candidate) => candidate.attempt.id === attemptId,
+        (candidate) => candidate.attempt.id === attemptId && candidate.attempt.hash === attemptHash,
       );
       if (rojo) {
         const [changeSet, sourceAttempt, proof] = await Promise.all([
@@ -1722,8 +1868,22 @@ export class CreatorSessionCoordinator {
   }
 
   async action(value: unknown): Promise<unknown> {
-    const action = assertCreatorControlAction(value);
-    if (action.action === "start") return this.start(action.prompt);
+    const action = assertCreatorTransactionControlAction(value);
+    if (action.action === "start")
+      return this.start(
+        action.creatorText,
+        action.agentPrompt,
+        action.model,
+        action.creatorSessionId,
+        action.contextCitations,
+        requiredSingleAgentExecution(action.agentExecutions, "planner"),
+      );
+    if (action.action === "resume")
+      return this.resumePlanner(
+        action.creatorSessionId,
+        requiredSingleAgentExecution(action.agentExecutions, "planner"),
+      );
+    assertActionAgentExecutions(action.actionId, action.agentExecutions);
     const bundle = await this.bundle(action.sessionId);
     return this.lock(bundle.session.id, async () => {
       const view =
@@ -1732,43 +1892,63 @@ export class CreatorSessionCoordinator {
       assertActionBinding(action, view, this.consumedViewHashes);
       if (
         [
-          "approve_and_apply_changes",
-          "retry_play_verification",
-          "cancel_changes",
-          "refresh_project",
-          "check_source_sync",
-          "revert_source_changes",
-          "cancel_interrupted_recording",
-          "reject_and_rollback",
+          "transaction_approve_and_apply_changes",
+          "transaction_retry_play_verification",
+          "transaction_cancel_changes",
+          "transaction_refresh_project",
+          "transaction_check_source_sync",
+          "transaction_revert_source_changes",
+          "transaction_cancel_interrupted_recording",
+          "transaction_reject_and_rollback",
         ].includes(action.actionId)
       )
         await this.currentAttestedStudioSession();
       if (
-        action.actionId === "approve_and_apply_changes" &&
+        action.actionId === "transaction_approve_and_apply_changes" &&
         requiredChangeSet(bundle).mutationAuthority === "studio_document"
       ) {
         const studio = await this.currentAttestedStudioSession();
         await this.requireClearRecordingInventory(studio);
       }
       this.consumedViewHashes.add(action.viewHash);
-      if (action.actionId === "approve_plan")
-        return this.decidePlan(bundle, requiredArtifactHash(view, "plan"), "approved");
-      if (action.actionId === "reject_plan")
+      if (action.actionId === "transaction_approve_plan")
+        return this.decidePlan(
+          bundle,
+          requiredArtifactHash(view, "plan"),
+          "approved",
+          requiredSingleAgentExecution(action.agentExecutions, "builder"),
+        );
+      if (action.actionId === "transaction_reject_plan")
         return this.decidePlan(bundle, requiredArtifactHash(view, "plan"), "rejected");
-      if (action.actionId === "approve_and_apply_changes")
-        return this.decideChanges(bundle, requiredArtifactHash(view, "change_set"), "approved");
-      if (action.actionId === "reject_changes")
+      if (action.actionId === "transaction_approve_and_apply_changes")
+        return this.decideChanges(
+          bundle,
+          requiredArtifactHash(view, "change_set"),
+          "approved",
+          requiredSingleAgentExecution(action.agentExecutions, "repair"),
+        );
+      if (action.actionId === "transaction_reject_changes")
         return this.decideChanges(bundle, requiredArtifactHash(view, "change_set"), "rejected");
-      if (action.actionId === "retry_play_verification") return this.retryPlayVerification(bundle);
-      if (action.actionId === "cancel_changes") return this.rollback(bundle);
-      if (action.actionId === "refresh_project") return this.refreshProject(bundle);
-      if (action.actionId === "check_source_sync") return this.checkRojoSourceSync(bundle);
-      if (action.actionId === "revert_source_changes") return this.revertRojoSourceChanges(bundle);
-      if (action.actionId === "cancel_interrupted_recording")
+      if (action.actionId === "transaction_retry_play_verification")
+        return this.retryPlayVerification(
+          bundle,
+          requiredSingleAgentExecution(action.agentExecutions, "repair"),
+        );
+      if (action.actionId === "transaction_cancel_changes") return this.rollback(bundle);
+      if (action.actionId === "transaction_refresh_project")
+        return this.refreshProject(
+          bundle,
+          requiredSingleAgentExecution(action.agentExecutions, "planner"),
+        );
+      if (action.actionId === "transaction_check_source_sync")
+        return this.checkRojoSourceSync(bundle);
+      if (action.actionId === "transaction_revert_source_changes")
+        return this.revertRojoSourceChanges(bundle);
+      if (action.actionId === "transaction_cancel_interrupted_recording")
         return this.cancelInterruptedRecording(bundle);
-      if (action.actionId === "accept_result")
+      if (action.actionId === "transaction_accept_result")
         return this.review(bundle, "accepted", action.report);
-      if (action.actionId === "reject_and_rollback")
+      if (action.actionId === "transaction_reject_and_rollback")
         return requiredChangeSet(bundle).mutationAuthority === "rojo_source"
           ? this.rejectAndRevertRojoSource(bundle, action.report)
           : this.rejectAndRollback(bundle, action.report);
@@ -1893,7 +2073,7 @@ export class CreatorSessionCoordinator {
       for (const bundle of this.bundles.values()) {
         if (bundle.session.projectId !== session.projectId) continue;
         this.observingCreatorPlay.delete(bundle.session.id);
-        // `CreatorControlView` is cached for its exact action binding. Clear
+        // `CreatorTransactionControlView` is cached for its exact action binding. Clear
         // an already-rendered Observing title immediately on disconnect rather
         // than waiting for the runtime promise to unwind and publish its
         // recovery view.
@@ -2714,9 +2894,19 @@ export class CreatorSessionCoordinator {
     });
   }
 
-  private async start(prompt: string): Promise<unknown> {
-    const canonicalPrompt = prompt.trim();
-    if (canonicalPrompt.length === 0) throw new Error("Creator prompt must be non-empty");
+  private async start(
+    creatorText: string,
+    agentPrompt: string,
+    model: string,
+    creatorSessionId: string,
+    contextCitations: readonly CreatorAgentContextCitation[],
+    execution: AgentExecutionSlot,
+  ): Promise<unknown> {
+    const canonicalCreatorText = creatorText.trim();
+    const canonicalAgentPrompt = agentPrompt.trim();
+    if (canonicalCreatorText.length === 0) throw new Error("Creator prompt must be non-empty");
+    if (canonicalAgentPrompt.length === 0)
+      throw new Error("Creator agent prompt must be non-empty");
     const studio = await this.currentAttestedStudioSession();
     const attestation = this.attestations.get(studio.sessionId);
     if (!attestation || attestation.status !== "verified")
@@ -2725,6 +2915,8 @@ export class CreatorSessionCoordinator {
     if (pluginMessageFailure) throw new Error(pluginMessageFailure);
     await this.requireClearRecordingInventory(studio);
     return this.lock(`project:${studio.projectId}`, async () => {
+      if (this.bundles.has(creatorSessionId))
+        throw new Error("Preassigned creator session identity was already consumed");
       const active = [...this.bundles.values()].find(
         (bundle) =>
           bundle.session.projectId === studio.projectId && !isTerminalStatus(bundle.session.status),
@@ -2763,17 +2955,21 @@ export class CreatorSessionCoordinator {
                 : {}),
             });
       let session = createCreatorSession({
-        prompt: canonicalPrompt,
+        id: creatorSessionId,
+        prompt: canonicalCreatorText,
         projectId: studio.projectId,
         revisionHash: projectIndex.revision.hash,
         projectCaptureHash: projectIndex.hash,
         ownership,
+        model,
       });
       const creatorRequest = await this.artifactStore.write({
         kind: "CreatorRequest",
         sessionId: session.id,
         promptHash: session.promptHash,
-        text: canonicalPrompt,
+        creatorText: canonicalCreatorText,
+        agentPrompt: canonicalAgentPrompt,
+        contextCitations: structuredClone(contextCitations),
       });
       let bundle: CreatorSessionBundle = {
         session,
@@ -2831,8 +3027,11 @@ export class CreatorSessionCoordinator {
           projectIndex: freshState,
           sourceIndex: analyzed.index,
           sourceResolver: analyzed.resolver,
-          prompt: canonicalPrompt,
+          creatorPrompt: canonicalCreatorText,
+          agentPrompt: canonicalAgentPrompt,
+          contextCitations,
           budgets: DEFAULT_AGENT_BUDGETS,
+          execution,
         });
         if (
           planned.source.index.id !== analyzed.index.id ||
@@ -2888,11 +3087,33 @@ export class CreatorSessionCoordinator {
           bundle = { ...bundle, session };
           return this.finish(bundle, `Planner stopped: ${planned.failure.detail}`);
         }
+        const outcomeArtifact = await this.artifactStore.write(planned.outcome);
+        bundle = {
+          ...bundle,
+          agentOutcome: { outcome: planned.outcome, artifact: outcomeArtifact },
+        };
+        if (planned.outcome.kind === "answer") {
+          session = advanceSession(session, { status: "answered" });
+          bundle = { ...bundle, session };
+          this.bundles.set(session.id, bundle);
+          await this.persist(bundle);
+          await this.publishView(bundle, planned.outcome.text);
+          return summary(bundle);
+        }
+        if (planned.outcome.kind === "clarification_requested") {
+          session = advanceSession(session, { status: "awaiting_clarification" });
+          bundle = { ...bundle, session };
+          this.bundles.set(session.id, bundle);
+          await this.persist(bundle);
+          await this.publishView(bundle, planned.outcome.question);
+          return summary(bundle);
+        }
+        const plan = planned.outcome.plan;
         session = advanceSession(session, {
           status: "awaiting_plan_approval",
-          plan: planned.plan,
+          plan,
         });
-        bundle = { ...bundle, session, plan: planned.plan };
+        bundle = { ...bundle, session, plan };
         this.bundles.set(session.id, bundle);
         await this.persist(bundle);
         await this.publishView(
@@ -2927,7 +3148,147 @@ export class CreatorSessionCoordinator {
     });
   }
 
-  private async refreshProject(bundle: CreatorSessionBundle): Promise<unknown> {
+  /**
+   * Re-enter a planner at the durable response/tool boundary. All model input,
+   * source material, and execution identity are recovered from immutable
+   * session artifacts; this deliberately does not recollect Studio or create a
+   * fresh provider execution reservation.
+   */
+  private async resumePlanner(
+    creatorSessionId: string,
+    execution: AgentExecutionSlot,
+  ): Promise<unknown> {
+    const initial = await this.bundle(creatorSessionId);
+    return this.lock(initial.session.id, async () => {
+      let bundle = await this.bundle(creatorSessionId);
+      if (bundle.session.status !== "planning")
+        throw new Error("Creator response resume requires the exact planning session boundary");
+      if (bundle.agentOutcome || bundle.agentRuns.length > 0)
+        throw new Error(
+          "Creator response resume cannot replace an already-published planner result",
+        );
+      const request = await this.creatorRequest(bundle);
+      const sourceBinding = bundle.sourceIndices.at(-1);
+      if (!sourceBinding)
+        throw new Error("Creator response resume lost its immutable source-index binding");
+      const sourceIndex = await this.artifactStore.read(
+        sourceBinding.artifact,
+        assertStudioSourceIndex,
+      );
+      if (sourceIndex.id !== sourceBinding.id || sourceIndex.hash !== sourceBinding.hash)
+        throw new Error("Creator response resume source-index artifact binding mismatch");
+      if (sourceIndex.snapshotHash !== bundle.session.currentProjectCaptureHash)
+        throw new Error(
+          "Creator response resume source index is outside the session capture boundary",
+        );
+      const projectBinding = bundle.projectIndices.find(
+        (candidate) => candidate.captureHash === sourceIndex.snapshotHash,
+      );
+      if (!projectBinding)
+        throw new Error("Creator response resume lost the source index project capture");
+      const capture = await readCreatorProjectIndexArtifacts(this.artifactStore, projectBinding);
+      const projectIndex = await this.observationForBundle(bundle);
+      const planned = await this.input.worker.plan({
+        session: bundle.session,
+        ownership: bundle.ownership,
+        projectIndex,
+        sourceIndex,
+        sourceResolver: this.projectSourceMaterial(capture).resolver,
+        creatorPrompt: request.creatorText,
+        agentPrompt: request.agentPrompt,
+        contextCitations: request.contextCitations,
+        budgets: DEFAULT_AGENT_BUDGETS,
+        execution,
+        resume: true,
+      });
+      if (
+        planned.source.index.id !== sourceIndex.id ||
+        planned.source.index.hash !== sourceIndex.hash
+      )
+        throw new Error("Resumed planner returned a source index outside the pinned boundary");
+      const liveAfterPlanning = this.bundles.get(creatorSessionId);
+      if (liveAfterPlanning?.session.status === "refresh_required") {
+        const staleResultBundle: CreatorSessionBundle = {
+          ...liveAfterPlanning,
+          agentRuns: [...liveAfterPlanning.agentRuns, planned.evidence],
+          sourceConsultations: [
+            ...liveAfterPlanning.sourceConsultations,
+            {
+              id: planned.source.consultation.id,
+              hash: planned.source.consultation.hash,
+              indexId: planned.source.consultation.indexId,
+              indexHash: planned.source.consultation.indexHash,
+              artifact: planned.source.consultationArtifact,
+            },
+          ],
+        };
+        this.bundles.set(creatorSessionId, staleResultBundle);
+        await this.persist(staleResultBundle);
+        await this.publishView(
+          staleResultBundle,
+          "The resumed planner AgentRun was preserved as evidence, but Studio changed. Refresh explicitly to establish a complete current index; stale output will not be revived.",
+        );
+        return summary(staleResultBundle);
+      }
+      bundle = {
+        ...bundle,
+        agentRuns: [...bundle.agentRuns, planned.evidence],
+        sourceConsultations: [
+          ...bundle.sourceConsultations,
+          {
+            id: planned.source.consultation.id,
+            hash: planned.source.consultation.hash,
+            indexId: planned.source.consultation.indexId,
+            indexHash: planned.source.consultation.indexHash,
+            artifact: planned.source.consultationArtifact,
+          },
+        ],
+      };
+      if (planned.status === "unsealed") {
+        const session = advanceSession(bundle.session, {
+          status: "incomplete",
+          failure: { code: planned.failure.code, detail: planned.failure.detail },
+        });
+        return this.finish(
+          { ...bundle, session },
+          `Resumed planner stopped: ${planned.failure.detail}`,
+        );
+      }
+      const outcomeArtifact = await this.artifactStore.write(planned.outcome);
+      bundle = { ...bundle, agentOutcome: { outcome: planned.outcome, artifact: outcomeArtifact } };
+      if (planned.outcome.kind === "answer") {
+        const session = advanceSession(bundle.session, { status: "answered" });
+        bundle = { ...bundle, session };
+        this.bundles.set(creatorSessionId, bundle);
+        await this.persist(bundle);
+        await this.publishView(bundle, planned.outcome.text);
+        return summary(bundle);
+      }
+      if (planned.outcome.kind === "clarification_requested") {
+        const session = advanceSession(bundle.session, { status: "awaiting_clarification" });
+        bundle = { ...bundle, session };
+        this.bundles.set(creatorSessionId, bundle);
+        await this.persist(bundle);
+        await this.publishView(bundle, planned.outcome.question);
+        return summary(bundle);
+      }
+      const plan = planned.outcome.plan;
+      const session = advanceSession(bundle.session, { status: "awaiting_plan_approval", plan });
+      bundle = { ...bundle, session, plan };
+      this.bundles.set(creatorSessionId, bundle);
+      await this.persist(bundle);
+      await this.publishView(
+        bundle,
+        "Review the exact plan, typed changes, and generated machine-check thresholds before approving.",
+      );
+      return summary(bundle);
+    });
+  }
+
+  private async refreshProject(
+    bundle: CreatorSessionBundle,
+    execution: AgentExecutionSlot,
+  ): Promise<unknown> {
     if (bundle.session.status !== "refresh_required" || bundle.activeMutation)
       throw new Error("Project refresh is unavailable while a Studio recording might exist");
     const noticeBinding = bundle.projectChanges.at(-1);
@@ -3016,7 +3377,9 @@ export class CreatorSessionCoordinator {
       return summary(restored);
     }
 
-    const prompt = await this.prompt(bundle);
+    const priorRequest = await this.creatorRequest(bundle);
+    const creatorPrompt = priorRequest.creatorText;
+    const agentPrompt = priorRequest.agentPrompt;
     const nextView = projectIndexViewForCreator(studioProjectIndexMetadataView(after));
     const successorAuthorityState = this.input.projectAuthority?.manifest.rojo
       ? await this.persistRojoAuthorityMap(studio.projectId, after)
@@ -3044,17 +3407,20 @@ export class CreatorSessionCoordinator {
               : {}),
           });
     const successorSession = createCreatorSession({
-      prompt,
+      prompt: creatorPrompt,
       projectId: studio.projectId,
       revisionHash: after.revision.hash,
       projectCaptureHash: after.hash,
       ownership,
+      model: bundle.session.model,
     });
     const successorRequest = await this.artifactStore.write({
       kind: "CreatorRequest",
       sessionId: successorSession.id,
       promptHash: successorSession.promptHash,
-      text: prompt,
+      creatorText: creatorPrompt,
+      agentPrompt,
+      contextCitations: priorRequest.contextCitations,
     });
     const successor: CreatorSessionBundle = {
       session: successorSession,
@@ -3113,13 +3479,23 @@ export class CreatorSessionCoordinator {
       successor,
       "Replanning from the complete refreshed project index. Studio remains read-only.",
     );
-    return this.planSuccessor(successor, prompt, after);
+    return this.planSuccessor(
+      successor,
+      creatorPrompt,
+      agentPrompt,
+      after,
+      priorRequest.contextCitations,
+      execution,
+    );
   }
 
   private async planSuccessor(
     bundle: CreatorSessionBundle,
-    prompt: string,
+    creatorPrompt: string,
+    agentPrompt: string,
     capture: StudioProjectIndexCapture,
+    contextCitations: readonly CreatorAgentContextCitation[],
+    execution: AgentExecutionSlot,
   ): Promise<unknown> {
     let analyzed: Awaited<ReturnType<CreatorSessionCoordinator["analyzeProjectSources"]>>;
     try {
@@ -3164,8 +3540,11 @@ export class CreatorSessionCoordinator {
       projectIndex: observation,
       sourceIndex: analyzed.index,
       sourceResolver: analyzed.resolver,
-      prompt,
+      creatorPrompt,
+      agentPrompt,
+      contextCitations,
       budgets: DEFAULT_AGENT_BUDGETS,
+      execution,
     });
     if (
       planned.source.index.id !== analyzed.index.id ||
@@ -3196,12 +3575,38 @@ export class CreatorSessionCoordinator {
       };
       return this.finish(next, `Planner stopped: ${planned.failure.detail}`);
     }
+    const outcomeArtifact = await this.artifactStore.write(planned.outcome);
     next = {
       ...next,
-      plan: planned.plan,
+      agentOutcome: { outcome: planned.outcome, artifact: outcomeArtifact },
+    };
+    if (planned.outcome.kind === "answer") {
+      next = {
+        ...next,
+        session: advanceSession(next.session, { status: "answered" }),
+      };
+      this.bundles.set(next.session.id, next);
+      await this.persist(next);
+      await this.publishView(next, planned.outcome.text);
+      return summary(next);
+    }
+    if (planned.outcome.kind === "clarification_requested") {
+      next = {
+        ...next,
+        session: advanceSession(next.session, { status: "awaiting_clarification" }),
+      };
+      this.bundles.set(next.session.id, next);
+      await this.persist(next);
+      await this.publishView(next, planned.outcome.question);
+      return summary(next);
+    }
+    const plan = planned.outcome.plan;
+    next = {
+      ...next,
+      plan,
       session: advanceSession(next.session, {
         status: "awaiting_plan_approval",
-        plan: planned.plan,
+        plan,
       }),
     };
     this.bundles.set(next.session.id, next);
@@ -3217,6 +3622,7 @@ export class CreatorSessionCoordinator {
     bundle: CreatorSessionBundle,
     hash: string,
     decision: "approved" | "rejected",
+    execution?: AgentExecutionSlot,
   ): Promise<unknown> {
     if (
       bundle.session.status !== "awaiting_plan_approval" ||
@@ -3244,6 +3650,7 @@ export class CreatorSessionCoordinator {
       return this.finish(bundle, "The creator rejected the proposed plan.");
     }
     const plan = bundle.plan;
+    if (!execution) throw new Error("Approved plan has no preassigned builder execution");
     let session = advanceSession(bundle.session, {
       status: "building",
       approval,
@@ -3255,7 +3662,8 @@ export class CreatorSessionCoordinator {
       bundle,
       "Building a virtual Studio change set. The live place remains unchanged.",
     );
-    const prompt = await this.prompt(bundle);
+    const creatorPrompt = await this.creatorPrompt(bundle);
+    const agentPrompt = await this.agentPrompt(bundle);
     try {
       const source = await this.sourceEvidence(bundle);
       const observation = await this.observationForBundle(bundle);
@@ -3263,11 +3671,13 @@ export class CreatorSessionCoordinator {
         session,
         ownership: bundle.ownership,
         projectIndex: observation,
-        prompt,
+        creatorPrompt,
+        agentPrompt,
         plan,
         planApproval: approval,
         ...source,
         budgets: DEFAULT_AGENT_BUDGETS,
+        execution,
       });
       const liveAfterBuild = this.bundles.get(session.id);
       if (liveAfterBuild?.session.status === "refresh_required") {
@@ -3340,6 +3750,7 @@ export class CreatorSessionCoordinator {
     bundle: CreatorSessionBundle,
     hash: string,
     decision: "approved" | "rejected",
+    repairExecution?: AgentExecutionSlot,
   ): Promise<unknown> {
     const changeSet = requiredChangeSet(bundle);
     if (bundle.session.status !== "awaiting_change_approval" || changeSet.hash !== hash)
@@ -3363,8 +3774,10 @@ export class CreatorSessionCoordinator {
     this.bundles.set(bundle.session.id, bundle);
     await this.persist(bundle);
     if (decision === "approved") {
+      if (!repairExecution)
+        throw new Error("Approved change has no preassigned verification-repair execution");
       try {
-        return await this.apply(bundle);
+        return await this.apply(bundle, repairExecution);
       } catch (error) {
         const current = this.bundles.get(bundle.session.id) ?? bundle;
         if (error instanceof ProjectAuthorityRevokedError) return summary(current);
@@ -3754,7 +4167,10 @@ export class CreatorSessionCoordinator {
     );
   }
 
-  private async apply(bundle: CreatorSessionBundle): Promise<unknown> {
+  private async apply(
+    bundle: CreatorSessionBundle,
+    repairExecution: AgentExecutionSlot,
+  ): Promise<unknown> {
     const authority = this.acquireProjectAuthority(bundle.session.projectId);
     const guarded = <T>(operation: Promise<T>) => this.awaitProjectAuthority(authority, operation);
     const assertAuthority = () => this.assertProjectAuthority(authority);
@@ -4548,6 +4964,7 @@ export class CreatorSessionCoordinator {
         ),
       );
       assertAuthority();
+      this.pendingRepairExecutions.set(bundle.session.id, repairExecution);
       this.scheduleAutomaticVerification(bundle.session.id);
       return summary(bundle);
     } catch (error) {
@@ -5045,6 +5462,7 @@ export class CreatorSessionCoordinator {
       }
     }
     if (verification.status === "incomplete") {
+      this.pendingRepairExecutions.delete(bundle.session.id);
       // Only a valid runtime envelope received after the exact Stop lifecycle
       // acknowledgement proves that the plugin retired its prior observer.
       // Timeouts, disconnects, and pre-start/plugin errors leave that runtime
@@ -5091,6 +5509,7 @@ export class CreatorSessionCoordinator {
     const unsubscribe = this.capture(studio, messages, indexStreams);
     try {
       if (failures.length === 0) {
+        this.pendingRepairExecutions.delete(bundle.session.id);
         this.assertFinalizationGateClear(bundle.session.id);
         bundle = {
           ...bundle,
@@ -5296,7 +5715,11 @@ export class CreatorSessionCoordinator {
       if (!this.hasPendingTransactionProjectChange(bundle.session.id))
         this.finalizedTransactionProjectChangeCaptures.delete(bundle.session.id);
       await this.acknowledgeFinalization(studio, finalized, attempt.hash);
-      return this.repair(bundle, boundVerification);
+      const repairExecution = this.pendingRepairExecutions.get(bundle.session.id);
+      if (!repairExecution)
+        throw new Error("Verification repair lost its creator-job execution reservation");
+      this.pendingRepairExecutions.delete(bundle.session.id);
+      return this.repair(bundle, boundVerification, repairExecution);
     } finally {
       unsubscribe();
     }
@@ -5305,13 +5728,15 @@ export class CreatorSessionCoordinator {
   private async repair(
     bundle: CreatorSessionBundle,
     verification: CreatorVerificationRecord,
+    execution: AgentExecutionSlot,
   ): Promise<unknown> {
     if (!bundle.plan) throw new Error("Repair requires the approved plan");
     const planApproval = bundle.approvals.find(
       (approval) => approval.artifactKind === "plan" && approval.decision === "approved",
     );
     if (!planApproval) throw new Error("Repair requires the original plan approval");
-    const prompt = await this.prompt(bundle);
+    const creatorPrompt = await this.creatorPrompt(bundle);
+    const agentPrompt = await this.agentPrompt(bundle);
     if (
       verification.status !== "failed" ||
       verification.failureFacts.length === 0 ||
@@ -5326,12 +5751,14 @@ export class CreatorSessionCoordinator {
       session: bundle.session,
       ownership: bundle.ownership,
       projectIndex: observation,
-      prompt,
+      creatorPrompt,
+      agentPrompt,
       plan: bundle.plan,
       planApproval,
       verificationFeedback: verification.failureFacts.map((fact) => fact.statement),
       budgets: DEFAULT_AGENT_BUDGETS,
       ...source,
+      execution,
     });
     bundle = {
       ...bundle,
@@ -5513,7 +5940,10 @@ export class CreatorSessionCoordinator {
     return this.revertRojoSourceChanges(reviewed);
   }
 
-  private async retryPlayVerification(bundle: CreatorSessionBundle): Promise<unknown> {
+  private async retryPlayVerification(
+    bundle: CreatorSessionBundle,
+    repairExecution: AgentExecutionSlot,
+  ): Promise<unknown> {
     if (bundle.session.status !== "awaiting_verification_retry")
       throw new Error("Creator session is not awaiting a Play verification retry");
     const pending = this.pendingRecordings.get(bundle.session.id);
@@ -5568,6 +5998,7 @@ export class CreatorSessionCoordinator {
       bundle,
       "Retry authorized for this exact incomplete Play receipt and unchanged provisional recording. Forge will observe the next ordinary Studio Play once.",
     );
+    this.pendingRepairExecutions.set(bundle.session.id, repairExecution);
     this.scheduleAutomaticVerification(bundle.session.id);
     return summary(bundle);
   }
@@ -6562,7 +6993,7 @@ export class CreatorSessionCoordinator {
     this.assertProjectAuthority(authority);
     const epoch = (this.viewPublicationEpochs.get(bundle.session.id) ?? 0) + 1;
     this.viewPublicationEpochs.set(bundle.session.id, epoch);
-    let view: CreatorControlView;
+    let view: CreatorTransactionControlView;
     try {
       view = await this.view(bundle, detailValue);
     } catch (error) {
@@ -6678,14 +7109,20 @@ export class CreatorSessionCoordinator {
     // operator configuration can still select a smaller bound.
     return this.input.timeoutMs ?? 660_000;
   }
-  private async prompt(bundle: CreatorSessionBundle): Promise<string> {
+  private async creatorRequest(bundle: CreatorSessionBundle) {
     const request = await this.artifactStore.read(
       bundle.creatorRequest,
       assertCreatorRequestArtifact,
     );
     if (request.sessionId !== bundle.session.id || request.promptHash !== bundle.session.promptHash)
       throw new Error("Creator request artifact does not bind its session");
-    return request.text;
+    return request;
+  }
+  private async creatorPrompt(bundle: CreatorSessionBundle): Promise<string> {
+    return (await this.creatorRequest(bundle)).creatorText;
+  }
+  private async agentPrompt(bundle: CreatorSessionBundle): Promise<string> {
+    return (await this.creatorRequest(bundle)).agentPrompt;
   }
   private async sourceEvidence(bundle: CreatorSessionBundle): Promise<{
     sourceIndex: StudioSourceIndex;
@@ -6726,25 +7163,28 @@ export class CreatorSessionCoordinator {
     };
   }
 
-  private async dashboardSourceIndex(sessionId: string): Promise<StudioSourceIndex> {
+  private async sealedSourceIndex(
+    sessionId: string,
+    sourceIndexHash: string,
+  ): Promise<StudioSourceIndex> {
     const bundle = await this.bundle(sessionId);
-    const binding = bundle.plan
-      ? bundle.sourceIndices.find(
-          (candidate) =>
-            candidate.id === bundle.plan?.sourceIndexId &&
-            candidate.hash === bundle.plan?.sourceIndexHash,
-        )
-      : bundle.sourceIndices.at(-1);
-    if (!binding) throw new Error("This session has no immutable source index to inspect");
-    return this.artifactStore.read(binding.artifact, assertStudioSourceIndex);
+    const binding = bundle.sourceIndices.find((candidate) => candidate.hash === sourceIndexHash);
+    if (!binding) throw new Error("This session does not retain the requested sealed source index");
+    const index = await this.artifactStore.read(binding.artifact, assertStudioSourceIndex);
+    if (index.id !== binding.id || index.hash !== sourceIndexHash)
+      throw new Error("Sealed source-index artifact binding mismatch");
+    return index;
   }
 
-  private async dashboardSourceMaterial(sessionId: string): Promise<{
+  private async sealedSourceMaterial(
+    sessionId: string,
+    sourceIndexHash: string,
+  ): Promise<{
     index: StudioSourceIndex;
     resolver: import("../../source-intelligence/src/index.js").AsyncVerifiedSourceResolver;
   }> {
     const bundle = await this.bundle(sessionId);
-    const index = await this.dashboardSourceIndex(sessionId);
+    const index = await this.sealedSourceIndex(sessionId, sourceIndexHash);
     const projectBinding = bundle.projectIndices.find(
       (candidate) => candidate.captureHash === index.snapshotHash,
     );
@@ -6760,7 +7200,7 @@ export class CreatorSessionCoordinator {
 
   private async sourceSyncPresentation(
     bundle: CreatorSessionBundle,
-  ): Promise<CreatorControlView["sourceSync"]> {
+  ): Promise<CreatorTransactionControlView["sourceSync"]> {
     const mutation = bundle.rojoSourceMutations.at(-1);
     if (!mutation) return undefined;
     if (mutation.revert) {
@@ -6801,8 +7241,8 @@ export class CreatorSessionCoordinator {
   private async view(
     bundle: CreatorSessionBundle,
     detailValue: string,
-  ): Promise<CreatorControlView> {
-    const prompt = await this.prompt(bundle);
+  ): Promise<CreatorTransactionControlView> {
+    const prompt = await this.creatorPrompt(bundle);
     const changeSet = activeChangeSet(bundle);
     const activeMutation = bundle.activeMutation;
     const settledVerification = bundle.verifications.at(-1);
@@ -7037,7 +7477,7 @@ export class CreatorSessionCoordinator {
     bundle: CreatorSessionBundle,
     attempt: CreatorMutationAttempt | undefined,
     active: CreatorActiveMutation | undefined,
-  ): Promise<CreatorControlView["mutation"]> {
+  ): Promise<CreatorTransactionControlView["mutation"]> {
     const cursor = attempt ?? active;
     if (!cursor) return undefined;
     const projection = (await this.artifactStore.read(
@@ -7228,7 +7668,7 @@ export class CreatorSessionCoordinator {
       return;
     }
     if (
-      !(["verifying", "committing", "cancelling"] as readonly string[]).includes(
+      !(["verifying", "repairing", "committing", "cancelling"] as readonly string[]).includes(
         bundle.session.status,
       )
     )
@@ -7510,6 +7950,8 @@ function requiredSettledMutationAttempt(
 }
 function bundleArtifactReferences(bundle: CreatorSessionBundle): ArtifactReference[] {
   return [
+    bundle.creatorRequest,
+    ...(bundle.agentOutcome ? [bundle.agentOutcome.artifact] : []),
     ...bundle.agentRuns.flatMap((run) => [run.agentRun, run.trace]),
     ...bundle.verifications.flatMap((verification) => [
       verification.executionPlan.artifact,
@@ -7638,6 +8080,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 function isTerminalStatus(status: CreatorSessionBundle["session"]["status"]): boolean {
   return [
+    "answered",
     "creator_accepted",
     "creator_rejected",
     "rolled_back",
@@ -7648,7 +8091,7 @@ function isTerminalStatus(status: CreatorSessionBundle["session"]["status"]): bo
 function creatorProgress(
   session: CreatorSessionBundle["session"] | undefined,
   observingCreatorPlay = false,
-): CreatorProgressStage[] {
+): CreatorTransactionStage[] {
   const order = ["request", "plan", "change", "studio", "review"] as const;
   const labels = {
     request: "Request",
@@ -7673,7 +8116,14 @@ function creatorProgress(
       detail: `${labels[id]} evidence`,
     }));
   const status = session.status;
-  const activeIndex = ["indexing", "planning", "refresh_required", "refreshing"].includes(status)
+  const activeIndex = [
+    "indexing",
+    "planning",
+    "awaiting_clarification",
+    "refining_plan",
+    "refresh_required",
+    "refreshing",
+  ].includes(status)
     ? 1
     : ["awaiting_plan_approval"].includes(status)
       ? 1
@@ -7752,6 +8202,12 @@ export function restoredCreatorControlDetail(bundle: CreatorSessionBundle): stri
       return "Forge is collecting and validating a complete sharded project index. Studio remains read-only.";
     case "planning":
       return "Forge is producing a bounded plan. Studio remains read-only.";
+    case "awaiting_clarification":
+      return bundle.agentOutcome?.outcome.kind === "clarification_requested"
+        ? bundle.agentOutcome.outcome.question
+        : "Forge needs one clarification before it can continue this intent.";
+    case "refining_plan":
+      return "Forge is revising the plan from the creator's exact follow-up. Studio remains read-only and the earlier controls are invalid.";
     case "awaiting_plan_approval":
       return "Review the exact plan and proof obligations. Studio remains read-only until you approve them.";
     case "building":
@@ -7784,6 +8240,10 @@ export function restoredCreatorControlDetail(bundle: CreatorSessionBundle): stri
       return "Forge is waiting for exact commit acknowledgement and post-commit state evidence before creating a checkpoint.";
     case "awaiting_review":
       return "The committed result and its evidence are ready for your required free-form review report and final decision.";
+    case "answered":
+      return bundle.agentOutcome?.outcome.kind === "answer"
+        ? bundle.agentOutcome.outcome.text
+        : "Forge answered without requesting a Studio change.";
     case "creator_accepted":
       return "The creator accepted the committed result. The final report and replayable evidence remain preserved.";
     case "creator_rejected":
@@ -7881,51 +8341,162 @@ function requiredHash(value: string | undefined, label: string): string {
     throw new Error(`Studio omitted a valid ${label} hash`);
   return value;
 }
-export function assertCreatorControlAction(value: unknown): CreatorControlAction {
+export function assertCreatorTransactionControlAction(
+  value: unknown,
+): CreatorTransactionControlAction {
   if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("Invalid creator control action");
+    throw new Error("Invalid creator transaction control action");
   const action = value as Record<string, unknown>;
   if (
     action.action === "start" &&
-    typeof action.prompt === "string" &&
-    action.prompt.trim().length > 0 &&
-    action.prompt.length <= 16_000
-  )
-    return { action: "start", prompt: action.prompt };
+    typeof action.creatorText === "string" &&
+    action.creatorText.trim().length > 0 &&
+    action.creatorText === action.creatorText.trim() &&
+    Buffer.byteLength(action.creatorText, "utf8") <= 16_000 &&
+    typeof action.agentPrompt === "string" &&
+    action.agentPrompt.trim().length > 0 &&
+    action.agentPrompt === action.agentPrompt.trim() &&
+    Buffer.byteLength(action.agentPrompt, "utf8") <= 256 * 1024 &&
+    typeof action.model === "string" &&
+    /^[a-z0-9][a-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(action.model) &&
+    typeof action.creatorSessionId === "string" &&
+    /^creator_session_[A-Za-z0-9-]{1,200}$/.test(action.creatorSessionId) &&
+    Array.isArray(action.contextCitations) &&
+    action.contextCitations.length <= 32 &&
+    Array.isArray(action.agentExecutions)
+  ) {
+    const contextCitations = action.contextCitations.map((citation) => {
+      assertCreatorAgentContextCitation(citation);
+      return structuredClone(citation);
+    });
+    if (
+      new Set(contextCitations.map((citation) => citation.citation.handle)).size !==
+      contextCitations.length
+    )
+      throw new Error("Creator start context citations must be unique");
+    const agentExecutions = action.agentExecutions.map((execution) => {
+      assertAgentExecutionSlot(execution);
+      return structuredClone(execution);
+    });
+    requiredSingleAgentExecution(agentExecutions, "planner");
+    return {
+      action: "start",
+      creatorText: action.creatorText,
+      agentPrompt: action.agentPrompt,
+      model: action.model,
+      creatorSessionId: action.creatorSessionId,
+      contextCitations,
+      agentExecutions,
+    };
+  }
+  if (
+    action.action === "resume" &&
+    typeof action.creatorSessionId === "string" &&
+    /^creator_session_[A-Za-z0-9-]{1,200}$/.test(action.creatorSessionId) &&
+    Array.isArray(action.agentExecutions)
+  ) {
+    const agentExecutions = action.agentExecutions.map((execution) => {
+      assertAgentExecutionSlot(execution);
+      return structuredClone(execution);
+    });
+    requiredSingleAgentExecution(agentExecutions, "planner");
+    return {
+      action: "resume",
+      creatorSessionId: action.creatorSessionId,
+      agentExecutions,
+    };
+  }
   if (
     action.action === "act" &&
     typeof action.sessionId === "string" &&
     typeof action.viewId === "string" &&
     typeof action.viewHash === "string" &&
     /^[a-f0-9]{64}$/.test(action.viewHash) &&
+    Array.isArray(action.agentExecutions) &&
     [
-      "approve_plan",
-      "reject_plan",
-      "approve_and_apply_changes",
-      "reject_changes",
-      "retry_play_verification",
-      "accept_result",
-      "reject_and_rollback",
-      "cancel_changes",
-      "cancel_interrupted_recording",
-      "refresh_project",
-      "check_source_sync",
-      "revert_source_changes",
+      "transaction_approve_plan",
+      "transaction_reject_plan",
+      "transaction_approve_and_apply_changes",
+      "transaction_reject_changes",
+      "transaction_retry_play_verification",
+      "transaction_accept_result",
+      "transaction_reject_and_rollback",
+      "transaction_cancel_changes",
+      "transaction_cancel_interrupted_recording",
+      "transaction_refresh_project",
+      "transaction_check_source_sync",
+      "transaction_revert_source_changes",
     ].includes(String(action.actionId)) &&
     (action.report === undefined ||
       (typeof action.report === "string" && Buffer.byteLength(action.report, "utf8") <= 4096)) &&
-    (!["accept_result", "reject_and_rollback"].includes(String(action.actionId)) ||
+    (!["transaction_accept_result", "transaction_reject_and_rollback"].includes(
+      String(action.actionId),
+    ) ||
       (typeof action.report === "string" && action.report.trim().length > 0))
-  )
-    return action as CreatorControlAction;
-  throw new Error("Invalid creator control action");
+  ) {
+    const agentExecutions = action.agentExecutions.map((execution) => {
+      assertAgentExecutionSlot(execution);
+      return structuredClone(execution);
+    });
+    assertActionAgentExecutions(
+      action.actionId as Extract<CreatorTransactionControlAction, { action: "act" }>["actionId"],
+      agentExecutions,
+    );
+    return {
+      action: "act",
+      sessionId: action.sessionId as string,
+      viewId: action.viewId as string,
+      viewHash: action.viewHash as string,
+      actionId: action.actionId as Extract<
+        CreatorTransactionControlAction,
+        { action: "act" }
+      >["actionId"],
+      ...(typeof action.report === "string" ? { report: action.report } : {}),
+      agentExecutions,
+    };
+  }
+  throw new Error("Invalid creator transaction control action");
+}
+
+function requiredSingleAgentExecution(
+  executions: readonly AgentExecutionSlot[],
+  purpose: AgentExecutionSlot["purpose"],
+): AgentExecutionSlot {
+  const execution = executions[0];
+  if (executions.length !== 1 || !execution || execution.purpose !== purpose)
+    throw new Error(`Creator action requires exactly one ${purpose} execution reservation`);
+  assertAgentExecutionSlot(execution);
+  return execution;
+}
+
+function assertActionAgentExecutions(
+  actionId: Extract<CreatorTransactionControlAction, { action: "act" }>["actionId"],
+  executions: readonly AgentExecutionSlot[],
+): void {
+  const expected =
+    actionId === "transaction_approve_plan"
+      ? "builder"
+      : actionId === "transaction_approve_and_apply_changes" ||
+          actionId === "transaction_retry_play_verification"
+        ? "repair"
+        : actionId === "transaction_refresh_project"
+          ? "planner"
+          : undefined;
+  if (expected === undefined) {
+    if (executions.length !== 0)
+      throw new Error(
+        "Creator action has provider authority without a provider-capable transition",
+      );
+    return;
+  }
+  requiredSingleAgentExecution(executions, expected);
 }
 function assertActionBinding(
-  action: Extract<CreatorControlAction, { action: "act" }>,
-  view: CreatorControlView,
+  action: Extract<CreatorTransactionControlAction, { action: "act" }>,
+  view: CreatorTransactionControlView,
   consumed: Set<string>,
 ): void {
-  assertCreatorControlActionBinding(
+  assertCreatorTransactionControlActionBinding(
     view,
     {
       creatorSessionId: action.sessionId,
@@ -7936,13 +8507,17 @@ function assertActionBinding(
     consumed.has(action.viewHash),
   );
 }
-function requiredArtifactHash(view: CreatorControlView, kind: "plan" | "change_set"): string {
-  if (view.artifact?.kind !== kind) throw new Error(`Creator control view does not bind a ${kind}`);
+function requiredArtifactHash(
+  view: CreatorTransactionControlView,
+  kind: "plan" | "change_set",
+): string {
+  if (view.artifact?.kind !== kind)
+    throw new Error(`Creator transaction control view does not bind a ${kind}`);
   return view.artifact.hash;
 }
 function creatorRuntimeSummary(
   evidence: StudioEvidenceEnvelope,
-): NonNullable<NonNullable<CreatorControlView["verification"]>["runtimeSummary"]> {
+): NonNullable<NonNullable<CreatorTransactionControlView["verification"]>["runtimeSummary"]> {
   const count = (status: StudioEvidenceEnvelope["facts"][number]["result"]["status"]) =>
     evidence.facts.filter((fact) => fact.result.status === status).length;
   return {
@@ -7971,18 +8546,18 @@ function controlView(
   observation: ReturnType<typeof projectIndexViewForCreator>,
   detailValue: string,
   prompt?: string,
-  artifacts?: NonNullable<CreatorControlView["artifacts"]>,
-  mutation?: CreatorControlView["mutation"],
-  verification?: CreatorControlView["verification"],
-  projectIndex?: CreatorControlView["projectIndex"],
-  sourceConsultation?: CreatorControlView["sourceConsultation"],
-  projectChange?: CreatorControlView["projectChange"],
-  sourceSync?: CreatorControlView["sourceSync"],
+  artifacts?: NonNullable<CreatorTransactionControlView["artifacts"]>,
+  mutation?: CreatorTransactionControlView["mutation"],
+  verification?: CreatorTransactionControlView["verification"],
+  projectIndex?: CreatorTransactionControlView["projectIndex"],
+  sourceConsultation?: CreatorTransactionControlView["sourceConsultation"],
+  projectChange?: CreatorTransactionControlView["projectChange"],
+  sourceSync?: CreatorTransactionControlView["sourceSync"],
   recoveryCancellationAvailable = false,
   observingCreatorPlay = false,
   changeApplicationAvailable = true,
   sourceRevertAvailable = false,
-): CreatorControlView {
+): CreatorTransactionControlView {
   if (bundle.session.status === "awaiting_plan_approval" && bundle.plan && prompt === undefined)
     throw new Error("Plan review requires the exact private creator request");
   const presentsPlan =
@@ -8043,7 +8618,7 @@ function controlView(
   const creatorReviewPrompts = bundle.plan?.charter.clauses
     .filter((clause) => clause.kind === "creator_review")
     .map((clause) => clause.statement);
-  return createCreatorControlView({
+  return createCreatorTransactionControlView({
     creatorSessionId: bundle.session.id,
     creatorSessionHash: bundle.session.hash,
     status: bundle.session.status,
@@ -8059,7 +8634,7 @@ function controlView(
     ...(sourceConsultation ? { sourceConsultation } : {}),
     ...(projectChange ? { projectChange } : {}),
     ...(sourceSync ? { sourceSync } : {}),
-    ...actions,
+    actions,
   });
 }
 function controlActions(
@@ -8067,107 +8642,107 @@ function controlActions(
   recoveryCancellationAvailable = false,
   changeApplicationAvailable = true,
   sourceRevertAvailable = false,
-): Pick<CreatorControlView, "primaryAction" | "secondaryAction"> {
+): CreatorTransactionControlView["actions"] {
   if (status === "refresh_required")
-    return {
-      primaryAction: {
-        id: "refresh_project",
+    return [
+      {
+        id: "transaction_refresh_project",
         label: "Refresh Project",
         intent: "primary",
       },
-    };
+    ];
   if (status === "awaiting_source_sync")
-    return {
-      primaryAction: {
-        id: "check_source_sync",
+    return [
+      {
+        id: "transaction_check_source_sync",
         label: "Check Source Sync",
         intent: "primary",
       },
       ...(sourceRevertAvailable
-        ? {
-            secondaryAction: {
-              id: "revert_source_changes" as const,
+        ? [
+            {
+              id: "transaction_revert_source_changes" as const,
               label: "Revert Source Changes",
               intent: "secondary" as const,
             },
-          }
-        : {}),
-    };
+          ]
+        : []),
+    ];
   if (status === "awaiting_plan_approval")
-    return {
-      primaryAction: {
-        id: "approve_plan",
+    return [
+      {
+        id: "transaction_approve_plan",
         label: "Approve Plan",
         intent: "primary",
       },
-      secondaryAction: {
-        id: "reject_plan",
+      {
+        id: "transaction_reject_plan",
         label: "Reject",
         intent: "secondary",
       },
-    };
+    ];
   if (status === "awaiting_change_approval")
-    return {
+    return [
       ...(changeApplicationAvailable
-        ? {
-            primaryAction: {
-              id: "approve_and_apply_changes" as const,
+        ? [
+            {
+              id: "transaction_approve_and_apply_changes" as const,
               label: "Approve & Apply",
               intent: "primary" as const,
             },
-          }
-        : {}),
-      secondaryAction: {
-        id: "reject_changes",
+          ]
+        : []),
+      {
+        id: "transaction_reject_changes",
         label: "Reject",
         intent: "secondary",
       },
-    };
+    ];
   if (status === "awaiting_verification")
-    return {
-      secondaryAction: {
-        id: "cancel_changes",
+    return [
+      {
+        id: "transaction_cancel_changes",
         label: "Cancel Changes",
         intent: "secondary",
       },
-    };
+    ];
   if (status === "awaiting_verification_retry")
-    return {
-      primaryAction: {
-        id: "retry_play_verification",
+    return [
+      {
+        id: "transaction_retry_play_verification",
         label: "Retry Play Verification",
         intent: "primary",
       },
-      secondaryAction: {
-        id: "cancel_changes",
+      {
+        id: "transaction_cancel_changes",
         label: "Cancel Changes",
         intent: "secondary",
       },
-    };
+    ];
   if (status === "awaiting_review")
-    return {
-      primaryAction: {
-        id: "accept_result",
+    return [
+      {
+        id: "transaction_accept_result",
         label: "Accept Result",
         intent: "primary",
         requiresReport: true,
       },
-      secondaryAction: {
-        id: "reject_and_rollback",
+      {
+        id: "transaction_reject_and_rollback",
         label: "Reject & Roll Back",
         intent: "secondary",
         requiresReport: true,
       },
-    };
+    ];
   if (status === "recovery_required" && recoveryCancellationAvailable)
-    return {
-      primaryAction: {
-        id: "cancel_interrupted_recording",
+    return [
+      {
+        id: "transaction_cancel_interrupted_recording",
         label: "Cancel Interrupted Recording",
         intent: "primary",
       },
-    };
-  return {};
+    ];
+  return [];
 }
 function controlTitle(
   status: CreatorSessionBundle["session"]["status"],
@@ -8176,6 +8751,8 @@ function controlTitle(
   const titles: Record<CreatorSessionBundle["session"]["status"], string> = {
     indexing: "Indexing Project",
     planning: "Planning",
+    awaiting_clarification: "One question before I continue",
+    refining_plan: "Refining the plan",
     awaiting_plan_approval: "Review Plan",
     building: "Building Changes",
     awaiting_change_approval: "Review Changes",
@@ -8192,6 +8769,7 @@ function controlTitle(
     superseded: "Superseded by Refresh",
     awaiting_source_sync: "Awaiting Source Sync",
     awaiting_review: "Review Result",
+    answered: "Answer",
     creator_accepted: "Accepted",
     creator_rejected: "Rejected",
     rolled_back: "Rolled Back",

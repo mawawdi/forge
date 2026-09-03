@@ -1,8 +1,9 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, extname, join, resolve } from "node:path";
-import type { CreatorSessionCoordinator } from "../../creator-session/src/coordinator.js";
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import type { CreatorConversationCoordinator } from "./conversation-coordinator.js";
 import {
   ROBLOX_API_CATALOG,
   ROBLOX_API_CATALOG_HASH,
@@ -18,7 +19,17 @@ import {
   type StudioCapabilityReason,
 } from "../../studio-evidence/src/index.js";
 
-const MAX_BODY_BYTES = 64 * 1024;
+/**
+ * Closed maximum for a complete UTF-8 creator-control request body.
+ *
+ * The largest text field the current control contract advertises is 64 KiB.
+ * JSON may encode each one-byte control character as a six-byte `\u00XX`
+ * escape, so the transport budget must cover escaping and bounded request
+ * framing rather than duplicating the field budget. 512 KiB leaves that
+ * worst-case 384 KiB representation sufficient room for every bounded ID,
+ * hash, and JSON delimiter while remaining a fixed DoS boundary.
+ */
+const MAX_CREATOR_CONTROL_WIRE_BODY_BYTES = 512 * 1024;
 const MAX_SUBSCRIBERS = 32;
 const MAX_EVENTS = 256;
 const COOKIE_NAME = "forge_creator_session";
@@ -26,6 +37,9 @@ const DEFAULT_CAPABILITY_PAGE_SIZE = 40;
 const MAX_CAPABILITY_PAGE_SIZE = 100;
 const MAX_CAPABILITY_QUERY_LENGTH = 160;
 const MAX_CLASS_NAME_LENGTH = 128;
+
+export * from "./conversation-coordinator.js";
+export * from "./store-lease.js";
 
 /**
  * A small, static view of the pinned Roblox catalog and its proof-policy
@@ -108,8 +122,27 @@ export interface CreatorControlDiscovery {
   startedAt: string;
 }
 
+export type CreatorControlCoordinator = Pick<
+  CreatorConversationCoordinator,
+  | "subscribe"
+  | "dashboardState"
+  | "conversationEvents"
+  | "submitTurn"
+  | "submitAction"
+  | "readAuthorizedArtifact"
+  | "replayVerification"
+  | "replayMutation"
+  | "sourceDocuments"
+  | "sourceSearch"
+  | "sourceRead"
+  | "sourceSymbols"
+  | "sourceReferences"
+  | "sourceDependencies"
+  | "sourceDiff"
+>;
+
 export interface CreatorControlServerOptions {
-  coordinator: CreatorSessionCoordinator;
+  coordinator: CreatorControlCoordinator;
   dashboardDirectory: string;
   host?: string;
   port?: number;
@@ -233,7 +266,30 @@ export class CreatorControlServer {
           response,
           200,
           await this.options.coordinator.dashboardState(
-            url.searchParams.get("sessionId") ?? undefined,
+            url.searchParams.get("conversationId") ?? undefined,
+          ),
+        );
+      }
+      const conversationEvents = /^\/api\/conversations\/([^/]+)\/events$/.exec(url.pathname);
+      if (request.method === "GET" && conversationEvents?.[1]) {
+        return writeJson(
+          response,
+          200,
+          await this.options.coordinator.conversationEvents(
+            decodeURIComponent(conversationEvents[1]),
+            {
+              ...(url.searchParams.has("before") ? { before: requiredQuery(url, "before") } : {}),
+              ...(url.searchParams.has("limit")
+                ? {
+                    limit: readBoundedInteger(
+                      url.searchParams.get("limit"),
+                      "Conversation event page size",
+                      1,
+                      200,
+                    ),
+                  }
+                : {}),
+            },
           ),
         );
       }
@@ -278,7 +334,7 @@ export class CreatorControlServer {
         return writeJson(
           response,
           200,
-          await this.options.coordinator.sourceDocuments(requiredQuery(url, "sessionId"), {
+          await this.options.coordinator.sourceDocuments(sourceEvidenceAnchor(url), {
             ...(url.searchParams.has("limit")
               ? {
                   limit: readBoundedInteger(
@@ -297,7 +353,7 @@ export class CreatorControlServer {
         return writeJson(
           response,
           200,
-          await this.options.coordinator.sourceSearch(requiredQuery(url, "sessionId"), {
+          await this.options.coordinator.sourceSearch(sourceEvidenceAnchor(url), {
             query: requiredQuery(url, "query"),
             ...(url.searchParams.has("pathPrefix")
               ? { pathPrefix: requiredQuery(url, "pathPrefix") }
@@ -330,7 +386,7 @@ export class CreatorControlServer {
         return writeJson(
           response,
           200,
-          await this.options.coordinator.sourceRead(requiredQuery(url, "sessionId"), {
+          await this.options.coordinator.sourceRead(sourceEvidenceAnchor(url), {
             documentId: requiredQuery(url, "documentId"),
             ...(url.searchParams.has("limit")
               ? {
@@ -350,7 +406,7 @@ export class CreatorControlServer {
         return writeJson(
           response,
           200,
-          await this.options.coordinator.sourceSymbols(requiredQuery(url, "sessionId"), {
+          await this.options.coordinator.sourceSymbols(sourceEvidenceAnchor(url), {
             query: requiredQuery(url, "query"),
             ...(url.searchParams.has("pathPrefix")
               ? { pathPrefix: requiredQuery(url, "pathPrefix") }
@@ -373,7 +429,7 @@ export class CreatorControlServer {
         return writeJson(
           response,
           200,
-          await this.options.coordinator.sourceReferences(requiredQuery(url, "sessionId"), {
+          await this.options.coordinator.sourceReferences(sourceEvidenceAnchor(url), {
             symbol: requiredQuery(url, "symbol"),
             ...(url.searchParams.has("pathPrefix")
               ? { pathPrefix: requiredQuery(url, "pathPrefix") }
@@ -403,7 +459,7 @@ export class CreatorControlServer {
         return writeJson(
           response,
           200,
-          await this.options.coordinator.sourceDependencies(requiredQuery(url, "sessionId"), {
+          await this.options.coordinator.sourceDependencies(sourceEvidenceAnchor(url), {
             documentId: requiredQuery(url, "documentId"),
             direction: direction as "imports" | "importers" | "closure",
             ...(url.searchParams.has("maxDepth")
@@ -434,7 +490,8 @@ export class CreatorControlServer {
         return writeJson(
           response,
           200,
-          await this.options.coordinator.sourceDiff(requiredQuery(url, "sessionId"), {
+          await this.options.coordinator.sourceDiff(sourceEvidenceAnchor(url), {
+            sourceIndexHash: requiredHashQuery(url, "sourceIndexHash"),
             operationId: requiredQuery(url, "operationId"),
             ...(url.searchParams.has("changeSetId")
               ? { changeSetId: requiredQuery(url, "changeSetId") }
@@ -455,37 +512,15 @@ export class CreatorControlServer {
       }
       if (request.method === "GET" && url.pathname === "/api/control/events")
         return this.openEvents(request, url, response);
+      if (request.method === "POST" && url.pathname === "/api/control/turn") {
+        this.assertSameOrigin(request);
+        const body = await readJsonBody(request, "Creator turn");
+        return writeJson(response, 202, await this.options.coordinator.submitTurn(body));
+      }
       if (request.method === "POST" && url.pathname === "/api/control/action") {
         this.assertSameOrigin(request);
-        let action: unknown;
-        try {
-          action = JSON.parse(await readBody(request)) as unknown;
-        } catch (error) {
-          if (error instanceof HttpError) throw error;
-          throw new HttpError(400, "Creator control action body must be valid JSON");
-        }
-        try {
-          await this.options.coordinator.action(action);
-        } catch (error) {
-          // Coordinator errors do not currently carry a proof that a
-          // state-changing action stopped before its durable boundary. Treat
-          // the result as ambiguous and let the client observe state; never
-          // invite it to replay the POST automatically.
-          throw new ActionOutcomeUnknownError(
-            `Forge could not prove whether the creator action reached its durable boundary: ${errorMessage(error)}`,
-          );
-        }
-        const selected =
-          action && typeof action === "object" && "sessionId" in action
-            ? String((action as { sessionId: unknown }).sessionId)
-            : undefined;
-        try {
-          return writeJson(response, 200, await this.options.coordinator.dashboardState(selected));
-        } catch (error) {
-          throw new ActionOutcomeUnknownError(
-            `The creator action completed, but Forge could not materialize its resulting dashboard state: ${errorMessage(error)}`,
-          );
-        }
+        const body = await readJsonBody(request, "Creator action");
+        return writeJson(response, 202, await this.options.coordinator.submitAction(body));
       }
       const artifact = /^\/api\/artifacts\/([a-f0-9]{64})$/.exec(url.pathname);
       if (request.method === "GET" && artifact?.[1])
@@ -510,24 +545,19 @@ export class CreatorControlServer {
         );
         return writeJson(response, 200, result);
       }
-      if (request.method === "GET") return this.serveAsset(url.pathname, response);
+      if (request.method === "GET") {
+        await this.serveAsset(url.pathname, response);
+        return;
+      }
       throw new HttpError(404, "Not found");
     } catch (error) {
       if (response.headersSent) {
         safeEnd(response);
         return;
       }
-      const status =
-        error instanceof ActionOutcomeUnknownError
-          ? 503
-          : error instanceof HttpError
-            ? error.status
-            : 400;
+      const status = error instanceof HttpError ? error.status : 400;
       safeWriteJson(response, status, {
-        kind:
-          error instanceof ActionOutcomeUnknownError
-            ? "CreatorControlActionOutcomeUnknown"
-            : "CreatorControlError",
+        kind: "CreatorControlError",
         message: error instanceof Error ? error.message : String(error),
       });
     }
@@ -606,18 +636,12 @@ export class CreatorControlServer {
     const relative = pathname === "/" ? "index.html" : pathname.slice(1);
     if (!/^[A-Za-z0-9_./-]+$/.test(relative) || relative.split("/").includes(".."))
       throw new HttpError(404, "Asset not found");
-    let destination = resolve(this.dashboardDirectory, relative);
-    if (!destination.startsWith(`${this.dashboardDirectory}/`))
-      throw new HttpError(404, "Asset not found");
-    try {
-      const info = await stat(destination);
-      if (!info.isFile()) throw new Error("not a file");
-    } catch {
-      destination = join(this.dashboardDirectory, "index.html");
-    }
+    const asset = await readDashboardAsset(this.dashboardDirectory, relative);
+    const fallback = asset ?? (await readDashboardAsset(this.dashboardDirectory, "index.html"));
+    if (!fallback) throw new HttpError(404, "Dashboard entrypoint is missing");
     response.statusCode = 200;
-    response.setHeader("content-type", contentType(destination));
-    response.end(await readFile(destination));
+    response.setHeader("content-type", contentType(fallback.path));
+    response.end(fallback.bytes);
   }
 
   private actualPort(): number {
@@ -829,6 +853,26 @@ function requiredQuery(url: URL, name: string): string {
   return value;
 }
 
+function sourceEvidenceAnchor(url: URL): {
+  conversationId: string;
+  eventId: string;
+  eventHash: string;
+  sourceIndexHash: string;
+} {
+  return {
+    conversationId: requiredQuery(url, "conversationId"),
+    eventId: requiredQuery(url, "eventId"),
+    eventHash: requiredHashQuery(url, "eventHash"),
+    sourceIndexHash: requiredHashQuery(url, "sourceIndexHash"),
+  };
+}
+
+function requiredHashQuery(url: URL, name: string): string {
+  const value = requiredQuery(url, name);
+  if (!/^[a-f0-9]{64}$/.test(value)) throw new HttpError(400, `Invalid ${name}`);
+  return value;
+}
+
 function readBoundedInteger(
   value: string | null,
   label: string,
@@ -916,10 +960,20 @@ async function readBody(request: IncomingMessage): Promise<string> {
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     bytes += buffer.byteLength;
-    if (bytes > MAX_BODY_BYTES) throw new HttpError(413, "Request body too large");
+    if (bytes > MAX_CREATOR_CONTROL_WIRE_BODY_BYTES)
+      throw new HttpError(413, "Request body too large");
     chunks.push(buffer);
   }
   return Buffer.concat(chunks).toString("utf8");
+}
+
+async function readJsonBody(request: IncomingMessage, label: string): Promise<unknown> {
+  try {
+    return JSON.parse(await readBody(request)) as unknown;
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(400, `${label} body must be valid JSON`);
+  }
 }
 
 function setSecurityHeaders(response: ServerResponse): void {
@@ -1015,6 +1069,78 @@ function contentType(path: string): string {
   return types[extname(path)] ?? "application/octet-stream";
 }
 
+interface DashboardAsset {
+  readonly path: string;
+  readonly bytes: Buffer;
+}
+
+/**
+ * Read one dashboard asset without ever traversing a symlink. The dashboard is
+ * local, but it still serves authenticated control-plane content and must not
+ * become a read primitive for files outside its compiled asset directory.
+ */
+async function readDashboardAsset(
+  dashboardDirectory: string,
+  assetPath: string,
+): Promise<DashboardAsset | undefined> {
+  const destination = resolve(dashboardDirectory, assetPath);
+  const fromRoot = relative(dashboardDirectory, destination);
+  if (
+    fromRoot === "" ||
+    fromRoot === ".." ||
+    fromRoot.startsWith(`..${sep}`) ||
+    isAbsolute(fromRoot)
+  )
+    throw new HttpError(404, "Asset not found");
+
+  const root = await lstat(dashboardDirectory).catch((error: unknown) => {
+    if (isMissingNodeError(error)) throw new HttpError(404, "Dashboard asset directory is missing");
+    throw error;
+  });
+  if (root.isSymbolicLink() || !root.isDirectory())
+    throw new HttpError(404, "Dashboard asset directory is unsafe");
+
+  const parts = fromRoot.split(sep).filter(Boolean);
+  let current = dashboardDirectory;
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    if (part === undefined) throw new HttpError(404, "Asset not found");
+    current = join(current, part);
+    const info = await lstat(current).catch((error: unknown) => {
+      if (isMissingNodeError(error)) return undefined;
+      throw error;
+    });
+    if (info === undefined) return undefined;
+    if (info.isSymbolicLink()) throw new HttpError(404, "Dashboard asset path is unsafe");
+    const target = index === parts.length - 1;
+    if ((!target && !info.isDirectory()) || (target && !info.isFile()))
+      throw new HttpError(404, "Dashboard asset is not a regular file");
+  }
+
+  const descriptor = await open(destination, constants.O_RDONLY | constants.O_NOFOLLOW).catch(
+    (error: unknown) => {
+      if (isMissingNodeError(error)) throw new HttpError(404, "Asset not found");
+      throw error;
+    },
+  );
+  try {
+    const info = await descriptor.stat();
+    if (!info.isFile()) throw new HttpError(404, "Dashboard asset is not a regular file");
+    return { path: destination, bytes: await descriptor.readFile() };
+  } finally {
+    await descriptor.close();
+  }
+}
+
+function isMissingNodeError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { readonly code?: unknown }).code === "ENOENT"
+  );
+}
+
 class HttpError extends Error {
   constructor(
     readonly status: number,
@@ -1022,15 +1148,4 @@ class HttpError extends Error {
   ) {
     super(message);
   }
-}
-
-class ActionOutcomeUnknownError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ActionOutcomeUnknownError";
-  }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

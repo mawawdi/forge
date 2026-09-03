@@ -12,23 +12,23 @@ import {
 import { ImmutableJsonArtifactStore } from "../../artifact-store/src/index.js";
 import { stableJson } from "../../contracts/src/index.js";
 import {
+  CreatorConversationCoordinator,
   CreatorControlServer,
+  acquireCreatorStoreLease,
   readCreatorControlDiscovery,
   removeCreatorControlDiscovery,
   studioCapabilityExplorerPage,
   studioCatalogSummary,
   writeCreatorControlDiscovery,
+  type CreatorStoreLease,
 } from "../../creator-control/src/index.js";
+import { CreatorSessionCoordinator } from "../../creator-session/src/coordinator.js";
+import { loadCreatorBundle } from "../../creator-session/src/index.js";
 import {
-  CreatorSessionCoordinator,
-  type CreatorControlAction,
-} from "../../creator-session/src/coordinator.js";
-import {
-  assertCreatorControlView,
-  loadCreatorBundle,
-  type CreatorControlActionId,
-  type CreatorControlView,
-} from "../../creator-session/src/index.js";
+  assertCreatorDashboardState,
+  type CreatorDashboardState,
+  type CreatorWorkAdmission,
+} from "../../creator-conversation/src/index.js";
 import { replayCreatorVerification } from "../../creator-session/src/verification.js";
 import { replayCreatorMutation } from "../../creator-session/src/mutation-evidence.js";
 import {
@@ -50,8 +50,12 @@ import {
 } from "../../experiments/src/index.js";
 import { defaultTraceDirectory, JsonFileTraceSink } from "../../flight-recorder/src/index.js";
 import {
+  CREATOR_MODEL_REGISTRY,
+  DEFAULT_CREATOR_MODEL_ID,
   OPENROUTER_MODEL_CLIENT_DESCRIPTOR,
+  OpenRouterModelCatalogProbe,
   OpenRouterModelClient,
+  isCreatorModelId,
 } from "../../model-client/src/index.js";
 import {
   assertAcceptanceSpec,
@@ -97,6 +101,14 @@ import {
 } from "../../studio-runtime/src/index.js";
 import { verifyProject } from "../../verifier/src/index.js";
 import { loadCreatorServeOptions, parseCreatorServeOptions } from "./creator-serve-options.js";
+import {
+  createCreatorActionCommandRequest,
+  createCreatorTurnCommandRequest,
+  creatorActionCommandInput,
+  parseCreatorActionCommandOptions,
+  parseCreatorTurnCommandOptions,
+} from "./creator-conversation-options.js";
+import { submitCreatorControlWork } from "./creator-control-client.js";
 
 const execFile = promisify(execFileCallback);
 const args = process.argv.slice(2);
@@ -104,30 +116,15 @@ const args = process.argv.slice(2);
 async function main(): Promise<void> {
   const [command, subcommand, ...rest] = args;
   if (command === "creator" && subcommand === "serve") return creatorServe(rest);
-  if (command === "creator" && subcommand === "start") return creatorStart(rest);
-  if (command === "creator" && subcommand === "status")
-    return creatorStatus(rest[0], rest.slice(1));
+  if (command === "creator" && subcommand === "turn") return creatorTurn(rest);
+  if (command === "creator" && subcommand === "state")
+    return creatorStateCommand(rest[0], rest.slice(1));
+  if (command === "creator" && subcommand === "act")
+    return creatorAction(rest[0], rest[1], rest.slice(2));
   if (command === "creator" && subcommand === "replay-verification")
     return creatorReplayVerification(rest[0], rest.slice(1));
   if (command === "creator" && subcommand === "replay-mutation")
     return creatorReplayMutation(rest[0], rest.slice(1));
-  if (
-    command === "creator" &&
-    [
-      "approve-plan",
-      "reject-plan",
-      "approve-changes",
-      "reject-changes",
-      "refresh-project",
-      "check-source-sync",
-      "revert-source-changes",
-      "retry-play-verification",
-      "cancel-changes",
-      "accept",
-      "reject-result",
-    ].includes(subcommand ?? "")
-  )
-    return creatorAction(subcommand!, rest[0], rest.slice(1));
   if (command === "experiment" && subcommand === "register")
     return experimentRegister(rest[0], rest.slice(1));
   if (command === "experiment" && subcommand === "build")
@@ -147,9 +144,17 @@ async function main(): Promise<void> {
 
 async function creatorServe(optionArgs: string[]): Promise<void> {
   const parsedOptions = parseCreatorServeOptions(optionArgs);
-  if (!parsedOptions.valid || !parsedOptions.model) {
+  if (!parsedOptions.valid) {
     process.stderr.write(
-      "Usage: forge creator serve --model <exact-model-id> [--session-dir <path>] [--timeout-ms <ms>] [--control-port <port>] [--project-authority <manifest.json>]\n",
+      "Usage: forge creator serve [--default-model <registered-model-id>] [--session-dir <path>] [--timeout-ms <ms>] [--control-port <port>] [--project-authority <manifest.json>]\n",
+    );
+    process.exitCode = 2;
+    return;
+  }
+  const defaultModel = parsedOptions.defaultModel ?? DEFAULT_CREATOR_MODEL_ID;
+  if (!isCreatorModelId(defaultModel)) {
+    process.stderr.write(
+      `Creator default model must be in registry ${CREATOR_MODEL_REGISTRY.hash}: ${CREATOR_MODEL_REGISTRY.models.map((entry) => entry.id).join(", ")}\n`,
     );
     process.exitCode = 2;
     return;
@@ -171,15 +176,17 @@ async function creatorServe(optionArgs: string[]): Promise<void> {
   }
   const bridge = new StudioBridgeServer();
   let coordinator: CreatorSessionCoordinator | undefined;
+  let conversation: CreatorConversationCoordinator | undefined;
   let control: CreatorControlServer | undefined;
+  let storeLease: CreatorStoreLease | undefined;
   let bridgeId: string | undefined;
   let controlId: string | undefined;
   try {
     const apiKey = loadOpenRouterApiKey();
-    const runtime = new ForgeNativeAgentRuntime(
-      new OpenRouterModelClient({ apiKey, model: parsedOptions.model }),
-    );
+    const runtime = new ForgeNativeAgentRuntime(new OpenRouterModelClient({ apiKey }));
+    const modelCatalog = await new OpenRouterModelCatalogProbe({ apiKey }).probe();
     const directory = resolve(options.sessionDirectory ?? ".forge/creator");
+    storeLease = await acquireCreatorStoreLease(directory);
     const sourceAnalysisHost = await PinnedSourceAnalysisHost.create({
       root: resolve(process.cwd()),
     });
@@ -192,8 +199,17 @@ async function creatorServe(optionArgs: string[]): Promise<void> {
       ...(options.projectAuthority ? { projectAuthority: options.projectAuthority.context } : {}),
     });
     await coordinator.initialize();
+    conversation = new CreatorConversationCoordinator({
+      transaction: coordinator,
+      connection: bridge,
+      directory,
+      defaultModelId: defaultModel,
+      modelCatalog,
+      ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+    });
+    await conversation.initialize();
     control = new CreatorControlServer({
-      coordinator,
+      coordinator: conversation,
       dashboardDirectory: resolve("dashboard/dist"),
       ...(options.controlPort ? { port: options.controlPort } : {}),
     });
@@ -240,100 +256,114 @@ async function creatorServe(optionArgs: string[]): Promise<void> {
     if (controlId) await removeCreatorControlDiscovery(controlId);
     if (bridgeId) await removeStudioBridgeDiscovery(bridgeId);
     await control?.close();
+    await conversation?.close();
     coordinator?.close();
     await bridge.close();
+    await storeLease?.release();
   }
 }
 
-async function creatorStart(optionArgs: string[]): Promise<void> {
-  const options = parseCreatorStartOptions(optionArgs);
-  if (!options.valid || (!options.prompt && !options.promptPath)) {
+async function creatorStateCommand(
+  conversationId: string | undefined,
+  optionArgs: string[],
+): Promise<void> {
+  if (optionArgs.length > 0) {
+    process.stderr.write("Usage: forge creator state [conversation-id]\n");
+    process.exitCode = 2;
+    return;
+  }
+  try {
+    process.stdout.write(`${JSON.stringify(await creatorState(conversationId), null, 2)}\n`);
+  } catch (error) {
+    process.stderr.write(`Creator conversation state unavailable: ${message(error)}\n`);
+    process.exitCode = 2;
+  }
+}
+
+async function creatorTurn(optionArgs: string[]): Promise<void> {
+  const options = parseCreatorTurnCommandOptions(optionArgs);
+  if (!options.valid || (options.prompt === undefined && options.promptPath === undefined)) {
     process.stderr.write(
-      "Usage: forge creator start (--prompt <request> | --prompt-file <file-or->)\n",
+      "Usage: forge creator turn [conversation-id] (--prompt <message> | --prompt-file <file-or->) [--model <registered-model-id>] [--kind new_work|clarification|plan_refinement|follow_up]\n",
     );
     process.exitCode = 2;
     return;
   }
   try {
-    const prompt =
+    const stateValue = await creatorState(options.conversationId);
+    assertCreatorDashboardState(stateValue);
+    const state = stateValue as CreatorDashboardState;
+    const text =
       options.prompt ??
       (options.promptPath === "-"
         ? await readStdin()
         : await readFile(resolve(options.promptPath!), "utf8"));
+    const request = createCreatorTurnCommandRequest({
+      state,
+      ...(options.conversationId ? { conversationId: options.conversationId } : {}),
+      ...(options.turnKind ? { turnKind: options.turnKind } : {}),
+      text,
+      ...(options.model ? { selectedModelId: options.model } : {}),
+      idempotencyKey: `creator_cli_turn_${randomUUID()}`,
+    });
     process.stdout.write(
-      `${JSON.stringify(await creatorControl({ action: "start", prompt: prompt.trim() }), null, 2)}\n`,
+      `${JSON.stringify(await creatorRequestFromDiscovery("/api/control/turn", request), null, 2)}\n`,
     );
   } catch (error) {
-    process.stderr.write(`Creator session did not start: ${message(error)}\n`);
-    process.exitCode = 2;
-  }
-}
-
-async function creatorStatus(sessionId: string | undefined, optionArgs: string[]): Promise<void> {
-  if (optionArgs.length > 0) {
-    process.stderr.write("Usage: forge creator status [session-id]\n");
-    process.exitCode = 2;
-    return;
-  }
-  try {
-    process.stdout.write(`${JSON.stringify(await creatorState(sessionId), null, 2)}\n`);
-  } catch (error) {
-    process.stderr.write(`Creator status unavailable: ${message(error)}\n`);
+    process.stderr.write(`Creator turn was not admitted: ${message(error)}\n`);
     process.exitCode = 2;
   }
 }
 
 async function creatorAction(
-  command: string,
-  sessionId: string | undefined,
+  conversationId: string | undefined,
+  actionInstanceId: string | undefined,
   optionArgs: string[],
 ): Promise<void> {
-  const reportOptions = parseCreatorReportOptions(optionArgs);
-  if (!sessionId || !reportOptions.valid) {
+  const inputOptions = parseCreatorActionCommandOptions(optionArgs);
+  if (!conversationId || !actionInstanceId || !inputOptions.valid) {
     process.stderr.write(
-      `Usage: forge creator ${command} <session-id> [--report <text> | --report-file <path>]\n`,
+      "Usage: forge creator act <conversation-id> <action-instance-id> [--text <value> | --text-file <file-or-> | --report <value> | --report-file <file-or->] [--model <registered-model-id>] [--memory-item-id <id> --memory-revision-id <id> --memory-revision-hash <hash>] [--memory-category preference|convention|vocabulary|goal|unresolved]\n",
     );
     process.exitCode = 2;
     return;
   }
   try {
-    const stateValue = await creatorState(sessionId);
-    if (!isRecord(stateValue) || !stateValue.controlView)
-      throw new Error("Creator session has no control view");
-    assertCreatorControlView(stateValue.controlView);
-    const view = stateValue.controlView as CreatorControlView;
-    const mapping: Record<string, CreatorControlActionId> = {
-      "approve-plan": "approve_plan",
-      "reject-plan": "reject_plan",
-      "approve-changes": "approve_and_apply_changes",
-      "reject-changes": "reject_changes",
-      "refresh-project": "refresh_project",
-      "check-source-sync": "check_source_sync",
-      "revert-source-changes": "revert_source_changes",
-      "retry-play-verification": "retry_play_verification",
-      "cancel-changes": "cancel_changes",
-      accept: "accept_result",
-      "reject-result": "reject_and_rollback",
-    };
-    const actionId = mapping[command];
-    if (!actionId || ![view.primaryAction?.id, view.secondaryAction?.id].includes(actionId))
-      throw new Error(`${command} is not available in the current creator control view`);
-    const report =
-      reportOptions.report ??
-      (reportOptions.reportPath
-        ? await readFile(resolve(reportOptions.reportPath), "utf8")
-        : undefined);
-    const action: CreatorControlAction = {
-      action: "act",
-      sessionId,
-      viewId: view.id,
-      viewHash: view.hash,
-      actionId,
-      ...(report !== undefined ? { report } : {}),
-    };
-    process.stdout.write(`${JSON.stringify(await creatorControl(action), null, 2)}\n`);
+    const stateValue = await creatorState(conversationId);
+    assertCreatorDashboardState(stateValue);
+    const view = stateValue.controlView;
+    if (!view || view.conversationId !== conversationId)
+      throw new Error("Conversation has no current control view");
+    const inputPath = inputOptions.textPath ?? inputOptions.reportPath;
+    const fileText = inputPath
+      ? inputPath === "-"
+        ? await readStdin()
+        : await readFile(resolve(inputPath), "utf8")
+      : undefined;
+    const commandInput = creatorActionCommandInput(inputOptions, fileText);
+    const action = createCreatorActionCommandRequest({
+      state: stateValue,
+      conversationId,
+      actionInstanceId,
+      idempotencyKey: `creator_cli_action_${randomUUID()}`,
+      ...(inputOptions.memoryItemId
+        ? {
+            memoryTarget: {
+              itemId: inputOptions.memoryItemId,
+              revisionId: inputOptions.memoryRevisionId!,
+              revisionHash: inputOptions.memoryRevisionHash!,
+            },
+          }
+        : {}),
+      ...(inputOptions.memoryCategory ? { memoryCategory: inputOptions.memoryCategory } : {}),
+      ...(inputOptions.model ? { selectedModelId: inputOptions.model } : {}),
+      ...(commandInput ? { commandInput } : {}),
+    });
+    process.stdout.write(
+      `${JSON.stringify(await creatorRequestFromDiscovery("/api/control/action", action), null, 2)}\n`,
+    );
   } catch (error) {
-    process.stderr.write(`Creator action failed: ${message(error)}\n`);
+    process.stderr.write(`Creator action was not admitted: ${message(error)}\n`);
     process.exitCode = 2;
   }
 }
@@ -506,9 +536,7 @@ async function experimentBuild(seedPath: string | undefined, optionArgs: string[
   try {
     const registration = await loadExperimentRegistration(options.registrationPath);
     const apiKey = loadOpenRouterApiKey();
-    const runtime = new ForgeNativeAgentRuntime(
-      new OpenRouterModelClient({ apiKey, model: registration.model.name }),
-    );
+    const runtime = new ForgeNativeAgentRuntime(new OpenRouterModelClient({ apiKey }));
     const result = await runRegisteredExperiment({
       registration,
       repositoryRoot: process.cwd(),
@@ -1027,18 +1055,6 @@ function parseSimpleTraceOptions(values: string[]): {
   }
   return { valid: true, ...(traceDirectory ? { traceDirectory } : {}) };
 }
-function parseCreatorReportOptions(values: string[]): {
-  valid: boolean;
-  report?: string;
-  reportPath?: string;
-} {
-  if (values.length === 0) return { valid: true };
-  if (values.length !== 2) return { valid: false };
-  if (values[0] === "--report" && values[1] !== undefined)
-    return { valid: true, report: values[1] };
-  if (values[0] === "--report-file" && values[1]) return { valid: true, reportPath: values[1] };
-  return { valid: false };
-}
 function parseCreatorReplayOptions(values: string[]): {
   valid: boolean;
   verificationId?: string;
@@ -1081,39 +1097,21 @@ function parseCreatorMutationReplayOptions(values: string[]): {
     ...(sessionDirectory ? { sessionDirectory } : {}),
   };
 }
-function parseCreatorStartOptions(values: string[]): {
-  valid: boolean;
-  prompt?: string;
-  promptPath?: string;
-} {
-  let prompt: string | undefined;
-  let promptPath: string | undefined;
-  for (let index = 0; index < values.length; index += 1) {
-    const option = values[index];
-    const next = values[index + 1];
-    if (option === "--prompt" && next) prompt = next;
-    else if (option === "--prompt-file" && next) promptPath = next;
-    else return { valid: false };
-    index += 1;
-  }
-  return {
-    valid: Boolean(prompt) !== Boolean(promptPath),
-    ...(prompt ? { prompt } : {}),
-    ...(promptPath ? { promptPath } : {}),
-  };
-}
-async function creatorControl(action: CreatorControlAction): Promise<unknown> {
+async function creatorRequestFromDiscovery(
+  path: string,
+  body: unknown,
+): Promise<CreatorWorkAdmission> {
   const discovery = await readCreatorControlDiscovery();
-  return creatorRequest(discovery, "/api/control/action", {
-    method: "POST",
-    body: stableJson(action),
-  });
+  if (path !== "/api/control/turn" && path !== "/api/control/action")
+    throw new Error("Invalid creator work endpoint");
+  return submitCreatorControlWork(discovery, path, body);
 }
-async function creatorState(sessionId?: string): Promise<unknown> {
+
+async function creatorState(conversationId?: string): Promise<unknown> {
   const discovery = await readCreatorControlDiscovery();
   return creatorRequest(
     discovery,
-    `/api/control/state${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`,
+    `/api/control/state${conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : ""}`,
     { method: "GET" },
   );
 }
@@ -1313,7 +1311,7 @@ function parseStudioCanaryOptions(values: string[]): {
 }
 function usage(): void {
   process.stdout.write(
-    `Forge commands:\n  forge creator serve --model <exact-model-id>\n  forge creator start (--prompt <request> | --prompt-file <file-or->)\n  forge creator status [session-id]\n  forge creator replay-verification <session-id> [--verification <id>] [--session-dir <path>]\n  forge creator replay-mutation <session-id> [--attempt <id>] [--session-dir <path>]\n  forge creator approve-plan|reject-plan <session-id>\n  forge creator approve-changes|reject-changes <session-id>\n  forge creator refresh-project <session-id>\n  forge creator check-source-sync|revert-source-changes <session-id>\n  forge creator retry-play-verification <session-id>\n  forge creator cancel-changes <session-id>\n  forge creator accept|reject-result <session-id> --report <text>\n  forge experiment register <seed> --prompt-file <file> --requirements <file> --acceptance <file> --runtime-plan <file> --runtime-configuration <file> --model <exact-model-id> --output <registration.json>\n  forge experiment build <seed> --registration <registration.json>\n  forge experiment evaluate <artifact> --registration <registration.json>\n  forge studio api-status\n  forge studio capabilities [--class <RobloxClass>] [--query <text>]\n  forge studio canary <seed> --plan <file>\n  forge studio bridge\n  forge verify <project>\n  forge trace show <trace-id>\n`,
+    `Forge commands:\n  forge creator serve [--default-model <registered-model-id>]\n  forge creator state [conversation-id]\n  forge creator turn [conversation-id] (--prompt <message> | --prompt-file <file-or->) [--model <registered-model-id>] [--kind <turn-kind>]\n  forge creator act <conversation-id> <action-instance-id> [--text <value> | --text-file <file-or-> | --report <value> | --report-file <file-or->] [--model <registered-model-id>] [--memory-item-id <id> --memory-revision-id <id> --memory-revision-hash <hash>] [--memory-category <category>]\n  forge creator replay-verification <session-id> [--verification <id>] [--session-dir <path>]\n  forge creator replay-mutation <session-id> [--attempt <id>] [--session-dir <path>]\n  forge experiment register <seed> --prompt-file <file> --requirements <file> --acceptance <file> --runtime-plan <file> --runtime-configuration <file> --model <exact-model-id> --output <registration.json>\n  forge experiment build <seed> --registration <registration.json>\n  forge experiment evaluate <artifact> --registration <registration.json>\n  forge studio api-status\n  forge studio capabilities [--class <RobloxClass>] [--query <text>]\n  forge studio canary <seed> --plan <file>\n  forge studio bridge\n  forge verify <project>\n  forge trace show <trace-id>\n`,
   );
 }
 function message(error: unknown): string {
@@ -1322,5 +1320,4 @@ function message(error: unknown): string {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-
 void main();

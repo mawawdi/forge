@@ -33,6 +33,7 @@ import {
 } from "../packages/studio-evidence/src/index.js";
 import type { PluginToBackendMessage } from "../packages/studio-protocol/src/index.js";
 import type { StudioBridgeSession } from "../packages/studio-bridge/src/index.js";
+import { createStudioProjectIdentityState } from "../packages/studio-protocol/src/index.js";
 
 interface DirtyConfirmationHarness {
   artifactStore: ImmutableJsonArtifactStore;
@@ -97,7 +98,13 @@ const project = { name: "Transaction dirty confirmation", placeId: 601, universe
 const studio: StudioBridgeSession = {
   sessionId: "studio_session_dirty_confirmation",
   projectId: "studio_project_dirty_confirmation",
+  conversationProjectId: "studio_project_dirty_confirmation",
   project,
+  projectIdentity: createStudioProjectIdentityState({
+    project,
+    reservedAttribute: { status: "absent" },
+  }),
+  projectIdentityTransaction: { status: "none" },
   capabilities: [],
   manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
   connectorBuildHash: "a".repeat(64),
@@ -919,7 +926,9 @@ test("dashboard renders a provisional create from its immutable pre-Apply index"
       kind: "CreatorRequest",
       sessionId: initialSession.id,
       promptHash: initialSession.promptHash,
-      text: "Confirm dirty project evidence.",
+      creatorText: "Confirm dirty project evidence.",
+      agentPrompt: "Confirm dirty project evidence.",
+      contextCitations: [],
     });
     const projectionArtifact = await harness.artifactStore.write({ requirements: [] });
     const inertArtifact = await harness.artifactStore.write({ kind: "test-artifact" });
@@ -968,6 +977,7 @@ test("dashboard renders a provisional create from its immutable pre-Apply index"
     harness.bundles.set(session.id, bundle);
 
     const state = await coordinator.dashboardState(session.id);
+    assert.equal(state.kind, "CreatorTransactionState");
     assert.equal(state.controlView?.artifact?.kind, "change_set");
     assert.equal(state.controlView?.projectIndex?.rootHash, after.revision.merkleRoot);
     const presentation = state.controlView?.artifact?.presentation as {

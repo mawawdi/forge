@@ -70,23 +70,19 @@ test("diagnostic identity retains columns for independent same-line errors", () 
   }
 });
 
-test("CLI help exposes prompt-only creator sessions and registered experiments with no loose creator build", () => {
+test("CLI help exposes the conversation control surface and registered experiments", () => {
   const result = spawnSync(process.execPath, [cli, "--help"], { encoding: "utf8" });
   assert.equal(result.status, 0);
   const lines = result.stdout.split("\n").filter((line) => /^  forge /.test(line));
-  assert.equal(lines.length, 21);
+  assert.equal(lines.length, 15);
   assert.match(result.stdout, /Forge commands/);
-  assert.match(result.stdout, /forge creator serve/);
-  assert.match(result.stdout, /forge creator start/);
+  assert.match(result.stdout, /forge creator serve \[--default-model/);
+  assert.match(result.stdout, /forge creator state/);
+  assert.match(result.stdout, /forge creator turn/);
+  assert.match(result.stdout, /forge creator act/);
+  assert.match(result.stdout, /--memory-item-id/);
   assert.match(result.stdout, /forge creator replay-verification/);
   assert.match(result.stdout, /forge creator replay-mutation/);
-  assert.match(result.stdout, /forge creator approve-plan/);
-  assert.match(result.stdout, /forge creator approve-changes/);
-  assert.match(result.stdout, /forge creator refresh-project/);
-  assert.match(result.stdout, /forge creator check-source-sync\|revert-source-changes/);
-  assert.match(result.stdout, /forge creator retry-play-verification/);
-  assert.match(result.stdout, /forge creator cancel-changes/);
-  assert.match(result.stdout, /forge creator accept/);
   assert.match(result.stdout, /forge experiment register/);
   assert.match(result.stdout, /--runtime-configuration/);
   assert.match(result.stdout, /forge experiment build/);
@@ -98,6 +94,9 @@ test("CLI help exposes prompt-only creator sessions and registered experiments w
   assert.match(result.stdout, /forge verify/);
   assert.match(result.stdout, /forge trace show/);
   assert.doesNotMatch(result.stdout, /forge agent build/);
+  assert.doesNotMatch(result.stdout, /forge creator serve --model/);
+  assert.doesNotMatch(result.stdout, /forge creator start/);
+  assert.doesNotMatch(result.stdout, /forge creator approve-plan/);
   assert.doesNotMatch(
     result.stdout,
     /candidate evaluate|repair|reverify|studio verify|candidate studio/,

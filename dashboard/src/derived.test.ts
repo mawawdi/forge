@@ -1,88 +1,123 @@
 import { describe, expect, it } from "vitest";
-import { getDashboardSurface, hasRequiredReport, makeActionRequest } from "./derived";
-import type { CreatorControlAction, CreatorDashboardState } from "./types";
+import { makeActionRequest, makeTurnRequest } from "./derived";
+import { HASH_B, dashboardState } from "./test/fixtures";
 
-const ACCEPT_ACTION: CreatorControlAction = {
-  id: "accept_result",
-  label: "Accept result",
-  intent: "primary",
-};
+describe("conversation request derivation", () => {
+  it("preserves every creator-message byte while rejecting whitespace-only text", () => {
+    const state = dashboardState();
+    const text = "  Keep this exact line.\n";
+    const request = makeTurnRequest(state, "follow_up", text, "openai/gpt-5.6-luna");
 
-const STATE: CreatorDashboardState = {
-  kind: "CreatorDashboardState",
-  sessions: [],
-  pairedStudio: {
-    status: "paired",
-    projectId: "studio_project_test",
-    projectName: "Test",
-    capabilities: [],
-    manifestHash: "a".repeat(64),
-    connectorBuildHash: "b".repeat(64),
-    attestationStatus: "verified",
-    transactionInventoryStatus: "clear",
-    message: "Connected",
-  },
-  stages: [],
-  serverTime: "2026-09-01T00:00:00.000Z",
-  controlView: {
-    kind: "CreatorControlView",
-    id: "view_1",
-    hash: "abc123",
-    creatorSessionId: "session_1",
-    creatorSessionHash: "session_hash",
-    status: "awaiting_review",
-    title: "Review",
-    detail: "Review the run.",
-    primaryAction: ACCEPT_ACTION,
-    artifacts: {},
-  },
-};
-
-describe("dashboard derived state", () => {
-  it("makes final review require a non-whitespace creator report", () => {
-    expect(hasRequiredReport(ACCEPT_ACTION, "   ")).toBe(false);
-    expect(hasRequiredReport(ACCEPT_ACTION, "Observed the prompt twice.")).toBe(true);
-    expect(hasRequiredReport(ACCEPT_ACTION, "😀".repeat(1025))).toBe(false);
+    expect(request.text).toBe(text);
+    expect(() => makeTurnRequest(state, "follow_up", " \n ", "openai/gpt-5.6-luna")).toThrow(
+      "non-whitespace",
+    );
   });
 
-  it("keeps the report bound to the exact visible view", () => {
-    expect(makeActionRequest(STATE, "accept_result", "Observed the prompt twice.")).toEqual({
-      action: "act",
-      sessionId: "session_1",
-      viewId: "view_1",
-      viewHash: "abc123",
-      actionId: "accept_result",
-      report: "Observed the prompt twice.",
-    });
-  });
-
-  it("surfaces recovery required ahead of ordinary active work", () => {
-    const state: CreatorDashboardState = {
-      ...STATE,
-      controlView: { ...STATE.controlView!, status: "recovery_required" },
-    };
-    expect(getDashboardSurface(state, undefined)).toBe("recovery-required");
-  });
-
-  it("binds an explicit Play retry to the exact incomplete control view", () => {
-    const state: CreatorDashboardState = {
-      ...STATE,
+  it("requires and preserves an exact coordinator-produced memory head target", () => {
+    const state = dashboardState({
       controlView: {
-        ...STATE.controlView!,
-        status: "awaiting_verification_retry",
-        primaryAction: {
-          id: "retry_play_verification",
-          label: "Retry Play Verification",
-          intent: "primary",
-        },
+        ...dashboardState().controlView,
+        actions: [
+          {
+            actionInstanceId: "action_pin_memory",
+            actionId: "pin_memory",
+            label: "Pin",
+            intent: "secondary",
+            controlViewId: "control_01",
+            authorizingEventId: "event_01",
+            authorizingEventHash: HASH_B,
+            target: "memory_head",
+            input: { kind: "none" },
+          },
+        ],
       },
-    };
-    expect(makeActionRequest(state, "retry_play_verification", "")).toEqual({
-      action: "act",
-      sessionId: "session_1",
-      viewId: "view_1",
-      viewHash: "abc123",
-      actionId: "retry_play_verification",
     });
+    const action = state.controlView!.actions[0]!;
+    const target = {
+      kind: "memory_head" as const,
+      itemId: "memory_item_01",
+      revisionId: "memory_revision_01",
+      revisionHash: HASH_B,
+    };
+
+    expect(makeActionRequest(state, action, "", { target }).target).toEqual(target);
+    expect(() => makeActionRequest(state, action, "")).toThrow("exact current memory revision");
+  });
+
+  it("preserves creator report bytes instead of normalizing a final decision", () => {
+    const state = dashboardState({
+      controlView: {
+        ...dashboardState().controlView,
+        actions: [
+          {
+            actionInstanceId: "action_keep",
+            actionId: "keep_changes",
+            label: "Keep changes",
+            intent: "primary",
+            controlViewId: "control_01",
+            authorizingEventId: "event_01",
+            authorizingEventHash: HASH_B,
+            target: "none",
+            input: {
+              kind: "text",
+              field: "report",
+              label: "What did you observe?",
+              minimumBytes: 1,
+              maximumBytes: 4096,
+              multiline: true,
+            },
+          },
+        ],
+      },
+    });
+    const report = "  It worked in Play mode.\n";
+
+    expect(makeActionRequest(state, state.controlView!.actions[0]!, report).input).toEqual({
+      report,
+    });
+  });
+
+  it("binds plan refinement to the creator-selected available model and exact registry", () => {
+    const state = dashboardState({
+      controlView: {
+        ...dashboardState().controlView,
+        actions: [
+          {
+            actionInstanceId: "action_revise",
+            actionId: "revise_plan",
+            label: "Change the plan",
+            intent: "secondary",
+            controlViewId: "control_01",
+            authorizingEventId: "event_01",
+            authorizingEventHash: HASH_B,
+            target: "none",
+            input: {
+              kind: "text",
+              field: "message",
+              label: "What should change?",
+              minimumBytes: 1,
+              maximumBytes: 65_536,
+              multiline: true,
+            },
+          },
+        ],
+      },
+    });
+
+    expect(
+      makeActionRequest(state, state.controlView!.actions[0]!, "Keep the outer door closed.", {
+        selectedModelId: "openai/gpt-5.6-luna",
+      }).input,
+    ).toEqual({
+      text: "Keep the outer door closed.",
+      selectedModelId: "openai/gpt-5.6-luna",
+      modelRegistryHash: state.modelRegistry.hash,
+    });
+    expect(() =>
+      makeActionRequest(state, state.controlView!.actions[0]!, "Try again.", {
+        selectedModelId: "unknown/model",
+      }),
+    ).toThrow("available model");
   });
 });

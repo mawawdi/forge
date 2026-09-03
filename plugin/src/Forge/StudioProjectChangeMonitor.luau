@@ -283,6 +283,15 @@ function StudioProjectChangeMonitor:start(cooperate: (() -> ())?)
 	local root = self.services.root
 	if root then
 		local hierarchyConnected = pcall(function()
+			-- The DataModel itself is outside the indexed authoring roots, but its
+			-- reserved project identity is a conversation-authority boundary. An
+			-- undo, manual removal, or external rewrite must invalidate the host's
+			-- current identity view just like any other attributed project edit.
+			table.insert(self.connections, root.AttributeChanged:Connect(function(attributeName: any)
+				if attributeName == Constants.PROJECT_IDENTITY_ATTRIBUTE then
+					self:emit("attribute", root, Constants.PROJECT_IDENTITY_ATTRIBUTE)
+				end
+			end))
 			table.insert(self.connections, root.DescendantAdded:Connect(function(instance)
 				-- DescendantAdded/Removing fires for each affected descendant. Keep
 				-- the engine callback O(1); startup owns the only cooperative tree walk.

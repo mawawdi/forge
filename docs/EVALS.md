@@ -4,6 +4,15 @@ This document defines what Forge may claim. [ARCHITECTURE.md](ARCHITECTURE.md) d
 
 ## Evidence tiers
 
+A rejected project Link/Fork command is not proof that Studio was unchanged.
+Only the command-bound observation of the exact approved before-identity,
+empty identity-transaction inventory, and no open recording permits the
+no-effect classification. An unknown or unavailable result remains recovery
+evidence, not success, failure of gameplay, or permission to retry. Readable
+diagnostics and their hashes are retained with the exact command settlement;
+neither a prior heartbeat nor its clear inventory can substitute for that
+observation.
+
 Forge interprets evidence in this order:
 
 1. artifact validation establishes data-shape truth;
@@ -19,6 +28,49 @@ Forge interprets evidence in this order:
 Later tiers do not retroactively strengthen earlier ones. A local pass is not Studio proof; a zero-error diagnostic count is not proof of intended gameplay; a creator acceptance is a product outcome, not a universal engine fact.
 
 Catalog coverage is not another evidence tier. `RobloxApiCatalog` says what the pinned official source documents; `StudioCapabilityCoverageReport` says why Forge does or does not support each entry; `StudioCapabilityManifest` says which exact rows have a complete mutation/readback proof route. A catalog entry marked `authorable` still requires current connector attestation and a complete projection-bound Studio transaction. `observable_only`, `source_only`, `creator_reviewed`, and `unsupported` never count as machine proof merely because they are exhaustively classified.
+
+## Creator Conversation presentation claims
+
+The Creator Conversation milestone has its own narrow claim boundary. Local
+Node, dashboard, plugin-module, and formal tests can establish that the
+contracts reject malformed or stale bindings; the store reconstructs an
+immutable commit chain; host-issued context/citations and the exact four-model
+no-fallback policy are represented; immutable planner/builder/repair journal
+slots and their interruption classifications are enforced; the local identity
+protocol and the Night Blueprint surface render their synthetic states. These
+tests do **not** establish that a provider received a request, that a selected
+provider/model produced a response, that a DataModel identity recording
+committed, or that the conversation shell completed an end-to-end Studio
+workflow.
+
+The required next evidence is a creator-run Studio canary of this exact
+clean-break shell. It must record the paired project identity, the durable
+conversation/turn/job boundaries, selected-model attribution if a provider turn
+is deliberately authorized, and the resulting Studio transaction/Play evidence
+using the normal product contracts. Until that canary exists, describe this
+work as presentation-ready and locally tested—not Studio-verified, provider
+verified, or an accepted current creator run.
+
+A `CreatorMemoryRevision` is creator authority, and a conversation citation is
+Forge authority over a host-issued target. Neither is project observation or
+machine evidence. A memory item may orient a later model turn but loses to a
+newer complete project revision; a citation identifies what the host made
+available and does not prove execution or behavior. The model may choose only
+handles issued during its AgentRun. Quoted history is creator context, never a
+channel for hidden evaluator criteria.
+
+### Foreground-job claim boundary
+
+An `AgentExecutionJournal` is execution-boundary evidence, not provider or
+Studio proof. `never_dispatched` means no durable provider intent exists for
+the reserved run. `outcome_unknown` means intent exists without a persisted
+response and says nothing about a provider's eventual result. A persisted
+nonterminal response or tool boundary proves only that checkpoint, not a final
+agent outcome or resumable continuation. Only a terminal journal can support
+publication of an already-persisted deterministic local outcome; it cannot
+authorize another provider turn. Recovery creates a new creator-authorized
+AgentRun/journal slot, never a resend. None of these classifications proves a
+Studio mutation, verification, commit, or creator acceptance.
 
 Capability attestation has the same explicit-presence rule as mutation evidence.
 The plugin reports raw ReflectionService facts; it does not reinterpret type
@@ -62,7 +114,7 @@ Stage rejection is factual feedback, not an opaque prompt hint. Forge returns th
 
 Repeated rejected-batch grading binds the exact arguments, canonical result hashes, and chronological host-state epoch. Different error bodies or a state transition therefore cannot be collapsed into a repeated failure merely because their top-level error codes match.
 
-The prompt-only path has no hidden evaluator. Every automated criterion, tolerance, sample upper bound, interval, maximum observation window, and diagnostic threshold must appear in the creator-visible charter or generated execution artifact before plan approval or mutation. Forge derives machine-check prose from typed fields; the model authors prose only for `creator_review`. Class-aware existence may resolve only exact allowlisted Studio service roots, while position and series observations remain limited to `Workspace` `BasePart` targets. Human-triggered creator checks have a bounded maximum observation window, and the complete declared schedule capacity must fit the common generated five-minute execution ceiling. Waiting for human Play authority has no transport deadline; the machine deadline begins only after the exact request-bound Play Server observer is installed and its first bounded reads complete. A normal creator Stop is the authoritative observation boundary, not a test failure. The direct observer seals the actual series prefix; a short observed prefix is graded as captured, not changed into missing evidence. For an exact projection, authoritative `observed` or `absent` results are complete even when they contradict the expected behavior. Missing keys, unavailable/read-error results, duplicates, extras, bad order, or bad bindings are incomplete. The terminal receipt and exact Edit-side inert tombstone remain prerequisites for grading. Stop-sealed technical incompleteness preserves the provisional mutation in `awaiting_verification_retry`; only the current hash-bound Retry or Cancel action may progress it. Missing or ambiguous lifecycle, receipt, or tombstone acknowledgement is `recovery_required`. `subtree_unchanged` compares one bounded edit-mode state digest and does not establish visual equivalence. Diagnostic bounds cover only their declared Play Server source and are never attributed to one change. Unsupported visual or gameplay judgments belong in final creator review.
+The creator work path has no hidden evaluator. Every automated criterion, tolerance, sample upper bound, interval, maximum observation window, and diagnostic threshold must appear in the creator-visible charter or generated execution artifact before plan approval or mutation. Forge derives machine-check prose from typed fields; the model authors prose only for `creator_review`. Class-aware existence may resolve only exact allowlisted Studio service roots, while position and series observations remain limited to `Workspace` `BasePart` targets. Human-triggered creator checks have a bounded maximum observation window, and the complete declared schedule capacity must fit the common generated five-minute execution ceiling. Waiting for human Play authority has no transport deadline; the machine deadline begins only after the exact request-bound Play Server observer is installed and its first bounded reads complete. A normal creator Stop is the authoritative observation boundary, not a test failure. The direct observer seals the actual series prefix; a short observed prefix is graded as captured, not changed into missing evidence. For an exact projection, authoritative `observed` or `absent` results are complete even when they contradict the expected behavior. Missing keys, unavailable/read-error results, duplicates, extras, bad order, or bad bindings are incomplete. The terminal receipt and exact Edit-side inert tombstone remain prerequisites for grading. Stop-sealed technical incompleteness preserves the provisional mutation in `awaiting_verification_retry`; only the current hash-bound Retry or Cancel action may progress it. Missing or ambiguous lifecycle, receipt, or tombstone acknowledgement is `recovery_required`. `subtree_unchanged` compares one bounded edit-mode state digest and does not establish visual equivalence. Diagnostic bounds cover only their declared Play Server source and are never attributed to one change. Unsupported visual or gameplay judgments belong in final creator review.
 
 Registered experiments are different: their `AcceptanceSpec` carries references while the redacted `StudioExecutionPlan` carries only typed targets, calls, bounds, and correlation. The plugin returns facts. Backend code alone receives evaluator assertions and grades them.
 

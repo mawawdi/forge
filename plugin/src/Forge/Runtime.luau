@@ -2,6 +2,8 @@
 local HttpService = game:GetService("HttpService")
 local StudioTestService = game:GetService("StudioTestService")
 local Constants = require(script.Parent.Constants)
+local ConnectorView = require(script.Parent.ConnectorView)
+local ConnectorPresentation = require(script.Parent.ConnectorPresentation)
 local Generated = require(script.Parent.GeneratedStudioEvidence)
 local Hash = require(script.Parent.Hash)
 local IdentityRegistry = require(script.Parent.IdentityRegistry)
@@ -12,6 +14,8 @@ local StudioEvidenceCollector = require(script.Parent.StudioEvidenceCollector)
 local StudioProjectIndexCollector = require(script.Parent.StudioProjectIndexCollector)
 local StudioProjectIndexCanonical = require(script.Parent.StudioProjectIndexCanonical)
 local StudioProjectChangeMonitor = require(script.Parent.StudioProjectChangeMonitor)
+local StudioProjectAuthority = require(script.Parent.StudioProjectAuthority)
+local StudioProjectIdentity = require(script.Parent.StudioProjectIdentity)
 local StudioSemanticTransport = require(script.Parent.StudioSemanticTransport)
 
 local Runtime = {}
@@ -19,17 +23,9 @@ local Runtime = {}
 local function iso(): string return os.date("!%Y-%m-%dT%H:%M:%S.000Z") end
 local function messageId(prefix: string): string return prefix .. "_" .. HttpService:GenerateGUID(false) end
 local function capabilities()
-	return { "studio_evidence", "studio_project_index", "opaque_identity", "project_change_monitor", "semantic_message_stream", "sha256", "stable_identity", "reflection_attestation", "detached_preflight", "transactional_authoring", "recording_recovery", "studio_play_mode", "bounded_diagnostics", "http_polling" }
+	return { "studio_evidence", "studio_project_index", "opaque_identity", "project_change_monitor", "semantic_message_stream", "sha256", "stable_identity", "reflection_attestation", "detached_preflight", "transactional_authoring", "recording_recovery", "studio_play_mode", "bounded_diagnostics", "project_identity", "http_polling" }
 end
 local function connectorBuildHash(): string return Generated.connectorBuildHash end
-local function connectorEpoch(sessionId: string, projectId: string): string
-	return Hash.sha256(StudioProjectIndexCanonical.material({
-		kind = "StudioConnectorEpoch",
-		sessionId = sessionId,
-		projectId = projectId,
-		connectorBuildHash = connectorBuildHash(),
-	}))
-end
 local function substrateAvailable(): boolean return Hash.available() end
 local function retryableOrderedTransportFailure(status: number, failure: any): boolean
 	if status == 0 or status == 408 or status == 429 or status >= 500 then return true end
@@ -120,6 +116,7 @@ function Runtime.start(plugin: Plugin)
 	local sessionId: string? = passiveArm and passiveArm.sessionId or nil
 	local projectId: string? = passiveArm and passiveArm.projectId or nil
 	local sessionToken: string? = passiveArm and passiveArm.sessionToken or nil
+	local pairedProject: any? = passiveArm and passiveArm.project or nil
 	local currentProjectRevision: string? = passiveArm and passiveArm.expectedProjectRevisionHash or nil
 	local currentProjectIndexManifestId: string? = nil
 	local currentProjectIndexCapture: any? = nil
@@ -140,16 +137,19 @@ function Runtime.start(plugin: Plugin)
 	local collector = StudioEvidenceCollector.new(registry)
 	local projectIndexCollector = StudioProjectIndexCollector.new(registry)
 	local authoring = StudioAuthoring.new(plugin, registry, collector)
+	local projectIdentity = StudioProjectIdentity.new(plugin)
 	local stopRegistry: (() -> ())? = nil
 	local projectChangeMonitor: any? = nil
-	local widgetStatus: TextLabel? = nil
-	local widgetDetail: TextLabel? = nil
-	local pairButton: TextButton? = nil
-	local runButton: TextButton? = nil
+	local connectorView: ConnectorView.View? = nil
+	local latestStatus = "CONNECTING"
+	local function updateConnectionView()
+		if not connectorView then return end
+		connectorView.setConnection(if invalidPassiveState then "invalid_receipt" elseif passiveResume then "reserved" elseif sessionId then "connected" elseif autoConnectEnabled then "connecting" else "disconnected")
+	end
 
 	local function state(title: string, detail: string)
-		if widgetStatus then widgetStatus.Text = title end
-		if widgetDetail then widgetDetail.Text = detail end
+		latestStatus = title
+		if connectorView then connectorView.setStatus(title, detail); updateConnectionView() end
 	end
 	local studioWorker = SerializedStudioWorker.new({
 		onError = function(failure: any)
@@ -514,7 +514,7 @@ function Runtime.start(plugin: Plugin)
 
 	local function startArmedRuntime()
 		if not runtimeCapabilities.active or runtimeCapabilities.active.phase ~= "armed" then state("NOT READY", "No exact runtime evidence projection is armed."); return end
-		if runButton then runButton.Active = false; runButton.AutoButtonColor = false end
+		if connectorView then connectorView.setTestReady(false) end
 		if not currentProjectRevision or runtimeCapabilities.active.plan.binding.projectRevisionHash ~= currentProjectRevision then
 			local requestId = runtimeCapabilities.active and runtimeCapabilities.active.requestId or nil
 			runtimeCapabilities:abort(); pluginError("STALE_EVIDENCE", "runtime plan revision does not match the current project index", false, requestId); return
@@ -527,15 +527,24 @@ function Runtime.start(plugin: Plugin)
 	local function unpair(notifyBridge: boolean?, reason: string?, disableAutoConnect: boolean?)
 		if disableAutoConnect then autoConnectEnabled = false end
 		runtimeCapabilities:abort()
-		if authoring:hasPossibleRecording() then state("RECOVERY REQUIRED", "A Forge creator recording may still be open. Re-pair to inspect it; Forge will not change Studio automatically.") end
-		if runButton then runButton.Visible = false; runButton.Active = false; runButton.AutoButtonColor = false end
+		local needsRecovery = projectIdentity:hasPossibleRecording() or authoring:hasPossibleRecording()
+		if projectIdentity:hasPossibleRecording() then
+			state("RECOVERY REQUIRED", "A Forge project-identity recording may still be open. Re-pair to inspect it; Forge will not change Studio automatically.")
+		elseif authoring:hasPossibleRecording() then
+			state("RECOVERY REQUIRED", "A Forge creator recording may still be open. Re-pair to inspect it; Forge will not change Studio automatically.")
+		end
+		if connectorView then connectorView.setTestReady(false) end
 		if notifyBridge and sessionId and sessionToken then send("UnpairProject", { reason = reason or "user" }) end
-		sessionId, projectId, sessionToken, currentProjectRevision, currentProjectIndexManifestId, currentProjectIndexCapture, currentProjectIndexDetectorEpoch, projectIndexProjection = nil, nil, nil, nil, nil, nil, nil, nil
+		sessionId, projectId, sessionToken, pairedProject, currentProjectRevision, currentProjectIndexManifestId, currentProjectIndexCapture, currentProjectIndexDetectorEpoch, projectIndexProjection = nil, nil, nil, nil, nil, nil, nil, nil, nil
+		projectIdentity:setChangeMonitor(nil)
 		if projectChangeMonitor then projectChangeMonitor:destroy(cooperativeBudget()); projectChangeMonitor = nil end
 		if stopRegistry then stopRegistry(); stopRegistry = nil end
 		table.clear(pending)
-		if pairButton then pairButton.Text = autoConnectEnabled and "Connecting…" or "Connect" end
-		state(autoConnectEnabled and "CONNECTING" or "DISCONNECTED", autoConnectEnabled and "Waiting for the local Forge bridge." or "Automatic connection is paused.")
+		if needsRecovery then
+			state("RECOVERY REQUIRED", "A Forge recording may still be open. Reconnect and review recovery in the dashboard.")
+		else
+			state(autoConnectEnabled and "CONNECTING" or "DISCONNECTED", autoConnectEnabled and "Waiting for the local Forge bridge." or "Automatic connection is paused.")
+		end
 	end
 	local function recoveryPayload(recording: any, recordingState: string, recoveryCapture: any?, finalizationRequestId: string?): any
 		if not recording then
@@ -588,14 +597,30 @@ function Runtime.start(plugin: Plugin)
 		pairing = true; state("CONNECTING", "Discovering the local Forge bridge.")
 		local discovered, discovery = request("GET", "/pairing")
 		if not discovered or typeof(discovery) ~= "table" or typeof(discovery.pairing) ~= "table" or typeof(discovery.pairing.token) ~= "string" then pairing = false; state("WAITING FOR BRIDGE", "Start `forge studio bridge`; Forge will connect automatically."); return false end
-		local ok, response, status = request("POST", "/message", { kind = "StudioProtocolMessage", direction = "plugin_to_backend", type = "PairProject", messageId = messageId("pair"), sentAt = iso(), payload = { pairingToken = discovery.pairing.token, project = collector:identity(), capabilities = capabilities(), connectorBuildHash = connectorBuildHash(), manifestHash = Generated.manifestHash } })
+		local identityOk, identityOrFailure, inventory = pcall(function()
+			return projectIdentity:observe(), projectIdentity:inventory()
+		end)
+		if not identityOk then pairing = false; autoConnectEnabled = false; state("RECOVERY REQUIRED", "Project identity state is invalid: " .. tostring(identityOrFailure)); return false end
+		local pairIdentity = identityOrFailure
+		local pairProject = collector:identity()
+		local ok, response, status = request("POST", "/message", { kind = "StudioProtocolMessage", direction = "plugin_to_backend", type = "PairProject", messageId = messageId("pair"), sentAt = iso(), payload = { pairingToken = discovery.pairing.token, project = pairProject, projectIdentity = pairIdentity, projectIdentityTransaction = inventory, capabilities = capabilities(), connectorBuildHash = connectorBuildHash(), manifestHash = Generated.manifestHash } })
 		pairing = false
 		if not ok then
 			if typeof(status) == "number" and status >= 400 and status < 500 then autoConnectEnabled = false end
 			state(status == 0 and "WAITING FOR BRIDGE" or "CONNECTION REJECTED", tostring(response)); return false
 		end
-		if typeof(response) ~= "table" or typeof(response.sessionId) ~= "string" or typeof(response.projectId) ~= "string" or typeof(response.sessionToken) ~= "string" or response.manifestHash ~= Generated.manifestHash or response.connectorBuildHash ~= connectorBuildHash() then state("CONNECTION REJECTED", "Bridge build or manifest identity does not match the current plugin."); return false end
-		sessionId, projectId, sessionToken = response.sessionId, response.projectId, response.sessionToken
+		if typeof(response) ~= "table" or typeof(response.sessionId) ~= "string" or typeof(response.projectId) ~= "string" or typeof(response.conversationProjectId) ~= "string" or typeof(response.sessionToken) ~= "string" or typeof(response.projectIdentity) ~= "table" or response.projectIdentity.hash ~= pairIdentity.hash or response.manifestHash ~= Generated.manifestHash or response.connectorBuildHash ~= connectorBuildHash() then state("CONNECTION REJECTED", "Bridge build, manifest, or project identity does not match the current plugin."); return false end
+		local authorityOk, pairAuthority = pcall(function()
+			return StudioProjectAuthority.derive({
+				sessionId = response.sessionId,
+				connectorBuildHash = connectorBuildHash(),
+				identity = pairIdentity,
+			})
+		end)
+		if not authorityOk or response.projectId ~= pairAuthority.projectId or response.conversationProjectId ~= pairAuthority.conversationProjectId then
+			state("CONNECTION REJECTED", "Bridge project authority does not match the exact Studio identity."); return false
+		end
+		sessionId, projectId, sessionToken, pairedProject = response.sessionId, pairAuthority.projectId, response.sessionToken, pairProject
 		local accepted, setup = pcall(function()
 			local attestation = decodeProjection(response.capabilityAttestationProjectionJson, response.capabilityAttestationProjectionJsonHash, response.capabilityAttestationProjectionHash)
 			local expectedProject = collector:identity()
@@ -607,7 +632,7 @@ function Runtime.start(plugin: Plugin)
 			-- This epoch scopes opaque read identities to exactly this connector
 			-- pairing. Re-pairing can never turn a stale opaque digest into a
 			-- write-capable object reference.
-			registry:setConnectorEpoch(connectorEpoch(sessionId, projectId))
+			registry:setConnectorEpoch(pairAuthority.connectorEpoch)
 			local cooperate = cooperativeBudget()
 			stopRegistry = registry:start(cooperate)
 			projectChangeMonitor = StudioProjectChangeMonitor.new(function(notice: any)
@@ -620,6 +645,7 @@ function Runtime.start(plugin: Plugin)
 				if expected then projectChangeMonitor:expectExactForgeRecordingFinish(recordingId)
 				else projectChangeMonitor:clearExpectedForgeRecordingFinish(recordingId) end
 			end)
+			projectIdentity:setChangeMonitor(projectChangeMonitor)
 			local sent, failure = sendEvidence("capability_attestation", attestation)
 			if not sent then error(failure) end
 			-- A finalization receipt proves that its named recording was settled,
@@ -629,6 +655,10 @@ function Runtime.start(plugin: Plugin)
 			local receipt = authoring:finalizationReceipt()
 			if receipt then
 				sendRequired("CreatorChangeFinalized", finalizationPayload(receipt))
+			end
+			local identityReceipt = projectIdentity:finalizationReceipt()
+			if identityReceipt then
+				sendRequired("StudioProjectIdentityFinalized", { requestId = identityReceipt.operation.id, receipt = identityReceipt }, identityReceipt.operation.id)
 			end
 			-- A retained finalization receipt and an active-recording cursor are
 			-- separate transaction phases.  The receipt must be acknowledged first;
@@ -654,8 +684,11 @@ function Runtime.start(plugin: Plugin)
 			end
 		end)
 		if not accepted then unpair(false, "session_replaced", true); state("CONNECTION REJECTED", tostring(setup)); return false end
-		if pairButton then pairButton.Text = "Disconnect" end
-		state("CONNECTED", "Manifest attestation sent. Forge will request a complete project index before any creator work.")
+		if projectIdentity:hasPossibleRecording() or authoring:hasPossibleRecording() then
+			state("RECOVERY REQUIRED", "Connected. A Forge recording may still be open; review recovery in the dashboard.")
+		else
+			state("CONNECTED", "Manifest attestation sent. Forge will request a complete project index before any creator work.")
+		end
 		return true
 	end
 
@@ -810,9 +843,92 @@ function Runtime.start(plugin: Plugin)
 			binding = stored,
 		}
 	end
+	local creatorRecordingCommands = {
+		CreatorSourceWriteBlobStarted = true,
+		CreatorSourceWriteBlobChunk = true,
+		CreatorSourceWriteBlobCompleted = true,
+		CreatorChangePrepareStarted = true,
+		CreatorChangePrepareChunk = true,
+		CreatorChangePrepareCompleted = true,
+		PreflightCreatorChangeSet = true,
+		ApplyCreatorChangeSet = true,
+		FinalizeCreatorChangeSet = true,
+		RequestCreatorRecordingRecovery = true,
+		CancelInterruptedRecording = true,
+		RollbackCreatorCheckpoint = true,
+		ExecuteRuntimeEvalPlan = true,
+	}
+	local function adoptProjectIdentity(identity: any)
+		if not sessionId then error("project identity finalization requires an active Studio session") end
+		if not projectId then error("project identity finalization requires a paired project authority") end
+		local authority = StudioProjectAuthority.adopt({
+			currentProjectId = projectId,
+			sessionId = sessionId,
+			connectorBuildHash = connectorBuildHash(),
+			identity = identity,
+		})
+		local nextProjectId = authority.projectId
+		local projectChanged = pairedProject == nil
+			or pairedProject.name ~= identity.project.name
+			or pairedProject.placeId ~= identity.project.placeId
+			or pairedProject.universeId ~= identity.project.universeId
+		local authorityChanged = authority.authorityChanged
+		projectId = nextProjectId
+		pairedProject = identity.project
+		if authorityChanged then registry:setConnectorEpoch(authority.connectorEpoch) end
+		-- Every complete index and opaque object handle was scoped to the prior
+		-- authority or exact project metadata. Linking, forking, Save As, and
+		-- publication invalidate it outright; the host must request a fresh index.
+		if authorityChanged or projectChanged then
+			currentProjectRevision = nil
+			currentProjectIndexManifestId = nil
+			currentProjectIndexCapture = nil
+			currentProjectIndexDetectorEpoch = nil
+			projectIndexProjection = nil
+			currentCreatorSessionId = nil
+		end
+	end
+	local function adoptFinalizedProjectIdentity(receipt: any)
+		if receipt.status ~= "linked" and receipt.status ~= "forked" then return end
+		adoptProjectIdentity(receipt.afterIdentity)
+	end
 	local function handle(message: any)
 		if typeof(message) ~= "table" or message.kind ~= "StudioProtocolMessage" or message.direction ~= "backend_to_plugin" or typeof(message.payload) ~= "table" or message.sessionId ~= sessionId then error("malformed backend message") end
-		if message.type == "FinalizePassiveRuntimeEval" then
+		if creatorRecordingCommands[message.type] and projectIdentity:hasPossibleRecording() then
+			error("RECOVERY_REQUIRED: a project identity recording may still be active")
+		end
+		local activity = ConnectorPresentation.command(message.type)
+		if activity then state(activity.started, "Studio command: " .. message.type) end
+		if message.type == "LinkStudioProject" or message.type == "ForkStudioProject" then
+			if message.payload.operationHash ~= message.payload.operation.hash
+				or message.payload.operation.action ~= (if message.type == "LinkStudioProject" then "link" else "fork")
+			then error("project identity command binding mismatch") end
+			if projectChangeMonitor == nil or not projectChangeMonitor:isUsable() then error("project identity mutation requires complete project-change monitoring") end
+			local receipt = projectIdentity:execute(message.payload.operation, registry.connectorEpoch, function()
+				return authoring:recovery().recording == nil
+			end)
+			adoptFinalizedProjectIdentity(receipt)
+			sendRequired("StudioProjectIdentityFinalized", { requestId = message.payload.requestId, receipt = receipt }, message.requestId)
+		elseif message.type == "CancelInterruptedStudioProjectIdentity" then
+			if projectChangeMonitor == nil or not projectChangeMonitor:isUsable() then error("project identity recovery requires complete project-change monitoring") end
+			local receipt = projectIdentity:cancelInterrupted(message.payload, function()
+				return authoring:recovery().recording == nil
+			end)
+			sendRequired("StudioProjectIdentityFinalized", { requestId = message.payload.requestId, receipt = receipt }, message.requestId)
+		elseif message.type == "AbandonOpeningStudioProjectIdentity" then
+			local receipt = projectIdentity:abandonOpening(message.payload, function()
+				return authoring:recovery().recording == nil
+			end)
+			sendRequired("StudioProjectIdentityFinalized", { requestId = message.payload.requestId, receipt = receipt }, message.requestId)
+		elseif message.type == "SettleClosedStudioProjectIdentity" then
+			local receipt = projectIdentity:settleClosed(message.payload, function()
+				return authoring:recovery().recording == nil
+			end)
+			adoptFinalizedProjectIdentity(receipt)
+			sendRequired("StudioProjectIdentityFinalized", { requestId = message.payload.requestId, receipt = receipt }, message.requestId)
+		elseif message.type == "AcknowledgeStudioProjectIdentityFinalization" then
+			projectIdentity:acknowledge(message.payload)
+		elseif message.type == "FinalizePassiveRuntimeEval" then
 			local finalizationMessageId = RuntimeCapabilityExecutor.passiveFinalizationMessageId(plugin)
 			local acknowledged = runtimeCapabilities:finalizePassive(message.payload)
 			local sent, failure = send("PassiveRuntimeEvalFinalized", acknowledged, message.requestId, finalizationMessageId)
@@ -837,7 +953,7 @@ function Runtime.start(plugin: Plugin)
 			if not sessionId or not projectId then error("runtime execution requires pairing") end
 			if message.payload.startPolicy == "observe_next_creator_play" and not currentCreatorSessionId then error("creator runtime execution has no exact creator-session binding") end
 			runtimeCapabilities:arm(message.payload, message.requestId, { sessionId = sessionId, projectId = projectId, sessionToken = sessionToken, bridgeUrl = bridgeUrl, projectRevisionHash = currentProjectRevision, project = collector:identity(), creatorSessionId = currentCreatorSessionId })
-			if message.payload.startPolicy == "observe_next_creator_play" then if runButton then runButton.Visible = false end elseif runButton then runButton.Visible = true; runButton.Active = true; runButton.AutoButtonColor = true end
+			if connectorView then connectorView.setTestReady(message.payload.startPolicy ~= "observe_next_creator_play") end
 		elseif message.type == "CreatorChangePrepareStarted" then
 			authoring:beginPrepareTransfer(message.payload)
 		elseif message.type == "CreatorChangePrepareChunk" then
@@ -1072,6 +1188,7 @@ function Runtime.start(plugin: Plugin)
 			local post = publishProjectIndex("post_rollback", message.requestId, nil, "transaction_evidence")
 			sendRequired("CreatorCheckpointRolledBack", { creatorSessionId = message.payload.creatorSessionId, checkpointId = message.payload.checkpointId, changeSetId = message.payload.changeSetId, changeSetHash = message.payload.changeSetHash, beforeProjectRevisionHash = before, afterProjectIndexManifestId = post.indexManifest.id, afterProjectRevisionHash = post.revision.hash, afterProjectDetectorEpoch = post.detectorEpoch, status = "rolled_back" }, message.requestId)
 		else error("unsupported backend command") end
+		if activity and latestStatus == activity.started then state(activity.finished, "Studio command returned: " .. message.type .. ". Review its exact result in the dashboard.") end
 	end
 
 	local function classifyCommandFailure(message: any, failure: any): string
@@ -1165,6 +1282,9 @@ function Runtime.start(plugin: Plugin)
 		if not executed then
 			settlement.classification = classification
 			settlement.detail = boundedCommandDiagnostic(failure)
+			if command.type == "LinkStudioProject" or command.type == "ForkStudioProject" then
+				settlement.identityRejection = projectIdentity:rejectionEvidence(command.payload.operation)
+			end
 		end
 		local record = {
 			commandHash = delivery.commandHash,
@@ -1205,29 +1325,7 @@ function Runtime.start(plugin: Plugin)
 		end
 	end
 
-	local info = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, true, false, 360, 220, 320, 180)
-	local widget = plugin:CreateDockWidgetPluginGuiAsync("ForgeStudio", info); widget.Title = "Forge Connector"
-	local frame = Instance.new("Frame"); frame.Size = UDim2.fromScale(1, 1); frame.BackgroundColor3 = Color3.fromRGB(17, 24, 39); frame.BorderSizePixel = 0; frame.Parent = widget
-	widgetStatus = Instance.new("TextLabel"); widgetStatus.Size = UDim2.new(1, -24, 0, 28); widgetStatus.Position = UDim2.fromOffset(12, 12); widgetStatus.BackgroundTransparency = 1; widgetStatus.TextColor3 = Color3.fromRGB(229, 231, 235); widgetStatus.Font = Enum.Font.GothamBold; widgetStatus.TextSize = 16; widgetStatus.TextXAlignment = Enum.TextXAlignment.Left; widgetStatus.Parent = frame
-	widgetDetail = Instance.new("TextLabel"); widgetDetail.Size = UDim2.new(1, -24, 0, 64); widgetDetail.Position = UDim2.fromOffset(12, 44); widgetDetail.BackgroundTransparency = 1; widgetDetail.TextColor3 = Color3.fromRGB(156, 163, 175); widgetDetail.Font = Enum.Font.Gotham; widgetDetail.TextSize = 12; widgetDetail.TextWrapped = true; widgetDetail.TextXAlignment = Enum.TextXAlignment.Left; widgetDetail.TextYAlignment = Enum.TextYAlignment.Top; widgetDetail.Parent = frame
-	local evaluate = Instance.new("TextButton"); evaluate.Size = UDim2.new(1, -24, 0, 32); evaluate.Position = UDim2.fromOffset(12, 118); evaluate.Text = "Run Approved Play Solo Check"; evaluate.Visible = false; evaluate.Active = false; evaluate.AutoButtonColor = false; evaluate.Parent = frame; runButton = evaluate
-	local pair = Instance.new("TextButton"); pair.Size = UDim2.new(1, -24, 0, 28); pair.Position = UDim2.fromOffset(12, 162); pair.Text = "Connecting…"; pair.Parent = frame; pairButton = pair
-	state("CONNECTING", "Start the local Forge service. Evidence, approvals, and recovery live in the dashboard.")
-	if invalidPassiveState then
-		pair.Text = "Discard invalid receipt & recover"
-		pair.Active = true
-		pair.AutoButtonColor = true
-		state("EVIDENCE INCOMPLETE", "Forge retained an invalid durable Play receipt. Discard it explicitly to pair for creator-transaction recovery; no Play claim will be preserved.")
-	elseif passiveResume then
-		pair.Text = "Awaiting Play receipt"
-		local replayed, replayFailure = pcall(function() return runtimeCapabilities:replayPassiveReceipt() end)
-		if replayed and replayFailure then
-			state("PLAY EVIDENCE RETURNED", "Forge re-sent the readback-verified Play-server receipt and is awaiting exact cleanup.")
-		else
-			state("WAITING FOR PLAY", "Forge has an exact persisted Play-server observer. Press Play normally; Forge will not re-pair or alter Studio.")
-		end
-	end
-	pair.MouseButton1Click:Connect(function()
+	local function onConnection()
 		if invalidPassiveState then
 			local discarded, discardResult = pcall(function() return RuntimeCapabilityExecutor.discardInvalidPassive(plugin) end)
 			if discarded and discardResult == true then
@@ -1236,9 +1334,6 @@ function Runtime.start(plugin: Plugin)
 				autoConnectEnabled = true
 				currentCreatorSessionId = nil
 				nextAutoPair = 0
-				pair.Text = "Connecting…"
-				pair.Active = true
-				pair.AutoButtonColor = true
 				state("RECOVERY PAIRING", "Invalid Play evidence was discarded by creator authority. Forge is pairing read-only to inspect durable creator-transaction state.")
 			else
 				state("EVIDENCE INCOMPLETE", "Invalid Play evidence could not be cleared safely: " .. string.sub(tostring(discardResult), 1, Constants.MAX_DIAGNOSTIC_CHARS))
@@ -1246,22 +1341,49 @@ function Runtime.start(plugin: Plugin)
 		elseif passiveResume then
 			state("WAITING FOR PLAY", "This paired session is reserved for the exact persisted Play-server observer.")
 		elseif sessionId then studioWorker:enqueue("user-unpair", function() unpair(true, "user", true) end)
-		else autoConnectEnabled = true; nextAutoPair = 0; pair.Text = "Connecting…" end
-	end)
-	evaluate.MouseButton1Click:Connect(function() studioWorker:enqueue("manual-runtime-start", startArmedRuntime) end)
+		else autoConnectEnabled = true; nextAutoPair = 0; state("CONNECTING", "Waiting for the local Forge service.") end
+	end
+	connectorView = ConnectorView.new(plugin, {
+		bridgeUrl = bridgeUrl,
+		buildHash = connectorBuildHash(),
+		onConnection = onConnection,
+		onRunTest = function() studioWorker:enqueue("manual-runtime-start", startArmedRuntime) end,
+	})
+	state("CONNECTING", "Start the local Forge service. Conversations, approvals, and recovery are in the dashboard.")
+	if invalidPassiveState then
+		state("INVALID PLAY DATA", "Forge retained an invalid durable Play receipt. Discard it explicitly to pair for creator-transaction recovery; no Play claim will be preserved.")
+	elseif passiveResume then
+		local replayed, replayFailure = pcall(function() return runtimeCapabilities:replayPassiveReceipt() end)
+		if replayed and replayFailure then
+			state("PLAY EVIDENCE RETURNED", "Forge re-sent the readback-verified Play-server receipt and is awaiting exact cleanup.")
+		else
+			state("WAITING FOR PLAY", "Forge has an exact persisted Play-server observer. Press Play normally; Forge will not re-pair or alter Studio.")
+		end
+	end
 
 	task.spawn(function()
-		local idle, nextHeartbeat = 0.25, 0
+		local idle, nextHeartbeat, nextLeasePoll = 0.25, 0, 0
 		while running do
 			if studioWorker:isBusy() then
+				-- Long, cooperative Studio jobs deliberately do not accept another
+				-- command, but the bridge transport lease must still know this exact
+				-- connector is alive. Poll is non-destructive; any delivered command
+				-- remains queued until the worker becomes idle and settles it.
+				if sessionId and sessionToken and os.clock() >= nextLeasePoll then
+					request("GET", "/poll?sessionId=" .. HttpService:UrlEncode(sessionId))
+					nextLeasePoll = os.clock() + 5
+				end
 				idle = 0.05
 			elseif sessionId and sessionToken then
 				local ok, response, statusCode = request("GET", "/poll?sessionId=" .. HttpService:UrlEncode(sessionId))
 				if ok and typeof(response) == "table" and response.kind == "ForgeStudioCommandDelivery" and response.sessionId == sessionId and typeof(response.commands) == "table" then
 					transportFailures = 0
+					nextLeasePoll = os.clock() + 5
 					if not passiveResume and os.clock() >= nextHeartbeat then
 						local recovery = authoring:recovery()
-						send("Heartbeat", { project = collector:identity(), manifestHash = Generated.manifestHash, currentProjectIndexManifestId = currentProjectIndexManifestId, currentProjectRevisionHash = currentProjectRevision, activeRecording = recovery.recording and recovery.recording or nil })
+						local observedIdentity = projectIdentity:observe()
+						local sent = send("Heartbeat", { project = observedIdentity.project, projectIdentity = observedIdentity, manifestHash = Generated.manifestHash, currentProjectIndexManifestId = currentProjectIndexManifestId, currentProjectRevisionHash = currentProjectRevision, activeRecording = recovery.recording and recovery.recording or nil })
+						if sent then adoptProjectIdentity(observedIdentity) end
 						nextHeartbeat = os.clock() + 15
 					end
 					idle = runtimeCapabilities.active and 0.1 or (#response.commands == 0 and math.min(3, idle * 1.5) or 0.1)
@@ -1309,7 +1431,16 @@ function Runtime.start(plugin: Plugin)
 		end
 	end)
 	plugin.Unloading:Connect(function()
+		-- Transport release is best-effort and has no Studio side effect. Durable
+		-- identity/creator cursors remain in plugin settings for exact re-pair
+		-- recovery if this one local POST cannot complete during shutdown.
+		if sessionId and sessionToken then
+			pcall(function()
+				postMessage(messageFor("UnpairProject", { reason = "plugin_unload" }, nil, messageId("plugin_unload")))
+			end)
+		end
 		running = false; studioWorker:close(); runtimeCapabilities:abort()
+		if connectorView then connectorView.destroy(); connectorView = nil end
 		if projectChangeMonitor then projectChangeMonitor:destroy(); projectChangeMonitor = nil end
 		if stopRegistry then stopRegistry(); stopRegistry = nil end
 	end)

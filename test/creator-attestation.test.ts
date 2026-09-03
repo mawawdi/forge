@@ -18,6 +18,7 @@ import type {
   PluginToBackendMessage,
   StudioCapability,
 } from "../packages/studio-protocol/src/index.js";
+import { createStudioProjectIdentityState } from "../packages/studio-protocol/src/index.js";
 import type {
   StudioBridgeConnection,
   StudioBridgeSession,
@@ -40,6 +41,7 @@ const capabilities: StudioCapability[] = [
   "recording_recovery",
   "studio_play_mode",
   "bounded_diagnostics",
+  "project_identity",
   "http_polling",
 ];
 
@@ -98,7 +100,13 @@ test("creator control exposes backend-graded live attestation and authorizes its
   const session: StudioBridgeSession = {
     sessionId: "studio_session_attestation",
     projectId: "studio_project_attestation",
+    conversationProjectId: "studio_project_attestation",
     project,
+    projectIdentity: createStudioProjectIdentityState({
+      project,
+      reservedAttribute: { status: "absent" },
+    }),
+    projectIdentityTransaction: { status: "none" },
     capabilities,
     manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
     connectorBuildHash: "1".repeat(64),

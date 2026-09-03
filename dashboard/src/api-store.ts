@@ -1,55 +1,72 @@
 import { useSyncExternalStore } from "react";
+import {
+  assertCreatorDashboardState,
+  assertCreatorWorkAdmission,
+} from "../../packages/creator-conversation/src/contracts.js";
 import type {
-  CapabilityExplorerSnapshot,
-  CreatorExactSourceDiffPage,
+  ActionDraft,
+  ConversationDraft,
+  CreatorActionRequest,
   CreatorDashboardState,
-  DashboardActionRequest,
+  CreatorConversationEvent,
+  CreatorConversationEventPage,
+  CreatorTurnRequest,
+  CreatorWorkAdmission,
   DashboardSnapshot,
-  SourceExplorerRequest,
-  SourceExplorerResult,
-  SourceExplorerSnapshot,
-  StudioCapabilityExplorerPage,
-  StudioCatalogSummary,
-  StudioSourceDependencyPage,
-  StudioSourceDocumentLocator,
-  StudioSourceDocumentPage,
-  StudioSourceLocation,
-  StudioSourceReadPage,
-  StudioSourceReferencePage,
-  StudioSourceSearchPage,
-  StudioSourceSymbolPage,
 } from "./types";
 
+const EMPTY_DRAFT: ConversationDraft = { text: "" };
+const EMPTY_ACTION_DRAFT: ActionDraft = { text: "" };
 const INITIAL_SNAPSHOT: DashboardSnapshot = {
   phase: "loading",
-  catalog: { phase: "loading" },
-  sources: { phase: "idle" },
+  drafts: {},
 };
-const JSON_HEADERS = { "Content-Type": "application/json" };
-const MAX_ATTESTATION_FINDINGS = 32;
-const SOURCE_DOCUMENT_PAGE_SIZE = 50;
-const SOURCE_SEARCH_PAGE_SIZE = 50;
-const SOURCE_SYMBOL_PAGE_SIZE = 100;
-const SOURCE_REFERENCE_PAGE_SIZE = 100;
-const SOURCE_DEPENDENCY_PAGE_SIZE = 200;
-const SOURCE_READ_PAGE_BYTES = 32 * 1024;
-const SOURCE_MAX_DEPENDENCY_DEPTH = 16;
-const AMBIGUOUS_ACTION_MESSAGE =
-  "Forge could not confirm whether this action reached the local control plane. Its exact effect may already be recorded. Forge did not retry it; the dashboard reloaded the current evidence record.";
+const JSON_HEADERS = { "Content-Type": "application/json", Accept: "application/json" };
+const AMBIGUOUS_REQUEST_MESSAGE =
+  "Forge could not confirm whether that request reached the local control plane. Its exact contents were retained, so retrying it will not create a second event.";
 
+let idempotencySequence = 0;
+
+type AdmissionKind = "turn" | "action";
+type AdmissionEndpoint = "/api/control/turn" | "/api/control/action";
+
+interface RetainedAdmission<T extends CreatorTurnRequest | CreatorActionRequest> {
+  readonly kind: AdmissionKind;
+  readonly endpoint: AdmissionEndpoint;
+  /** Stable identity of the request without its generated idempotency key. */
+  readonly identity: string;
+  /** The immutable request object sent on every retry. */
+  readonly request: T;
+  /** The exact JSON bytes sent on every retry. */
+  readonly body: string;
+}
+
+/**
+ * The only browser state owner. One EventSource invalidates this one snapshot;
+ * cards and sheets subscribe rather than opening their own streams.
+ */
 export class CreatorDashboardStore {
   private snapshot = INITIAL_SNAPSHOT;
   private readonly listeners = new Set<() => void>();
-  private selectedSessionId: string | undefined;
+  private selectedConversationId: string | undefined;
   private eventSource: EventSource | undefined;
   private cursor = 0;
   private invalidations = 0;
   private refreshing = false;
   private refreshAgain = false;
-  private catalogSummaryRequest = 0;
-  private capabilityPageRequest = 0;
-  private sourceExplorerRequest = 0;
   private started = false;
+  private readonly loadedEvents = new Map<string, readonly CreatorConversationEvent[]>();
+  private readonly historyCursors = new Map<string, string | undefined>();
+  private readonly historyLoading = new Set<string>();
+  /**
+   * Requests whose admission has not been confirmed. The dashboard read model
+   * intentionally does not expose idempotency keys or request hashes, so a
+   * state refresh cannot prove that one of these exact requests was admitted.
+   */
+  private readonly retainedAdmissions = new Map<
+    string,
+    RetainedAdmission<CreatorTurnRequest | CreatorActionRequest>
+  >();
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -62,96 +79,210 @@ export class CreatorDashboardStore {
     if (this.started || typeof window === "undefined") return;
     this.started = true;
     void this.refresh();
-    void this.refreshCatalog();
     this.connectEvents();
   };
 
-  selectSession = (sessionId: string): void => {
-    if (this.selectedSessionId === sessionId) return;
-    this.selectedSessionId = sessionId;
-    this.sourceExplorerRequest += 1;
-    this.setSources({ phase: "idle" });
+  selectConversation = (conversationId: string): void => {
+    if (this.selectedConversationId === conversationId) return;
+    this.selectedConversationId = conversationId;
     void this.refresh();
   };
 
-  submit = async (action: DashboardActionRequest): Promise<void> => {
-    const pendingAction = action.action === "start" ? "start" : action.actionId;
-    this.setSnapshot({ ...this.snapshot, pendingAction });
-    let actionOutcomeKnown = false;
+  draftFor = (conversationId: string | undefined): ConversationDraft =>
+    this.snapshot.drafts[draftKey(conversationId)] ?? EMPTY_DRAFT;
+
+  unconfirmedTurnFor = (
+    conversationId: string | undefined,
+    text: string,
+    modelId: string,
+  ): CreatorTurnRequest | undefined =>
+    this.snapshot.unconfirmedTurns?.find(
+      (request) =>
+        request.conversationId === conversationId &&
+        request.text === text &&
+        request.selectedModelId === modelId,
+    );
+
+  actionDraftFor = (actionKey: string): ActionDraft =>
+    this.snapshot.actionDrafts?.[actionKey] ?? EMPTY_ACTION_DRAFT;
+
+  hasActionDraft = (actionKey: string): boolean =>
+    this.snapshot.actionDrafts?.[actionKey] !== undefined;
+
+  updateDraft = (conversationId: string | undefined, draft: ConversationDraft): void => {
+    const key = draftKey(conversationId);
+    this.setSnapshot({
+      ...this.snapshot,
+      drafts: { ...this.snapshot.drafts, [key]: draft },
+    });
+  };
+
+  updateActionDraft = (actionKey: string, draft: ActionDraft): void => {
+    this.setSnapshot({
+      ...this.snapshot,
+      actionDrafts: { ...this.snapshot.actionDrafts, [actionKey]: draft },
+    });
+  };
+
+  clearActionDraft = (actionKey: string): void => {
+    if (!this.snapshot.actionDrafts?.[actionKey]) return;
+    const { [actionKey]: _cleared, ...actionDrafts } = this.snapshot.actionDrafts;
+    this.setSnapshot({ ...this.snapshot, actionDrafts });
+  };
+
+  loadPreviousEvents = (): void => {
+    const page = this.snapshot.data?.eventPage;
+    if (!page?.nextBeforeCursor || this.historyLoading.has(page.conversationId)) return;
+    this.historyLoading.add(page.conversationId);
+    void this.fetchPreviousEvents(page.conversationId, page.nextBeforeCursor);
+  };
+
+  submitTurn = async (
+    input: Omit<CreatorTurnRequest, "kind" | "idempotencyKey">,
+  ): Promise<void> => {
+    const unconfirmed = this.unconfirmedTurnFor(
+      input.conversationId,
+      input.text,
+      input.selectedModelId,
+    );
+    if (unconfirmed) return this.retryTurn(unconfirmed.idempotencyKey);
+    const admission = this.retainAdmission(
+      "turn",
+      "/api/control/turn",
+      admissionIdentity("turn", input),
+      (): CreatorTurnRequest => ({
+        kind: "CreatorTurnRequest",
+        ...input,
+        idempotencyKey: makeIdempotencyKey(),
+      }),
+    );
+    await this.admit(admission);
+    this.clearSubmittedTurnDraft(admission.request);
+  };
+
+  retryTurn = async (idempotencyKey: string): Promise<void> => {
+    const admission = [...this.retainedAdmissions.values()].find(
+      (entry) => entry.request.idempotencyKey === idempotencyKey,
+    );
+    if (!admission || admission.request.kind !== "CreatorTurnRequest")
+      throw new Error("The original message is no longer available to retry.");
+    await this.admit(admission);
+    this.clearSubmittedTurnDraft(admission.request);
+  };
+
+  submitAction = async (
+    input: Omit<CreatorActionRequest, "kind" | "idempotencyKey">,
+  ): Promise<void> => {
+    await this.admit(
+      this.retainAdmission(
+        "action",
+        "/api/control/action",
+        admissionIdentity("action", input),
+        (): CreatorActionRequest => ({
+          kind: "CreatorActionRequest",
+          ...input,
+          idempotencyKey: makeIdempotencyKey(),
+        }),
+      ),
+    );
+  };
+
+  private retainAdmission<T extends CreatorTurnRequest | CreatorActionRequest>(
+    kind: AdmissionKind,
+    endpoint: AdmissionEndpoint,
+    identity: string,
+    createRequest: () => T,
+  ): RetainedAdmission<T> {
+    const retained = this.retainedAdmissions.get(identity);
+    if (retained) {
+      if (retained.kind !== kind || retained.endpoint !== endpoint)
+        throw new Error("Forge retained a request for another control endpoint.");
+      return retained as RetainedAdmission<T>;
+    }
+    const request = createRequest();
+    const admission: RetainedAdmission<T> = {
+      kind,
+      endpoint,
+      identity,
+      request,
+      body: serializeRequest(request),
+    };
+    this.retainedAdmissions.set(identity, admission);
+    return admission;
+  }
+
+  private async admit(
+    admission: RetainedAdmission<CreatorTurnRequest | CreatorActionRequest>,
+  ): Promise<void> {
+    this.setSnapshot({
+      ...withoutError(this.snapshot),
+      pendingRequest: { kind: admission.kind, id: admission.request.idempotencyKey },
+    });
+    let responseReceived = false;
+    let rejectionReceived = false;
     try {
-      const response = await fetch("/api/control/action", {
+      const response = await fetch(admission.endpoint, {
         method: "POST",
         credentials: "same-origin",
         headers: JSON_HEADERS,
-        body: JSON.stringify(action),
+        body: admission.body,
       });
-      const value = await readJson(response);
+      responseReceived = true;
+      const payload = await readJson(response);
       if (!response.ok) {
-        if (isActionOutcomeUnknown(value)) throw new Error(readError(value, response.status));
-        actionOutcomeKnown = true;
-        throw new Error(readError(value, response.status));
+        rejectionReceived = true;
+        throw new Error(readError(payload, response.status));
       }
-      if (isDashboardState(value)) {
-        actionOutcomeKnown = true;
-        const nextSelectedSessionId = value.selectedSessionId ?? this.selectedSessionId;
-        const sourceSessionChanged = nextSelectedSessionId !== this.selectedSessionId;
-        this.selectedSessionId = nextSelectedSessionId;
-        if (sourceSessionChanged) this.sourceExplorerRequest += 1;
-        this.setSnapshot({
-          ...this.snapshot,
-          phase: "ready",
-          data: value,
-          ...(sourceSessionChanged ? { sources: { phase: "idle" } } : {}),
-        });
-      } else {
-        throw new Error("The control plane returned an invalid dashboard state.");
-      }
-    } catch (error) {
-      if (!actionOutcomeKnown) {
-        // A lost POST response cannot prove the action was rejected: Studio may
-        // already have received and durably recorded it. Observe canonical
-        // state once, but never repeat a state-changing request automatically.
-        await this.refresh();
-        this.setSnapshot({
-          ...this.snapshot,
-          phase: "error",
-          ...(this.snapshot.data ? { data: this.snapshot.data } : {}),
-          error: AMBIGUOUS_ACTION_MESSAGE,
-        });
-        throw new Error(AMBIGUOUS_ACTION_MESSAGE);
-      }
+      if (response.status !== 202)
+        throw new Error(
+          `The control plane returned ${response.status}; Forge requires an exact 202 work admission.`,
+        );
+      if (!isWorkAdmission(payload))
+        throw new Error("The control plane did not return a valid work admission.");
+      if (
+        admission.request.kind === "CreatorTurnRequest" ||
+        payload.conversationId !== admission.request.conversationId
+      )
+        this.selectedConversationId = payload.conversationId;
+      this.retainedAdmissions.delete(admission.identity);
       this.setSnapshot({
-        ...this.snapshot,
-        phase: "error",
-        ...(this.snapshot.data ? { data: this.snapshot.data } : {}),
-        error: errorMessage(error),
+        ...withoutPendingRequest(this.snapshot),
+        phase: "ready",
+        unconfirmedTurns: (this.snapshot.unconfirmedTurns ?? []).filter(
+          (request) => request.idempotencyKey !== admission.request.idempotencyKey,
+        ),
       });
-      throw error;
-    } finally {
-      if (this.snapshot.pendingAction) {
-        const { pendingAction: _pendingAction, ...withoutPendingAction } = this.snapshot;
-        this.setSnapshot(withoutPendingAction);
-      }
-    }
-  };
-
-  exploreCapabilities = (input: { className?: string; query?: string; cursor?: number }): void => {
-    void this.refreshCapabilities(input);
-  };
-
-  exploreSources = (input: SourceExplorerRequest): void => {
-    const sessionId = this.snapshot.data?.selectedSessionId ?? this.selectedSessionId;
-    const request = ++this.sourceExplorerRequest;
-    if (!sessionId) {
-      this.setSources({
+      // The 202 proves only admission. The SSE remains the one source for the
+      // durable event outcome, while this read catches a fast local transition.
+      void this.refresh();
+    } catch (error) {
+      const message = responseReceived ? errorMessage(error) : AMBIGUOUS_REQUEST_MESSAGE;
+      const unconfirmedTurns = [...(this.snapshot.unconfirmedTurns ?? [])];
+      if (
+        !rejectionReceived &&
+        admission.request.kind === "CreatorTurnRequest" &&
+        !unconfirmedTurns.some(
+          (request) => request.idempotencyKey === admission.request.idempotencyKey,
+        )
+      )
+        unconfirmedTurns.push(admission.request);
+      this.setSnapshot({
+        ...withoutPendingRequest(this.snapshot),
         phase: "error",
-        request: input,
-        error: "Select a creator session before exploring its immutable source index.",
+        error: message,
+        unconfirmedTurns,
       });
-      return;
+      if (!responseReceived) void this.refresh();
+      throw new Error(message);
     }
-    void this.refreshSources(sessionId, input, request);
-  };
+  }
+
+  private clearSubmittedTurnDraft(request: CreatorTurnRequest): void {
+    const key = draftKey(request.conversationId);
+    const draft = this.snapshot.drafts[key];
+    if (!draftMatchesTurnRequest(draft, request)) return;
+    this.updateDraft(request.conversationId, { text: "", modelId: request.selectedModelId });
+  }
 
   private connectEvents(): void {
     this.eventSource = new EventSource(`/api/control/events?after=${this.cursor}`);
@@ -160,19 +291,15 @@ export class CreatorDashboardStore {
       this.invalidations += 1;
       void this.consumeInvalidations();
     };
-    // An event cursor is intentionally bounded server-side. A reset is a
-    // protocol-level resync, not an error that should make EventSource retry an
-    // expired cursor forever.
-    (this.eventSource as Partial<EventSource>).addEventListener?.("reset", (event) => {
+    this.eventSource.addEventListener("reset", (event) => {
       const message = event as MessageEvent<string>;
       this.cursor = readCursor(message.data, message.lastEventId, this.cursor);
       this.invalidations = 0;
       void this.refresh();
     });
-    this.eventSource.onerror = () => {
-      // Native EventSource reconnects automatically. State remains visible until
-      // the next successful invalidation fetch.
-    };
+    // Native EventSource reconnects. The last durable snapshot stays visible
+    // rather than being replaced by a transient connection error.
+    this.eventSource.onerror = () => undefined;
   }
 
   private async consumeInvalidations(): Promise<void> {
@@ -180,7 +307,6 @@ export class CreatorDashboardStore {
       this.refreshAgain = true;
       return;
     }
-    this.refreshAgain = false;
     while (this.invalidations > 0) {
       this.invalidations -= 1;
       await this.refresh();
@@ -195,31 +321,32 @@ export class CreatorDashboardStore {
     this.refreshing = true;
     const previous = this.snapshot.data;
     this.setSnapshot({
-      ...this.snapshot,
+      ...withoutError(this.snapshot),
       phase: "loading",
       ...(previous ? { data: previous } : {}),
     });
     try {
-      const search = this.selectedSessionId
-        ? `?sessionId=${encodeURIComponent(this.selectedSessionId)}`
+      const requestedConversationId = this.selectedConversationId;
+      const query = requestedConversationId
+        ? `?conversationId=${encodeURIComponent(requestedConversationId)}`
         : "";
-      const response = await fetch(`/api/control/state${search}`, {
+      const response = await fetch(`/api/control/state${query}`, {
         credentials: "same-origin",
         headers: { Accept: "application/json" },
       });
-      const value = await readJson(response);
-      if (!response.ok) throw new Error(readError(value, response.status));
-      if (!isDashboardState(value))
-        throw new Error("The control plane returned an invalid dashboard state.");
-      const nextSelectedSessionId = value.selectedSessionId ?? this.selectedSessionId;
-      const sourceSessionChanged = nextSelectedSessionId !== this.selectedSessionId;
-      this.selectedSessionId = nextSelectedSessionId;
-      if (sourceSessionChanged) this.sourceExplorerRequest += 1;
+      const payload = await readJson(response);
+      if (!response.ok) throw new Error(readError(payload, response.status));
+      if (!isDashboardState(payload))
+        throw new Error("Forge couldn't load the latest conversation update.");
+      // A project selection may change while this request is in flight. An
+      // older response may remain visible until its queued successor lands,
+      // but it must not overwrite the newer selection used by that refresh.
+      if (this.selectedConversationId === requestedConversationId)
+        this.selectedConversationId = payload.selectedConversationId ?? requestedConversationId;
       this.setSnapshot({
-        ...this.snapshot,
+        ...withoutError(this.snapshot),
         phase: "ready",
-        data: value,
-        ...(sourceSessionChanged ? { sources: { phase: "idle" } } : {}),
+        data: this.mergeReadModel(payload, false),
       });
     } catch (error) {
       this.setSnapshot({
@@ -230,895 +357,209 @@ export class CreatorDashboardStore {
       });
     } finally {
       this.refreshing = false;
+      const refreshAgain = this.refreshAgain;
+      this.refreshAgain = false;
       if (this.invalidations > 0) {
         void this.consumeInvalidations();
-      } else if (this.refreshAgain) {
-        this.refreshAgain = false;
+      } else if (refreshAgain) {
+        // An explicit selection/admission refresh can arrive without an SSE
+        // invalidation. Run it after the in-flight request instead of dropping
+        // the creator's newly selected conversation.
         void this.refresh();
       }
     }
   }
 
-  private async refreshCatalog(): Promise<void> {
-    const request = ++this.catalogSummaryRequest;
-    const capabilityPageRequestAtStart = this.capabilityPageRequest;
-    const previous = this.snapshot.catalog;
-    this.setCatalog({
-      phase: "loading",
-      ...(previous.summary ? { summary: previous.summary } : {}),
-      ...(previous.page ? { page: previous.page } : {}),
-    });
+  private async fetchPreviousEvents(conversationId: string, before: string): Promise<void> {
     try {
-      const response = await fetch("/api/control/catalog", {
-        credentials: "same-origin",
-        headers: { Accept: "application/json" },
-      });
-      const value = await readJson(response);
-      if (!response.ok) throw new Error(readError(value, response.status));
-      if (!isCatalogSummary(value))
-        throw new Error("The control plane returned an invalid catalog summary.");
-      if (request !== this.catalogSummaryRequest) return;
-      const current = this.snapshot.catalog;
-      this.setCatalog({
+      const response = await fetch(
+        `/api/conversations/${encodeURIComponent(conversationId)}/events?before=${encodeURIComponent(before)}&limit=100`,
+        { credentials: "same-origin", headers: { Accept: "application/json" } },
+      );
+      const payload = await readJson(response);
+      if (!response.ok) throw new Error(readError(payload, response.status));
+      const current = this.snapshot.data;
+      if (!current || current.selectedConversationId !== conversationId) return;
+      if (!isEventPageForDashboard(current, payload))
+        throw new Error("The control plane returned an invalid conversation history page.");
+      this.setSnapshot({
+        ...withoutError(this.snapshot),
         phase: "ready",
-        summary: value,
-        ...(current.page ? { page: current.page } : {}),
+        data: this.mergeReadModel({ ...current, eventPage: payload }, true),
       });
-      if (!current.page && capabilityPageRequestAtStart === this.capabilityPageRequest)
-        void this.refreshCapabilities({});
     } catch (error) {
-      if (request !== this.catalogSummaryRequest) return;
-      const current = this.snapshot.catalog;
-      this.setCatalog({
-        phase: "error",
-        ...(current.summary ? { summary: current.summary } : {}),
-        ...(current.page ? { page: current.page } : {}),
-        error: errorMessage(error),
-      });
+      this.setSnapshot({ ...this.snapshot, phase: "error", error: errorMessage(error) });
+    } finally {
+      this.historyLoading.delete(conversationId);
     }
   }
 
-  private async refreshCapabilities(input: {
-    className?: string;
-    query?: string;
-    cursor?: number;
-  }): Promise<void> {
-    const request = ++this.capabilityPageRequest;
-    const previous = this.snapshot.catalog;
-    this.setCatalog({
-      phase: "loading",
-      ...(previous.summary ? { summary: previous.summary } : {}),
-      ...(previous.page ? { page: previous.page } : {}),
-    });
-    const search = new URLSearchParams();
-    if (input.className?.trim()) search.set("class", input.className.trim());
-    if (input.query?.trim()) search.set("query", input.query.trim());
-    if (input.cursor !== undefined) search.set("cursor", String(input.cursor));
-    search.set("limit", "40");
-    try {
-      const response = await fetch(`/api/control/capabilities?${search.toString()}`, {
-        credentials: "same-origin",
-        headers: { Accept: "application/json" },
-      });
-      const value = await readJson(response);
-      if (!response.ok) throw new Error(readError(value, response.status));
-      if (!isCapabilityPage(value))
-        throw new Error("The control plane returned an invalid capability page.");
-      if (request !== this.capabilityPageRequest) return;
-      const current = this.snapshot.catalog;
-      this.setCatalog({
-        phase: "ready",
-        ...(current.summary ? { summary: current.summary } : {}),
-        page: value,
-      });
-    } catch (error) {
-      if (request !== this.capabilityPageRequest) return;
-      const current = this.snapshot.catalog;
-      this.setCatalog({
-        phase: "error",
-        ...(current.summary ? { summary: current.summary } : {}),
-        ...(current.page ? { page: current.page } : {}),
-        error: errorMessage(error),
-      });
-    }
-  }
-
-  private async refreshSources(
-    sessionId: string,
-    input: SourceExplorerRequest,
-    request: number,
-  ): Promise<void> {
-    const previous = this.snapshot.sources;
-    this.setSources({
-      phase: "loading",
-      sessionId,
-      request: input,
-      ...(previous.sessionId === sessionId && previous.result ? { result: previous.result } : {}),
-    });
-    try {
-      const response = await fetch(sourceExplorerUrl(sessionId, input), {
-        credentials: "same-origin",
-        headers: { Accept: "application/json" },
-      });
-      const value = await readJson(response);
-      if (!response.ok) throw new Error(readError(value, response.status));
-      const result = sourceExplorerResult(input.operation, value);
-      if (request !== this.sourceExplorerRequest) return;
-      this.setSources({ phase: "ready", sessionId, request: input, result });
-    } catch (error) {
-      if (request !== this.sourceExplorerRequest) return;
-      const current = this.snapshot.sources;
-      this.setSources({
-        phase: "error",
-        sessionId,
-        request: input,
-        ...(current.sessionId === sessionId && current.result ? { result: current.result } : {}),
-        error: errorMessage(error),
-      });
-    }
-  }
-
-  private setCatalog(value: CapabilityExplorerSnapshot): void {
-    this.setSnapshot({ ...this.snapshot, catalog: value });
-  }
-
-  private setSources(value: SourceExplorerSnapshot): void {
-    this.setSnapshot({ ...this.snapshot, sources: value });
+  private mergeReadModel(
+    state: CreatorDashboardState,
+    fromHistoryPage: boolean,
+  ): CreatorDashboardState {
+    const page = state.eventPage;
+    if (!page) return state;
+    const existing = this.loadedEvents.get(page.conversationId) ?? [];
+    const indexed = new Map(existing.map((event) => [event.id, event]));
+    for (const event of page.events) indexed.set(event.id, event);
+    const events = [...indexed.values()].sort((left, right) => left.sequence - right.sequence);
+    this.loadedEvents.set(page.conversationId, events);
+    if (fromHistoryPage || !this.historyCursors.has(page.conversationId))
+      this.historyCursors.set(page.conversationId, page.nextBeforeCursor);
+    const nextBeforeCursor = this.historyCursors.get(page.conversationId);
+    return {
+      ...state,
+      eventPage: {
+        conversationId: page.conversationId,
+        events,
+        ...(page.beforeCursor ? { beforeCursor: page.beforeCursor } : {}),
+        ...(nextBeforeCursor ? { nextBeforeCursor } : {}),
+        complete: page.complete && !nextBeforeCursor,
+      },
+    };
   }
 
   private setSnapshot(value: DashboardSnapshot): void {
     this.snapshot = value;
-    for (const listener of this.listeners) {
-      try {
-        listener();
-      } catch {
-        // Store subscribers only render local state. A broken consumer must
-        // not interrupt fetch completion, event resynchronization, or another
-        // subscriber receiving the canonical snapshot.
-      }
-    }
+    for (const listener of this.listeners) listener();
   }
 }
 
 export function isDashboardState(value: unknown): value is CreatorDashboardState {
-  if (!isRecord(value) || value.kind !== "CreatorDashboardState") return false;
-  return (
-    (value.selectedSessionId === undefined || isIdentifier(value.selectedSessionId)) &&
-    Array.isArray(value.sessions) &&
-    value.sessions.every(isCreatorSessionSummary) &&
-    isPairedStudioState(value.pairedStudio) &&
-    (value.controlView === undefined || isCreatorControlView(value.controlView)) &&
-    Array.isArray(value.stages) &&
-    value.stages.every(isCreatorStage) &&
-    isIsoTimestamp(value.serverTime)
-  );
-}
-
-function isCreatorSessionSummary(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    isIdentifier(value.id) &&
-    isContentHash(value.hash) &&
-    isIdentifier(value.projectId) &&
-    typeof value.prompt === "string" &&
-    isContentHash(value.promptHash) &&
-    isCreatorSessionStatus(value.status) &&
-    isIsoTimestamp(value.createdAt) &&
-    isIsoTimestamp(value.updatedAt) &&
-    (value.latestVerificationStatus === undefined ||
-      ["passed", "failed", "incomplete", "not_run"].includes(
-        value.latestVerificationStatus as string,
-      )) &&
-    (value.failure === undefined ||
-      (isRecord(value.failure) &&
-        typeof value.failure.code === "string" &&
-        value.failure.code.length > 0 &&
-        isContentHash(value.failure.detailHash)))
-  );
-}
-
-function isCreatorStage(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    ["request", "plan", "change", "studio", "review"].includes(value.id as string) &&
-    ["Request", "Plan", "Change", "Studio", "Review"].includes(value.label as string) &&
-    ["pending", "active", "complete", "blocked", "failed"].includes(value.status as string) &&
-    ["creator", "agent", "forge", "studio"].includes(value.authority as string) &&
-    typeof value.detail === "string"
-  );
-}
-
-function isPairedStudioState(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  if (value.status !== "paired" && value.status !== "unpaired" && value.status !== "connecting")
-    return false;
-  if (
-    typeof value.message !== "string" ||
-    !["clear", "pending", "blocked", "unavailable"].includes(
-      value.transactionInventoryStatus as string,
-    )
-  )
-    return false;
-  if (
-    value.status === "paired" &&
-    (!isIdentifier(value.projectId) ||
-      typeof value.projectName !== "string" ||
-      (value.revisionHash !== undefined && !isContentHash(value.revisionHash)) ||
-      !Array.isArray(value.capabilities) ||
-      !value.capabilities.every((capability) => typeof capability === "string") ||
-      !isContentHash(value.manifestHash) ||
-      !isContentHash(value.connectorBuildHash) ||
-      !["verified", "pending", "rejected", "incomplete"].includes(
-        value.attestationStatus as string,
-      ))
-  )
-    return false;
-  return (
-    (value.attestationHash === undefined || isContentHash(value.attestationHash)) &&
-    (value.attestationArtifact === undefined || isArtifactReference(value.attestationArtifact)) &&
-    (value.attestation === undefined || isAttestationSummary(value.attestation))
-  );
-}
-
-function isCreatorControlView(value: unknown): boolean {
-  if (
-    !isRecord(value) ||
-    value.kind !== "CreatorControlView" ||
-    !isIdentifier(value.id) ||
-    !isContentHash(value.hash) ||
-    !isIdentifier(value.creatorSessionId) ||
-    !isContentHash(value.creatorSessionHash) ||
-    !isCreatorSessionStatus(value.status) ||
-    typeof value.title !== "string" ||
-    typeof value.detail !== "string"
-  )
-    return false;
-  if (value.artifact !== undefined && !isReviewArtifact(value.artifact)) return false;
-  if (
-    value.creatorReviewPrompts !== undefined &&
-    (!Array.isArray(value.creatorReviewPrompts) ||
-      !value.creatorReviewPrompts.every((prompt) => typeof prompt === "string"))
-  )
-    return false;
-  if (value.primaryAction !== undefined && !isCreatorAction(value.primaryAction, "primary"))
-    return false;
-  if (value.secondaryAction !== undefined && !isCreatorAction(value.secondaryAction, "secondary"))
-    return false;
-  if (
-    value.artifacts !== undefined &&
-    (!isRecord(value.artifacts) || !Object.values(value.artifacts).every(isArtifactReference))
-  )
-    return false;
-  if (value.verification !== undefined && !isVerification(value.verification)) return false;
-  if (value.mutation !== undefined && !isMutation(value.mutation)) return false;
-  if (value.projectIndex !== undefined && !isProjectIndex(value.projectIndex)) return false;
-  if (value.sourceConsultation !== undefined && !isSourceConsultation(value.sourceConsultation))
-    return false;
-  if (value.projectChange !== undefined && !isProjectChange(value.projectChange)) return false;
-  return value.sourceSync === undefined || isSourceSync(value.sourceSync);
-}
-
-function isReviewArtifact(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    (value.kind === "plan" || value.kind === "change_set") &&
-    isIdentifier(value.id) &&
-    isContentHash(value.hash) &&
-    isContentHash(value.presentationHash) &&
-    value.presentation !== undefined
-  );
-}
-
-function isCreatorAction(value: unknown, intent: "primary" | "secondary"): boolean {
-  return (
-    isRecord(value) &&
-    [
-      "approve_plan",
-      "reject_plan",
-      "approve_and_apply_changes",
-      "reject_changes",
-      "retry_play_verification",
-      "cancel_changes",
-      "refresh_project",
-      "check_source_sync",
-      "revert_source_changes",
-      "accept_result",
-      "reject_and_rollback",
-      "cancel_interrupted_recording",
-    ].includes(value.id as string) &&
-    typeof value.label === "string" &&
-    value.label.length > 0 &&
-    value.intent === intent &&
-    (value.requiresReport === undefined || value.requiresReport === true)
-  );
-}
-
-function isArtifactReference(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    typeof value.locator === "string" &&
-    value.locator.length > 0 &&
-    isContentHash(value.artifactHash) &&
-    isNonNegativeInteger(value.bytes)
-  );
-}
-
-function isVerification(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    isIdentifier(value.id) &&
-    ["passed", "failed", "incomplete", "not_run"].includes(value.status as string) &&
-    typeof value.replayable === "boolean" &&
-    isFailureFacts(value.failureFacts) &&
-    (value.runtimeSummary === undefined || isRuntimeSummary(value.runtimeSummary))
-  );
-}
-
-function isRuntimeSummary(value: unknown): boolean {
-  if (!isRecord(value) || !isIsoTimestamp(value.startedAt) || !isIsoTimestamp(value.endedAt))
-    return false;
-  if (
-    ![
-      value.observedFacts,
-      value.absentFacts,
-      value.unavailableFacts,
-      value.readErrorFacts,
-      value.diagnosticCount,
-    ].every(isNonNegativeInteger)
-  )
-    return false;
-  return (
-    Array.isArray(value.issues) &&
-    value.issues.every(
-      (issue) =>
-        isRecord(issue) &&
-        typeof issue.key === "string" &&
-        ["unavailable", "read_error"].includes(issue.status as string) &&
-        typeof issue.code === "string",
-    )
-  );
-}
-
-function isMutation(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    isIdentifier(value.attemptId) &&
-    [
-      "preflighting",
-      "source_transfer_failed",
-      "prepare_failed",
-      "preflight_failed",
-      "provisional",
-      "matched",
-      "mismatched",
-      "incomplete",
-      "cancelled",
-      "committed",
-      "rolled_back",
-      "recovery_required",
-    ].includes(value.status as string) &&
-    typeof value.replayable === "boolean" &&
-    isNonNegativeInteger(value.projectionFactCount) &&
-    isFailureFacts(value.failureFacts, true)
-  );
-}
-
-function isFailureFacts(value: unknown, requireCode = false): boolean {
-  return (
-    Array.isArray(value) &&
-    value.every(
-      (fact) =>
-        isRecord(fact) &&
-        typeof fact.statement === "string" &&
-        isContentHash(fact.hash) &&
-        (!requireCode || (typeof fact.code === "string" && fact.code.length > 0)),
-    )
-  );
-}
-
-function isProjectIndex(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    ["indexing", "complete", "incomplete", "dirty"].includes(value.status as string) &&
-    ["studio_document", "rojo_source"].includes(value.authorityMode as string) &&
-    isIdentifier(value.connectorEpoch) &&
-    isNonNegativeInteger(value.indexedInstances) &&
-    isNonNegativeInteger(value.indexedBytes) &&
-    isNonNegativeInteger(value.sourceBlobs) &&
-    typeof value.dirty === "boolean" &&
-    (value.manifestHash === undefined || isContentHash(value.manifestHash)) &&
-    (value.rootHash === undefined || isContentHash(value.rootHash)) &&
-    (value.artifact === undefined || isArtifactReference(value.artifact))
-  );
-}
-
-function isSourceConsultation(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    isArtifactReference(value.artifact) &&
-    isContentHash(value.sourceIndexHash) &&
-    isNonNegativeInteger(value.sourceCount) &&
-    isNonNegativeInteger(value.rangeCount) &&
-    isNonNegativeInteger(value.dependencyNodeCount)
-  );
-}
-
-function isProjectChange(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    isIsoTimestamp(value.detectedAt) &&
-    Array.isArray(value.reasons) &&
-    value.reasons.every((reason) => typeof reason === "string") &&
-    (value.notice === undefined || isArtifactReference(value.notice)) &&
-    (value.delta === undefined || isArtifactReference(value.delta)) &&
-    (value.predecessorSessionId === undefined || isIdentifier(value.predecessorSessionId)) &&
-    (value.successorSessionId === undefined || isIdentifier(value.successorSessionId))
-  );
-}
-
-function isSourceSync(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    ["awaiting", "matched", "mismatched", "reverted"].includes(value.status as string) &&
-    isIdentifier(value.attemptId) &&
-    (value.artifact === undefined || isArtifactReference(value.artifact))
-  );
-}
-
-function isCreatorSessionStatus(value: unknown): boolean {
-  return (
-    typeof value === "string" &&
-    [
-      "indexing",
-      "planning",
-      "awaiting_plan_approval",
-      "building",
-      "awaiting_change_approval",
-      "preflighting",
-      "applying",
-      "awaiting_verification",
-      "verifying",
-      "awaiting_verification_retry",
-      "cancelling",
-      "committing",
-      "repairing",
-      "refresh_required",
-      "refreshing",
-      "superseded",
-      "awaiting_source_sync",
-      "awaiting_review",
-      "creator_accepted",
-      "creator_rejected",
-      "rolled_back",
-      "incomplete",
-      "recovery_required",
-    ].includes(value)
-  );
-}
-
-function isIdentifier(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9_:-]+$/u.test(value);
-}
-
-function isIsoTimestamp(value: unknown): boolean {
-  return typeof value === "string" && Number.isFinite(Date.parse(value));
-}
-
-function isAttestationSummary(value: unknown): boolean {
-  if (!isRecord(value) || typeof value.detail !== "string") return false;
-  if (typeof value.findingsTruncated !== "boolean") return false;
-  if (!Array.isArray(value.findings) || value.findings.length > MAX_ATTESTATION_FINDINGS)
-    return false;
-  for (const key of [
-    "totalFacts",
-    "observedFacts",
-    "unavailableFacts",
-    "readErrorFacts",
-    "mismatchedFacts",
-    "missingFacts",
-  ]) {
-    const count = value[key];
-    if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) return false;
-  }
-  return value.findings.every(isAttestationFinding);
-}
-
-function isAttestationFinding(value: unknown): boolean {
-  if (!isRecord(value) || typeof value.key !== "string" || typeof value.code !== "string")
-    return false;
-  return (
-    (value.expected === undefined || isAttestationEvidence(value.expected)) &&
-    (value.received === undefined || isAttestationEvidence(value.received))
-  );
-}
-
-function isAttestationEvidence(value: unknown): boolean {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  )
+  try {
+    assertCreatorDashboardState(value);
     return true;
-  if (Array.isArray(value)) return value.every(isAttestationEvidence);
-  return isRecord(value) && Object.values(value).every(isAttestationEvidence);
-}
-
-function isCatalogSummary(value: unknown): value is StudioCatalogSummary {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Record<string, unknown>;
-  return (
-    candidate.kind === "StudioCatalogSummary" &&
-    isRecord(candidate.catalog) &&
-    isRecord(candidate.coverage) &&
-    isRecord(candidate.manifest)
-  );
-}
-
-function isCapabilityPage(value: unknown): value is StudioCapabilityExplorerPage {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Record<string, unknown>;
-  return (
-    candidate.kind === "StudioCapabilityExplorerPage" &&
-    Array.isArray(candidate.entries) &&
-    isRecord(candidate.page) &&
-    isRecord(candidate.selection)
-  );
-}
-
-function sourceExplorerUrl(sessionId: string, input: SourceExplorerRequest): string {
-  const search = new URLSearchParams({ sessionId });
-  if (input.cursor !== undefined) search.set("cursor", input.cursor);
-  switch (input.operation) {
-    case "documents":
-      search.set("limit", String(SOURCE_DOCUMENT_PAGE_SIZE));
-      return `/api/sources/documents?${search.toString()}`;
-    case "search":
-      search.set("query", requiredSourceText(input.query, "Source search query", 512));
-      if (input.pathPrefix?.trim()) search.set("pathPrefix", input.pathPrefix.trim());
-      search.set("limit", String(SOURCE_SEARCH_PAGE_SIZE));
-      return `/api/sources/search?${search.toString()}`;
-    case "read":
-      search.set(
-        "documentId",
-        requiredSourceText(input.documentId, "Source document identity", 256),
-      );
-      search.set("limit", String(SOURCE_READ_PAGE_BYTES));
-      return `/api/sources/read?${search.toString()}`;
-    case "symbols":
-      search.set("query", requiredSourceText(input.query, "Symbol query", 256));
-      if (input.pathPrefix?.trim()) search.set("pathPrefix", input.pathPrefix.trim());
-      search.set("limit", String(SOURCE_SYMBOL_PAGE_SIZE));
-      return `/api/sources/symbols?${search.toString()}`;
-    case "references":
-      search.set("symbol", requiredSourceText(input.symbol, "Reference symbol", 256));
-      if (input.pathPrefix?.trim()) search.set("pathPrefix", input.pathPrefix.trim());
-      search.set("limit", String(SOURCE_REFERENCE_PAGE_SIZE));
-      return `/api/sources/references?${search.toString()}`;
-    case "dependencies":
-      search.set(
-        "documentId",
-        requiredSourceText(input.documentId, "Dependency root identity", 256),
-      );
-      search.set("direction", input.direction);
-      search.set("maxDepth", String(SOURCE_MAX_DEPENDENCY_DEPTH));
-      search.set("limit", String(SOURCE_DEPENDENCY_PAGE_SIZE));
-      return `/api/sources/dependencies?${search.toString()}`;
-    case "diff":
-      search.set(
-        "operationId",
-        requiredSourceText(input.operationId, "Source edit operation identity", 256),
-      );
-      if (input.changeSetId?.trim())
-        search.set(
-          "changeSetId",
-          requiredSourceText(input.changeSetId, "Change-set identity", 256),
-        );
-      search.set("limit", String(SOURCE_READ_PAGE_BYTES));
-      return `/api/sources/diff?${search.toString()}`;
-  }
-}
-
-function requiredSourceText(value: string, label: string, maximumLength: number): string {
-  const normalized = value.trim();
-  if (!normalized) throw new Error(`${label} is required.`);
-  if (normalized.length > maximumLength) throw new Error(`${label} is too long.`);
-  return normalized;
-}
-
-function sourceExplorerResult(
-  operation: SourceExplorerRequest["operation"],
-  value: unknown,
-): SourceExplorerResult {
-  switch (operation) {
-    case "documents":
-      if (!isSourceDocumentPage(value)) break;
-      return { operation, page: value };
-    case "search":
-      if (!isSourceSearchPage(value)) break;
-      return { operation, page: value };
-    case "read":
-      if (!isSourceReadPage(value)) break;
-      return { operation, page: value };
-    case "symbols":
-      if (!isSourceSymbolPage(value)) break;
-      return { operation, page: value };
-    case "references":
-      if (!isSourceReferencePage(value)) break;
-      return { operation, page: value };
-    case "dependencies":
-      if (!isSourceDependencyPage(value)) break;
-      return { operation, page: value };
-    case "diff":
-      if (!isExactSourceDiffPage(value)) break;
-      return { operation, page: value };
-  }
-  throw new Error("The control plane returned an invalid source explorer page.");
-}
-
-function isSourceDocumentPage(value: unknown): value is StudioSourceDocumentPage {
-  return (
-    hasSourcePageBinding(value) &&
-    Array.isArray(value.documents) &&
-    value.documents.length <= 200 &&
-    value.documents.every(isSourceDocumentLocator)
-  );
-}
-
-function isSourceSearchPage(value: unknown): value is StudioSourceSearchPage {
-  return (
-    hasSourcePageBinding(value) &&
-    typeof value.query === "string" &&
-    Array.isArray(value.matches) &&
-    value.matches.length <= 100 &&
-    value.matches.every(
-      (match) =>
-        isRecord(match) &&
-        isSourceDocumentLocator(match.document) &&
-        isSourceLocation(match.location) &&
-        isSourceRange(match.snippetRange) &&
-        typeof match.snippet === "string",
-    )
-  );
-}
-
-function isSourceReadPage(value: unknown): value is StudioSourceReadPage {
-  return (
-    hasSourcePageBinding(value) &&
-    isSourceDocumentLocator(value.document) &&
-    isNonNegativeInteger(value.totalUtf8Bytes) &&
-    isSourceRange(value.range) &&
-    value.range.endByte <= value.totalUtf8Bytes &&
-    typeof value.source === "string" &&
-    utf8Bytes(value.source) === value.range.endByte - value.range.startByte &&
-    utf8Bytes(value.source) <= SOURCE_READ_PAGE_BYTES
-  );
-}
-
-function isSourceSymbolPage(value: unknown): value is StudioSourceSymbolPage {
-  return (
-    hasSourcePageBinding(value) &&
-    typeof value.query === "string" &&
-    Array.isArray(value.symbols) &&
-    value.symbols.length <= 200 &&
-    value.symbols.every(
-      (symbol) =>
-        isRecord(symbol) &&
-        typeof symbol.id === "string" &&
-        typeof symbol.name === "string" &&
-        (symbol.kind === "local" ||
-          symbol.kind === "function" ||
-          symbol.kind === "type" ||
-          symbol.kind === "export_type") &&
-        isSourceDocumentLocator(symbol.document) &&
-        isSourceLocation(symbol.location),
-    )
-  );
-}
-
-function isSourceReferencePage(value: unknown): value is StudioSourceReferencePage {
-  return (
-    hasSourcePageBinding(value) &&
-    typeof value.symbol === "string" &&
-    Array.isArray(value.references) &&
-    value.references.length <= 200 &&
-    value.references.every(
-      (reference) =>
-        isRecord(reference) &&
-        typeof reference.id === "string" &&
-        typeof reference.name === "string" &&
-        (reference.role === "declaration" || reference.role === "reference") &&
-        isSourceDocumentLocator(reference.document) &&
-        isSourceLocation(reference.location),
-    )
-  );
-}
-
-function isSourceDependencyPage(value: unknown): value is StudioSourceDependencyPage {
-  return (
-    hasSourcePageBinding(value) &&
-    isSourceDocumentLocator(value.root) &&
-    (value.direction === "imports" ||
-      value.direction === "importers" ||
-      value.direction === "closure") &&
-    isNonNegativeInteger(value.maxDepth) &&
-    value.maxDepth <= SOURCE_MAX_DEPENDENCY_DEPTH &&
-    typeof value.truncated === "boolean" &&
-    Array.isArray(value.dependencies) &&
-    value.dependencies.length <= 1_024 &&
-    value.dependencies.every(isSourceDependency) &&
-    Array.isArray(value.discoveredNodes) &&
-    value.discoveredNodes.length <= 1_024 &&
-    value.discoveredNodes.every(isSourceDocumentLocator)
-  );
-}
-
-function isExactSourceDiffPage(value: unknown): value is CreatorExactSourceDiffPage {
-  if (
-    !isRecord(value) ||
-    value.kind !== "CreatorExactSourceDiffPage" ||
-    typeof value.sessionId !== "string" ||
-    value.sessionId.length === 0 ||
-    !isRecord(value.sourceIndex) ||
-    typeof value.sourceIndex.id !== "string" ||
-    !isContentHash(value.sourceIndex.hash) ||
-    !isContentHash(value.sourceIndex.snapshotHash) ||
-    !isRecord(value.changeSet) ||
-    typeof value.changeSet.id !== "string" ||
-    !isContentHash(value.changeSet.hash) ||
-    !isRecord(value.operation) ||
-    typeof value.operation.id !== "string" ||
-    !isSourceDocumentLocator(value.operation.document) ||
-    !isContentHash(value.operation.beforeSourceHash) ||
-    !isContentHash(value.operation.finalSourceHash) ||
-    !isNonNegativeInteger(value.operation.finalByteCount) ||
-    !isRecord(value.edit) ||
-    !isNonNegativeInteger(value.edit.ordinal) ||
-    !isNonNegativeInteger(value.edit.editCount) ||
-    value.edit.editCount < 1 ||
-    value.edit.ordinal >= value.edit.editCount ||
-    !isExactSourceDiffSide(value.edit.before, false) ||
-    !isExactSourceDiffSide(value.edit.replacement, true) ||
-    (value.nextCursor !== undefined &&
-      (typeof value.nextCursor !== "string" || value.nextCursor.length === 0))
-  )
+  } catch {
     return false;
+  }
+}
+
+function isEventPageForDashboard(
+  state: CreatorDashboardState,
+  value: unknown,
+): value is CreatorConversationEventPage {
+  return isDashboardState({ ...state, eventPage: value });
+}
+
+function isWorkAdmission(value: unknown): value is CreatorWorkAdmission {
+  try {
+    assertCreatorWorkAdmission(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function draftKey(conversationId: string | undefined): string {
+  return conversationId ?? "new-conversation";
+}
+
+function draftMatchesTurnRequest(
+  draft: ConversationDraft | undefined,
+  request: CreatorTurnRequest,
+): boolean {
+  if (!draft || draft.text !== request.text) return false;
+  if (draft.modelId !== undefined && draft.modelId !== request.selectedModelId) return false;
   return true;
 }
 
-function isExactSourceDiffSide(value: unknown, replacement: boolean): boolean {
-  if (
-    !isRecord(value) ||
-    !isNonNegativeInteger(value.totalUtf8Bytes) ||
-    !isSourceRange(value.range) ||
-    value.range.endByte > value.totalUtf8Bytes ||
-    typeof value.source !== "string" ||
-    utf8Bytes(value.source) > SOURCE_READ_PAGE_BYTES ||
-    utf8Bytes(value.source) !== value.range.endByte - value.range.startByte
-  )
-    return false;
-  return !replacement || isContentHash(value.sourceHash);
+function admissionIdentity(
+  kind: AdmissionKind,
+  input:
+    | Omit<CreatorTurnRequest, "kind" | "idempotencyKey">
+    | Omit<CreatorActionRequest, "kind" | "idempotencyKey">,
+): string {
+  return `${kind}:${canonicalJson(input)}`;
 }
 
-function hasSourcePageBinding(value: unknown): value is Record<string, unknown> & {
-  indexId: string;
-  indexHash: string;
-} {
-  return (
-    isRecord(value) &&
-    typeof value.indexId === "string" &&
-    value.indexId.length > 0 &&
-    isContentHash(value.indexHash) &&
-    (value.nextCursor === undefined ||
-      (typeof value.nextCursor === "string" && value.nextCursor.length > 0))
-  );
+function serializeRequest(request: CreatorTurnRequest | CreatorActionRequest): string {
+  const serialized = JSON.stringify(request);
+  if (serialized === undefined) throw new Error("Forge could not serialize the control request.");
+  return serialized;
 }
 
-function isSourceDocumentLocator(value: unknown): value is StudioSourceDocumentLocator {
-  return (
-    isRecord(value) &&
-    typeof value.documentId === "string" &&
-    value.documentId.length > 0 &&
-    typeof value.path === "string" &&
-    value.path.length > 0 &&
-    typeof value.className === "string" &&
-    value.className.length > 0 &&
-    (value.executionContext === "client" ||
-      value.executionContext === "server" ||
-      value.executionContext === "shared") &&
-    isContentHash(value.sourceHash)
-  );
+/**
+ * Retry matching ignores caller property order while preserving the original
+ * JSON body separately. Undefined object fields follow JSON.stringify and are
+ * omitted, so two callers that would send the same request share one key.
+ */
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value === "string" || typeof value === "boolean")
+    return JSON.stringify(value);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value))
+      throw new Error("Forge control request contains a non-finite number.");
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value))
+    return `[${value
+      .map((entry) => (entry === undefined ? "null" : canonicalJson(entry)))
+      .join(",")}]`;
+  if (isRecord(value)) {
+    const entries = Object.entries(value)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries
+      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
+      .join(",")}}`;
+  }
+  throw new Error("Forge control request contains a non-JSON value.");
 }
 
-function isSourceLocation(value: unknown): value is StudioSourceLocation {
-  return (
-    isRecord(value) &&
-    isNonNegativeInteger(value.startByte) &&
-    isNonNegativeInteger(value.endByte) &&
-    value.endByte >= value.startByte &&
-    isNonNegativeInteger(value.startLine) &&
-    isNonNegativeInteger(value.startColumn) &&
-    isNonNegativeInteger(value.endLine) &&
-    isNonNegativeInteger(value.endColumn) &&
-    (value.endLine > value.startLine ||
-      (value.endLine === value.startLine && value.endColumn >= value.startColumn))
-  );
+function withoutError(snapshot: DashboardSnapshot): Omit<DashboardSnapshot, "error"> {
+  const { error: _error, ...without } = snapshot;
+  return without;
 }
 
-function isSourceRange(value: unknown): value is { startByte: number; endByte: number } {
-  return (
-    isRecord(value) &&
-    isNonNegativeInteger(value.startByte) &&
-    isNonNegativeInteger(value.endByte) &&
-    value.endByte >= value.startByte
-  );
+function withoutPendingRequest(
+  snapshot: DashboardSnapshot,
+): Omit<DashboardSnapshot, "pendingRequest"> {
+  const { pendingRequest: _pendingRequest, ...without } = snapshot;
+  return without;
 }
 
-function isSourceDependency(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    isSourceDocumentLocator(value.source) &&
-    isContentHash(value.expressionHash) &&
-    isSourceLocation(value.location) &&
-    (value.resolution === "resolved" ||
-      value.resolution === "dynamic" ||
-      value.resolution === "unresolved") &&
-    (value.target === undefined || isSourceDocumentLocator(value.target)) &&
-    (value.reason === undefined || typeof value.reason === "string")
-  );
-}
-
-function isContentHash(value: unknown): value is string {
-  return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
-}
-
-function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function utf8Bytes(value: string): number {
-  return new TextEncoder().encode(value).byteLength;
+function makeIdempotencyKey(): string {
+  idempotencySequence += 1;
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
+    return crypto.randomUUID();
+  return `dashboard-${Date.now()}-${idempotencySequence}`;
 }
 
 async function readJson(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (!text) return undefined;
+  const body = await response.text();
+  if (!body) return undefined;
   try {
-    return JSON.parse(text) as unknown;
+    return JSON.parse(body) as unknown;
   } catch {
-    return { message: text };
+    return body;
   }
 }
 
 function readError(value: unknown, status: number): string {
-  if (value && typeof value === "object" && "message" in value) {
-    const message = (value as { message?: unknown }).message;
-    if (typeof message === "string" && message.trim()) return message;
-  }
-  return `Control request failed (${status}).`;
-}
-
-function isActionOutcomeUnknown(value: unknown): boolean {
-  return isRecord(value) && value.kind === "CreatorControlActionOutcomeUnknown";
-}
-
-function readCursor(data: string, lastEventId: string, fallback: number): number {
-  if (lastEventId && Number.isInteger(Number(lastEventId))) return Number(lastEventId);
-  try {
-    const value: unknown = JSON.parse(data);
-    if (value && typeof value === "object" && "cursor" in value) {
-      const cursor = (value as { cursor?: unknown }).cursor;
-      if (typeof cursor === "number" && Number.isInteger(cursor) && cursor >= 0) return cursor;
-    }
-  } catch {
-    // The control plane may use an event name without a JSON body.
-  }
-  return fallback;
+  if (isRecord(value) && typeof value.message === "string") return value.message;
+  if (typeof value === "string" && value.trim()) return value;
+  return `The control plane rejected this request (${status}).`;
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "The control request failed.";
+  return error instanceof Error ? error.message : "The control plane request failed.";
+}
+
+function readCursor(data: string, lastEventId: string, fallback: number): number {
+  const candidates = [lastEventId, data];
+  for (const candidate of candidates) {
+    const parsed = Number(candidate);
+    if (Number.isSafeInteger(parsed) && parsed >= 0) return parsed;
+    try {
+      const parsedJson = JSON.parse(candidate) as { cursor?: unknown };
+      if (typeof parsedJson.cursor === "number" && Number.isSafeInteger(parsedJson.cursor))
+        return parsedJson.cursor;
+    } catch {
+      // Event data may be an opaque invalidation marker.
+    }
+  }
+  return fallback;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

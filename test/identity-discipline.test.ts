@@ -13,7 +13,11 @@ test("Forge source, connector, and fixtures carry no release or schema numbering
     /schemaVersion|protocolVersion|pluginVersion|studioVersion|FORGE_VERSION|STUDIO_PROTOCOL_VERSION|STUDIO_PLUGIN_VERSION|PROTOCOL_SCHEMA|PROTOCOL_VERSION|\/v\d+\//;
 
   for (const path of files) {
-    assert.doesNotMatch(readFileSync(path, "utf8"), forbidden, path);
+    const forgeOwnedMaterial = readFileSync(path, "utf8").replaceAll(
+      /https:\/\/[^\s"'`)]+/g,
+      "<external-url>",
+    );
+    assert.doesNotMatch(forgeOwnedMaterial, forbidden, path);
   }
   assert.equal(existsSync(resolve(root, "packages/version")), false);
 

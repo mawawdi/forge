@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:acceptance": "playwright test"
   },
   "dependencies": {
     "@fontsource-variable/spline-sans": "^5.2.6",
@@ -17,6 +18,8 @@
     "vite": "^7.1.4"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
+    "@playwright/test": "1.55.0",
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "^16.3.0",
     "@types/react": "^19.1.12",

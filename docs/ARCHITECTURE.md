@@ -6,28 +6,170 @@ Forge has one current clean-break artifact and message shape. `kind` discriminat
 
 ## Current implementation
 
-The primary product path is prompt-only and Studio-native, with creator control in a local React dashboard. The creator supplies one prompt against the open place. Forge first produces a read-only plan and fully visible verification charter. Only after the creator approves that exact hash does a separate builder stage a typed change set. The open Studio document owns ordinary model/property work. An explicitly opted-in Rojo map additionally marks exact mapped source paths that may use the guarded filesystem writer. The sealed plan, build contract, and change set derive one writer from their exact targets; a mixed-authority batch is rejected before approval.
+The primary product path is conversation-first and Studio-native, with creator
+control in a local React dashboard. A hash-bound creator turn begins new work,
+clarification, plan refinement, or a follow-up only when its current
+`CreatorControlView` permits that turn. Forge first produces a read-only plan
+and fully visible verification charter. Only after the creator approves that
+exact hash does a separate builder stage a typed change set. The open Studio
+document owns ordinary model/property work. An explicitly opted-in Rojo map
+additionally marks exact mapped source paths that may use the guarded filesystem
+writer. The sealed plan, build contract, and change set derive one writer from
+their exact targets; a mixed-authority batch is rejected before approval.
 
 Every paired connector receives one opaque-object identity epoch derived from tagged, length-delimited project-index canonical material over the exact Studio session ID, paired project ID, and connector build hash. TypeScript and Luau hash that same material and share generated vectors. No endpoint may substitute JSON encoding or delimiter concatenation, and changing any of the three bindings invalidates every `studio_ephemeral` handle. Project-index projections and the connector registry must therefore agree by construction before collection begins.
+
+The paired project ID itself is derived by one generated authority recipe used
+by pairing, heartbeat identity adoption, Link/Fork, the bridge, and conversation
+controls. An unlinked local identity always includes the exact pairing session;
+linked local identity and published universe/place identity retain their durable
+scope. Read-only heartbeat adoption cannot change an unchanged identity's epoch.
+Link/Fork controls bind that epoch, so a control from an earlier pairing cannot
+authorize a new connector.
+
+Rejected Link/Fork commands carry exact command-bound
+`StudioProjectIdentityRejectionEvidence`. Only an observed approved before-identity,
+empty identity-transaction inventory, and proven absence of any recording release
+the exact pending reservation. Open/unknown/unavailable observations retain
+recovery authority; stale or duplicate settlements cannot release another
+operation. The immutable identity job stores bounded readable diagnostics and
+the complete rejected command/settlement. Explicit retry is legal only after
+this no-effect proof or an undispatched job; old pairing inventory is not proof
+of an ambiguous command's outcome. Technical details can retrieve verified
+identity-job artifacts before any conversation exists, and a failure card stays
+visible even when it has no legal action.
 
 Project indexing is cooperative and terminating. Every declared root produces at least one shard, but an absent or empty root uses a one-shot empty-shard cursor that cannot repeat. Shard admission uses the exact incremental length of the tagged canonical material instead of repeatedly rematerializing a growing shard. Collection, canonical materialization, and transport encoding yield at bounded intervals and recheck the detector epoch and indexing deadline so a large valid place cannot monopolize Studio's plugin thread. Transport JSON uses a buffered encoder with an explicit empty-object marker; semantic hashes remain based on the tagged, length-delimited canonical form. Generated project-property metadata is a canonical ordered sequence, separate from the name-keyed writer lookup. Every indexed instance whose class is in the observation manifest must declare exactly that class's complete applicable property-name set and a class-valid canonical value for every declared property. Missing, extra, duplicate, unsorted, or invalid property coverage makes the index incomplete before reconciliation; it can never be converted into a mutation mismatch.
 
 Project-index collection and publication are separate authority boundaries. The connector reads a whole capture against one detector epoch; a callback during that read discards the attempt and restarts the whole read under the same overall resource deadline. Once the read completes at a stable epoch, its canonical shards, revision, and capture hash are immutable historical evidence. Transport has a separate bounded deadline and never consults mutable detector state, so a delayed engine callback cannot retroactively invalidate already-captured bytes merely because a larger place takes longer to stream. After transport, the capture becomes the connector's current command gate only if the detector epoch is still unchanged. Otherwise it remains valid transaction evidence, the durably queued dirty notice blocks progress, and the host obtains a fresh complete capture before Play or finalization. A transaction notice received before direct post-Apply state exists remains an unadjudicated barrier; Forge never compares it with the unrelated pre-Apply snapshot or fabricates an incomplete verdict.
 
+### Creator Conversation presentation boundary
+
+`packages/creator-conversation` owns the clean-break durable presentation
+records: a project conversation, creator/agent turns, work-episode snapshots,
+events, plan revisions, creator-authority memory revisions, citations, jobs,
+and hash-bound control views. It is an append-only immutable artifact chain per
+conversation. Each append materializes all immutable bodies and the linking
+commit before atomically replacing one private head file. That head binds the
+exact latest commit; every load walks the predecessor hashes to sequence one
+and rejects a cycle, skipped sequence, altered snapshot, or mismatched related
+record. No historical session UI shape or compatibility reader participates.
+
+The conversation coordinator is a presentation/control adapter over
+`CreatorSessionCoordinator`, which remains the sole Studio action authority.
+The lower coordinator derives `CreatorTransactionControlView` and its bounded
+transaction actions (including their primary/secondary intents); the
+conversation coordinator maps that state to durable events and the browser-safe
+public `CreatorControlView`. Browser actions carry the public view's ID/hash
+and an exact authorizing action instance; a card cannot make an action legal by
+rendering a button. Event attachments reference only sealed artifacts.
+Host-issued planner citation handles become source-range or project-fact
+citations with exact revision/hash provenance, and the host—not a provider—
+writes the bounded next-turn context artifact.
+
+The current dashboard groups independent conversations under Studio projects.
+Conversation IDs identify chats, while linked/published identity identifies the
+place; a hash-bound New conversation action creates a chat without changing
+Studio or calling a model. Each chat has separate turns, decisions, and evidence.
+Explicit preferences share the original project conversation's memory authority,
+exposed through a dedicated settings control view. They enter every chat's bounded
+context, while another chat's turns and evidence do not. Project-scoped control
+cache invalidation prevents stale admission when another chat owns unfinished work.
+
+The React surface has a project sidebar, scrolling chat, anchored composer,
+one-click Project settings modal, and lazy Technical Details sheet. Internal
+turn kinds remain protocol data; the composer automatically uses the current
+permitted kind. The journal-derived activity read model shows completed tool
+steps and the current phase without exposing provider reasoning. A service
+interval emits invalidations only while foreground work exists. It uses one module-level
+`useSyncExternalStore` store and one SSE invalidation stream; the sheet can
+show event bindings, citation targets, and raw JSON for attached artifacts. It
+does not reintroduce the former workbench as a second route.
+
+Work admission is durable, but execution is foreground-only. A
+`CreatorWorkJob` reserves a globally unique, immutable `AgentExecutionSlot`
+before each provider-bearing planner, builder, or repair phase. The slot binds
+one AgentRun and the journal ID derived exactly from that run; it cannot be
+reassigned after a restart. Its append-only `AgentExecutionJournal` records
+hash-linked `request_intent`, `response_received`, `batch_validated`,
+`tool_completed`, and `terminal` boundaries with exact host state.
+
+Jobs run only in the live local creator service, not a daemon or detached
+worker. Restart reads the journal, never synthesizes an intent: no head is
+`never_dispatched` and permits an explicit fresh **Resume work** run; a
+`request_intent` without `response_received`, or a `tool_execution_intent`
+without matching `tool_completed`, remains `outcome_unknown` and permits an
+explicit fresh **Retry work** run. A fully persisted provider response with
+all tool completions and no pending execution intent instead permits an
+explicit **Resume work** that consumes that exact response/tool boundary in the
+same reserved AgentRun and journal, without re-dispatching the response or
+reconstructing opaque provider continuation. A terminal journal may finish
+only deterministic already-persisted local publication. No restart, journal
+load, or stale/duplicate input can automatically dispatch a provider, Apply,
+commit, cancel, rollback, or Play arm.
+
+Model selection is a sealed, host-owned four-entry registry: `Muse Spark 1.3`
+(`meta/muse-spark-1.3-contributor`), `GLM 5.3 Flash`
+(`z-ai/glm-5.3-flash`), `DeepSeek V4 Flash`
+(`deepseek/deepseek-v4-flash-0731`), and `GPT-5.6 Luna`
+(`openai/gpt-5.6-luna`, the default). Every entry requires tools and disables
+model/provider fallback. Catalog evidence controls availability; an unavailable
+choice is rejected rather than replaced, and an accepted agent turn requires
+the response to attribute the requested model and a serving provider exactly.
+
+Provider tool definitions explicitly set `strict: false` on the HTTP wire so
+Forge's optional fields retain omission semantics. The pinned OpenRouter SDK
+does not forward the AI SDK per-tool strict flag, so the transport supplies the
+same named schemas through its call-level provider passthrough. Forge still
+validates each complete batch and enforces exact parent selectors and
+revision-bound pagination locally. Failed conversational work retains the
+runtime failure code and a bounded explanation from its immutable AgentRun;
+live activity derives failed-step details from the execution journal. Planning
+remains read-only and must produce an answer, clarification, or reviewed plan
+before the separate build and Studio approval actions.
+
+Activity summaries share the browser contract's 240-byte UTF-8 limit, including
+tool errors and multilingual queries. Structured diagnostics expose their short
+message; complete payloads stay in the journal. Settings and project-navigation
+actions never force internal job events into the transcript. Outcome publication
+checks artifact hashes against the artifact store's exact canonical bytes
+(including the newline), while attachment IDs and semantic hashes come from the
+sealed outcome body. Artifact-file identity and semantic record identity remain
+distinct.
+
+Studio identity uses a separate protocol rather than the authoring manifest.
+For a local place, an absent `_forgeProjectId` can be **Link**ed to a fresh
+Forge project ID and an observed ID can be **Fork**ed to a different one, each
+through a host-issued exact-state ChangeHistory transaction with direct
+readback, receipt, acknowledgement, and recovery cursor. Saving a linked local
+place under another name carries the copied ID until the creator explicitly
+forks it. A published place instead derives identity from its exact universe and
+place IDs; an embedded local ID never silently continues into that published
+conversation. Link, Fork, and the local-to-published continuity choice are all
+explicit, hash-bound creator actions; none is inferred from a filename or
+connector heartbeat.
+
+This boundary is presentation-ready, not Studio-demonstrated. Node, dashboard,
+plugin-module, and formal tests exercise the contracts and synthetic paths but
+make no provider request or Studio action. One creator-run Studio canary must
+exercise pairing, conversation continuity, a permitted action, and the
+transaction/Play boundary before any claim that this new shell has completed a
+live end-to-end path.
+
 Registered experiments remain a separate benchmark path. They use file-backed seeds and evaluator-only material to produce scoped evidence; those task JSON files are not product inputs for an ordinary creator session.
 
 ```mermaid
 flowchart TB
-    creator[Creator in local dashboard] --> prompt[One creator prompt]
-    dashboard[React evidence workbench] --> control_server[Loopback CreatorControlServer]
+    creator[Creator in local dashboard] --> prompt[Hash-bound creator turn]
+    dashboard[React Creator Conversation] --> control_server[Loopback CreatorControlServer]
     creator --> dashboard
     control_server --> coordinator
     studio[Open Studio place] --> index[Complete Merkle-sharded StudioProjectIndex]
     index --> ownership[Exact Studio object identities and authority map]
     rojo[Optional private Rojo authority manifest] -. one source-writer mode .-> ownership
 
-    subgraph creator_path[Prompt-only creator session]
-        prompt --> coordinator[Creator coordinator]
+    subgraph creator_path[Conversation-driven creator work episode]
+        prompt --> coordinator[Conversation coordinator]
         coordinator --> worker[LocalCreatorAgentWorker: local process, no isolation]
         worker --> planner[Read-only planner AgentRun]
         index --> planner
@@ -88,7 +230,7 @@ flowchart TB
 
 The two paths share the native model runtime, Studio bridge, factual observation substrate, and evidence infrastructure. They do not share semantic authority. A creator charter is a visible, creator-approved hypothesis; a benchmark evaluator remains private and may grade only its registered treatment.
 
-### Prompt-only creator sequence
+### Conversation-driven creator sequence
 
 ```mermaid
 sequenceDiagram
@@ -101,9 +243,9 @@ sequenceDiagram
     participant Model as Native planner or builder
     participant Studio as Live Studio place
 
-    Creator->>Dashboard: Enter one prompt
-    Dashboard->>Control: Hash-bound CreatorControlAction
-    Control->>Forge: Authenticated action
+    Creator->>Dashboard: Send a permitted creator turn
+    Dashboard->>Control: Hash-bound turn or action request
+    Control->>Forge: Authenticate and durably admit foreground work
     Forge->>Studio: Collect complete sharded project index
     Forge->>Worker: Immutable phase input and worker descriptor
     Worker->>Model: Prompt, catalog, ownership, authoring constraints
@@ -112,8 +254,15 @@ sequenceDiagram
     Model-->>Worker: Typed changes and visible charter fields
     Worker->>Worker: Derive exact prompt goal and require executable verification closure
     Worker-->>Forge: Plan, AgentRun, and trace references
-    Forge-->>Dashboard: CreatorDashboardState with exact plan and two actions
-    Creator->>Dashboard: Approve exact plan view
+    Forge-->>Dashboard: Immutable plan event and bounded hash-bound action array
+    alt creator refines the proposal
+        Creator->>Dashboard: Change the plan with exact revision binding
+        Dashboard->>Control: Admit refinement turn and foreground job atomically
+        Forge->>Worker: Produce a new immutable plan revision
+        Forge-->>Dashboard: Superseding plan event with fresh actions
+    else creator builds the proposal
+        Creator->>Dashboard: Build this exact plan revision
+    end
     Forge->>Worker: Approved plan and hash-bound build contract
     Worker->>Model: Approved plan semantics and contract
     opt approved replacement of an existing script
@@ -123,8 +272,8 @@ sequenceDiagram
     Model-->>Worker: planChangeId plus creative payload and local verification
     alt artifact is seal-ready
         Worker-->>Forge: Change set, sealed AgentRun, and trace references
-        Forge-->>Dashboard: CreatorControlView with exact diff and approve-and-apply
-        Creator->>Dashboard: Approve and immediately apply exact change set
+        Forge-->>Dashboard: Immutable change event with exact diff and bounded actions
+        Creator->>Dashboard: Apply changes from the event-bound action
         Forge->>Forge: Compile and validate the complete Play Solo proof program
         Forge->>Studio: Send sealed change set, before-state projection, and mutation projection
         Studio->>Studio: Independently recompile projection and run detached canary
@@ -187,7 +336,7 @@ The current passive handoff is a clean-break `ForgePassiveRuntimeDirectV2` setti
 
 Runtime evidence incompleteness is non-destructive and visible. A short but valid series prefix captured at creator Stop is an observed fact and is graded as captured; an absent projected target is authoritative complete evidence and can fail the charter. Only unavailable/read-error, missing, duplicate, extra, invalid-order, or invalid-binding evidence is incomplete. Forge persists that draft, leaves the already-matched provisional recording open, moves to `awaiting_verification_retry`, and shows the completed interval, observed/absent/unavailable/error counts, diagnostics, immutable artifact, and exact gaps. The only actions are a view-hash-bound **Retry Play Verification** or **Cancel Changes**. Retry binds the incomplete draft, matched mutation attempt, stopped/finalized receipt, revision, and exact open recording before arming once. There is no automatic re-arm path.
 
-The only current private creator store is `.forge/creator`; there is no legacy reader, migration, or alternate storage shape. Deleting `.forge` is a deliberate hard reset performed only while the control process is stopped, and first use creates a fresh current store. Bundles reference the exact creator request, manifests, pairing attestations, projections, envelopes, reconciliations, mutation attempts, execution plans, creator reports, AgentRuns, and traces through root-relative `ArtifactReference`s. There is no auxiliary prompt sidecar whose lifecycle can diverge from the session bundle. Observation history is chronological, not a set: consecutive identical captures are a no-op, while A → B → A records all three authoritative boundaries and leaves the rollback state as the current tail. A failed detached canary is retained as an incomplete attempt with exact before-state and failure facts; it is replayable only to the explicit absence of a mutation verdict. A mid-batch execution failure is likewise retained without a verdict only after its same-call cancellation, complete final state, and durable receipt are stored. The in-flight transaction cursor contains references only—including an immutable execution-failure reference—and is persisted before a recording may open or while a receipt remains unacknowledged. On every load, Forge verifies regular-file and symlink safety, canonical bytes, hashes, and graph bindings. If a process stopped after a settled mutation attempt was persisted but before the session tail advanced, startup replays that attempt and advances only local metadata to its persisted final state; it never repeats the Studio operation or provider work. Provider-free mutation replay validates and recompiles against the immutable manifest and build-policy snapshot stored for that attempt, not whichever manifest happens to be current after later capability growth; live authoring always uses the current generated manifest. It then regrades readback and the allowed state delta and reproduces reconciliation status and failure-fact hashes. Verification replay additionally requires a linked exactly replayable `matched` mutation. AgentRun and trace artifacts carry real root, provider-turn, and tool-call intervals. Final judgment is an immutable creator-authority `CreatorReviewReport`, never a source of machine claims.
+The only current private creator store is `.forge/creator`; there is no legacy reader, migration, or alternate storage shape. It holds both creator-session evidence and the clean-break conversation heads/immutable commit artifacts. Deleting `.forge` is a deliberate hard reset performed only while the control process is stopped, and first use creates a fresh current store. Bundles reference the exact creator request, manifests, pairing attestations, projections, envelopes, reconciliations, mutation attempts, execution plans, creator reports, AgentRuns, and traces through root-relative `ArtifactReference`s. There is no auxiliary prompt sidecar whose lifecycle can diverge from the session bundle. Observation history is chronological, not a set: consecutive identical captures are a no-op, while A → B → A records all three authoritative boundaries and leaves the rollback state as the current tail. A failed detached canary is retained as an incomplete attempt with exact before-state and failure facts; it is replayable only to the explicit absence of a mutation verdict. A mid-batch execution failure is likewise retained without a verdict only after its same-call cancellation, complete final state, and durable receipt are stored. The in-flight transaction cursor contains references only—including an immutable execution-failure reference—and is persisted before a recording may open or while a receipt remains unacknowledged. On every load, Forge verifies regular-file and symlink safety, canonical bytes, hashes, graph bindings, conversation commit order, and every referenced agent-execution journal. If a process stopped after a settled mutation attempt was persisted but before the session tail advanced, startup replays that attempt and advances only local metadata to its persisted final state; it never repeats the Studio operation or provider work. Provider-free mutation replay validates and recompiles against the immutable manifest and build-policy snapshot stored for that attempt, not whichever manifest happens to be current after later capability growth; live authoring always uses the current generated manifest. It then regrades readback and the allowed state delta and reproduces reconciliation status and failure-fact hashes. Verification replay additionally requires a linked exactly replayable `matched` mutation. AgentRun and trace artifacts carry real root, provider-turn, and tool-call intervals. Final judgment is an immutable creator-authority `CreatorReviewReport`, never a source of machine claims.
 
 Restart is fail-closed. Interrupted worker phases become `incomplete / control_process_interrupted`; any phase that might own a recording becomes `recovery_required`. Creator control views are ephemeral, so after restart the coordinator reconstructs their detail from the durable session, approvals, transaction cursor, mutation attempts, verification records, and failure binding. A terminal or recovery view may never fall back to a generic ready message: it must state the proven interruption boundary, the evidence that does or does not exist, the prohibited automatic actions, and whether the only valid next step is recovery or a fresh request. Plugin settings are treated as a restricted external JSON store: three mutation keys plus the single current passive-runtime key are punctuation-free, every phase writes a fresh immutable snapshot, and Forge immediately reads back the exact recording/finalization binding before crossing the next Studio boundary. A clean-break connector ignores removed key names outright. Settled notification-only metadata from a different manifest may be discarded without calling Studio because it cannot represent an open recording. A possibly open recording cursor is never discarded or reinterpreted: pairing fails closed while preserving the cursor unless its manifest is the current generated contract and its exact persisted project-index graph is available. Recovery messages, observations, cancellation, and acknowledgement all require that same current manifest. Installing a new manifest while a transaction may be open is therefore prohibited; recover it with its exact connector build first. The opening intent must be durable before `TryBeginRecording`, and Studio's returned opaque recording ID must replace that intent durably before the first place operation. The connector never automatically commits or cancels on startup, unpair, unload, or transport loss.
 
@@ -204,7 +353,9 @@ or deliver a deferred acknowledgement cannot revise it or synthesize a second
 verdict. Detached coordinator tasks and HTTP request/socket callbacks terminate
 inside non-throwing supervisors. A lost state-changing browser response is an
 ambiguous delivery outcome; the dashboard performs one canonical read-only
-refresh and never resubmits the action automatically.
+refresh and never resubmits the action automatically. If the creator retries,
+it sends the retained byte-identical request body with the same idempotency key,
+not a reconstructed request with a new key.
 
 Command transport has its own evidence boundary. `/poll` returns a retained canonical command plus its SHA-256 rather than destructively dequeuing it. The plugin verifies those bytes before decoding, caches an exact bounded `StudioCommandSettled` receipt before transport, and reports either `executed` or `rejected`; an identical redelivery replays that terminal settlement without rerunning the handler, while a same-ID/different-body delivery is rejected. The bridge removes the exact queue head for either disposition, resolves or immediately rejects its sender waiter, and never routes the transport receipt through semantic subscribers. New clients begin at the session's advertised base cursor so pairing attestation and transaction inventory cannot be skipped, and cursor expiry is an explicit resynchronization failure. A settlement proves only the command handler's terminal transport disposition—its classification and diagnostic detail never establish Studio state. Semantic Prepare, preflight, mutation, recovery, and finalization messages remain the sole evidence for those claims.
 
@@ -216,20 +367,22 @@ ChangeHistory finalization is explicitly two-step in the current V6 plugin store
 
 ### Current implementation inventory
 
-| Boundary              | Concrete implementation                                                                    | Public identity or command                                                                                                                                    | Current status                                                                                                                                                                                                |
-| --------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Identity discipline   | contracts, `studio-evidence`, and canonical hashing                                        | one current shape; `kind`, content-addressed IDs, generated manifest/build/projection hashes                                                                  | Implemented; clean-break readers only                                                                                                                                                                         |
-| API accountability    | pinned catalog compiler, coverage generator, `studio-evidence/catalog`                     | `roblox-api-catalog:check`, `studio-evidence:check`, `roblox-api-coverage:check`, `forge studio api-status`, `forge studio capabilities`                      | Implemented; 9,685/9,685 class/datatype/enum/global/library entries classified, exact source/catalog/coverage drift fails offline checks                                                                      |
-| Prompt-only contracts | `packages/creator-session`                                                                 | `CreatorSession`, executable `CreatorPlan`, `VerificationCharter`, `CreatorBuildContract`, `CreatorChangeSet`                                                 | Implemented and locally tested; planner inspection, contract-scoped source reads, exact prompt goal, initialization, step coverage, output checks, source syntax, and plan-bound builder contract fail closed |
-| Worker seam           | `creator-session/worker.ts`, `agent-runtime`                                               | `CreatorAgentWorker`; bound `local_process / none` descriptor in AgentRun and harness evidence                                                                | Implemented with `LocalCreatorAgentWorker`; sealed and unsealed phase outcomes persist; microVM worker unimplemented                                                                                          |
-| Creator orchestration | `creator-session/coordinator.ts`                                                           | `forge creator ...`; canonical `CreatorControlView`                                                                                                           | Implemented and fake-runtime tested; fail-closed restart classification and one active session per paired Studio project                                                                                      |
-| Studio authority      | generated Luau dispatch plus `StudioAuthoring.luau`                                        | manifest-bound preflight, provisional apply, direct readback, commit/cancel/recovery receipts                                                                 | Implemented; no automatic restart mutation                                                                                                                                                                    |
-| Creator control/UI    | `packages/creator-control`, `dashboard`, `plugin/src/Forge/Runtime.luau`                   | standalone loopback API and local evidence workbench over canonical `CreatorControlView`; authenticated catalog/capability explorer; thin connector in Studio | Implemented and locally tested; the dashboard owns prompts, review, consent, evidence, progress, history, and read-only capability accountability                                                             |
-| Local checks          | `luau-toolchain`, `verifier`                                                               | `forge.verify` and creator `forge.verify` tool                                                                                                                | Implemented                                                                                                                                                                                                   |
-| Studio evidence       | `studio-evidence`, `studio-protocol`, `studio-bridge`, `studio-runtime`, plugin            | one projection/envelope/fact algebra for exact mutation/runtime facts, plus one sharded project-index graph for whole-project truth                           | Implemented with explicit presence, 33 proof-closed classes, 370 catalog-derived writable property applications, five bounded runtime capabilities, and generated TS/Luau closure                             |
-| Registered benchmarks | `experiments`, `agent-runtime`, `proofs`                                                   | experiment CLI plus caller-supplied registration and proof artifacts                                                                                          | Current contracts implemented and covered by synthetic treatment regressions; predecessor live evidence remains historical                                                                                    |
-| Evidence              | `artifact-store`, creator mutation/verification replay, `agent-runtime`, `flight-recorder` | immutable graph, provider-free mutation and verification replay, runtime-owned tool evidence, exact intervals, creator reports                                | Implemented and locally tested; the Door Control ledger is documentary predecessor evidence whose backing store was deliberately removed                                                                      |
-| Demo place seeds      | `examples/status-beacon`, `examples/door-control`, `examples/orbital-freight-airlock`      | solution-free buildable seeds with no task/evaluator JSON                                                                                                     | Status Beacon and Door Control are historical evidence; Orbital Freight Airlock is the next interconnected client/server proof                                                                                |
+| Boundary               | Concrete implementation                                                                    | Public identity or command                                                                                                                                                     | Current status                                                                                                                                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity discipline    | contracts, `studio-evidence`, and canonical hashing                                        | one current shape; `kind`, content-addressed IDs, generated manifest/build/projection hashes                                                                                   | Implemented; clean-break readers only                                                                                                                                                                          |
+| API accountability     | pinned catalog compiler, coverage generator, `studio-evidence/catalog`                     | `roblox-api-catalog:check`, `studio-evidence:check`, `roblox-api-coverage:check`, `forge studio api-status`, `forge studio capabilities`                                       | Implemented; 9,685/9,685 class/datatype/enum/global/library entries classified, exact source/catalog/coverage drift fails offline checks                                                                       |
+| Creator-work contracts | `packages/creator-session`                                                                 | `CreatorSession`, executable `CreatorPlan`, `VerificationCharter`, `CreatorBuildContract`, `CreatorChangeSet`                                                                  | Implemented and locally tested; planner inspection, contract-scoped source reads, exact prompt goal, initialization, step coverage, output checks, source syntax, and plan-bound builder contract fail closed  |
+| Durable conversation   | `packages/creator-conversation`, `creator-control/conversation-coordinator.ts`             | `CreatorProjectConversation`, immutable turns/events/commits, citations, work jobs, `AgentExecutionJournal`, `CreatorTurnContract`, public `CreatorControlView`                | Implemented and locally tested; strict per-conversation hash chain/head reconstruction, host-issued bounded context/citations, exact action legality, four-model registry, journaled foreground-only execution |
+| Worker seam            | `creator-session/worker.ts`, `agent-runtime`                                               | `CreatorAgentWorker`; bound `local_process / none` descriptor in AgentRun and harness evidence                                                                                 | Implemented with `LocalCreatorAgentWorker`; sealed and unsealed phase outcomes persist; microVM worker unimplemented                                                                                           |
+| Creator orchestration  | `creator-session/coordinator.ts`                                                           | `forge creator ...`; canonical `CreatorTransactionControlView` and transaction actions                                                                                         | Implemented and fake-runtime tested; fail-closed restart classification and one active session per paired Studio project                                                                                       |
+| Studio authority       | generated Luau dispatch plus `StudioAuthoring.luau`                                        | manifest-bound preflight, provisional apply, direct readback, commit/cancel/recovery receipts                                                                                  | Implemented; no automatic restart mutation                                                                                                                                                                     |
+| Creator control/UI     | `packages/creator-control`, `dashboard`, `plugin/src/Forge/Runtime.luau`                   | standalone loopback API and local Creator Conversation over canonical `CreatorControlView`; Project/Context rails, timeline, composer, details sheet; thin connector in Studio | Implemented and locally tested with synthetic browser state; no live Studio or provider call is implied                                                                                                        |
+| Project continuity     | `studio-protocol`, `studio-bridge`, `StudioProjectIdentity.luau`                           | published `(universeId, placeId)` identity; local `_forgeProjectId` Link/Fork transaction                                                                                      | Protocol/connector and hash-bound Link, Fork, and published-continuity choices are locally tested; the current shell still requires a user-run Save/Open continuity canary                                     |
+| Local checks           | `luau-toolchain`, `verifier`                                                               | `forge.verify` and creator `forge.verify` tool                                                                                                                                 | Implemented                                                                                                                                                                                                    |
+| Studio evidence        | `studio-evidence`, `studio-protocol`, `studio-bridge`, `studio-runtime`, plugin            | one projection/envelope/fact algebra for exact mutation/runtime facts, plus one sharded project-index graph for whole-project truth                                            | Implemented with explicit presence, 33 proof-closed classes, 370 catalog-derived writable property applications, five bounded runtime capabilities, and generated TS/Luau closure                              |
+| Registered benchmarks  | `experiments`, `agent-runtime`, `proofs`                                                   | experiment CLI plus caller-supplied registration and proof artifacts                                                                                                           | Current contracts implemented and covered by synthetic treatment regressions; predecessor live evidence remains historical                                                                                     |
+| Evidence               | `artifact-store`, creator mutation/verification replay, `agent-runtime`, `flight-recorder` | immutable graph, provider-free mutation and verification replay, runtime-owned tool evidence, exact intervals, creator reports                                                 | Implemented and locally tested; the Door Control ledger is documentary predecessor evidence whose backing store was deliberately removed                                                                       |
+| Demo place seeds       | `examples/status-beacon`, `examples/door-control`, `examples/orbital-freight-airlock`      | solution-free buildable seeds with no task/evaluator JSON                                                                                                                      | Status Beacon and Door Control are historical evidence; Orbital Freight Airlock is the accepted predecessor baseline ledger, not live proof of the new conversation shell                                      |
 
 ## Why there is no dual writer
 
@@ -240,7 +393,7 @@ roots plus an optional Rojo project file and source roots. Forge generates the
 map only through the verified pinned Rojo 7.7.0 `sourcemap` command; a manifest
 cannot supply a map or executable. A change set has exactly one writer: a Studio
 transaction or a guarded Rojo source transaction, never both.
-The default prompt-only user supplies no project JSON or ownership manifest.
+The default conversation user supplies no project JSON or ownership manifest.
 
 Registered benchmarks still require a seed, evaluator, thresholds, and treatment identity, but those inputs are caller-supplied rather than retained as product examples. That is experimental scaffolding, not the intended creator experience.
 
@@ -319,16 +472,24 @@ MicroVMs are a future isolation boundary for model/tool execution, local analysi
 
 ### Horizon comparison
 
-| Concern             | Current                                                                                                                                                         | Near-term evidence task                                                        | Goal                                                                |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
-| User input          | One dashboard prompt; optional verified Rojo mapping adapter with per-change-set writer selection; read-only API coverage explorer                              | Exercise one non-Door authoring group in a user-run Studio proof               | Conversational long-horizon intent                                  |
-| Planning            | Exact prompt-derived goal; typed executable changes and initialization; generated machine-check prose; separate read-only plan and builder                      | Improve plans from the next distinct live proof without adding hidden criteria | Revised plans across durable checkpoints                            |
-| Authoring           | 33 proof-closed classes, 370 catalog-derived property applications, attributes, source, compound codecs, and exact class-constrained Instance references        | Prove the smallest new coherent group in Studio before expanding assets        | Broader typed Studio and asset tools                                |
-| Verification        | Replayable manifest/projection/envelope grading, five bounded runtime primitives, diagnostics, matched mutation prerequisite, and creator report                | Add one fixed factual primitive only when a concrete prompt needs it           | Verification bus with adversarial and qualitative signals           |
-| Ownership           | One declared writer per change set: Studio document or guarded mapped Rojo source; connector-issued identities require exact current index evidence             | Exercise graph-reference readback and cancellation in a live proof             | Automatic ownership discovery without concurrent writers            |
-| Execution isolation | Bound local-process worker descriptor; no isolation                                                                                                             | Keep capability work on the existing local worker boundary                     | MicroVM builder/evaluator workers plus separate real-Studio workers |
-| Product UI          | Local React dashboard with catalog/disposition/attestation/proof exploration over the standalone control API; thin Studio connector                             | Validate explorer clarity with the next user-run proof                         | Cloud identity and multi-user collaboration                         |
-| Learning            | New AgentRuns/traces preserve real intervals; pinned upstream drift and unclassified API entries fail CI; purged historical identifiers remain documentary only | Promote only reviewed live failures into focused regressions                   | Reviewed failure mining and regression evaluation                   |
+| Concern             | Current                                                                                                                                                         | Near-term evidence task                                                                                       | Goal                                                                |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| User input          | Hash-bound conversation turns with an exact four-model selector; optional verified Rojo mapping adapter with per-change-set writer selection                    | Exercise a conversation turn and permitted action in a user-run Studio proof                                  | Durable background/concurrent conversational work                   |
+| Planning            | Host-bounded conversation context, exact prompt-derived goal, typed executable changes, generated machine-check prose, and separate read-only plan/builder      | Improve plans from the next distinct live proof without adding hidden criteria                                | Revised plans across durable checkpoints                            |
+| Authoring           | 33 proof-closed classes, 370 catalog-derived property applications, attributes, source, compound codecs, and exact class-constrained Instance references        | Prove the smallest new coherent group in Studio before expanding assets                                       | Broader typed Studio and asset tools                                |
+| Verification        | Replayable manifest/projection/envelope grading, five bounded runtime primitives, diagnostics, matched mutation prerequisite, and creator report                | Add one fixed factual primitive only when a concrete prompt needs it                                          | Verification bus with adversarial and qualitative signals           |
+| Ownership           | One declared writer per change set: Studio document or guarded mapped Rojo source; connector-issued identities require exact current index evidence             | Exercise graph-reference readback and cancellation in a live proof                                            | Automatic ownership discovery without concurrent writers            |
+| Execution isolation | Bound local-process worker descriptor; no isolation                                                                                                             | Keep capability work on the existing local worker boundary                                                    | MicroVM builder/evaluator workers plus separate real-Studio workers |
+| Product UI          | Projects with independent conversations, journal activity, anchored composer, on-demand settings and attachment-bound Details; thin Studio connector            | User-run Studio canary through Link, refinement, Apply, Play/Stop, review, restart, refresh, and Save to File | Long-horizon project collaboration without a second workbench route |
+| Learning            | New AgentRuns/traces preserve real intervals; pinned upstream drift and unclassified API entries fail CI; purged historical identifiers remain documentary only | Promote only reviewed live failures into focused regressions                                                  | Reviewed failure mining and regression evaluation                   |
+
+The native Studio connector separates its view from execution authority:
+`ConnectorPresentation` maps runtime events to plain-language copy and colors;
+`ConnectorView` owns the dockable panel, settings popup, and bounded activity
+history. `Runtime` retains pairing, recovery, command execution, and test
+authorization. Presentation state cannot create command authority. The plugin
+test gate statically analyzes the native view with a Rojo source map and runs
+pure presentation regressions without launching Studio.
 
 ## Invariants
 
@@ -336,7 +497,11 @@ MicroVMs are a future isolation boundary for model/tool execution, local analysi
 - Hidden evaluator bodies never reach a creator planner or builder. Studio receives data plans and typed change sets, never evaluator assertions or arbitrary callbacks.
 - Every change set selects exactly one persistent writer: the Studio document transaction or an explicitly opted-in guarded Rojo source transaction. Every mutation requires an exact approved artifact hash, a current authority/revision match, and fixed interpreter semantics. Forge never merges the two writers.
 - Model providers remain replaceable one-turn transports; `ForgeNativeAgentRuntime` owns iteration, tools, budgets, and stopping.
-- The coordinator owns workflow legality through `CreatorControlView`; neither the plugin nor the dashboard infers legal actions from status text.
+- The conversation coordinator owns public workflow legality through `CreatorControlView`; the lower transaction coordinator owns `CreatorTransactionControlView` and its actions. Neither the plugin nor the dashboard infers legal actions from status text.
+- Durable conversation history is an immutable, strictly ordered commit chain. The current head may advance only after every referenced event/body is durable; no UI cache, legacy reader, or status string may replace it.
+- The host, not the model, issues conversation context and citation handles. Creator-authority memory is context only and never wins against a current complete Studio revision or creates mutation authority.
+- Creator jobs execute only in the live foreground service. Every planner, builder, and repair call owns one immutable AgentRun/journal slot; restart classification comes only from persisted boundaries. Explicit creator resume may consume a fully persisted response/tool-completion boundary in that same slot, while an unconfirmed provider intent or pending tool execution remains `outcome_unknown` and requires a fresh slot. Checkpointed active-execution duration remains available across service downtime, while the enclosing audit interval retains the wall-clock gap. Forge never resumes automatically, resends a persisted response, or substitutes a provider/model.
+- Published platform identity and local `_forgeProjectId` identity are separate domains. Link/Fork is a dedicated local transaction; Save As and publication never silently merge project conversations.
 - Studio tokens and mutation authority remain outside `CreatorAgentWorker`; changing from the bound local-process worker to an isolated worker changes evidence identity.
 - A local or creator check establishes only its modeled property. Backend benchmark grading remains separate from factual observation and creator satisfaction.
 - Obsolete mechanic compilers, PatchSets, provider-owned loops, mechanic-specific Studio harnesses, and deleted packages are not part of the architecture.

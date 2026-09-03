@@ -18,6 +18,8 @@ for (const model of [
   "RecordingFinalization",
   "StudioInboundStreaming",
   "ProjectIndexPublication",
+  "CreatorConversation",
+  "CreatorProjectIdentity",
 ]) {
   const metadir = await mkdtemp(join(tmpdir(), "forge-tlc-"));
   try {

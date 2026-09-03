@@ -8,10 +8,13 @@ import {
   STUDIO_CONNECTOR_BUILD_HASH,
   compileMutationEvidenceProjection,
   createCreatorSourceWriteBlobCapture,
+  createStudioConnectorEpoch,
+  deriveStudioProjectIdentityAuthority,
   createStudioEvidenceEnvelope,
   createStudioProjectEvidenceShard,
   createStudioProjectIndexCapture,
   createStudioProjectIndexProjection,
+  projectIndexHash,
   serializeStudioEvidenceProjection,
   studioEvidenceFactKey,
   type StudioEvidenceFact,
@@ -20,8 +23,16 @@ import {
 import {
   assertBackendToPluginMessage,
   assertPluginToBackendMessage,
+  assertStudioCommandSettledPayload,
+  assertStudioProjectIdentityRejectionEvidence,
+  assertStudioProjectIdentityFinalizationReceipt,
+  assertStudioProjectIdentityOperation,
+  assertStudioProjectIdentityTransactionInventory,
   BACKEND_COMMAND_FRAGMENT_BYTES,
   createCreatorChangePrepareTransfer,
+  createStudioProjectIdentityFinalizationReceipt,
+  createStudioProjectIdentityOperation,
+  createStudioProjectIdentityState,
   createStudioSemanticMessageTransfer,
   MAX_PROTOCOL_MESSAGE_BYTES,
   STUDIO_PROJECT_CHANGE_SOURCES,
@@ -29,11 +40,13 @@ import {
   type CreatorChangePrepareDocument,
   type PluginToBackendMessage,
   type StudioCapability,
+  type StudioProjectIdentityTransactionInventory,
   type StudioStreamedSemanticMessage,
 } from "../packages/studio-protocol/src/index.js";
 import { createCreatorProjectChangeNotice } from "../packages/creator-session/src/project-refresh.js";
 import {
   StudioBridgeClient,
+  StudioCommandRejectedError,
   StudioBridgeServer,
   createBackendMessage,
   type StudioBridgeSession,
@@ -41,6 +54,18 @@ import {
 
 const sentAt = "2026-09-01T00:00:00.000Z";
 const project = { name: "Protocol Evidence", placeId: 1, universeId: 2 };
+const projectIdentity = createStudioProjectIdentityState({
+  project,
+  reservedAttribute: { status: "absent" },
+});
+const localProject = { name: "Local Identity Place", placeId: 0, universeId: 0 };
+const localUnlinkedIdentity = createStudioProjectIdentityState({
+  project: localProject,
+  reservedAttribute: { status: "absent" },
+});
+const firstForgeProjectId = `forge_project_${"1".repeat(32)}`;
+const secondForgeProjectId = `forge_project_${"2".repeat(32)}`;
+const identityConnectorEpoch = "a".repeat(64);
 const connectorEpoch = "connector_epoch_protocol";
 const target: Extract<StudioEvidenceTarget, { readonly kind: "instance" }> = {
   kind: "instance",
@@ -62,6 +87,7 @@ const capabilities: StudioCapability[] = [
   "recording_recovery",
   "studio_play_mode",
   "bounded_diagnostics",
+  "project_identity",
   "http_polling",
 ];
 
@@ -302,6 +328,8 @@ test("pairing is bound to the exact generated connector surface", () => {
     payload: {
       pairingToken: "pairing-token",
       project,
+      projectIdentity,
+      projectIdentityTransaction: { status: "none" },
       capabilities,
       connectorBuildHash: STUDIO_CONNECTOR_BUILD_HASH,
       manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
@@ -315,6 +343,389 @@ test("pairing is bound to the exact generated connector surface", () => {
         payload: { ...pair.payload, capabilities: capabilities.slice(1) },
       }),
     /PairProject/,
+  );
+});
+
+test("project identity states are canonical, bounded, and keep platform authority explicit", () => {
+  assert.equal(localUnlinkedIdentity.platform.kind, "local");
+  const linked = createStudioProjectIdentityState({
+    project: localProject,
+    reservedAttribute: { status: "observed", forgeProjectId: firstForgeProjectId },
+  });
+  assert.equal(linked.reservedAttribute.status, "observed");
+  assert.equal(
+    deriveStudioProjectIdentityAuthority({
+      sessionId: "studio_protocol_identity",
+      connectorBuildHash: STUDIO_CONNECTOR_BUILD_HASH,
+      identity: linked,
+    }).conversationProjectId,
+    firstForgeProjectId,
+  );
+
+  const publishedWithEmbeddedLocalId = createStudioProjectIdentityState({
+    project,
+    reservedAttribute: { status: "observed", forgeProjectId: firstForgeProjectId },
+  });
+  assert.equal(publishedWithEmbeddedLocalId.platform.kind, "published");
+  assert.notEqual(
+    deriveStudioProjectIdentityAuthority({
+      sessionId: "studio_protocol_identity",
+      connectorBuildHash: STUDIO_CONNECTOR_BUILD_HASH,
+      identity: publishedWithEmbeddedLocalId,
+    }).conversationProjectId,
+    firstForgeProjectId,
+    "publishing must not silently bind the embedded local conversation identity",
+  );
+  assert.throws(
+    () =>
+      createStudioProjectIdentityState({
+        project: { ...localProject, name: "x".repeat(513) },
+        reservedAttribute: { status: "absent" },
+      }),
+    /StudioProjectIdentityState/,
+  );
+  assert.throws(
+    () =>
+      assertPluginToBackendMessage({
+        kind: "StudioProtocolMessage",
+        direction: "plugin_to_backend",
+        type: "Heartbeat",
+        messageId: "identity-tampered-heartbeat",
+        sessionId: "studio-identity-session",
+        sentAt,
+        payload: {
+          project: localProject,
+          projectIdentity: { ...linked, hash: "0".repeat(64) },
+          manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
+        },
+      }),
+    /StudioProjectIdentityState/,
+  );
+});
+
+test("Link and Fork are closed, exact-state identity operations", () => {
+  const link = createStudioProjectIdentityOperation({
+    action: "link",
+    project: localProject,
+    connectorEpoch: identityConnectorEpoch,
+    expectedIdentity: localUnlinkedIdentity,
+    assignedForgeProjectId: firstForgeProjectId,
+  });
+  assertStudioProjectIdentityOperation(link);
+  assertBackendToPluginMessage(
+    createBackendMessage(
+      "LinkStudioProject",
+      {
+        requestId: "identity-link-request",
+        operation: link,
+        operationHash: link.hash,
+      },
+      "studio-identity-session",
+      "identity-link-request",
+      () => new Date(sentAt),
+    ),
+  );
+  assert.throws(
+    () =>
+      assertBackendToPluginMessage(
+        createBackendMessage(
+          "ForkStudioProject",
+          {
+            requestId: "identity-link-as-fork",
+            operation: link,
+            operationHash: link.hash,
+          },
+          "studio-identity-session",
+          "identity-link-as-fork",
+          () => new Date(sentAt),
+        ),
+      ),
+    /ForkStudioProject/,
+  );
+  const linked = createStudioProjectIdentityState({
+    project: localProject,
+    reservedAttribute: { status: "observed", forgeProjectId: firstForgeProjectId },
+  });
+  const fork = createStudioProjectIdentityOperation({
+    action: "fork",
+    project: localProject,
+    connectorEpoch: identityConnectorEpoch,
+    expectedIdentity: linked,
+    assignedForgeProjectId: secondForgeProjectId,
+  });
+  assertStudioProjectIdentityOperation(fork);
+  assert.throws(
+    () =>
+      createStudioProjectIdentityOperation({
+        action: "link",
+        project: localProject,
+        connectorEpoch: identityConnectorEpoch,
+        expectedIdentity: linked,
+        assignedForgeProjectId: secondForgeProjectId,
+      }),
+    /StudioProjectIdentityOperation/,
+  );
+  assert.throws(
+    () =>
+      createStudioProjectIdentityOperation({
+        action: "fork",
+        project: localProject,
+        connectorEpoch: identityConnectorEpoch,
+        expectedIdentity: linked,
+        assignedForgeProjectId: firstForgeProjectId,
+      }),
+    /StudioProjectIdentityOperation/,
+  );
+  assert.throws(
+    () =>
+      createStudioProjectIdentityOperation({
+        action: "link",
+        project,
+        connectorEpoch: identityConnectorEpoch,
+        expectedIdentity: projectIdentity,
+        assignedForgeProjectId: firstForgeProjectId,
+      }),
+    /StudioProjectIdentityOperation/,
+  );
+});
+
+test("identity receipts distinguish commit, ordinary cancellation, and recovery cancellation", () => {
+  const operation = createStudioProjectIdentityOperation({
+    action: "link",
+    project: localProject,
+    connectorEpoch: identityConnectorEpoch,
+    expectedIdentity: localUnlinkedIdentity,
+    assignedForgeProjectId: firstForgeProjectId,
+  });
+  const linked = createStudioProjectIdentityState({
+    project: localProject,
+    reservedAttribute: { status: "observed", forgeProjectId: firstForgeProjectId },
+  });
+  const committed = createStudioProjectIdentityFinalizationReceipt({
+    operation,
+    beforeIdentity: localUnlinkedIdentity,
+    afterIdentity: linked,
+    recordingId: "identity-recording-1",
+    finalization: "ordinary",
+    status: "linked",
+    completedAt: sentAt,
+  });
+  assertStudioProjectIdentityFinalizationReceipt(committed);
+  assertPluginToBackendMessage({
+    kind: "StudioProtocolMessage",
+    direction: "plugin_to_backend",
+    type: "StudioProjectIdentityFinalized",
+    messageId: "identity-linked-receipt",
+    requestId: "identity-link-request",
+    sessionId: "studio-identity-session",
+    sentAt,
+    payload: { requestId: "identity-link-request", receipt: committed },
+  });
+
+  const cancelled = createStudioProjectIdentityFinalizationReceipt({
+    operation,
+    beforeIdentity: localUnlinkedIdentity,
+    afterIdentity: localUnlinkedIdentity,
+    recordingId: "identity-recording-2",
+    finalization: "ordinary",
+    status: "cancelled",
+    completedAt: sentAt,
+    failureDetail: "DataModel attribute readback failed",
+  });
+  assertStudioProjectIdentityFinalizationReceipt(cancelled);
+  const recoveryCancelled = createStudioProjectIdentityFinalizationReceipt({
+    operation,
+    beforeIdentity: localUnlinkedIdentity,
+    afterIdentity: localUnlinkedIdentity,
+    recordingId: "identity-recording-3",
+    finalization: "recovery_cancel",
+    status: "cancelled",
+    completedAt: sentAt,
+  });
+  assertStudioProjectIdentityFinalizationReceipt(recoveryCancelled);
+  const openingAbandoned = createStudioProjectIdentityFinalizationReceipt({
+    operation,
+    beforeIdentity: localUnlinkedIdentity,
+    afterIdentity: localUnlinkedIdentity,
+    finalization: "recovery_abandon",
+    status: "cancelled",
+    completedAt: sentAt,
+  });
+  assertStudioProjectIdentityFinalizationReceipt(openingAbandoned);
+  assert.equal(openingAbandoned.recordingId, undefined);
+  assert.throws(
+    () =>
+      createStudioProjectIdentityFinalizationReceipt({
+        operation,
+        beforeIdentity: localUnlinkedIdentity,
+        afterIdentity: localUnlinkedIdentity,
+        recordingId: "an-impossible-opening-recording",
+        finalization: "recovery_abandon",
+        status: "cancelled",
+        completedAt: sentAt,
+      }),
+    /StudioProjectIdentityFinalizationReceipt/,
+  );
+  const recoveredCommit = createStudioProjectIdentityFinalizationReceipt({
+    operation,
+    beforeIdentity: localUnlinkedIdentity,
+    afterIdentity: linked,
+    recordingId: "identity-recording-closed-commit",
+    finalization: "recovery_settle",
+    status: "linked",
+    completedAt: sentAt,
+  });
+  assertStudioProjectIdentityFinalizationReceipt(recoveredCommit);
+  const recoveredCancellation = createStudioProjectIdentityFinalizationReceipt({
+    operation,
+    beforeIdentity: localUnlinkedIdentity,
+    afterIdentity: localUnlinkedIdentity,
+    recordingId: "identity-recording-closed-cancel",
+    finalization: "recovery_settle",
+    status: "cancelled",
+    completedAt: sentAt,
+    failureDetail: "Recovered the exact closed cancellation cursor",
+  });
+  assertStudioProjectIdentityFinalizationReceipt(recoveredCancellation);
+  assert.throws(
+    () =>
+      createStudioProjectIdentityFinalizationReceipt({
+        operation,
+        beforeIdentity: localUnlinkedIdentity,
+        afterIdentity: localUnlinkedIdentity,
+        recordingId: "identity-recording-4",
+        finalization: "ordinary",
+        status: "cancelled",
+        completedAt: sentAt,
+      }),
+    /StudioProjectIdentityFinalizationReceipt/,
+  );
+  assert.throws(
+    () =>
+      assertStudioProjectIdentityFinalizationReceipt({
+        ...committed,
+        completedAt: "2026-09-01T00:00:01.000Z",
+      }),
+    /StudioProjectIdentityFinalizationReceipt/,
+  );
+  assert.throws(
+    () =>
+      createStudioProjectIdentityFinalizationReceipt({
+        operation,
+        beforeIdentity: localUnlinkedIdentity,
+        afterIdentity: linked,
+        recordingId: "r".repeat(513),
+        finalization: "ordinary",
+        status: "linked",
+        completedAt: sentAt,
+      }),
+    /StudioProjectIdentityFinalizationReceipt/,
+  );
+});
+
+test("identity recovery cancellation binds the exact durable cursor", () => {
+  const operation = createStudioProjectIdentityOperation({
+    action: "link",
+    project: localProject,
+    connectorEpoch: identityConnectorEpoch,
+    expectedIdentity: localUnlinkedIdentity,
+    assignedForgeProjectId: firstForgeProjectId,
+  });
+  const command = createBackendMessage(
+    "CancelInterruptedStudioProjectIdentity",
+    {
+      requestId: "identity-recovery-request",
+      operationId: operation.id,
+      operationHash: operation.hash,
+      transactionCursorHash: "b".repeat(64),
+      recordingId: "identity-recording-recovery",
+      expectedIdentityStateHash: localUnlinkedIdentity.hash,
+    },
+    "studio-identity-session",
+    "identity-recovery-request",
+    () => new Date(sentAt),
+  );
+  assertBackendToPluginMessage(command);
+  assert.throws(
+    () =>
+      assertBackendToPluginMessage({
+        ...command,
+        payload: { ...command.payload, transactionCursorHash: "not-a-hash" },
+      }),
+    /CancelInterruptedStudioProjectIdentity/,
+  );
+  const openingCommand = createBackendMessage(
+    "AbandonOpeningStudioProjectIdentity",
+    {
+      requestId: "identity-opening-recovery-request",
+      operationId: operation.id,
+      operationHash: operation.hash,
+      transactionCursorHash: "c".repeat(64),
+      expectedIdentityStateHash: localUnlinkedIdentity.hash,
+    },
+    "studio-identity-session",
+    "identity-opening-recovery-request",
+    () => new Date(sentAt),
+  );
+  assertBackendToPluginMessage(openingCommand);
+  assert.throws(
+    () =>
+      assertBackendToPluginMessage({
+        ...openingCommand,
+        payload: { ...openingCommand.payload, operationHash: "not-a-hash" },
+      }),
+    /AbandonOpeningStudioProjectIdentity/,
+  );
+});
+
+test("identity recovery inventory verifies its exact durable cursor material", () => {
+  const operation = createStudioProjectIdentityOperation({
+    action: "link",
+    project: localProject,
+    connectorEpoch: identityConnectorEpoch,
+    expectedIdentity: localUnlinkedIdentity,
+    assignedForgeProjectId: firstForgeProjectId,
+  });
+  const cursor = {
+    kind: "StudioProjectIdentityTransactionCursor" as const,
+    operation,
+    beforeIdentity: operation.expectedIdentity,
+    phase: "open" as const,
+    recordingId: "identity-cursor-recording",
+  };
+  const inventory = {
+    status: "pending" as const,
+    operation,
+    phase: "open" as const,
+    cursorHash: projectIndexHash(cursor),
+    recordingState: "open" as const,
+    recordingId: cursor.recordingId,
+  };
+  assertStudioProjectIdentityTransactionInventory(inventory);
+  assertBackendToPluginMessage(
+    createBackendMessage(
+      "SettleClosedStudioProjectIdentity",
+      {
+        requestId: "identity-closed-settlement",
+        operationId: operation.id,
+        operationHash: operation.hash,
+        transactionCursorHash: inventory.cursorHash,
+        recordingId: inventory.recordingId,
+        expectedIdentityStateHash: "1".repeat(64),
+        expectedFinalization: "commit",
+      },
+      "studio-identity-session",
+      "identity-closed-settlement",
+      () => new Date(sentAt),
+    ),
+  );
+  assert.throws(
+    () =>
+      assertStudioProjectIdentityTransactionInventory({
+        ...inventory,
+        cursorHash: "0".repeat(64),
+      }),
+    /StudioProjectIdentityTransactionInventory/,
   );
 });
 
@@ -380,6 +791,43 @@ test("command settlements are hash-bound terminal protocol messages", () => {
       detail: "exact binding rejected",
     },
   });
+  const operation = createStudioProjectIdentityOperation({
+    action: "link",
+    project: localProject,
+    connectorEpoch: identityConnectorEpoch,
+    expectedIdentity: localUnlinkedIdentity,
+    assignedForgeProjectId: firstForgeProjectId,
+  });
+  const identityRejection = {
+    kind: "StudioProjectIdentityRejectionEvidence" as const,
+    operationId: operation.id,
+    operationHash: operation.hash,
+    status: "observed" as const,
+    identity: localUnlinkedIdentity,
+    transaction: { status: "none" as const },
+    recordingState: "not_open" as const,
+  };
+  assertStudioProjectIdentityRejectionEvidence(identityRejection);
+  assertStudioCommandSettledPayload({
+    commandMessageId: "command-1",
+    commandHash: "a".repeat(64),
+    disposition: "rejected",
+    classification: "SECURITY_REJECTION",
+    detail: "exact identity binding rejected",
+    identityRejection,
+  });
+  assert.throws(
+    () =>
+      assertStudioCommandSettledPayload({
+        commandMessageId: "command-1",
+        commandHash: "a".repeat(64),
+        disposition: "rejected",
+        classification: "SECURITY_REJECTION",
+        detail: "exact identity binding rejected",
+        identityRejection: { ...identityRejection, recordingState: "not-a-recording-state" },
+      }),
+    /StudioProjectIdentityRejectionEvidence/,
+  );
   assert.throws(
     () =>
       assertPluginToBackendMessage({
@@ -938,6 +1386,8 @@ test("the bridge rejects a stale connector identity before creating a session", 
           payload: {
             pairingToken: pairing.pairing.token,
             project,
+            projectIdentity,
+            projectIdentityTransaction: { status: "none" },
             capabilities,
             connectorBuildHash,
             manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
@@ -979,6 +1429,8 @@ test("pairing is not advertised or retained when host enrollment fails", async (
         payload: {
           pairingToken: pairing.pairing.token,
           project,
+          projectIdentity,
+          projectIdentityTransaction: { status: "none" },
           capabilities,
           connectorBuildHash: STUDIO_CONNECTOR_BUILD_HASH,
           manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
@@ -1008,6 +1460,8 @@ async function pairBridge(origin: string, suffix: string): Promise<StudioBridgeS
       payload: {
         pairingToken: pairing.pairing.token,
         project,
+        projectIdentity,
+        projectIdentityTransaction: { status: "none" },
         capabilities,
         connectorBuildHash: STUDIO_CONNECTOR_BUILD_HASH,
         manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
@@ -1017,6 +1471,1060 @@ async function pairBridge(origin: string, suffix: string): Promise<StudioBridgeS
   assert.equal(response.status, 200);
   return (await response.json()) as StudioBridgeSession;
 }
+
+async function postIdentityPair(
+  origin: string,
+  suffix: string,
+  pairedProject: typeof localProject,
+  identity: ReturnType<typeof createStudioProjectIdentityState>,
+  identityTransaction: StudioProjectIdentityTransactionInventory = { status: "none" },
+): Promise<Response> {
+  const pairing = (await (await fetch(`${origin}/pairing`)).json()) as {
+    pairing: { token: string };
+  };
+  return fetch(`${origin}/message`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "StudioProtocolMessage",
+      direction: "plugin_to_backend",
+      type: "PairProject",
+      messageId: `pair-identity-${suffix}`,
+      sentAt,
+      payload: {
+        pairingToken: pairing.pairing.token,
+        project: pairedProject,
+        projectIdentity: identity,
+        projectIdentityTransaction: identityTransaction,
+        capabilities,
+        connectorBuildHash: STUDIO_CONNECTOR_BUILD_HASH,
+        manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
+      },
+    }),
+  });
+}
+
+function identityOperationForSession(
+  session: StudioBridgeSession,
+  assignedForgeProjectId = firstForgeProjectId,
+): ReturnType<typeof createStudioProjectIdentityOperation> {
+  return createStudioProjectIdentityOperation({
+    action: "link",
+    project: localProject,
+    connectorEpoch: deriveStudioProjectIdentityAuthority({
+      sessionId: session.sessionId,
+      connectorBuildHash: session.connectorBuildHash,
+      identity: session.projectIdentity,
+    }).connectorEpoch,
+    expectedIdentity: localUnlinkedIdentity,
+    assignedForgeProjectId,
+  });
+}
+
+function observedIdentityRejectionEvidence(
+  operation: ReturnType<typeof createStudioProjectIdentityOperation>,
+  overrides: Partial<{
+    identity: ReturnType<typeof createStudioProjectIdentityState>;
+    transaction: StudioProjectIdentityTransactionInventory;
+    recordingState: "open" | "not_open" | "unknown";
+    operationId: string;
+    operationHash: string;
+  }> = {},
+) {
+  return {
+    kind: "StudioProjectIdentityRejectionEvidence" as const,
+    operationId: overrides.operationId ?? operation.id,
+    operationHash: overrides.operationHash ?? operation.hash,
+    status: "observed" as const,
+    identity: overrides.identity ?? localUnlinkedIdentity,
+    transaction: overrides.transaction ?? { status: "none" as const },
+    recordingState: overrides.recordingState ?? "not_open",
+  };
+}
+
+function rejectedIdentitySettlement(
+  session: StudioBridgeSession,
+  command: ReturnType<typeof createBackendMessage>,
+  identityRejection: unknown,
+  suffix: string,
+): PluginToBackendMessage {
+  return {
+    kind: "StudioProtocolMessage",
+    direction: "plugin_to_backend",
+    type: "StudioCommandSettled",
+    messageId: `identity-rejection-settlement-${suffix}`,
+    sessionId: session.sessionId,
+    sentAt,
+    payload: {
+      commandMessageId: command.messageId,
+      commandHash: contentHash(stableJson(command)),
+      disposition: "rejected",
+      classification: "STUDIO_FAILURE",
+      detail: "the command handler rejected before finalization",
+      identityRejection,
+    } as Extract<PluginToBackendMessage, { type: "StudioCommandSettled" }>["payload"],
+  };
+}
+
+async function postStudioMessage(
+  origin: string,
+  session: StudioBridgeSession,
+  message: PluginToBackendMessage,
+): Promise<Response> {
+  return fetch(`${origin}/message`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-forge-session-token": session.sessionToken,
+    },
+    body: JSON.stringify(message),
+  });
+}
+
+test("the bridge rejects a duplicate durable project without evicting the first connector", async () => {
+  const bridge = new StudioBridgeServer({ port: 0 });
+  try {
+    const address = await bridge.listen();
+    const origin = `http://${address.host}:${address.port}`;
+    const linked = createStudioProjectIdentityState({
+      project: localProject,
+      reservedAttribute: { status: "observed", forgeProjectId: firstForgeProjectId },
+    });
+    const first = await postIdentityPair(origin, "durable-first", localProject, linked);
+    assert.equal(first.status, 200);
+    const firstSession = (await first.json()) as StudioBridgeSession;
+    const duplicate = await postIdentityPair(origin, "durable-duplicate", localProject, linked);
+    assert.equal(duplicate.status, 409);
+    assert.match(await duplicate.text(), /already connected/);
+    assert.deepEqual(
+      bridge.getSessions().map((session) => session.sessionId),
+      [firstSession.sessionId],
+      "a duplicate pairing must never revoke the already-authorized connector",
+    );
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("an authenticated heartbeat adopts rename and one local-linked publication transition only", async () => {
+  const bridge = new StudioBridgeServer({ port: 0 });
+  try {
+    const address = await bridge.listen();
+    const origin = `http://${address.host}:${address.port}`;
+    const linked = createStudioProjectIdentityState({
+      project: localProject,
+      reservedAttribute: { status: "observed", forgeProjectId: firstForgeProjectId },
+    });
+    const paired = await postIdentityPair(
+      origin,
+      "heartbeat-authority-transition",
+      localProject,
+      linked,
+    );
+    assert.equal(paired.status, 200);
+    const session = (await paired.json()) as StudioBridgeSession;
+    const postHeartbeat = async (
+      suffix: string,
+      heartbeatProject: typeof localProject,
+      identity: ReturnType<typeof createStudioProjectIdentityState>,
+    ) =>
+      fetch(`${origin}/message`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-forge-session-token": session.sessionToken,
+        },
+        body: JSON.stringify({
+          kind: "StudioProtocolMessage",
+          direction: "plugin_to_backend",
+          type: "Heartbeat",
+          messageId: `identity-heartbeat-${suffix}`,
+          sessionId: session.sessionId,
+          sentAt,
+          payload: {
+            project: heartbeatProject,
+            projectIdentity: identity,
+            manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
+          },
+        }),
+      });
+
+    const renamedProject = { ...localProject, name: "Renamed Local Identity Place" };
+    const renamedIdentity = createStudioProjectIdentityState({
+      project: renamedProject,
+      reservedAttribute: { status: "observed", forgeProjectId: firstForgeProjectId },
+    });
+    assert.equal((await postHeartbeat("renamed", renamedProject, renamedIdentity)).status, 202);
+    assert.equal(bridge.getSessions()[0]!.project.name, renamedProject.name);
+    assert.equal(bridge.getSessions()[0]!.conversationProjectId, firstForgeProjectId);
+
+    const publishedProject = { ...renamedProject, placeId: 2468, universeId: 1357 };
+    const publishedIdentity = createStudioProjectIdentityState({
+      project: publishedProject,
+      reservedAttribute: { status: "observed", forgeProjectId: firstForgeProjectId },
+    });
+    assert.equal(
+      (await postHeartbeat("published", publishedProject, publishedIdentity)).status,
+      202,
+    );
+    const publishedSession = bridge.getSessions()[0]!;
+    assert.deepEqual(publishedSession.project, publishedProject);
+    assert.notEqual(publishedSession.conversationProjectId, firstForgeProjectId);
+
+    const otherPublishedProject = { ...publishedProject, placeId: 2469 };
+    const otherPublishedIdentity = createStudioProjectIdentityState({
+      project: otherPublishedProject,
+      reservedAttribute: { status: "observed", forgeProjectId: firstForgeProjectId },
+    });
+    const rejected = await postHeartbeat(
+      "different-published-authority",
+      otherPublishedProject,
+      otherPublishedIdentity,
+    );
+    assert.equal(rejected.status, 409);
+    assert.match(await rejected.text(), /project-authority transition/);
+    assert.deepEqual(bridge.getSessions()[0]!.project, publishedProject);
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("an idle connector lease expires while polling renews the exact live session", async () => {
+  let clock = Date.parse(sentAt);
+  const bridge = new StudioBridgeServer({
+    port: 0,
+    sessionIdleTtlMs: 5_000,
+    now: () => new Date(clock),
+  });
+  try {
+    const address = await bridge.listen();
+    const origin = `http://${address.host}:${address.port}`;
+    const linked = createStudioProjectIdentityState({
+      project: localProject,
+      reservedAttribute: { status: "observed", forgeProjectId: firstForgeProjectId },
+    });
+    const first = await postIdentityPair(origin, "lease-first", localProject, linked);
+    assert.equal(first.status, 200);
+    const firstSession = (await first.json()) as StudioBridgeSession;
+
+    clock += 4_000;
+    const renewal = await fetch(`${origin}/poll?sessionId=${firstSession.sessionId}`, {
+      headers: { "x-forge-session-token": firstSession.sessionToken },
+    });
+    assert.equal(renewal.status, 200);
+    clock += 4_000;
+    const stillDuplicate = await postIdentityPair(
+      origin,
+      "lease-live-duplicate",
+      localProject,
+      linked,
+    );
+    assert.equal(stillDuplicate.status, 409);
+
+    clock += 1_001;
+    const replacement = await postIdentityPair(origin, "lease-replacement", localProject, linked);
+    assert.equal(replacement.status, 200);
+    const replacementSession = (await replacement.json()) as StudioBridgeSession;
+    assert.notEqual(replacementSession.sessionId, firstSession.sessionId);
+    assert.deepEqual(
+      bridge.getSessions().map((candidate) => candidate.sessionId),
+      [replacementSession.sessionId],
+    );
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("explicit plugin unload releases only the connector lease for immediate re-pair", async () => {
+  const bridge = new StudioBridgeServer({ port: 0 });
+  try {
+    const address = await bridge.listen();
+    const origin = `http://${address.host}:${address.port}`;
+    const linked = createStudioProjectIdentityState({
+      project: localProject,
+      reservedAttribute: { status: "observed", forgeProjectId: firstForgeProjectId },
+    });
+    const first = await postIdentityPair(origin, "unload-first", localProject, linked);
+    assert.equal(first.status, 200);
+    const firstSession = (await first.json()) as StudioBridgeSession;
+    const unload = await fetch(`${origin}/message`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-forge-session-token": firstSession.sessionToken,
+      },
+      body: JSON.stringify({
+        kind: "StudioProtocolMessage",
+        direction: "plugin_to_backend",
+        type: "UnpairProject",
+        messageId: "identity-plugin-unload",
+        sessionId: firstSession.sessionId,
+        sentAt,
+        payload: { reason: "plugin_unload" },
+      }),
+    });
+    assert.equal(unload.status, 202);
+    assert.equal(bridge.getSessions().length, 0);
+    const replacement = await postIdentityPair(origin, "unload-replacement", localProject, linked);
+    assert.equal(replacement.status, 200);
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("the bridge admits opening identity abandonment only with exact no-effect evidence", async () => {
+  const bridge = new StudioBridgeServer({ port: 0 });
+  try {
+    const address = await bridge.listen();
+    const origin = `http://${address.host}:${address.port}`;
+    const operation = createStudioProjectIdentityOperation({
+      action: "link",
+      project: localProject,
+      connectorEpoch: identityConnectorEpoch,
+      expectedIdentity: localUnlinkedIdentity,
+      assignedForgeProjectId: firstForgeProjectId,
+    });
+    const cursor = {
+      kind: "StudioProjectIdentityTransactionCursor" as const,
+      operation,
+      beforeIdentity: localUnlinkedIdentity,
+      phase: "opening" as const,
+    };
+    const inventory: StudioProjectIdentityTransactionInventory = {
+      status: "pending",
+      operation,
+      phase: "opening",
+      cursorHash: projectIndexHash(cursor),
+      recordingState: "not_open",
+    };
+    const paired = await postIdentityPair(
+      origin,
+      "opening-abandonment",
+      localProject,
+      localUnlinkedIdentity,
+      inventory,
+    );
+    assert.equal(paired.status, 200);
+    const session = (await paired.json()) as StudioBridgeSession;
+    const payload = {
+      requestId: "identity-opening-bridge-abandonment",
+      operationId: operation.id,
+      operationHash: operation.hash,
+      transactionCursorHash: inventory.cursorHash,
+      expectedIdentityStateHash: localUnlinkedIdentity.hash,
+    };
+    await assert.rejects(
+      bridge.send(
+        createBackendMessage(
+          "AbandonOpeningStudioProjectIdentity",
+          {
+            ...payload,
+            requestId: "identity-opening-bridge-stale",
+            transactionCursorHash: "0".repeat(64),
+          },
+          session.sessionId,
+          "identity-opening-bridge-stale",
+          () => new Date(sentAt),
+        ),
+      ),
+      /does not match the exact paired cursor/,
+    );
+    const command = createBackendMessage(
+      "AbandonOpeningStudioProjectIdentity",
+      payload,
+      session.sessionId,
+      payload.requestId,
+      () => new Date(sentAt),
+    );
+    await bridge.send(command);
+    const delivery = (await (
+      await fetch(`${origin}/poll?sessionId=${session.sessionId}`, {
+        headers: { "x-forge-session-token": session.sessionToken },
+      })
+    ).json()) as { commands: Array<{ commandJson: string }> };
+    assert.equal(
+      (JSON.parse(delivery.commands[0]!.commandJson) as { type: string }).type,
+      "AbandonOpeningStudioProjectIdentity",
+    );
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("the bridge reserves a link identity and rejects a later duplicate observation", async () => {
+  const bridge = new StudioBridgeServer({ port: 0 });
+  try {
+    const address = await bridge.listen();
+    const origin = `http://${address.host}:${address.port}`;
+    const firstPair = await postIdentityPair(
+      origin,
+      "reservation-first",
+      localProject,
+      localUnlinkedIdentity,
+    );
+    const secondPair = await postIdentityPair(
+      origin,
+      "reservation-second",
+      localProject,
+      localUnlinkedIdentity,
+    );
+    assert.equal(firstPair.status, 200);
+    assert.equal(secondPair.status, 200);
+    const firstSession = (await firstPair.json()) as StudioBridgeSession;
+    const secondSession = (await secondPair.json()) as StudioBridgeSession;
+    assert.notEqual(
+      firstSession.projectId,
+      secondSession.projectId,
+      "unlinked places must have pairing-scoped provisional authority",
+    );
+    const firstOperation = createStudioProjectIdentityOperation({
+      action: "link",
+      project: localProject,
+      connectorEpoch: createStudioConnectorEpoch({
+        sessionId: firstSession.sessionId,
+        projectId: firstSession.projectId,
+        connectorBuildHash: firstSession.connectorBuildHash,
+      }),
+      expectedIdentity: localUnlinkedIdentity,
+      assignedForgeProjectId: firstForgeProjectId,
+    });
+    const secondOperation = createStudioProjectIdentityOperation({
+      action: "link",
+      project: localProject,
+      connectorEpoch: createStudioConnectorEpoch({
+        sessionId: secondSession.sessionId,
+        projectId: secondSession.projectId,
+        connectorBuildHash: secondSession.connectorBuildHash,
+      }),
+      expectedIdentity: localUnlinkedIdentity,
+      assignedForgeProjectId: firstForgeProjectId,
+    });
+    const firstCommand = createBackendMessage(
+      "LinkStudioProject",
+      {
+        requestId: "identity-reservation-first",
+        operation: firstOperation,
+        operationHash: firstOperation.hash,
+      },
+      firstSession.sessionId,
+      "identity-reservation-first",
+      () => new Date(sentAt),
+    );
+    await bridge.send(firstCommand);
+    const commandSettled = await fetch(`${origin}/message`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-forge-session-token": firstSession.sessionToken,
+      },
+      body: JSON.stringify({
+        kind: "StudioProtocolMessage",
+        direction: "plugin_to_backend",
+        type: "StudioCommandSettled",
+        messageId: "identity-reservation-command-settled",
+        requestId: "identity-reservation-first",
+        sessionId: firstSession.sessionId,
+        sentAt,
+        payload: {
+          commandMessageId: firstCommand.messageId,
+          commandHash: contentHash(stableJson(firstCommand)),
+          disposition: "executed",
+        },
+      }),
+    });
+    assert.equal(commandSettled.status, 202);
+    await assert.rejects(
+      bridge.send(
+        createBackendMessage(
+          "LinkStudioProject",
+          {
+            requestId: "identity-reservation-second",
+            operation: secondOperation,
+            operationHash: secondOperation.hash,
+          },
+          secondSession.sessionId,
+          "identity-reservation-second",
+          () => new Date(sentAt),
+        ),
+      ),
+      /reserved by another exact transaction/,
+    );
+
+    const linked = createStudioProjectIdentityState({
+      project: localProject,
+      reservedAttribute: { status: "observed", forgeProjectId: firstForgeProjectId },
+    });
+    const receipt = createStudioProjectIdentityFinalizationReceipt({
+      operation: firstOperation,
+      beforeIdentity: localUnlinkedIdentity,
+      afterIdentity: linked,
+      recordingId: "identity-reservation-recording",
+      finalization: "ordinary",
+      status: "linked",
+      completedAt: sentAt,
+    });
+    const finalized = await fetch(`${origin}/message`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-forge-session-token": firstSession.sessionToken,
+      },
+      body: JSON.stringify({
+        kind: "StudioProtocolMessage",
+        direction: "plugin_to_backend",
+        type: "StudioProjectIdentityFinalized",
+        messageId: "identity-reservation-finalized",
+        requestId: "identity-reservation-first",
+        sessionId: firstSession.sessionId,
+        sentAt,
+        payload: { requestId: "identity-reservation-first", receipt },
+      }),
+    });
+    assert.equal(finalized.status, 202);
+
+    const duplicateHeartbeat = await fetch(`${origin}/message`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-forge-session-token": secondSession.sessionToken,
+      },
+      body: JSON.stringify({
+        kind: "StudioProtocolMessage",
+        direction: "plugin_to_backend",
+        type: "Heartbeat",
+        messageId: "identity-reservation-duplicate-heartbeat",
+        sessionId: secondSession.sessionId,
+        sentAt,
+        payload: {
+          project: localProject,
+          projectIdentity: linked,
+          manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
+        },
+      }),
+    });
+    assert.equal(duplicateHeartbeat.status, 409);
+    assert.match(await duplicateHeartbeat.text(), /already connected/);
+    assert.equal(bridge.getSessions()[0]!.conversationProjectId, firstForgeProjectId);
+    assert.notEqual(
+      bridge.getSessions()[1]!.conversationProjectId,
+      firstForgeProjectId,
+      "rejected duplicate evidence must not overwrite the second session authority",
+    );
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("a command-bound no-effect Link rejection releases only its exact reservation", async () => {
+  const bridge = new StudioBridgeServer({ port: 0 });
+  try {
+    const address = await bridge.listen();
+    const origin = `http://${address.host}:${address.port}`;
+    const paired = await postIdentityPair(
+      origin,
+      "identity-rejection-no-effect",
+      localProject,
+      localUnlinkedIdentity,
+    );
+    assert.equal(paired.status, 200);
+    const session = (await paired.json()) as StudioBridgeSession;
+    const operation = identityOperationForSession(session);
+    const command = createBackendMessage(
+      "LinkStudioProject",
+      {
+        requestId: "identity-rejection-no-effect",
+        operation,
+        operationHash: operation.hash,
+      },
+      session.sessionId,
+      "identity-rejection-no-effect",
+      () => new Date(sentAt),
+    );
+    const rejected = bridge.sendAndWaitForSettlement(command, 5_000);
+    const settlement = rejectedIdentitySettlement(
+      session,
+      command,
+      observedIdentityRejectionEvidence(operation),
+      "no-effect",
+    );
+    const rejectedAssertion = assert.rejects(rejected, (error: unknown) => {
+      assert.ok(error instanceof StudioCommandRejectedError);
+      assert.equal(error.command, command);
+      assert.deepEqual(error.settlement, settlement.payload);
+      assert.equal(error.identityNoEffectProven, true);
+      return true;
+    });
+    const accepted = await postStudioMessage(origin, session, settlement);
+    assert.equal(accepted.status, 202);
+    await rejectedAssertion;
+
+    // This distinct delivery must be admitted: the preceding exact no-effect
+    // receipt released its own id, rather than relying on disposition alone.
+    await bridge.send(
+      createBackendMessage(
+        "LinkStudioProject",
+        {
+          requestId: "identity-rejection-no-effect-retry",
+          operation,
+          operationHash: operation.hash,
+        },
+        session.sessionId,
+        "identity-rejection-no-effect-retry",
+        () => new Date(sentAt),
+      ),
+    );
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("the bridge rejects project identity rejection evidence on generic command rejections", async () => {
+  const bridge = new StudioBridgeServer({ port: 0 });
+  try {
+    const address = await bridge.listen();
+    const origin = `http://${address.host}:${address.port}`;
+    const session = await pairBridge(origin, "generic-identity-rejection");
+    const command = createBackendMessage(
+      "RollbackCreatorCheckpoint",
+      {
+        requestId: "generic-identity-rejection",
+        creatorSessionId: "creator-session",
+        checkpointId: "checkpoint",
+        changeSetId: "change-set",
+        changeSetHash: "a".repeat(64),
+        expectedProjectRevisionHash: "b".repeat(64),
+      },
+      session.sessionId,
+      "generic-identity-rejection",
+      () => new Date(sentAt),
+    );
+    await bridge.send(command);
+    const operation = createStudioProjectIdentityOperation({
+      action: "link",
+      project: localProject,
+      connectorEpoch: identityConnectorEpoch,
+      expectedIdentity: localUnlinkedIdentity,
+      assignedForgeProjectId: firstForgeProjectId,
+    });
+    const rejection: PluginToBackendMessage = {
+      kind: "StudioProtocolMessage",
+      direction: "plugin_to_backend",
+      type: "StudioCommandSettled",
+      messageId: "generic-identity-rejection-settlement",
+      sessionId: session.sessionId,
+      sentAt,
+      payload: {
+        commandMessageId: command.messageId,
+        commandHash: contentHash(stableJson(command)),
+        disposition: "rejected",
+        classification: "STUDIO_FAILURE",
+        detail: "generic command rejected",
+        identityRejection: observedIdentityRejectionEvidence(operation),
+      },
+    };
+    const response = await postStudioMessage(origin, session, rejection);
+    assert.equal(response.status, 409);
+    assert.match(await response.text(), /Only rejected Link\/Fork commands/);
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("identity rejection proofs that are missing, ambiguous, stale, or duplicated retain reservations", async () => {
+  const cases: ReadonlyArray<{
+    readonly name: string;
+    readonly proof: (operation: ReturnType<typeof createStudioProjectIdentityOperation>) => unknown;
+    readonly accepted: boolean;
+  }> = [
+    {
+      name: "missing",
+      proof: () => undefined,
+      accepted: false,
+    },
+    {
+      name: "open",
+      proof: (operation) => {
+        const recordingId = "identity-rejection-open-recording";
+        return observedIdentityRejectionEvidence(operation, {
+          transaction: {
+            status: "pending",
+            operation,
+            phase: "open",
+            recordingId,
+            recordingState: "open",
+            cursorHash: projectIndexHash({
+              kind: "StudioProjectIdentityTransactionCursor",
+              operation,
+              beforeIdentity: localUnlinkedIdentity,
+              phase: "open",
+              recordingId,
+            }),
+          },
+          recordingState: "open",
+        });
+      },
+      accepted: true,
+    },
+    {
+      name: "unknown",
+      proof: (operation) => {
+        const recordingId = "identity-rejection-unknown-recording";
+        return observedIdentityRejectionEvidence(operation, {
+          transaction: {
+            status: "pending",
+            operation,
+            phase: "open",
+            recordingId,
+            recordingState: "unknown",
+            cursorHash: projectIndexHash({
+              kind: "StudioProjectIdentityTransactionCursor",
+              operation,
+              beforeIdentity: localUnlinkedIdentity,
+              phase: "open",
+              recordingId,
+            }),
+          },
+          recordingState: "unknown",
+        });
+      },
+      accepted: true,
+    },
+    {
+      name: "tampered",
+      proof: (operation) =>
+        observedIdentityRejectionEvidence(operation, { operationHash: "f".repeat(64) }),
+      accepted: false,
+    },
+    {
+      name: "stale",
+      proof: (operation) =>
+        observedIdentityRejectionEvidence(operation, {
+          operationId: "studio_project_identity_operation_stale",
+        }),
+      accepted: false,
+    },
+  ];
+  for (const scenario of cases) {
+    const bridge = new StudioBridgeServer({ port: 0 });
+    try {
+      const address = await bridge.listen();
+      const origin = `http://${address.host}:${address.port}`;
+      const paired = await postIdentityPair(
+        origin,
+        `identity-rejection-${scenario.name}`,
+        localProject,
+        localUnlinkedIdentity,
+      );
+      assert.equal(paired.status, 200);
+      const session = (await paired.json()) as StudioBridgeSession;
+      const operation = identityOperationForSession(session);
+      const command = createBackendMessage(
+        "LinkStudioProject",
+        {
+          requestId: `identity-rejection-${scenario.name}`,
+          operation,
+          operationHash: operation.hash,
+        },
+        session.sessionId,
+        `identity-rejection-${scenario.name}`,
+        () => new Date(sentAt),
+      );
+      const waiting = scenario.accepted
+        ? bridge.sendAndWaitForSettlement(command, 5_000)
+        : bridge.send(command);
+      const rejectedAssertion = scenario.accepted
+        ? assert.rejects(waiting, (error: unknown) => {
+            assert.ok(error instanceof StudioCommandRejectedError);
+            assert.equal(error.identityNoEffectProven, false);
+            return true;
+          })
+        : undefined;
+      const settlement = rejectedIdentitySettlement(
+        session,
+        command,
+        scenario.proof(operation),
+        scenario.name,
+      );
+      const response = await postStudioMessage(origin, session, settlement);
+      assert.equal(response.status, scenario.accepted ? 202 : 409, scenario.name);
+      if (rejectedAssertion) await rejectedAssertion;
+      else await waiting;
+      await assert.rejects(
+        bridge.send(
+          createBackendMessage(
+            "LinkStudioProject",
+            {
+              requestId: `identity-rejection-${scenario.name}-retry`,
+              operation,
+              operationHash: operation.hash,
+            },
+            session.sessionId,
+            `identity-rejection-${scenario.name}-retry`,
+            () => new Date(sentAt),
+          ),
+        ),
+        /prior project identity transaction outcome is not yet finalized/,
+        scenario.name,
+      );
+    } finally {
+      await bridge.close();
+    }
+  }
+
+  const bridge = new StudioBridgeServer({ port: 0 });
+  try {
+    const address = await bridge.listen();
+    const origin = `http://${address.host}:${address.port}`;
+    const paired = await postIdentityPair(
+      origin,
+      "identity-rejection-duplicate",
+      localProject,
+      localUnlinkedIdentity,
+    );
+    assert.equal(paired.status, 200);
+    const session = (await paired.json()) as StudioBridgeSession;
+    const operation = identityOperationForSession(session);
+    const first = createBackendMessage(
+      "LinkStudioProject",
+      { requestId: "identity-rejection-duplicate-first", operation, operationHash: operation.hash },
+      session.sessionId,
+      "identity-rejection-duplicate-first",
+      () => new Date(sentAt),
+    );
+    await bridge.send(first);
+    const proof = observedIdentityRejectionEvidence(operation);
+    const settlement = rejectedIdentitySettlement(session, first, proof, "duplicate-first");
+    assert.equal((await postStudioMessage(origin, session, settlement)).status, 202);
+    const second = createBackendMessage(
+      "LinkStudioProject",
+      {
+        requestId: "identity-rejection-duplicate-second",
+        operation,
+        operationHash: operation.hash,
+      },
+      session.sessionId,
+      "identity-rejection-duplicate-second",
+      () => new Date(sentAt),
+    );
+    await bridge.send(second);
+    const duplicate = await postStudioMessage(origin, session, settlement);
+    assert.equal(duplicate.status, 202);
+    await assert.rejects(
+      bridge.send(
+        createBackendMessage(
+          "LinkStudioProject",
+          {
+            requestId: "identity-rejection-duplicate-third",
+            operation,
+            operationHash: operation.hash,
+          },
+          session.sessionId,
+          "identity-rejection-duplicate-third",
+          () => new Date(sentAt),
+        ),
+      ),
+      /prior project identity transaction outcome is not yet finalized/,
+    );
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("the bridge admits closed identity settlement only for its exact paired cursor", async () => {
+  const bridge = new StudioBridgeServer({ port: 0 });
+  try {
+    const address = await bridge.listen();
+    const origin = `http://${address.host}:${address.port}`;
+    const operation = createStudioProjectIdentityOperation({
+      action: "link",
+      project: localProject,
+      connectorEpoch: identityConnectorEpoch,
+      expectedIdentity: localUnlinkedIdentity,
+      assignedForgeProjectId: firstForgeProjectId,
+    });
+    const linked = createStudioProjectIdentityState({
+      project: localProject,
+      reservedAttribute: { status: "observed", forgeProjectId: firstForgeProjectId },
+    });
+    const cursor = {
+      kind: "StudioProjectIdentityTransactionCursor" as const,
+      operation,
+      beforeIdentity: operation.expectedIdentity,
+      phase: "finalizing" as const,
+      recordingId: "identity-closed-bridge-recording",
+      finalization: "commit" as const,
+    };
+    const inventory: StudioProjectIdentityTransactionInventory = {
+      status: "pending",
+      operation,
+      phase: "finalizing",
+      cursorHash: projectIndexHash(cursor),
+      recordingState: "not_open",
+      recordingId: cursor.recordingId,
+      finalization: "commit",
+    };
+    const paired = await postIdentityPair(
+      origin,
+      "closed-settlement",
+      localProject,
+      linked,
+      inventory,
+    );
+    assert.equal(paired.status, 200);
+    const session = (await paired.json()) as StudioBridgeSession;
+    const payload = {
+      requestId: "identity-closed-bridge-settlement",
+      operationId: operation.id,
+      operationHash: operation.hash,
+      transactionCursorHash: inventory.cursorHash,
+      recordingId: cursor.recordingId,
+      expectedIdentityStateHash: linked.hash,
+      expectedFinalization: "commit" as const,
+    };
+    await assert.rejects(
+      bridge.send(
+        createBackendMessage(
+          "SettleClosedStudioProjectIdentity",
+          {
+            ...payload,
+            requestId: "identity-closed-bridge-stale",
+            transactionCursorHash: "0".repeat(64),
+          },
+          session.sessionId,
+          "identity-closed-bridge-stale",
+          () => new Date(sentAt),
+        ),
+      ),
+      /does not match the exact paired cursor/,
+    );
+    const command = createBackendMessage(
+      "SettleClosedStudioProjectIdentity",
+      payload,
+      session.sessionId,
+      "identity-closed-bridge-settlement",
+      () => new Date(sentAt),
+    );
+    await bridge.send(command);
+    const delivery = (await (
+      await fetch(`${origin}/poll?sessionId=${session.sessionId}`, {
+        headers: { "x-forge-session-token": session.sessionToken },
+      })
+    ).json()) as { commands: Array<{ commandJson: string }> };
+    assert.equal(
+      (JSON.parse(delivery.commands[0]!.commandJson) as { type: string }).type,
+      "SettleClosedStudioProjectIdentity",
+    );
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("successful identity finalization rotates bridge authority before subscribers run", async () => {
+  const bridge = new StudioBridgeServer({ port: 0 });
+  let deliveredSession: StudioBridgeSession | undefined;
+  bridge.subscribeWithSession((message, session) => {
+    if (message.type === "StudioProjectIdentityFinalized") deliveredSession = { ...session };
+  });
+  try {
+    const address = await bridge.listen();
+    const origin = `http://${address.host}:${address.port}`;
+    const paired = await postIdentityPair(
+      origin,
+      "authority-rotation",
+      localProject,
+      localUnlinkedIdentity,
+    );
+    assert.equal(paired.status, 200);
+    const session = (await paired.json()) as StudioBridgeSession;
+    const operation = createStudioProjectIdentityOperation({
+      action: "link",
+      project: localProject,
+      connectorEpoch: createStudioConnectorEpoch({
+        sessionId: session.sessionId,
+        projectId: session.projectId,
+        connectorBuildHash: session.connectorBuildHash,
+      }),
+      expectedIdentity: localUnlinkedIdentity,
+      assignedForgeProjectId: firstForgeProjectId,
+    });
+    const linked = createStudioProjectIdentityState({
+      project: localProject,
+      reservedAttribute: { status: "observed", forgeProjectId: firstForgeProjectId },
+    });
+    const receipt = createStudioProjectIdentityFinalizationReceipt({
+      operation,
+      beforeIdentity: localUnlinkedIdentity,
+      afterIdentity: linked,
+      recordingId: "identity-recording-bridge",
+      finalization: "ordinary",
+      status: "linked",
+      completedAt: sentAt,
+    });
+    const finalized = await fetch(`${origin}/message`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-forge-session-token": session.sessionToken,
+      },
+      body: JSON.stringify({
+        kind: "StudioProtocolMessage",
+        direction: "plugin_to_backend",
+        type: "StudioProjectIdentityFinalized",
+        messageId: "identity-finalized-bridge",
+        requestId: "identity-link-bridge",
+        sessionId: session.sessionId,
+        sentAt,
+        payload: { requestId: "identity-link-bridge", receipt },
+      }),
+    });
+    assert.equal(finalized.status, 202);
+    assert.ok(deliveredSession);
+    assert.notEqual(deliveredSession.projectId, session.projectId);
+    assert.equal(deliveredSession.conversationProjectId, firstForgeProjectId);
+    assert.equal(deliveredSession.projectIdentity.hash, linked.hash);
+    const retained = bridge.getSessions()[0]!;
+    assert.equal(retained.projectId, deliveredSession.projectId);
+    assert.deepEqual(retained.projectIdentityTransaction, { status: "finalized", receipt });
+
+    const acknowledgement = createBackendMessage(
+      "AcknowledgeStudioProjectIdentityFinalization",
+      {
+        requestId: "identity-ack-bridge",
+        receiptId: receipt.id,
+        receiptHash: receipt.hash,
+      },
+      session.sessionId,
+      "identity-ack-bridge",
+      () => new Date(sentAt),
+    );
+    await bridge.send(acknowledgement);
+    const settled = await fetch(`${origin}/message`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-forge-session-token": session.sessionToken,
+      },
+      body: JSON.stringify({
+        kind: "StudioProtocolMessage",
+        direction: "plugin_to_backend",
+        type: "StudioCommandSettled",
+        messageId: "identity-ack-settled",
+        requestId: "identity-ack-bridge",
+        sessionId: session.sessionId,
+        sentAt,
+        payload: {
+          commandMessageId: acknowledgement.messageId,
+          commandHash: contentHash(stableJson(acknowledgement)),
+          disposition: "executed",
+        },
+      }),
+    });
+    assert.equal(settled.status, 202);
+    assert.deepEqual(bridge.getSessions()[0]!.projectIdentityTransaction, { status: "none" });
+  } finally {
+    await bridge.close();
+  }
+});
 
 test("every large Studio evidence outcome has one bounded semantic transport", () => {
   for (const logical of streamedMutationMessages("studio-semantic-bounds", 90)) {
@@ -1211,6 +2719,7 @@ function heartbeat(
     sentAt,
     payload: {
       project,
+      projectIdentity,
       manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
       currentProjectRevisionHash: revision,
     },
@@ -1417,10 +2926,14 @@ test("in-process bridge rejects a settled command immediately and delivers the n
       () => new Date(sentAt),
     );
     const waiting = bridge.sendAndWaitForSettlement(command, 2_000);
-    const rejectedWaiting = assert.rejects(
-      waiting,
-      /SECURITY_REJECTION.*creator Prepare binding mismatch/,
-    );
+    const rejectedWaiting = assert.rejects(waiting, (error: unknown) => {
+      assert.ok(error instanceof StudioCommandRejectedError);
+      assert.equal(error.command, command);
+      assert.equal(error.settlement.classification, "SECURITY_REJECTION");
+      assert.equal(error.settlement.detail, "creator Prepare binding mismatch");
+      assert.equal(error.identityNoEffectProven, false);
+      return true;
+    });
     const first = (await (
       await fetch(`${origin}/poll?sessionId=${encodeURIComponent(session.sessionId)}`, {
         headers: { "x-forge-session-token": session.sessionToken },
@@ -1540,10 +3053,14 @@ test("remote bridge client rejects from an exact retained command settlement", a
       () => new Date(sentAt),
     );
     const waiting = client.sendAndWaitForSettlement(command, 2_000);
-    const rejectedWaiting = assert.rejects(
-      waiting,
-      /STUDIO_FAILURE.*detached preflight constructor rejected/,
-    );
+    const rejectedWaiting = assert.rejects(waiting, (error: unknown) => {
+      assert.ok(error instanceof StudioCommandRejectedError);
+      assert.equal(error.command, command);
+      assert.equal(error.settlement.classification, "STUDIO_FAILURE");
+      assert.equal(error.settlement.detail, "detached preflight constructor rejected");
+      assert.equal(error.identityNoEffectProven, false);
+      return true;
+    });
     let current: { commandJson: string; commandHash: string } | undefined;
     for (let attempt = 0; attempt < 100 && current === undefined; attempt += 1) {
       const delivery = (await (

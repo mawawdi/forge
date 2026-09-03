@@ -8,5 +8,8 @@ target/
 *.rbxlx
 *.rbxm
 *.rbxmx
-
+*.rbxl.lock
+*.rbxlx.lock
 reference-plugin/
+dashboard/test-results/
+dashboard/playwright-report/

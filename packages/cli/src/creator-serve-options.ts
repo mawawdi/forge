@@ -16,7 +16,7 @@ const execFile = promisify(execFileCallback);
 
 export interface CreatorServeOptions {
   readonly valid: boolean;
-  readonly model?: string;
+  readonly defaultModel?: string;
   readonly sessionDirectory?: string;
   readonly timeoutMs?: number;
   readonly controlPort?: number;
@@ -42,7 +42,7 @@ export interface LoadedCreatorServeOptions extends CreatorServeOptions {
 }
 
 export function parseCreatorServeOptions(values: readonly string[]): CreatorServeOptions {
-  let model: string | undefined;
+  let defaultModel: string | undefined;
   let sessionDirectory: string | undefined;
   let timeoutMs: number | undefined;
   let controlPort: number | undefined;
@@ -50,7 +50,7 @@ export function parseCreatorServeOptions(values: readonly string[]): CreatorServ
   for (let index = 0; index < values.length; index += 1) {
     const option = values[index];
     const next = values[index + 1];
-    if (option === "--model" && next) model = next;
+    if (option === "--default-model" && next) defaultModel = next;
     else if (option === "--session-dir" && next) sessionDirectory = next;
     else if (option === "--timeout-ms" && next && /^\d+$/.test(next)) timeoutMs = Number(next);
     else if (
@@ -68,7 +68,7 @@ export function parseCreatorServeOptions(values: readonly string[]): CreatorServ
   }
   return {
     valid: true,
-    ...(model ? { model } : {}),
+    ...(defaultModel ? { defaultModel } : {}),
     ...(sessionDirectory ? { sessionDirectory } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     ...(controlPort !== undefined ? { controlPort } : {}),

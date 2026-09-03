@@ -1,6 +1,10 @@
 import { join, resolve } from "node:path";
 import {
+  AgentExecutionJournalStore,
+  assertAgentExecutionSlot,
+  createAgentExecutionJournalResume,
   persistCreatorPhaseAgentRun,
+  type AgentExecutionSlot,
   type AgentRuntime,
   type BudgetPolicy,
 } from "../../agent-runtime/src/index.js";
@@ -15,7 +19,9 @@ import {
   creatorOrientation,
   runCreatorBuilder,
   runCreatorPlanner,
+  type CreatorAgentContextCitation,
   type CreatorAgentWorkerDescriptor,
+  type CreatorAgentOutcome,
   type CreatorApproval,
   type CreatorBuildContract,
   type CreatorChangeSet,
@@ -35,8 +41,13 @@ export interface CreatorAgentWorker {
     projectIndex: CreatorProjectIndexView;
     sourceIndex: StudioSourceIndex;
     sourceResolver: VerifiedSourceResolver;
-    prompt: string;
+    creatorPrompt: string;
+    agentPrompt: string;
+    contextCitations?: readonly CreatorAgentContextCitation[];
     budgets: BudgetPolicy;
+    execution: AgentExecutionSlot;
+    /** Continue a durable response boundary in this exact journal. */
+    resume?: true;
   }): Promise<CreatorWorkerPlanResult>;
   build(input: {
     session: CreatorSession;
@@ -44,19 +55,21 @@ export interface CreatorAgentWorker {
     projectIndex: CreatorProjectIndexView;
     sourceIndex: StudioSourceIndex;
     sourceResolver: VerifiedSourceResolver;
-    prompt: string;
+    creatorPrompt: string;
+    agentPrompt: string;
     plan: CreatorPlan;
     planApproval: CreatorApproval;
     sourceConsultation: CreatorSourceConsultation;
     verificationFeedback?: readonly string[];
     budgets: BudgetPolicy;
+    execution: AgentExecutionSlot;
   }): Promise<CreatorWorkerBuildResult>;
 }
 
 export type CreatorWorkerPlanResult =
   | {
       status: "sealed";
-      plan: CreatorPlan;
+      outcome: CreatorAgentOutcome;
       evidence: CreatorSessionBundle["agentRuns"][number];
       source: CreatorWorkerSourceEvidence;
     }
@@ -106,20 +119,38 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
     projectIndex: CreatorProjectIndexView;
     sourceIndex: StudioSourceIndex;
     sourceResolver: VerifiedSourceResolver;
-    prompt: string;
+    creatorPrompt: string;
+    agentPrompt: string;
+    contextCitations?: readonly CreatorAgentContextCitation[];
     budgets: BudgetPolicy;
+    execution: AgentExecutionSlot;
+    resume?: true;
   }): Promise<CreatorWorkerPlanResult> {
+    assertWorkerExecution(input.execution, "planner");
+    const artifactStore = new ImmutableJsonArtifactStore(resolve(this.directory));
+    const journalStore = new AgentExecutionJournalStore(artifactStore);
+    const resumeFromJournal = await executionJournalResume(
+      journalStore,
+      input.execution,
+      input.resume === true,
+    );
     const result = await runCreatorPlanner({
       session: input.session,
       ownership: input.ownership,
       projectIndex: input.projectIndex,
       sourceIndex: input.sourceIndex,
       sourceResolver: input.sourceResolver,
-      prompt: input.prompt,
+      creatorPrompt: input.creatorPrompt,
+      agentPrompt: input.agentPrompt,
+      ...(input.contextCitations ? { contextCitations: input.contextCitations } : {}),
       runtime: this.runtime,
       budgets: input.budgets,
+      executionJournal: journalStore.sink(input.execution.journalId),
+      ...(resumeFromJournal ? { resumeFromJournal } : {}),
     });
+    const executionJournal = await journalStore.load(input.execution.journalId);
     const phase = await persistCreatorPhaseAgentRun({
+      agentRunId: input.execution.agentRunId,
       phase: "creator_planner",
       creatorSession: { id: input.session.id, hash: input.session.hash },
       promptHash: input.session.promptHash,
@@ -134,18 +165,15 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
       finalization: result.finalization,
       runtime: this.runtime,
       runtimeResult: result.runtimeResult,
+      model: input.session.model,
       toolHost: result.toolHost,
       budgets: input.budgets,
       directory: join(resolve(this.directory), "agent-runs"),
       traceDirectory: join(resolve(this.directory), "traces"),
       executionWorker: this.descriptor,
+      executionJournal,
     });
-    const evidence = await reference(
-      phase,
-      "creator_planner",
-      new ImmutableJsonArtifactStore(resolve(this.directory)),
-    );
-    const artifactStore = new ImmutableJsonArtifactStore(resolve(this.directory));
+    const evidence = await reference(phase, "creator_planner", artifactStore);
     const sourceIndex = result.toolHost.getSourceIndex();
     const sourceConsultation = result.toolHost.getSourceConsultation();
     const source: CreatorWorkerSourceEvidence = {
@@ -168,30 +196,31 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
         evidence,
         source,
       };
-    if (result.finalization.status === "unsealed" || !result.plan)
+    if (result.finalization.status === "unsealed" || !result.outcome)
       return {
         status: "unsealed",
         failure: {
           code:
             result.finalization.status === "unsealed"
               ? result.finalization.failureCode
-              : "PLAN_NOT_PUBLISHED",
+              : "CREATOR_OUTCOME_NOT_PUBLISHED",
           detail:
             result.finalization.status === "unsealed"
               ? result.finalization.detail
-              : "Creator planner did not publish a plan",
+              : "Creator agent did not publish an answer, clarification, or plan",
         },
         evidence,
         source,
       };
-    return { status: "sealed", plan: result.plan, evidence, source };
+    return { status: "sealed", outcome: result.outcome, evidence, source };
   }
 
   async build(input: {
     session: CreatorSession;
     ownership: StudioOwnershipMap;
     projectIndex: CreatorProjectIndexView;
-    prompt: string;
+    creatorPrompt: string;
+    agentPrompt: string;
     plan: CreatorPlan;
     planApproval: CreatorApproval;
     sourceIndex: StudioSourceIndex;
@@ -199,14 +228,23 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
     sourceConsultation: CreatorSourceConsultation;
     verificationFeedback?: readonly string[];
     budgets: BudgetPolicy;
+    execution: AgentExecutionSlot;
   }): Promise<CreatorWorkerBuildResult> {
+    assertWorkerExecution(
+      input.execution,
+      input.verificationFeedback === undefined ? "builder" : "repair",
+    );
+    const artifactStore = new ImmutableJsonArtifactStore(resolve(this.directory));
+    const journalStore = new AgentExecutionJournalStore(artifactStore);
+    await executionJournalResume(journalStore, input.execution, false);
     const result = await runCreatorBuilder({
       session: input.session,
       ownership: input.ownership,
       projectIndex: input.projectIndex,
       sourceIndex: input.sourceIndex,
       sourceResolver: input.sourceResolver,
-      prompt: input.prompt,
+      creatorPrompt: input.creatorPrompt,
+      agentPrompt: input.agentPrompt,
       plan: input.plan,
       planApproval: input.planApproval,
       sourceConsultation: input.sourceConsultation,
@@ -215,8 +253,11 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
         : { verificationFeedback: input.verificationFeedback }),
       runtime: this.runtime,
       budgets: input.budgets,
+      executionJournal: journalStore.sink(input.execution.journalId),
     });
+    const executionJournal = await journalStore.load(input.execution.journalId);
     const phase = await persistCreatorPhaseAgentRun({
+      agentRunId: input.execution.agentRunId,
       phase: "creator_builder",
       creatorSession: { id: input.session.id, hash: input.session.hash },
       promptHash: input.session.promptHash,
@@ -231,21 +272,19 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
       finalization: result.finalization,
       runtime: this.runtime,
       runtimeResult: result.runtimeResult,
+      model: input.session.model,
       toolHost: result.toolHost,
       budgets: input.budgets,
       directory: join(resolve(this.directory), "agent-runs"),
       traceDirectory: join(resolve(this.directory), "traces"),
       executionWorker: this.descriptor,
+      executionJournal,
       creatorBuildContract: {
         id: result.toolHost.contract.id,
         hash: result.toolHost.contract.hash,
       },
     });
-    const evidence = await reference(
-      phase,
-      "creator_builder",
-      new ImmutableJsonArtifactStore(resolve(this.directory)),
-    );
+    const evidence = await reference(phase, "creator_builder", artifactStore);
     if (phase.run.status !== "locally_eligible")
       return {
         status: "unsealed",
@@ -288,6 +327,33 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
       evidence,
     };
   }
+}
+
+function assertWorkerExecution(
+  execution: AgentExecutionSlot,
+  expectedPurpose: AgentExecutionSlot["purpose"],
+): void {
+  assertAgentExecutionSlot(execution);
+  if (execution.purpose !== expectedPurpose)
+    throw new Error(
+      `Creator worker expected a ${expectedPurpose} execution slot, received ${execution.purpose}`,
+    );
+}
+
+async function executionJournalResume(
+  store: AgentExecutionJournalStore,
+  execution: AgentExecutionSlot,
+  resume: boolean,
+): Promise<ReturnType<typeof createAgentExecutionJournalResume> | undefined> {
+  const journal = await store.loadIfPresent(execution.journalId);
+  if (!resume) {
+    if (journal !== undefined)
+      throw new Error("Preassigned creator execution journal was already dispatched");
+    return undefined;
+  }
+  if (!journal)
+    throw new Error("Creator-authorized response resume has no durable execution journal");
+  return createAgentExecutionJournalResume(journal);
 }
 
 async function reference(

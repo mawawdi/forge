@@ -2,7 +2,134 @@
 
 This is the canonical status and next-work record. [ARCHITECTURE.md](ARCHITECTURE.md) defines architecture, [FORGE.md](FORGE.md) defines thesis and invariants, [EVALS.md](EVALS.md) defines claims, and [RESEARCH.md](RESEARCH.md) indexes evidence.
 
-## Current milestone: existing-project intelligence and explicit refresh
+## Current milestone: Creator Conversation presentation-ready clean break
+
+The subsequent DeepSeek planner completed a six-step plan, but an oversized
+activity error froze browser updates and artifact-identity bugs blocked
+publication. Both boundaries are corrected and the exact saved plan now
+publishes in an isolated copy, without a model retry or Studio operation.
+See the [dashboard/publication incident](research/durable-creator-conversation.md#dashboard-refresh-and-outcome-publication-2026-09-04)
+for original identities, replay evidence, and the remaining live recovery boundary.
+
+The September 4 GPT-5.6 Luna planner incident is now diagnosed from its complete
+journal and artifact graph: 34 failed project queries and five empty API lookups,
+followed by `REPEATED_NO_PROGRESS_TOOL_BATCH`. It produced no plan and made no
+writes. The provider wire now preserves optional fields explicitly, query
+guidance explains first-page and parent selection, and the UI exposes the
+underlying failure. Planning and creator approval boundaries are unchanged.
+Offline verification is recorded in the
+[incident ledger](research/durable-creator-conversation.md#planner-query-loop-2026-09-04);
+a fresh user-run planner turn remains necessary to establish provider behavior
+after the fix.
+
+The current product surface is the clean-break Creator Conversation described
+in [CREATOR-EXPERIENCE.md](CREATOR-EXPERIENCE.md). It replaces the evidence
+workbench route with projects containing independent chats, a scrolling timeline,
+anchored composer, live journal-derived activity, and on-demand Project settings
+and Technical Details dialogs. Shared preferences remain project-scoped; each
+chat retains its own history. The browser consumes one coordinator-produced read model and one SSE
+invalidation source; it retains its last durable view across a transient API
+failure and performs a read-only canonical refresh without resubmitting an
+ambiguous mutation request automatically. An explicit retry posts the retained
+byte-identical body with the same idempotency key, rather than a newly composed
+request.
+
+The native Studio plugin now follows the same visual direction: a compact
+current-activity view, a toolbar visibility toggle, and a dismissible settings
+popup for connection controls and diagnostics. Its responsive layout and motion
+preferences have offline parse, type, and module coverage. Native rendering
+still needs the creator's Studio review; see the
+[connector review record](research/durable-creator-conversation.md#native-connector-redesign-review).
+
+The underlying `CreatorConversationStore` is append-only: immutable bodies and
+their exact linking commit are written before an atomic private head update;
+loading verifies the head-to-sequence-one chain and every snapshot/artifact
+binding. Turns, agent outcomes, citations, plan revisions, work-job snapshots,
+and creator-authority memory revisions are separate sealed records. The host
+builds the bounded next-turn context (active memory, up to 20 turns, up to 20
+decisions, current project revision, and exact new turn) and converts only
+planner-issued handles into durable source-range/project-fact citations. No
+model can mint a citation or inject hidden evaluator material as conversation
+authority.
+
+The model registry is a closed ordered four-model registry with tools required:
+`meta/muse-spark-1.3-contributor`, `z-ai/glm-5.3-flash`,
+`deepseek/deepseek-v4-flash-0731`, and default `openai/gpt-5.6-luna`. Model and
+provider fallback are disabled. Registry/catalog availability can reject a
+selection, and a published agent turn requires exact requested-model and
+serving-provider attribution.
+
+Admitted conversation work executes only in the foreground local creator
+service. Each planner, builder, or repair phase reserves a globally unique,
+immutable AgentRun/journal slot before provider intent. Its append-only
+`AgentExecutionJournal` records `request_intent`, `response_received`,
+`batch_validated`, `tool_completed`, and `terminal` boundaries. Restart derives
+its result only from that journal: no head is `never_dispatched`; an
+unconfirmed request intent or `tool_execution_intent` without matching
+completion is `outcome_unknown` and requires explicit **Retry work** with a
+fresh job/AgentRun/journal slot. A fully persisted response and completed-tool
+boundary instead may be consumed by explicit **Resume work** in the same
+reserved AgentRun/journal, without re-dispatching that response. Forge never
+automatically retries a provider call, Apply, commit, cancel, rollback, or Play
+arm on restart.
+
+Local project continuity now has a dedicated protocol. An unpublished place
+may Link an absent `_forgeProjectId`, while an observed local identity may Fork
+to a different ID through a host-issued exact-state ChangeHistory transaction,
+direct readback, finalization receipt, and acknowledgement. Save As copies the
+local identity until an explicit Fork. Publishing instead makes universe/place
+identity authoritative and never silently continues the embedded local
+conversation ID. Link, Fork, and the creator-facing local-to-published
+continuity choice are current hash-bound control-view actions.
+
+This is a presentation-ready, locally tested milestone—not a new live Studio
+result. The automated suite covers contract validation, strict history
+reconstruction, stale/action binding, job interruption classifications, model
+registry behavior, identity-protocol validation, and dashboard rendering with
+synthetic data. It deliberately makes no provider request or Studio call. The
+next smallest evidence-producing task is one user-run Studio canary through
+this new shell; until then no current provider, mutation, Play, acceptance, or
+Studio-verification claim follows from the presentation work.
+
+### Planner response and publication failure, 2026-09-03
+
+The user-run DeepSeek planner reached 18 read-only tool completions and then
+hit the 4,096-token per-response limit on turn 6. AgentRun
+`agent_run_b857c1a5-10d5-4eff-af3e-b3e3c745d8be` is `incomplete`, classified
+`budget_exhausted`. The session validator then incorrectly expected a `plan`
+instead of the current `creator_outcome`, masking the original failure.
+
+The validator now binds planner evidence to its answer, clarification, or plan
+outcome, including unsealed failures. The response cap is 32,768 tokens and
+remains clamped by the runtime's remaining total budget. No automatic provider
+retry occurs. Exact identities and evidence are in the
+[incident ledger](research/durable-creator-conversation.md#planner-publication-failure-2026-09-03).
+The next live gate is a creator-sent request in the rebuilt UI; no successful
+provider or Studio result is claimed by this correction.
+
+### First conversation-shell Link canary: failed before mutation
+
+The 2026-09-03 `game.rbxlx` canary paired and attested but did not link.
+Job `creator_identity_job_bea28003-07f0-481e-96f3-e41d090a08a0` received
+`STUDIO_FAILURE: project identity operation connector epoch mismatch`
+(detail `b65995c2…3ddc`). Pairing used a session-salted local identity;
+heartbeat adoption recomputed an unsalted identity. Two Resume jobs then
+failed locally against the first job's retained bridge reservation
+(detail `6524cb71…fd53`), without another Studio dispatch. The exact IDs,
+hashes, timing, and no-mutation boundary are preserved in the
+[incident ledger](research/durable-creator-conversation.md#link-rejection-incident-2026-09-03).
+
+The correction uses one generated authority recipe across pairing/adoption
+and binds local controls to the connector epoch. Rejected Link/Fork commands
+carry exact no-effect/recovery evidence; only verified no-effect evidence
+releases the matching reservation and offers explicit retry. Failure detail
+and command/settlement evidence are durable and visible without requiring a
+legal action. Unreadable predecessor identity-job heads block new authority
+until a clean-store reset and fresh Studio pairing; no migration or guessed
+outcome is allowed. The next live gate remains user-run Link → Save to File →
+close/reopen → re-pair. Offline tests do not establish that live result.
+
+## Predecessor milestone: existing-project intelligence and explicit refresh
 
 The first connector launch after the project-index clean break exposed a local
 recovery deadlock before pairing: the new connector reused
@@ -133,7 +260,7 @@ The repository now implements the product-shaped vertical slice plus the closed 
 - every finalized mutation attempt is provider-free replayable through `forge creator replay-mutation` and the dashboard API; verification replay requires its linked exactly replayable matched mutation;
 - the bounded TLA+ transaction model is checked offline in `npm test` using the pinned official 1.7.4 tools JAR;
 
-- one creator prompt entered from the local React dashboard or CLI control client;
+- a predecessor single creator prompt entered from the local React dashboard or CLI control client;
 - fresh bounded complete Studio project-index graphs, a generated engine-owned authoring-container topology, and exact connector-issued identities;
 - Studio transaction authority plus an opt-in verified Rojo map, with exactly one derived writer sealed per change set and mixed-authority batches rejected before approval;
 - separate read-only planner and typed builder model phases behind the bound `CreatorAgentWorker` seam;
@@ -157,8 +284,8 @@ The repository now implements the product-shaped vertical slice plus the closed 
 - retrievable execution-plan and complete bounded runtime-evidence artifacts, exact state/mutation bindings, pure provider-free replay, and explicit non-replayability for incomplete connector runs;
 - runtime-owned rejected/executed tool-call evidence and real monotonic-backed phase, provider-turn, and tool-call intervals, materialized as contained trace spans;
 - a standalone loopback `CreatorControlServer` with one-time browser grants, host-only cookies, separate CLI bearer authentication, same-origin mutation, bounded SSE invalidations, authorized artifact retrieval, and replay;
-- a canonical `CreatorControlView` consumed by the dashboard and CLI, with one primary and one secondary creator action, exact change payload presentation, content-bound terminal evidence references, and no workflow legality inferred from status text;
-- a React evidence workbench with session history, five coordinator-produced stages, exact artifacts, Studio pairing and consent, required final report, explicit error/recovery states, keyboard-visible controls, reduced motion, and responsive stacking;
+- a public `CreatorControlView` consumed by the dashboard and CLI, with exact change-payload presentation, content-bound terminal-evidence references, and no workflow legality inferred from status text; the lower `CreatorTransactionControlView` owns its bounded ordered transaction-action array;
+- the predecessor React evidence workbench with session history, five coordinator-produced stages, exact artifacts, Studio pairing and consent, required final report, explicit error/recovery states, keyboard-visible controls, reduced motion, and responsive stacking;
 - a thin Studio connector with creator workflow controls and protocol messages removed while pairing, observation, typed mutation, Play Solo, diagnostics, commit/cancel, and guarded undo remain;
 - approve-and-apply followed by silent arming of the next ordinary creator-driven Studio Play/Stop session, while retaining the exact approved evidence boundary;
 - pre-mutation compilation of dependency-ordered runtime proof programs, persisted revision-bound execution plans, and a bounded creator-interaction observation window inside the common generated five-minute Studio ceiling;
@@ -608,7 +735,7 @@ The fifth consumed Status Beacon session is preserved unchanged: session `creato
 
 The sixth consumed Status Beacon session is preserved unchanged: session `creator_session_2fc9d4ac-d27f-4ac1-87df-60701bcb9468`; approved plan `creator_plan_0927f211476722b7e3c3d431` (`0927f211476722b7e3c3d431527e51e9e9fa9ee80c246cf6be14758c1a9e5dc2`); sealed change set `creator_change_set_12f86290d366d7a2e6501b5f` (`12f86290d366d7a2e6501b5f014905737b3aeda26904ad732f9f8ecd24a9c87c`); planner AgentRun `agent_run_102524ec-7a5c-4229-a7dd-ff496053278b` and trace `trace_d55a23ae-a0a1-46f4-9f15-cba33da4bd80`; builder AgentRun `agent_run_23fd5567-5894-47cd-9e84-60fb7a31c093` and trace `trace_559e93a3-d7a2-49fb-9b0d-5de1c92fa8ae`. Planning and building both sealed, all natural property inputs staged on their first attempt, and the local gate was `eligible`. After exact change approval, Studio created the Part and Script inside an open recording. Post-apply observation showed Roblox had stored the requested red channel `0.1` as the 8-bit value `0.09803921729326248`; Forge compared it to the unrepresentable input decimal and falsely classified the Color as mismatched. The recording was automatically cancelled, a fresh rollback observation exactly restored the initial revision, and all three initial/transient/recovered observations are preserved. No playtest or final review occurred. This is storage-semantics boundary failure evidence, not builder failure. Current Forge canonicalizes natural numeric/color inputs to Studio's storage domain before review and the connector accepts deterministic canonical color bytes. The session is not rewritten, resumed, or retried.
 
-## Accepted Orbital Freight Airlock proof and next milestone
+## Accepted Orbital Freight Airlock baseline ledger
 
 The full interconnected Orbital Freight Airlock flow has now completed as
 accepted evidence. Session
@@ -640,14 +767,13 @@ report remains creator observation; it does not upgrade unsupported visual,
 client, or causal behavior into machine evidence.
 
 This proof closes the repeated Prepare, preflight, project-index publication,
-provisional Apply, ordinary Play/Stop, commit, and final-review blockers for the
-demonstrated transaction. The next milestone is the clean-break creator
-conversation specified in [CREATOR-EXPERIENCE.md](CREATOR-EXPERIENCE.md): a
-durable project conversation, genuine clarification and plan revision,
-conversation-native source citations, explicit memory, per-turn model
-selection, asynchronous foreground jobs, and the Night Blueprint product
-shell. The current session-oriented evidence workbench is no longer the target
-experience.
+provisional Apply, ordinary Play/Stop, commit, and final-review blockers for
+that demonstrated predecessor transaction. It is the accepted Orbital Freight
+Airlock baseline ledger, not evidence that the later Creator Conversation
+presentation shell ran live. The clean-break shell is now implemented and
+locally tested; its next evidence task is the user-run Studio canary stated in
+the current milestone. The old session-oriented workbench is not retained as a
+second product path.
 
 ## Deferred goal-only work
 

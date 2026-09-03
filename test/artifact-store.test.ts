@@ -1,5 +1,15 @@
 import assert from "node:assert/strict";
-import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { createHash } from "node:crypto";
@@ -123,6 +133,23 @@ test("rejects unsafe locators and all symlink path components", async () => {
     await assert.rejects(store.read(reference), /symbolic link/i);
     assert.equal(target.startsWith(root), true);
   });
+});
+
+test("rejects a creator-controlled symlinked store ancestor for reads and writes", async () => {
+  const root = await temporaryDirectory();
+  try {
+    const actualRoot = join(root, "actual-store", "creator");
+    const store = new ImmutableJsonArtifactStore(actualRoot);
+    const reference = await store.write({ safe: true });
+    const relocatedAncestor = join(root, "relocated-store");
+    await rename(join(root, "actual-store"), relocatedAncestor);
+    await symlink(relocatedAncestor, join(root, "actual-store"));
+
+    await assert.rejects(store.read(reference), /unsafe artifact store directory/i);
+    await assert.rejects(store.write({ redirected: true }), /unsafe artifact store directory/i);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("never overwrites a content-addressed conflict and supports typed read assertions", async () => {

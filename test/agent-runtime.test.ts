@@ -5,14 +5,17 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import {
   BoundedToolHost,
+  AgentExecutionJournalStore,
   CandidateWorkspace,
   ForgeNativeAgentRuntime,
   DEFAULT_AGENT_BUDGETS,
   assertHarnessConfiguration,
+  agentExecutionJournalIdForAgentRun,
   createHarnessConfiguration,
   loadWorkspaceCandidateArtifact,
   persistCreatorPhaseAgentRun,
   runBoundedAgent,
+  verifyAgentRunExecutionJournal,
   type AgentToolHost,
   type ToolBatchDecision,
   type ToolResult,
@@ -157,9 +160,13 @@ class ScriptedModelClient implements ModelClient {
       aiSdk: { package: "fake-ai" },
       providerAdapter: { package: "fake-provider" },
       routing: {
-        only: ["fake"],
-        allowFallbacks: false,
+        modelRegistryHash: "f".repeat(64),
+        allowlistedModels: ["fake/model"],
+        providerAllowlist: "none",
+        modelFallbacks: false,
+        providerFallbacks: false,
         requireParameters: true,
+        requireTools: true,
       },
       reasoning: { effort: "medium", exclude: false },
       request: {
@@ -851,6 +858,9 @@ test("runtime persists rejected atomic-batch evidence when a tool host only retu
       assistant(2, [], "Stopped after receiving the validation result."),
     ]),
   );
+  const agentRunId = "agent_run_runtime_evidence";
+  const executionJournalStore = new AgentExecutionJournalStore(runDirectory);
+  const executionJournalId = agentExecutionJournalIdForAgentRun(agentRunId);
   const runtimeResult = await runtime.run({
     systemPrompt: "Test runtime",
     prompt: CREATOR_PROMPT,
@@ -858,13 +868,16 @@ test("runtime persists rejected atomic-batch evidence when a tool host only retu
     tools: toolHost,
     budgets: DEFAULT_AGENT_BUDGETS,
     model: "fake/model",
+    executionJournal: executionJournalStore.sink(executionJournalId),
   });
+  const executionJournal = await executionJournalStore.load(executionJournalId);
   assert.equal(runtimeResult.status, "completed");
   assert.deepEqual(
     runtimeResult.toolCalls.map((call) => call.result.error?.code),
     ["TOOL_UNKNOWN"],
   );
   const phase = await persistCreatorPhaseAgentRun({
+    agentRunId,
     phase: "creator_planner",
     creatorSession: CREATOR_SESSION,
     promptHash: contentHash(CREATOR_PROMPT),
@@ -875,13 +888,14 @@ test("runtime persists rejected atomic-batch evidence when a tool host only retu
     finalization: {
       status: "sealed",
       artifact: {
-        kind: "plan",
+        kind: "creator_outcome",
         id: "creator_plan_runtime_evidence",
         hash: contentHash("creator-plan-runtime-evidence"),
       },
     },
     runtime,
     runtimeResult,
+    model: "fake/model",
     toolHost,
     budgets: DEFAULT_AGENT_BUDGETS,
     directory: runDirectory,
@@ -892,6 +906,7 @@ test("runtime persists rejected atomic-batch evidence when a tool host only retu
       environment: "local_process",
       isolation: "none",
     },
+    executionJournal,
   });
   assert.deepEqual(
     phase.run.toolCalls.map((call) => call.result.error?.code),
@@ -900,6 +915,17 @@ test("runtime persists rejected atomic-batch evidence when a tool host only retu
   assert.equal(phase.run.toolCalls[0]?.inputHash, runtimeResult.toolCalls[0]?.inputHash);
   assert.equal(phase.run.toolCalls[0]?.resultHash, runtimeResult.toolCalls[0]?.resultHash);
   assert.equal(phase.run.budgets.consumed.toolCalls, 1);
+  assert.equal(phase.run.model.name, "fake/model");
+  assert.equal(phase.run.executionJournal?.journalId, executionJournal.head.journalId);
+  assert.equal(phase.run.executionJournal?.sequence, executionJournal.head.sequence);
+  assert.equal(phase.run.executionJournal?.entryHash, executionJournal.head.entryHash);
+  assert.deepEqual(phase.run.executionJournal?.entry, executionJournal.head.entry);
+  assert.equal(
+    phase.run.executionJournal?.terminalResultHash,
+    contentHash(stableJson(runtimeResult)),
+  );
+  await verifyAgentRunExecutionJournal(phase.run, executionJournalStore.artifactStore);
+  assert.equal(phase.trace.components.model?.name, "fake/model");
   assert.equal(phase.run.budgets.consumed.toolResultBytes, phase.run.toolCalls[0]?.bytes);
   const persisted = JSON.parse(await readFile(phase.persistence.path, "utf8")) as typeof phase.run;
   assert.equal(persisted.toolCalls[0]?.result.error?.code, "TOOL_UNKNOWN");
@@ -907,6 +933,85 @@ test("runtime persists rejected atomic-batch evidence when a tool host only retu
   assert.equal(span?.attributes["forge.tool.error_code"], "TOOL_UNKNOWN");
   assert.equal(span?.attributes["forge.tool.input_hash"], phase.run.toolCalls[0]?.inputHash);
   assert.equal(span?.attributes["forge.tool.result_hash"], phase.run.toolCalls[0]?.resultHash);
+});
+
+test("creator builder repair AgentRuns bind distinct terminal execution journals", async () => {
+  const runDirectory = await directory();
+  const orientation = await genericOrientation();
+  const toolHost = recordlessRejectingToolHost();
+  const runtime = new ForgeNativeAgentRuntime(
+    new ScriptedModelClient([
+      assistant(1, [], "repair one sealed"),
+      assistant(2, [], "repair two sealed"),
+    ]),
+  );
+  const journalStore = new AgentExecutionJournalStore(runDirectory);
+  const phases: Array<Awaited<ReturnType<typeof persistCreatorPhaseAgentRun>>> = [];
+  for (const repair of [1, 2]) {
+    const agentRunId = `agent_run_builder_repair_${repair}`;
+    const journalId = agentExecutionJournalIdForAgentRun(agentRunId);
+    const runtimeResult = await runtime.run({
+      systemPrompt: "Builder repair",
+      prompt: CREATOR_PROMPT,
+      orientation,
+      tools: toolHost,
+      budgets: DEFAULT_AGENT_BUDGETS,
+      model: "fake/model",
+      executionJournal: journalStore.sink(journalId),
+    });
+    const executionJournal = await journalStore.load(journalId);
+    phases.push(
+      await persistCreatorPhaseAgentRun({
+        agentRunId,
+        phase: "creator_builder",
+        creatorSession: CREATOR_SESSION,
+        promptHash: contentHash(CREATOR_PROMPT),
+        projectId: "project_builder_repairs",
+        revisionHash: contentHash("builder-repair-revision"),
+        orientation,
+        systemPrompt: "Builder repair",
+        finalization: {
+          status: "sealed",
+          artifact: {
+            kind: "change_set",
+            id: `creator_change_set_repair_${repair}`,
+            hash: contentHash(`creator-change-set-repair-${repair}`),
+          },
+        },
+        runtime,
+        runtimeResult,
+        model: "fake/model",
+        toolHost,
+        budgets: DEFAULT_AGENT_BUDGETS,
+        directory: runDirectory,
+        traceDirectory: join(runDirectory, "traces"),
+        executionWorker: {
+          kind: "CreatorAgentWorkerDescriptor",
+          name: "forge-local-creator-agent-worker",
+          environment: "local_process",
+          isolation: "none",
+        },
+        executionJournal,
+        creatorBuildContract: {
+          id: "creator_build_contract_repairs",
+          hash: contentHash("creator-build-contract-repairs"),
+        },
+      }),
+    );
+  }
+  assert.notEqual(
+    phases[0]?.run.executionJournal?.journalId,
+    phases[1]?.run.executionJournal?.journalId,
+  );
+  for (const phase of phases) {
+    assert.equal(
+      phase.run.executionJournal?.journalId,
+      agentExecutionJournalIdForAgentRun(phase.run.id),
+    );
+    const loaded = await journalStore.load(phase.run.executionJournal!.journalId);
+    assert.equal(loaded.entries.at(-1)?.checkpoint.checkpointType, "terminal");
+    assert.equal(phase.run.executionJournal?.entryHash, loaded.head.entryHash);
+  }
 });
 
 test("runtime owns exact monotonic timing for provider turns and executed tool calls", async () => {

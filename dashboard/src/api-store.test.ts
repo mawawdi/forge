@@ -1,544 +1,528 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CreatorDashboardStore, isDashboardState } from "./api-store";
+import { makeTurnRequest } from "./derived";
+import { HASH_B, dashboardState, event } from "./test/fixtures";
 
-const catalogSummary = {
-  kind: "StudioCatalogSummary",
-  catalog: {
-    hash: "a".repeat(64),
-    source: {
-      repository: "https://github.com/Roblox/creator-docs.git",
-      commit: "0123456789abcdef",
-      engineReferencePath: "content/en-us/reference/engine",
-      sourceTreeHash: "b".repeat(64),
-    },
-    counts: { classes: 638 },
-  },
-  coverage: {
-    hash: "c".repeat(64),
-    catalogHash: "a".repeat(64),
-    policyHash: "d".repeat(64),
-    manifestHash: "e".repeat(64),
-    summary: {
-      total: 1,
-      byDisposition: {},
-      byReason: {},
-      authorableClasses: 0,
-      authorableProperties: 0,
-    },
-    catalogBinding: "matched",
-    manifestBinding: "matched",
-  },
-  manifest: {
-    hash: "e".repeat(64),
-    connectorBuildHash: "f".repeat(64),
-    classCount: 0,
-    writablePropertyCount: 0,
-    roots: [],
-    operationKinds: [],
-  },
-};
-
-const capabilityPage = {
-  kind: "StudioCapabilityExplorerPage",
-  catalogHash: "a".repeat(64),
-  coverageHash: "c".repeat(64),
-  selection: { query: "anchored" },
-  page: { cursor: 0, limit: 40, total: 0 },
-  entries: [],
-};
-
-const sourceSearchPage = {
-  indexId: "studio_source_index_0123456789abcdef",
-  indexHash: "1".repeat(64),
-  query: "require",
-  matches: [
-    {
-      document: {
-        documentId: "workspace:Catalog",
-        path: "ReplicatedStorage/Catalog",
-        className: "ModuleScript",
-        executionContext: "shared",
-        sourceHash: "2".repeat(64),
-      },
-      location: {
-        startByte: 0,
-        endByte: 7,
-        startLine: 1,
-        startColumn: 1,
-        endLine: 1,
-        endColumn: 8,
-      },
-      snippetRange: { startByte: 0, endByte: 20 },
-      snippet: "require(Catalog)",
-    },
-  ],
-};
-
-const sourceReadPage = {
-  indexId: "studio_source_index_0123456789abcdef",
-  indexHash: "1".repeat(64),
-  document: {
-    documentId: "workspace:Catalog",
-    path: "ReplicatedStorage/Catalog",
-    className: "ModuleScript",
-    executionContext: "shared",
-    sourceHash: "2".repeat(64),
-  },
-  totalUtf8Bytes: 10,
-  range: { startByte: 0, endByte: 10 },
-  source: "return {}\n",
-};
-
-const sourceDependencyPage = {
-  indexId: "studio_source_index_0123456789abcdef",
-  indexHash: "1".repeat(64),
-  root: sourceReadPage.document,
-  direction: "closure",
-  maxDepth: 16,
-  dependencies: [],
-  discoveredNodes: [sourceReadPage.document],
-  truncated: false,
-};
-
-const exactSourceDiffPage = {
-  kind: "CreatorExactSourceDiffPage",
-  sessionId: "creator_session_source",
-  sourceIndex: {
-    id: sourceReadPage.indexId,
-    hash: sourceReadPage.indexHash,
-    snapshotHash: "3".repeat(64),
-  },
-  changeSet: { id: "creator_change_set_source", hash: "4".repeat(64) },
-  operation: {
-    id: "edit-source-1",
-    document: sourceReadPage.document,
-    beforeSourceHash: sourceReadPage.document.sourceHash,
-    finalSourceHash: "5".repeat(64),
-    finalByteCount: 12,
-  },
-  edit: {
-    ordinal: 0,
-    editCount: 1,
-    before: {
-      totalUtf8Bytes: 4,
-      range: { startByte: 0, endByte: 4 },
-      source: "old\n",
-    },
-    replacement: {
-      sourceHash: "6".repeat(64),
-      totalUtf8Bytes: 4,
-      range: { startByte: 0, endByte: 4 },
-      source: "new\n",
-    },
-  },
-};
-
-function deferred<T>(): {
-  readonly promise: Promise<T>;
-  readonly resolve: (value: T) => void;
-} {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
-}
-
-function json(value: unknown): Response {
+function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {
-    status: 200,
+    status,
     headers: { "Content-Type": "application/json" },
   });
 }
 
-function dashboardState(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    kind: "CreatorDashboardState",
-    sessions: [],
-    pairedStudio: {
-      status: "unpaired",
-      transactionInventoryStatus: "unavailable",
-      message: "Open the Forge connector in Studio to pair this dashboard.",
-    },
-    stages: [],
-    serverTime: "2026-09-03T00:00:00.000Z",
-    ...overrides,
-  };
-}
+describe("CreatorDashboardStore", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("accepts only the conversation read model, not a partial control response", () => {
+    expect(isDashboardState({ kind: "CreatorDashboardState", conversations: [] })).toBe(false);
+    expect(isDashboardState(dashboardState())).toBe(true);
+  });
+
+  it("posts a hash-bound turn once and clears its draft only after a 202 admission", async () => {
+    const requests: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string, init?: RequestInit) => {
+        if (input === "/api/control/turn") {
+          requests.push(JSON.parse(String(init?.body)));
+          return Promise.resolve(
+            json(
+              {
+                kind: "CreatorWorkAdmission",
+                jobId: "job_01",
+                conversationId: "conversation_01",
+                acceptedAt: "2026-09-03T00:00:01.000Z",
+              },
+              202,
+            ),
+          );
+        }
+        if (input.startsWith("/api/control/state")) return Promise.resolve(json(dashboardState()));
+        throw new Error(`Unexpected request ${input}`);
+      }),
+    );
+    const store = new CreatorDashboardStore();
+    store.updateDraft("conversation_01", {
+      text: "Add a safe door.",
+      modelId: "openai/gpt-5.6-luna",
+    });
+
+    await store.submitTurn({
+      conversationId: "conversation_01",
+      turnContractId: "turn_contract_01",
+      turnContractHash: HASH_B,
+      turnKind: "follow_up",
+      text: "Add a safe door.",
+      selectedModelId: "openai/gpt-5.6-luna",
+    });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      kind: "CreatorTurnRequest",
+      turnContractHash: HASH_B,
+      turnKind: "follow_up",
+      selectedModelId: "openai/gpt-5.6-luna",
+    });
+    expect(store.draftFor("conversation_01").text).toBe("");
+    expect(store.draftFor("conversation_01").modelId).toBe("openai/gpt-5.6-luna");
+  });
+
+  it("keeps an unsent draft after an explicit rejection", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(json({ message: "Model unavailable" }, 409))),
+    );
+    const store = new CreatorDashboardStore();
+    store.updateDraft("conversation_01", { text: "Keep this request." });
+
+    await expect(
+      store.submitTurn({
+        conversationId: "conversation_01",
+        turnContractId: "turn_contract_01",
+        turnContractHash: HASH_B,
+        turnKind: "follow_up",
+        text: "Keep this request.",
+        selectedModelId: "openai/gpt-5.6-luna",
+      }),
+    ).rejects.toThrow("Model unavailable");
+
+    expect(store.draftFor("conversation_01").text).toBe("Keep this request.");
+  });
+
+  it("requires an exact 202 before clearing an admitted turn draft", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          json({
+            kind: "CreatorWorkAdmission",
+            jobId: "job_01",
+            conversationId: "conversation_01",
+            acceptedAt: "2026-09-03T00:00:01.000Z",
+          }),
+        ),
+      ),
+    );
+    const store = new CreatorDashboardStore();
+    store.updateDraft("conversation_01", { text: "Retain this until an exact admission." });
+
+    await expect(
+      store.submitTurn({
+        conversationId: "conversation_01",
+        turnContractId: "turn_contract_01",
+        turnContractHash: HASH_B,
+        turnKind: "follow_up",
+        text: "Retain this until an exact admission.",
+        selectedModelId: "openai/gpt-5.6-luna",
+      }),
+    ).rejects.toThrow("requires an exact 202");
+
+    expect(store.draftFor("conversation_01").text).toBe("Retain this until an exact admission.");
+  });
+
+  it("rejects a malformed 202 admission through the shared browser contract", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          json(
+            {
+              kind: "CreatorWorkAdmission",
+              jobId: "",
+              conversationId: "conversation_01",
+              acceptedAt: "not-a-time",
+            },
+            202,
+          ),
+        ),
+      ),
+    );
+    const store = new CreatorDashboardStore();
+    store.updateDraft("conversation_01", { text: "Retain malformed admissions." });
+
+    await expect(
+      store.submitTurn({
+        conversationId: "conversation_01",
+        turnContractId: "turn_contract_01",
+        turnContractHash: HASH_B,
+        turnKind: "follow_up",
+        text: "Retain malformed admissions.",
+        selectedModelId: "openai/gpt-5.6-luna",
+      }),
+    ).rejects.toThrow("valid work admission");
+
+    expect(store.draftFor("conversation_01").text).toBe("Retain malformed admissions.");
+  });
+
+  it("retries the original turn after a lost admission refreshes its contract", async () => {
+    const requests: string[] = [];
+    const jobs = new Map<string, string>();
+    let stateReads = 0;
+    const initial = dashboardState();
+    const refreshed = dashboardState({
+      controlView: {
+        ...initial.controlView!,
+        id: "control_after_job",
+        hash: "c".repeat(64),
+        turnContract: {
+          ...initial.controlView!.turnContract!,
+          id: "contract_after_job",
+          hash: "d".repeat(64),
+          allowedTurnTypes: ["new_work"],
+        },
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string, init?: RequestInit) => {
+        if (input === "/api/control/turn") {
+          const body = String(init?.body);
+          const request = JSON.parse(body) as { idempotencyKey: string };
+          requests.push(body);
+          const existingJob = jobs.get(request.idempotencyKey);
+          if (existingJob)
+            return Promise.resolve(
+              json(
+                {
+                  kind: "CreatorWorkAdmission",
+                  jobId: existingJob,
+                  conversationId: "conversation_01",
+                  acceptedAt: "2026-09-03T00:00:01.000Z",
+                },
+                202,
+              ),
+            );
+          jobs.set(request.idempotencyKey, "job_01");
+          return Promise.reject(new TypeError("Failed to fetch"));
+        }
+        if (input.startsWith("/api/control/state")) {
+          stateReads += 1;
+          return Promise.resolve(json(refreshed));
+        }
+        throw new Error(`Unexpected request ${input}`);
+      }),
+    );
+    const store = new CreatorDashboardStore();
+    const input = {
+      conversationId: "conversation_01",
+      turnContractId: "turn_contract_01",
+      turnContractHash: HASH_B,
+      turnKind: "follow_up" as const,
+      text: "Keep this exact request.",
+      selectedModelId: "openai/gpt-5.6-luna",
+    };
+    store.updateDraft("conversation_01", { text: input.text });
+
+    await expect(store.submitTurn(input)).rejects.toThrow("could not confirm");
+    expect(store.draftFor("conversation_01").text).toBe(input.text);
+    await waitFor(() => stateReads === 1 && store.getSnapshot().data !== undefined);
+    expect(store.getSnapshot().data!.controlView!.turnContract!.id).toBe("contract_after_job");
+    expect(
+      store.unconfirmedTurnFor(input.conversationId, input.text, input.selectedModelId),
+    ).toMatchObject({ turnContractId: input.turnContractId });
+
+    await store.submitTurn(
+      makeTurnRequest(store.getSnapshot().data!, "new_work", input.text, input.selectedModelId),
+    );
+
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toBe(requests[0]);
+    expect(jobs).toHaveLength(1);
+    expect(store.draftFor("conversation_01").text).toBe("");
+    expect(store.getSnapshot().unconfirmedTurns).toEqual([]);
+  });
+
+  it("retries an exact message without a current contract and preserves an edited draft", async () => {
+    const original = dashboardState();
+    const requests: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url.startsWith("/api/control/state"))
+          return Promise.resolve(
+            json(
+              dashboardState({
+                controlView: { ...original.controlView, turnContract: undefined },
+              }),
+            ),
+          );
+        requests.push(String(init?.body));
+        if (requests.length === 1) return Promise.reject(new TypeError("Lost response"));
+        return Promise.resolve(
+          json(
+            {
+              kind: "CreatorWorkAdmission",
+              jobId: "job_01",
+              conversationId: "conversation_01",
+              acceptedAt: "2026-09-03T00:00:01.000Z",
+            },
+            202,
+          ),
+        );
+      }),
+    );
+    const store = new CreatorDashboardStore();
+    const input = makeTurnRequest(
+      original,
+      "follow_up",
+      "Original message.",
+      original.modelRegistry.defaultModelId,
+    );
+    await expect(store.submitTurn(input)).rejects.toThrow("could not confirm");
+    await waitFor(() => store.getSnapshot().data !== undefined);
+    store.updateDraft("conversation_01", { text: "My next message." });
+    const retained = store.getSnapshot().unconfirmedTurns![0]!;
+    await store.retryTurn(retained.idempotencyKey);
+    expect(requests[1]).toBe(requests[0]);
+    expect(store.draftFor("conversation_01").text).toBe("My next message.");
+  });
+
+  it("shows the server's actionable rejection message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          json(
+            {
+              kind: "CreatorControlError",
+              message: "Selected model is unavailable: missing tools support",
+            },
+            400,
+          ),
+        ),
+      ),
+    );
+    const state = dashboardState();
+    const store = new CreatorDashboardStore();
+    await expect(
+      store.submitTurn(
+        makeTurnRequest(
+          state,
+          "follow_up",
+          "Explain this project.",
+          state.modelRegistry.defaultModelId,
+        ),
+      ),
+    ).rejects.toThrow("Selected model is unavailable: missing tools support");
+    expect(store.getSnapshot().error).toBe("Selected model is unavailable: missing tools support");
+    expect(store.getSnapshot().unconfirmedTurns).toEqual([]);
+  });
+
+  it("preserves an edited draft when the earlier turn is the one admitted", async () => {
+    let resolveAdmission!: (response: Response) => void;
+    const admission = new Promise<Response>((resolve) => {
+      resolveAdmission = resolve;
+    });
+    let posts = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string) => {
+        if (input === "/api/control/turn") {
+          posts += 1;
+          return admission;
+        }
+        if (input.startsWith("/api/control/state")) return Promise.resolve(json(dashboardState()));
+        throw new Error(`Unexpected request ${input}`);
+      }),
+    );
+    const store = new CreatorDashboardStore();
+    const input = {
+      conversationId: "conversation_01",
+      turnContractId: "turn_contract_01",
+      turnContractHash: HASH_B,
+      turnKind: "follow_up" as const,
+      text: "Original draft.",
+      selectedModelId: "openai/gpt-5.6-luna",
+    };
+    store.updateDraft("conversation_01", { text: input.text });
+    const submitted = store.submitTurn(input);
+    await waitFor(() => posts === 1);
+    store.updateDraft("conversation_01", { text: "Edited draft." });
+    resolveAdmission(
+      json(
+        {
+          kind: "CreatorWorkAdmission",
+          jobId: "job_01",
+          conversationId: "conversation_01",
+          acceptedAt: "2026-09-03T00:00:01.000Z",
+        },
+        202,
+      ),
+    );
+
+    await submitted;
+
+    expect(store.draftFor("conversation_01").text).toBe("Edited draft.");
+  });
+
+  it("keeps an unconfirmed report request distinct from changed report text", async () => {
+    const requests: string[] = [];
+    const jobs = new Map<string, string>();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string, init?: RequestInit) => {
+        if (input !== "/api/control/action") throw new Error(`Unexpected request ${input}`);
+        const body = String(init?.body);
+        const request = JSON.parse(body) as { idempotencyKey: string };
+        requests.push(body);
+        const existingJob = jobs.get(request.idempotencyKey);
+        if (existingJob)
+          return Promise.resolve(
+            json(
+              {
+                kind: "CreatorWorkAdmission",
+                jobId: existingJob,
+                conversationId: "conversation_01",
+                acceptedAt: "2026-09-03T00:00:01.000Z",
+              },
+              202,
+            ),
+          );
+        jobs.set(request.idempotencyKey, `job_${jobs.size + 1}`);
+        if (requests.length === 1) return Promise.reject(new TypeError("Failed to fetch"));
+        return Promise.resolve(
+          json(
+            {
+              kind: "CreatorWorkAdmission",
+              jobId: jobs.get(request.idempotencyKey),
+              conversationId: "conversation_01",
+              acceptedAt: "2026-09-03T00:00:01.000Z",
+            },
+            202,
+          ),
+        );
+      }),
+    );
+    const store = new CreatorDashboardStore();
+    const first = {
+      conversationId: "conversation_01",
+      viewId: "control_01",
+      viewHash: HASH_B,
+      actionInstanceId: "action_01",
+      input: { report: "Keep the original report." },
+    };
+    const changed = { ...first, input: { report: "Use this edited report instead." } };
+    store.updateActionDraft("action:action_01", { text: first.input.report });
+
+    await expect(store.submitAction(first)).rejects.toThrow("could not confirm");
+    expect(store.actionDraftFor("action:action_01").text).toBe(first.input.report);
+    store.updateActionDraft("action:action_01", { text: changed.input.report });
+
+    await store.submitAction(changed);
+    await store.submitAction(first);
+
+    expect(requests).toHaveLength(3);
+    expect(JSON.parse(requests[1]!)).toMatchObject({ input: changed.input });
+    expect(JSON.parse(requests[1]!).idempotencyKey).not.toBe(
+      JSON.parse(requests[0]!).idempotencyKey,
+    );
+    expect(requests[2]).toBe(requests[0]);
+    expect(jobs).toHaveLength(2);
+  });
+
+  it("runs a queued conversation selection refresh after an in-flight refresh", async () => {
+    class EventSourceStub {
+      onmessage: ((event: MessageEvent<string>) => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor(_url: string) {}
+      addEventListener(_name: string, _listener: EventListener): void {}
+    }
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const requests: string[] = [];
+    vi.stubGlobal("EventSource", EventSourceStub);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        requests.push(input);
+        if (requests.length === 1) await firstGate;
+        if (!input.includes("conversation_02")) return json(dashboardState());
+        const second = dashboardState();
+        return json({
+          ...second,
+          conversations: second.conversations.map((conversation) => ({
+            ...conversation,
+            id: "conversation_02",
+          })),
+          selectedConversationId: "conversation_02",
+          eventPage: {
+            conversationId: "conversation_02",
+            events: [event({ conversationId: "conversation_02" })],
+            complete: true,
+          },
+          controlView: {
+            ...second.controlView!,
+            conversationId: "conversation_02",
+            turnContract: {
+              ...second.controlView!.turnContract!,
+              conversationId: "conversation_02",
+            },
+          },
+        });
+      }),
+    );
+    const store = new CreatorDashboardStore();
+    store.start();
+    store.selectConversation("conversation_02");
+    releaseFirst();
+
+    await waitFor(() => requests.length === 2);
+    expect(requests[1]).toContain("conversationId=conversation_02");
+    await waitFor(() => store.getSnapshot().data?.selectedConversationId === "conversation_02");
+    expect(store.getSnapshot().data?.selectedConversationId).toBe("conversation_02");
+  });
+
+  it("keeps loaded history when a live snapshot invalidates the conversation", async () => {
+    class EventSourceStub {
+      onmessage: ((event: MessageEvent<string>) => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor(_url: string) {}
+      addEventListener(_name: string, _listener: EventListener): void {}
+    }
+    const newest = { ...event(), id: "event_02", sequence: 2 };
+    const current = dashboardState({
+      eventPage: {
+        conversationId: "conversation_01",
+        events: [newest],
+        nextBeforeCursor: "before_01",
+        complete: false,
+      },
+    });
+    vi.stubGlobal("EventSource", EventSourceStub);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string) => {
+        if (input.startsWith("/api/control/state")) return Promise.resolve(json(current));
+        if (input.includes("/api/conversations/conversation_01/events")) {
+          return Promise.resolve(
+            json({
+              conversationId: "conversation_01",
+              events: [event()],
+              complete: true,
+            }),
+          );
+        }
+        throw new Error(`Unexpected request ${input}`);
+      }),
+    );
+    const store = new CreatorDashboardStore();
+    store.start();
+    await waitFor(() => store.getSnapshot().data?.eventPage?.events.length === 1);
+    store.loadPreviousEvents();
+    await waitFor(() => store.getSnapshot().data?.eventPage?.events.length === 2);
+
+    expect(store.getSnapshot().data?.eventPage?.events.map((entry) => entry.sequence)).toEqual([
+      1, 2,
+    ]);
+  });
+});
 
 async function waitFor(condition: () => boolean): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     if (condition()) return;
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
-  throw new Error("Timed out waiting for dashboard state.");
+  throw new Error("Timed out waiting for the dashboard store.");
 }
-
-describe("CreatorDashboardStore catalog requests", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("rejects a partial dashboard response instead of treating it as actionable state", () => {
-    expect(isDashboardState({ kind: "CreatorDashboardState", sessions: [] })).toBe(false);
-    expect(
-      isDashboardState(
-        dashboardState({
-          sessions: [
-            {
-              id: "creator_session_missing_project",
-              hash: "a".repeat(64),
-              prompt: "Add a door",
-              promptHash: "b".repeat(64),
-              status: "planning",
-              createdAt: "2026-09-03T00:00:00.000Z",
-              updatedAt: "2026-09-03T00:00:00.000Z",
-            },
-          ],
-        }),
-      ),
-    ).toBe(false);
-    expect(
-      isDashboardState(
-        dashboardState({
-          pairedStudio: {
-            status: "paired",
-            projectId: "studio_project_test",
-            projectName: "Test",
-            capabilities: [],
-            manifestHash: "a".repeat(64),
-            connectorBuildHash: "b".repeat(64),
-            attestationStatus: "verified",
-            transactionInventoryStatus: "clear",
-            message: "Connected",
-          },
-        }),
-      ),
-    ).toBe(true);
-  });
-
-  it("observes canonical state after an ambiguous action transport failure without replaying it", async () => {
-    let actionPosts = 0;
-    let stateReads = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: string, init?: RequestInit) => {
-        if (input === "/api/control/action" && init?.method === "POST") {
-          actionPosts += 1;
-          return Promise.reject(new TypeError("Failed to fetch"));
-        }
-        if (input.startsWith("/api/control/state")) {
-          stateReads += 1;
-          return Promise.resolve(
-            json(dashboardState({ selectedSessionId: "creator_session_observed" })),
-          );
-        }
-        throw new Error(`Unexpected request: ${input}`);
-      }),
-    );
-
-    const store = new CreatorDashboardStore();
-    await expect(store.submit({ action: "start", prompt: "Add a guarded door." })).rejects.toThrow(
-      "could not confirm whether this action reached",
-    );
-
-    expect(actionPosts).toBe(1);
-    expect(stateReads).toBe(1);
-    expect(store.getSnapshot().data?.selectedSessionId).toBe("creator_session_observed");
-    expect(store.getSnapshot().error).toContain("Forge did not retry it");
-    expect(store.getSnapshot().pendingAction).toBeUndefined();
-  });
-
-  it("observes canonical state after an explicit post-action state failure without replaying it", async () => {
-    let actionPosts = 0;
-    let stateReads = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: string, init?: RequestInit) => {
-        if (input === "/api/control/action" && init?.method === "POST") {
-          actionPosts += 1;
-          return Promise.resolve(
-            new Response(
-              JSON.stringify({
-                kind: "CreatorControlActionOutcomeUnknown",
-                message: "The action completed, but its resulting view failed.",
-              }),
-              { status: 503, headers: { "Content-Type": "application/json" } },
-            ),
-          );
-        }
-        if (input.startsWith("/api/control/state")) {
-          stateReads += 1;
-          return Promise.resolve(
-            json(dashboardState({ selectedSessionId: "creator_session_observed_after_action" })),
-          );
-        }
-        throw new Error(`Unexpected request: ${input}`);
-      }),
-    );
-
-    const store = new CreatorDashboardStore();
-    await expect(store.submit({ action: "start", prompt: "Add a guarded door." })).rejects.toThrow(
-      "could not confirm whether this action reached",
-    );
-
-    expect(actionPosts).toBe(1);
-    expect(stateReads).toBe(1);
-    expect(store.getSnapshot().data?.selectedSessionId).toBe(
-      "creator_session_observed_after_action",
-    );
-    expect(store.getSnapshot().error).toContain("Forge did not retry it");
-  });
-
-  it("contains a broken store listener without blocking other dashboard subscribers", async () => {
-    vi.stubGlobal("EventSource", class EventSource {});
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: string) => {
-        if (input.startsWith("/api/control/state")) return Promise.resolve(json(dashboardState()));
-        if (input === "/api/control/catalog") return Promise.resolve(json(catalogSummary));
-        if (input.startsWith("/api/control/capabilities"))
-          return Promise.resolve(json(capabilityPage));
-        throw new Error(`Unexpected request: ${input}`);
-      }),
-    );
-    const store = new CreatorDashboardStore();
-    let healthyNotifications = 0;
-    store.subscribe(() => {
-      throw new Error("broken dashboard subscriber");
-    });
-    store.subscribe(() => {
-      healthyNotifications += 1;
-    });
-
-    store.start();
-    await waitFor(
-      () => store.getSnapshot().phase === "ready" && store.getSnapshot().catalog.phase === "ready",
-    );
-
-    expect(healthyNotifications).toBeGreaterThan(0);
-    expect(store.getSnapshot().data).toMatchObject({ kind: "CreatorDashboardState" });
-  });
-
-  it("resyncs state exactly once when the bounded SSE cursor is reset", async () => {
-    let emitReset: ((cursor: number) => void) | undefined;
-    let stateReads = 0;
-    class TestEventSource {
-      onmessage: ((event: MessageEvent<string>) => void) | undefined;
-      onerror: (() => void) | undefined;
-      private readonly listeners = new Map<string, Array<(event: Event) => void>>();
-
-      constructor(_url: string) {
-        emitReset = (cursor) => this.emitReset(cursor);
-      }
-
-      addEventListener(type: string, listener: (event: Event) => void): void {
-        const listeners = this.listeners.get(type) ?? [];
-        listeners.push(listener);
-        this.listeners.set(type, listeners);
-      }
-
-      emitReset(cursor: number): void {
-        const event = {
-          data: JSON.stringify({ cursor }),
-          lastEventId: String(cursor),
-        } as MessageEvent<string> as Event;
-        for (const listener of this.listeners.get("reset") ?? []) listener(event);
-      }
-    }
-    vi.stubGlobal("EventSource", TestEventSource);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: string) => {
-        if (input.startsWith("/api/control/state")) {
-          stateReads += 1;
-          return Promise.resolve(json(dashboardState()));
-        }
-        if (input === "/api/control/catalog") return Promise.resolve(json(catalogSummary));
-        if (input.startsWith("/api/control/capabilities"))
-          return Promise.resolve(json(capabilityPage));
-        throw new Error(`Unexpected request: ${input}`);
-      }),
-    );
-
-    const store = new CreatorDashboardStore();
-    store.start();
-    await waitFor(() => stateReads === 1 && emitReset !== undefined);
-    emitReset?.(257);
-    await waitFor(() => stateReads === 2);
-    expect(stateReads).toBe(2);
-  });
-
-  it("keeps a catalog summary that resolves after an independently requested capability page", async () => {
-    const summary = deferred<Response>();
-    const page = deferred<Response>();
-    vi.stubGlobal("EventSource", class EventSource {});
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: string) => {
-        if (input.startsWith("/api/control/state")) return Promise.resolve(json(dashboardState()));
-        if (input === "/api/control/catalog") return summary.promise;
-        if (input.startsWith("/api/control/capabilities")) return page.promise;
-        throw new Error(`Unexpected request: ${input}`);
-      }),
-    );
-
-    const store = new CreatorDashboardStore();
-    store.start();
-    store.exploreCapabilities({ query: "anchored" });
-
-    page.resolve(json(capabilityPage));
-    await waitFor(() => store.getSnapshot().catalog.page !== undefined);
-    summary.resolve(json(catalogSummary));
-    await waitFor(() => store.getSnapshot().catalog.summary !== undefined);
-
-    const snapshot = store.getSnapshot();
-    expect(snapshot.catalog.summary).toEqual(catalogSummary);
-    expect(snapshot.catalog.page).toEqual(capabilityPage);
-  });
-
-  it("makes a session-bound authenticated GET only after a source explorer action", async () => {
-    const fetchMock = vi.fn((input: string) => {
-      if (input.startsWith("/api/control/state"))
-        return Promise.resolve(
-          json(
-            dashboardState({
-              selectedSessionId: "creator_session_source",
-              sessions: [],
-            }),
-          ),
-        );
-      if (input === "/api/control/catalog") return Promise.resolve(json(catalogSummary));
-      if (input.startsWith("/api/control/capabilities"))
-        return Promise.resolve(json(capabilityPage));
-      if (input.startsWith("/api/sources/search")) return Promise.resolve(json(sourceSearchPage));
-      throw new Error(`Unexpected request: ${input}`);
-    });
-    vi.stubGlobal("EventSource", class EventSource {});
-    vi.stubGlobal("fetch", fetchMock);
-
-    const store = new CreatorDashboardStore();
-    store.start();
-    await waitFor(() => store.getSnapshot().data?.selectedSessionId === "creator_session_source");
-    expect(fetchMock.mock.calls.some(([input]) => String(input).startsWith("/api/sources/"))).toBe(
-      false,
-    );
-
-    store.exploreSources({ operation: "search", query: "require" });
-    await waitFor(() => store.getSnapshot().sources.phase === "ready");
-
-    const sourceCall = fetchMock.mock.calls.find(([input]) =>
-      String(input).startsWith("/api/sources/search"),
-    );
-    expect(sourceCall).toBeDefined();
-    expect(sourceCall?.[0]).toBe(
-      "/api/sources/search?sessionId=creator_session_source&query=require&limit=50",
-    );
-    expect(sourceCall?.[1]).toEqual({
-      credentials: "same-origin",
-      headers: { Accept: "application/json" },
-    });
-    expect(store.getSnapshot().sources.result).toEqual({
-      operation: "search",
-      page: sourceSearchPage,
-    });
-  });
-
-  it("uses opaque document IDs, not display paths, for exact reads and dependency roots", async () => {
-    const fetchMock = vi.fn((input: string) => {
-      if (input.startsWith("/api/control/state"))
-        return Promise.resolve(
-          json(
-            dashboardState({
-              selectedSessionId: "creator_session_source",
-              sessions: [],
-            }),
-          ),
-        );
-      if (input === "/api/control/catalog") return Promise.resolve(json(catalogSummary));
-      if (input.startsWith("/api/control/capabilities"))
-        return Promise.resolve(json(capabilityPage));
-      if (input.startsWith("/api/sources/read")) return Promise.resolve(json(sourceReadPage));
-      if (input.startsWith("/api/sources/dependencies"))
-        return Promise.resolve(json(sourceDependencyPage));
-      throw new Error(`Unexpected request: ${input}`);
-    });
-    vi.stubGlobal("EventSource", class EventSource {});
-    vi.stubGlobal("fetch", fetchMock);
-
-    const store = new CreatorDashboardStore();
-    store.start();
-    await waitFor(() => store.getSnapshot().data?.selectedSessionId === "creator_session_source");
-
-    store.exploreSources({
-      operation: "read",
-      documentId: "workspace:Catalog",
-    });
-    await waitFor(() => store.getSnapshot().sources.result?.operation === "read");
-    store.exploreSources({
-      operation: "dependencies",
-      documentId: "workspace:Catalog",
-      direction: "closure",
-    });
-    await waitFor(() => store.getSnapshot().sources.result?.operation === "dependencies");
-
-    const readCall = fetchMock.mock.calls.find(([input]) =>
-      String(input).startsWith("/api/sources/read"),
-    );
-    const dependenciesCall = fetchMock.mock.calls.find(([input]) =>
-      String(input).startsWith("/api/sources/dependencies"),
-    );
-    expect(readCall?.[0]).toBe(
-      "/api/sources/read?sessionId=creator_session_source&documentId=workspace%3ACatalog&limit=32768",
-    );
-    expect(dependenciesCall?.[0]).toBe(
-      "/api/sources/dependencies?sessionId=creator_session_source&documentId=workspace%3ACatalog&direction=closure&maxDepth=16&limit=200",
-    );
-  });
-
-  it("requests only an authenticated, server-produced sealed source diff", async () => {
-    const fetchMock = vi.fn((input: string) => {
-      if (input.startsWith("/api/control/state"))
-        return Promise.resolve(
-          json(
-            dashboardState({
-              selectedSessionId: "creator_session_source",
-              sessions: [],
-            }),
-          ),
-        );
-      if (input === "/api/control/catalog") return Promise.resolve(json(catalogSummary));
-      if (input.startsWith("/api/control/capabilities"))
-        return Promise.resolve(json(capabilityPage));
-      if (input.startsWith("/api/sources/diff")) return Promise.resolve(json(exactSourceDiffPage));
-      throw new Error(`Unexpected request: ${input}`);
-    });
-    vi.stubGlobal("EventSource", class EventSource {});
-    vi.stubGlobal("fetch", fetchMock);
-
-    const store = new CreatorDashboardStore();
-    store.start();
-    await waitFor(() => store.getSnapshot().data?.selectedSessionId === "creator_session_source");
-    store.exploreSources({
-      operation: "diff",
-      operationId: "edit-source-1",
-      changeSetId: "creator_change_set_source",
-    });
-    await waitFor(() => store.getSnapshot().sources.result?.operation === "diff");
-
-    const call = fetchMock.mock.calls.find(([input]) =>
-      String(input).startsWith("/api/sources/diff"),
-    );
-    expect(call?.[0]).toBe(
-      "/api/sources/diff?sessionId=creator_session_source&operationId=edit-source-1&changeSetId=creator_change_set_source&limit=32768",
-    );
-    expect(call?.[1]).toEqual({
-      credentials: "same-origin",
-      headers: { Accept: "application/json" },
-    });
-    expect(store.getSnapshot().sources.result).toEqual({
-      operation: "diff",
-      page: exactSourceDiffPage,
-    });
-  });
-});

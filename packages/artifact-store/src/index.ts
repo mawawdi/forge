@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { chmod, link, lstat, mkdir, open, unlink, writeFile } from "node:fs/promises";
+import { access, chmod, link, lstat, mkdir, open, stat, unlink, writeFile } from "node:fs/promises";
 import {
   basename,
   dirname,
@@ -131,6 +131,10 @@ export class ImmutableJsonArtifactStore {
   }
 
   private async resolveForRead(locator: string): Promise<string> {
+    // Reads must validate the same absolute root chain as writes. Otherwise a
+    // store constructed before an ancestor is replaced with a symlink could
+    // read evidence outside of its declared root.
+    await assertSafeAbsoluteDirectory(this.root);
     const destination = resolveLocator(this.root, locator);
     await assertSafeExistingPathWithinRoot(this.root, destination, true);
     return destination;
@@ -173,7 +177,8 @@ export function isSafeArtifactLocator(value: string): boolean {
   return isSafeLocator(value);
 }
 
-function serializeCanonicalJson(value: unknown): string {
+/** Exact UTF-8 artifact representation, including its terminating newline. */
+export function serializeCanonicalJson(value: unknown): string {
   const json = stableJson(value);
   if (typeof json !== "string") throw new Error("Artifact must be JSON-serializable");
   return `${json}\n`;
@@ -215,11 +220,25 @@ function isSafeLocator(value: string): boolean {
 }
 
 /**
- * Build a missing absolute directory component by component. This refuses a
- * symlink at every component rather than relying on recursive mkdir, which
- * would silently traverse a malicious link.
+ * Build a missing absolute directory component by component. A creator-owned
+ * link is never traversed: it could redirect a root-relative artifact path
+ * outside the declared store. The only permitted aliases are OS-owned
+ * namespace links (for example macOS's /var -> /private/var), whose parent is
+ * neither writable by this process nor group/world writable.
  */
 async function ensureSafeAbsoluteDirectory(directory: string): Promise<void> {
+  await visitSafeAbsoluteDirectory(directory, true);
+}
+
+/** Validate every existing absolute root component before a read. */
+async function assertSafeAbsoluteDirectory(directory: string): Promise<void> {
+  await visitSafeAbsoluteDirectory(directory, false);
+}
+
+async function visitSafeAbsoluteDirectory(
+  directory: string,
+  createMissing: boolean,
+): Promise<void> {
   const absolute = resolve(directory);
   const parsed = parse(absolute);
   let current = parsed.root;
@@ -228,11 +247,14 @@ async function ensureSafeAbsoluteDirectory(directory: string): Promise<void> {
     current = `${current}${current.endsWith(sep) ? "" : sep}${part}`;
     try {
       const info = await lstat(current);
-      if (info.isSymbolicLink() && current !== absolute) continue;
-      if (info.isSymbolicLink() || !info.isDirectory())
-        throw new Error(`Unsafe artifact store directory: ${current}`);
+      if (info.isSymbolicLink()) {
+        await assertTrustedNamespaceAlias(current);
+        continue;
+      }
+      if (!info.isDirectory()) throw new Error(`Unsafe artifact store directory: ${current}`);
     } catch (error: unknown) {
       if (!isMissing(error)) throw error;
+      if (!createMissing) throw new Error(`Artifact store root does not exist: ${current}`);
       try {
         await mkdir(current, { mode: 0o700 });
       } catch (mkdirError: unknown) {
@@ -243,6 +265,29 @@ async function ensureSafeAbsoluteDirectory(directory: string): Promise<void> {
         throw new Error(`Unsafe artifact store directory: ${current}`);
     }
   }
+}
+
+/**
+ * Follow only a namespace alias that an unprivileged local process cannot
+ * replace. This retains support for system aliases such as macOS /var while
+ * failing closed for links placed in a project, .forge, or temporary store
+ * directory by the current user.
+ */
+async function assertTrustedNamespaceAlias(path: string): Promise<void> {
+  const parent = dirname(path);
+  const parentInfo = await stat(parent);
+  const targetInfo = await stat(path);
+  if (!parentInfo.isDirectory() || !targetInfo.isDirectory())
+    throw new Error(`Unsafe artifact store directory: ${path}`);
+  if (typeof process.getuid === "function" && parentInfo.uid === process.getuid())
+    throw new Error(`Unsafe artifact store directory: ${path}`);
+  if ((parentInfo.mode & 0o022) !== 0) throw new Error(`Unsafe artifact store directory: ${path}`);
+  try {
+    await access(parent, constants.W_OK);
+  } catch {
+    return;
+  }
+  throw new Error(`Unsafe artifact store directory: ${path}`);
 }
 
 async function ensureSafeDirectoryWithinRoot(root: string, directory: string): Promise<void> {

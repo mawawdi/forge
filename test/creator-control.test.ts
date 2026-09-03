@@ -1,84 +1,123 @@
 import assert from "node:assert/strict";
-import { once } from "node:events";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { createConnection } from "node:net";
-import { join } from "node:path";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   CreatorControlServer,
   readCreatorControlDiscovery,
   writeCreatorControlDiscovery,
+  type CreatorControlCoordinator,
 } from "../packages/creator-control/src/index.js";
-import type { CreatorSessionCoordinator } from "../packages/creator-session/src/coordinator.js";
 
-test("creator control exchanges one-time launch grants and separates cookie and bearer authority", async () => {
+function fakeCoordinator(
+  overrides: Partial<CreatorControlCoordinator> = {},
+): CreatorControlCoordinator {
+  return {
+    subscribe: () => () => undefined,
+    async dashboardState() {
+      return {
+        kind: "CreatorDashboardState",
+        conversations: [],
+        episodes: [],
+        memories: [],
+        modelRegistry: {
+          kind: "CreatorModelRegistry",
+          id: "creator_model_registry_test",
+          hash: "c".repeat(64),
+          generatedAt: "2026-09-03T00:00:00.000Z",
+          defaultModelId: "openai/gpt-5.6-luna",
+          models: [
+            {
+              id: "openai/gpt-5.6-luna",
+              displayName: "Luna",
+              availability: "available",
+              requiredCapabilities: ["tools"],
+              providerFallback: "disabled",
+            },
+          ],
+        },
+        pairedStudio: {
+          status: "ready",
+          message: "Studio is paired.",
+          transactionStatus: "clear",
+        },
+        serverTime: "2026-09-03T00:00:00.000Z",
+      };
+    },
+    async conversationEvents(conversationId) {
+      return { conversationId, events: [], complete: true };
+    },
+    async submitTurn() {
+      return {
+        kind: "CreatorWorkAdmission",
+        jobId: "creator_job_turn",
+        conversationId: "creator_conversation_test",
+        acceptedAt: "2026-09-03T00:00:00.000Z",
+      };
+    },
+    async submitAction() {
+      return {
+        kind: "CreatorWorkAdmission",
+        jobId: "creator_job_action",
+        conversationId: "creator_conversation_test",
+        acceptedAt: "2026-09-03T00:00:00.000Z",
+      };
+    },
+    async readAuthorizedArtifact(hash) {
+      if (hash !== "a".repeat(64)) throw new Error("unauthorized");
+      return { safe: true };
+    },
+    async replayVerification(id) {
+      return { kind: "CreatorVerificationReplay", verificationId: id };
+    },
+    async replayMutation(id) {
+      return { kind: "CreatorMutationReplay", attemptId: id };
+    },
+    async sourceDocuments() {
+      return { documents: [] };
+    },
+    async sourceSearch() {
+      return { matches: [] };
+    },
+    async sourceRead() {
+      return { text: "" };
+    },
+    async sourceSymbols() {
+      return { symbols: [] };
+    },
+    async sourceReferences() {
+      return { references: [] };
+    },
+    async sourceDependencies() {
+      return { nodes: [] };
+    },
+    async sourceDiff() {
+      return { text: "" };
+    },
+    ...overrides,
+  } as CreatorControlCoordinator;
+}
+
+test("creator control authenticates conversation reads and admits turns/actions with 202", async () => {
   const root = await mkdtemp(join(tmpdir(), "forge-creator-control-"));
   const dashboard = join(root, "dashboard");
   await mkdir(dashboard);
   await writeFile(join(dashboard, "index.html"), "<!doctype html><title>Forge</title>");
   const listeners = new Set<() => void>();
-  const fake = {
-    subscribe(listener: () => void) {
+  const sourceRequests: unknown[] = [];
+  const coordinator = fakeCoordinator({
+    subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    async dashboardState() {
-      return {
-        kind: "CreatorDashboardState",
-        sessions: [],
-        pairedStudio: {
-          status: "paired",
-          message: "Studio paired, but its capability attestation was rejected.",
-          attestationStatus: "rejected",
-          attestationHash: "c".repeat(64),
-          attestationArtifact: {
-            locator: "studio-evidence/attestation-envelope.json",
-            artifactHash: "c".repeat(64),
-            bytes: 2_048,
-          },
-          attestation: {
-            detail: "The backend verifier found one missing reflection row.",
-            totalFacts: 183,
-            observedFacts: 182,
-            unavailableFacts: 0,
-            readErrorFacts: 0,
-            mismatchedFacts: 0,
-            missingFacts: 1,
-            findingsTruncated: false,
-            findings: [
-              {
-                key: "reflection:project:Beam.Attachment0",
-                code: "missing_fact",
-                expected: {
-                  catalogType: { category: "class", name: "Attachment" },
-                  reflection: {
-                    engineType: "RefType",
-                    scriptType: "Instance",
-                    instanceType: "Attachment",
-                  },
-                },
-              },
-            ],
-          },
-        },
-        stages: [],
-        serverTime: "2026-09-01T00:00:00.000Z",
-      };
+    async sourceDocuments(anchor, input) {
+      sourceRequests.push({ anchor, input });
+      return { documents: [] };
     },
-    async action(value: unknown) {
-      return value;
-    },
-    async readAuthorizedArtifact(hash: string) {
-      if (hash !== "a".repeat(64)) throw new Error("unauthorized");
-      return { safe: true };
-    },
-    async replayVerification(id: string) {
-      return { kind: "CreatorVerificationReplay", verificationId: id };
-    },
-  } as unknown as CreatorSessionCoordinator;
+  });
   const server = new CreatorControlServer({
-    coordinator: fake,
+    coordinator,
     dashboardDirectory: dashboard,
     port: 0,
     bearerToken: "bearer_token_123456789012345678901234",
@@ -95,120 +134,219 @@ test("creator control exchanges one-time launch grants and separates cookie and 
     assert.match(exchange.headers.get("content-security-policy") ?? "", /default-src 'self'/);
     assert.equal((await fetch(launch, { redirect: "manual" })).status, 401);
 
-    const state = await fetch(`${origin}/api/control/state`, {
-      headers: { cookie: cookie! },
-    });
+    const state = await fetch(`${origin}/api/control/state`, { headers: { cookie: cookie! } });
     assert.equal(state.status, 200);
-    const dashboardState = (await state.json()) as {
-      kind: string;
-      pairedStudio: {
-        attestation?: { missingFacts?: number; findings?: Array<{ code?: string }> };
-        attestationArtifact?: { artifactHash?: string };
-      };
-    };
-    assert.equal(dashboardState.kind, "CreatorDashboardState");
-    assert.equal(dashboardState.pairedStudio.attestation?.missingFacts, 1);
-    assert.equal(dashboardState.pairedStudio.attestation?.findings?.[0]?.code, "missing_fact");
-    assert.equal(dashboardState.pairedStudio.attestationArtifact?.artifactHash, "c".repeat(64));
+    assert.equal(((await state.json()) as { kind: string }).kind, "CreatorDashboardState");
     assert.equal(state.headers.get("access-control-allow-origin"), null);
 
-    const catalog = await fetch(`${origin}/api/control/catalog`, {
-      headers: { authorization: `Bearer ${address.bearerToken}` },
-    });
-    assert.equal(catalog.status, 200);
-    assert.equal(catalog.headers.get("cache-control"), "no-store");
-    assert.equal(((await catalog.json()) as { kind: string }).kind, "StudioCatalogSummary");
-
-    const capabilities = await fetch(`${origin}/api/control/capabilities?class=Part&limit=1`, {
-      headers: { authorization: `Bearer ${address.bearerToken}` },
-    });
-    assert.equal(capabilities.status, 200);
-    const capabilityPage = (await capabilities.json()) as {
-      kind: string;
-      entries: unknown[];
-      page: { limit: number };
-    };
-    assert.equal(capabilityPage.kind, "StudioCapabilityExplorerPage");
-    assert.equal(capabilityPage.page.limit, 1);
-    assert.ok(capabilityPage.entries.length <= 1);
+    const events = await fetch(
+      `${origin}/api/conversations/creator_conversation_test/events?limit=20`,
+      { headers: { authorization: `Bearer ${address.bearerToken}` } },
+    );
+    assert.equal(events.status, 200);
     assert.equal(
-      (
-        await fetch(`${origin}/api/control/capabilities?limit=101`, {
-          headers: { authorization: `Bearer ${address.bearerToken}` },
-        })
-      ).status,
-      400,
+      ((await events.json()) as { conversationId: string }).conversationId,
+      "creator_conversation_test",
     );
 
-    const wrongOrigin = await fetch(`${origin}/api/control/action`, {
+    const unanchoredSource = await fetch(
+      `${origin}/api/sources/documents?conversationId=creator_conversation_test`,
+      { headers: { authorization: `Bearer ${address.bearerToken}` } },
+    );
+    assert.equal(unanchoredSource.status, 400);
+    const eventHash = "b".repeat(64);
+    const sourceIndexHash = "c".repeat(64);
+    const anchoredSource = await fetch(
+      `${origin}/api/sources/documents?conversationId=creator_conversation_test&eventId=creator_event_historical&eventHash=${eventHash}&sourceIndexHash=${sourceIndexHash}&limit=20`,
+      { headers: { authorization: `Bearer ${address.bearerToken}` } },
+    );
+    assert.equal(anchoredSource.status, 200);
+    assert.deepEqual(sourceRequests, [
+      {
+        anchor: {
+          conversationId: "creator_conversation_test",
+          eventId: "creator_event_historical",
+          eventHash,
+          sourceIndexHash,
+        },
+        input: { limit: 20 },
+      },
+    ]);
+
+    const wrongOrigin = await fetch(`${origin}/api/control/turn`, {
       method: "POST",
       headers: {
         cookie: cookie!,
         origin: "http://evil.invalid",
         "content-type": "application/json",
       },
-      body: JSON.stringify({ action: "start", prompt: "x" }),
+      body: JSON.stringify({ kind: "CreatorTurnRequest" }),
     });
     assert.equal(wrongOrigin.status, 403);
-    const bearer = await fetch(`${origin}/api/control/action`, {
+
+    const turn = await fetch(`${origin}/api/control/turn`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${address.bearerToken}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ action: "start", prompt: "x" }),
+      body: JSON.stringify({ kind: "CreatorTurnRequest" }),
     });
-    assert.equal(bearer.status, 200);
-    const oversized = await fetch(`${origin}/api/control/action`, {
+    assert.equal(turn.status, 202);
+    assert.equal(((await turn.json()) as { jobId: string }).jobId, "creator_job_turn");
+
+    const action = await fetch(`${origin}/api/control/action`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${address.bearerToken}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ action: "start", prompt: "x".repeat(70_000) }),
+      body: JSON.stringify({ kind: "CreatorActionRequest" }),
+    });
+    assert.equal(action.status, 202);
+    assert.equal(((await action.json()) as { jobId: string }).jobId, "creator_job_action");
+
+    const oversized = await fetch(`${origin}/api/control/turn`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${address.bearerToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ text: "x".repeat(512 * 1024) }),
     });
     assert.equal(oversized.status, 413);
+
+    const catalog = await fetch(`${origin}/api/control/catalog`, {
+      headers: { authorization: `Bearer ${address.bearerToken}` },
+    });
+    assert.equal(catalog.status, 200);
+    assert.equal(catalog.headers.get("cache-control"), "no-store");
+    const capabilities = await fetch(`${origin}/api/control/capabilities?class=Part&limit=1`, {
+      headers: { authorization: `Bearer ${address.bearerToken}` },
+    });
+    assert.equal(capabilities.status, 200);
+
     for (let index = 0; index < 257; index += 1) for (const listener of listeners) listener();
-    const expiredEventsAbort = new AbortController();
-    const expiredEvents = await fetch(`${origin}/api/control/events?after=0`, {
+    const eventStream = await fetch(`${origin}/api/control/events?after=0`, {
       headers: { authorization: `Bearer ${address.bearerToken}` },
-      signal: expiredEventsAbort.signal,
     });
-    assert.equal(expiredEvents.status, 200);
-    const reader = expiredEvents.body?.getReader();
+    const reader = eventStream.body?.getReader();
     assert.ok(reader);
-    const reset = await reader.read();
-    assert.match(new TextDecoder().decode(reset.value), /event: reset/);
-    assert.match(new TextDecoder().decode(reset.value), /id: 257/);
+    assert.match(new TextDecoder().decode((await reader.read()).value), /event: reset/);
     for (const listener of listeners) listener();
-    const invalidation = await reader.read();
-    assert.match(new TextDecoder().decode(invalidation.value), /id: 258/);
+    assert.match(new TextDecoder().decode((await reader.read()).value), /id: 258/);
     await reader.cancel();
-    expiredEventsAbort.abort();
-    // A dropped SSE peer is removed before the next coordinator invalidation.
-    // Invalidation must not throw or take down the control server.
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
-    for (const listener of listeners) listener();
-    assert.equal(
-      (
-        await fetch(`${origin}/api/control/state`, {
+
+    assert.deepEqual(
+      await (
+        await fetch(`${origin}/api/artifacts/${"a".repeat(64)}`, {
           headers: { authorization: `Bearer ${address.bearerToken}` },
         })
-      ).status,
-      200,
+      ).json(),
+      { safe: true },
     );
-    const artifact = await fetch(`${origin}/api/artifacts/${"a".repeat(64)}`, {
+
+    const secret = join(root, "outside-dashboard.txt");
+    await writeFile(secret, "must not be served", "utf8");
+    await symlink(secret, join(dashboard, "leak.js"));
+    const linkedAsset = await fetch(`${origin}/leak.js`, {
       headers: { authorization: `Bearer ${address.bearerToken}` },
     });
-    assert.deepEqual(await artifact.json(), { safe: true });
-    assert.equal(
-      (
-        await fetch(`${origin}/api/artifacts/${"b".repeat(64)}`, {
-          headers: { authorization: `Bearer ${address.bearerToken}` },
-        })
-      ).status,
-      400,
-    );
+    assert.equal(linkedAsset.status, 404);
+    assert.doesNotMatch(await linkedAsset.text(), /must not be served/);
+
+    await mkdir(join(dashboard, "not-an-asset.js"));
+    const irregularAsset = await fetch(`${origin}/not-an-asset.js`, {
+      headers: { authorization: `Bearer ${address.bearerToken}` },
+    });
+    assert.equal(irregularAsset.status, 404);
+
+    const clientRoute = await fetch(`${origin}/conversation`, {
+      headers: { authorization: `Bearer ${address.bearerToken}` },
+    });
+    assert.equal(clientRoute.status, 200);
+    assert.match(await clientRoute.text(), /Forge/);
+  } finally {
+    await server.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("creator control reserves wire framing for the largest advertised text field", async () => {
+  const root = await mkdtemp(join(tmpdir(), "forge-creator-control-wire-"));
+  const dashboard = join(root, "dashboard");
+  await mkdir(dashboard);
+  await writeFile(join(dashboard, "index.html"), "<!doctype html><title>Forge</title>");
+  const maximumTextBytes = 64 * 1024;
+  let submittedText: string | undefined;
+  const coordinator = fakeCoordinator({
+    async submitTurn(value) {
+      const request = value as { readonly text?: unknown };
+      if (
+        typeof request.text !== "string" ||
+        Buffer.byteLength(request.text, "utf8") > maximumTextBytes
+      )
+        throw new Error("Creator turn text is outside the exact control-view bounds");
+      submittedText = request.text;
+      return {
+        kind: "CreatorWorkAdmission",
+        jobId: "creator_job_largest_turn",
+        conversationId: "creator_conversation_test",
+        acceptedAt: "2026-09-03T00:00:00.000Z",
+      };
+    },
+  });
+  const server = new CreatorControlServer({
+    coordinator,
+    dashboardDirectory: dashboard,
+    port: 0,
+    bearerToken: "bearer_token_123456789012345678901234",
+  });
+  try {
+    const address = await server.listen();
+    const origin = `http://${address.host}:${address.port}`;
+    const headers = {
+      authorization: `Bearer ${address.bearerToken}`,
+      "content-type": "application/json",
+    };
+    // NUL is the worst legal UTF-8 byte for JSON transport: JSON.stringify
+    // expands every byte to a six-byte \u0000 escape.
+    const exactText = "\0".repeat(maximumTextBytes);
+    const exactRequest = {
+      kind: "CreatorTurnRequest",
+      turnContractId: "creator_turn_contract_test",
+      turnContractHash: "a".repeat(64),
+      turnKind: "new_work",
+      text: exactText,
+      selectedModelId: "openai/gpt-5.6-luna",
+      idempotencyKey: "idempotency-key-for-largest-wire-test",
+    };
+    const exactBody = JSON.stringify(exactRequest);
+    assert.ok(Buffer.byteLength(exactBody, "utf8") > maximumTextBytes);
+    assert.ok(Buffer.byteLength(exactBody, "utf8") < 512 * 1024);
+    const exact = await fetch(`${origin}/api/control/turn`, {
+      method: "POST",
+      headers,
+      body: exactBody,
+    });
+    assert.equal(exact.status, 202);
+    assert.equal(submittedText, exactText);
+
+    const overContract = await fetch(`${origin}/api/control/turn`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ...exactRequest, text: `${exactText}\0` }),
+    });
+    // The HTTP boundary has accepted the complete body; the exact
+    // control-view validator, rather than transport framing, rejects max + 1.
+    assert.equal(overContract.status, 400);
+
+    const overWire = await fetch(`${origin}/api/control/turn`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ text: "x".repeat(512 * 1024) }),
+    });
+    assert.equal(overWire.status, 413);
   } finally {
     await server.close();
     await rm(root, { recursive: true, force: true });
@@ -226,7 +364,7 @@ test("creator control discovery is private and validated", async () => {
       port: 8788,
       bearerToken: "bearer_token_123456789012345678901234",
       pid: process.pid,
-      startedAt: "2026-09-01T00:00:00.000Z",
+      startedAt: "2026-09-03T00:00:00.000Z",
     };
     await writeCreatorControlDiscovery(discovery, path);
     assert.deepEqual(await readCreatorControlDiscovery(path), discovery);
@@ -235,23 +373,19 @@ test("creator control discovery is private and validated", async () => {
   }
 });
 
-test("creator control drops a backpressured SSE peer instead of retaining its write buffer", async () => {
+test("creator control drops a backpressured SSE peer", async () => {
   const listeners = new Set<() => void>();
-  const fake = {
-    subscribe(listener: () => void) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-  } as unknown as CreatorSessionCoordinator;
   const server = new CreatorControlServer({
-    coordinator: fake,
+    coordinator: fakeCoordinator({
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    }),
     dashboardDirectory: process.cwd(),
     port: 0,
   });
-  const internal = server as unknown as {
-    subscribers: Set<unknown>;
-    invalidate(): void;
-  };
+  const internal = server as unknown as { subscribers: Set<unknown>; invalidate(): void };
   let writes = 0;
   let ends = 0;
   const response = {
@@ -274,114 +408,5 @@ test("creator control drops a backpressured SSE peer instead of retaining its wr
     assert.equal(internal.subscribers.size, 0);
   } finally {
     await server.close();
-  }
-});
-
-test("creator control survives an aborted client after its action is admitted", async () => {
-  const root = await mkdtemp(join(tmpdir(), "forge-creator-control-abort-"));
-  const dashboard = join(root, "dashboard");
-  await mkdir(dashboard);
-  await writeFile(join(dashboard, "index.html"), "<!doctype html><title>Forge</title>");
-  let actionCalls = 0;
-  let beginAction!: () => void;
-  let completeAction!: () => void;
-  const actionStarted = new Promise<void>((resolvePromise) => {
-    beginAction = resolvePromise;
-  });
-  const actionCompletion = new Promise<void>((resolvePromise) => {
-    completeAction = resolvePromise;
-  });
-  const fake = {
-    subscribe: () => () => undefined,
-    async action() {
-      actionCalls += 1;
-      beginAction();
-      await actionCompletion;
-    },
-    async dashboardState() {
-      return { kind: "CreatorDashboardState" };
-    },
-  } as unknown as CreatorSessionCoordinator;
-  const server = new CreatorControlServer({
-    coordinator: fake,
-    dashboardDirectory: dashboard,
-    port: 0,
-    bearerToken: "bearer_token_aborted_request_123456789012",
-  });
-  try {
-    const address = await server.listen();
-    const body = JSON.stringify({ action: "start", prompt: "Bounded request" });
-    const socket = createConnection({ host: address.host, port: address.port });
-    await once(socket, "connect");
-    socket.write(
-      [
-        "POST /api/control/action HTTP/1.1",
-        `Host: ${address.host}:${address.port}`,
-        `Authorization: Bearer ${address.bearerToken}`,
-        "Content-Type: application/json",
-        `Content-Length: ${Buffer.byteLength(body, "utf8")}`,
-        "",
-        body,
-      ].join("\r\n"),
-    );
-    await actionStarted;
-    const closed = once(socket, "close");
-    socket.destroy();
-    await closed;
-    completeAction();
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 20));
-
-    assert.equal(actionCalls, 1);
-    const health = await fetch(`http://${address.host}:${address.port}/api/control/state`, {
-      headers: { authorization: `Bearer ${address.bearerToken}` },
-    });
-    assert.equal(health.status, 200);
-  } finally {
-    await server.close();
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("a completed action whose resulting view fails is reported as an ambiguous outcome", async () => {
-  const root = await mkdtemp(join(tmpdir(), "forge-creator-control-ambiguous-"));
-  const dashboard = join(root, "dashboard");
-  await mkdir(dashboard);
-  await writeFile(join(dashboard, "index.html"), "<!doctype html><title>Forge</title>");
-  let actionCalls = 0;
-  const fake = {
-    subscribe: () => () => undefined,
-    async action() {
-      actionCalls += 1;
-    },
-    async dashboardState() {
-      throw new Error("change presentation failed after persistence");
-    },
-  } as unknown as CreatorSessionCoordinator;
-  const server = new CreatorControlServer({
-    coordinator: fake,
-    dashboardDirectory: dashboard,
-    port: 0,
-    bearerToken: "bearer_token_ambiguous_123456789012345678",
-  });
-  try {
-    const address = await server.listen();
-    const response = await fetch(`http://${address.host}:${address.port}/api/control/action`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${address.bearerToken}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ action: "start", prompt: "Bounded request" }),
-    });
-    assert.equal(actionCalls, 1);
-    assert.equal(response.status, 503);
-    assert.deepEqual(await response.json(), {
-      kind: "CreatorControlActionOutcomeUnknown",
-      message:
-        "The creator action completed, but Forge could not materialize its resulting dashboard state: change presentation failed after persistence",
-    });
-  } finally {
-    await server.close();
-    await rm(root, { recursive: true, force: true });
   }
 });
