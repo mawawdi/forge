@@ -32,16 +32,13 @@ import { compileAgentOrientation } from "../packages/context-compiler/src/index.
 import { createProjectSnapshot } from "../packages/semantic-map/src/index.js";
 import type { FlightRecorderClock } from "../packages/flight-recorder/src/index.js";
 
-const VULNERABLE = resolve(
-  "test/fixtures/client-controlled-authoritative-state",
-);
+const VULNERABLE = resolve("test/fixtures/client-controlled-authoritative-state");
 const SAFE = resolve("test/fixtures/authoritative-state-safe");
 const GENERIC_SEED = resolve("test/fixtures/empty-declared-source-root");
 const EMPTY_ROOT = resolve("test/fixtures/empty-declared-source-root");
 const CREATOR_PROMPT =
   "Keep authoritative state server-owned while preserving the existing request interface.";
-const EMPTY_ROOT_PROMPT =
-  "Create a minimal server bootstrap script in the declared source root.";
+const EMPTY_ROOT_PROMPT = "Create a minimal server bootstrap script in the declared source root.";
 const CREATOR_SESSION = {
   id: "creator_session_test",
   hash: contentHash("creator_session_test"),
@@ -49,6 +46,25 @@ const CREATOR_SESSION = {
 
 async function directory(): Promise<string> {
   return mkdtemp(join(tmpdir(), "forge-agent-runtime-"));
+}
+async function genericOrientation() {
+  const workspace = await CandidateWorkspace.create(
+    GENERIC_SEED,
+    await directory(),
+    DEFAULT_AGENT_BUDGETS,
+  );
+  const map = await workspace.semanticMap();
+  const requirementView = resolveRequirementView(requirements(), {
+    phase: "build",
+    environment: "production",
+    audience: "builder",
+  });
+  return compileAgentOrientation({
+    semanticMap: map,
+    projectSnapshotHash: createProjectSnapshot(map).projectSemanticHash,
+    requirementView,
+    sourceRoots: workspace.sourceRoots,
+  });
 }
 function requirements(): RequirementSet {
   return createRequirementSet([
@@ -161,11 +177,7 @@ class ScriptedModelClient implements ModelClient {
     },
   };
   private index = 0;
-  constructor(
-    private readonly results: Array<
-      (request: ModelTurnRequest) => ModelTurnResult
-    >,
-  ) {}
+  constructor(private readonly results: Array<(request: ModelTurnRequest) => ModelTurnResult>) {}
   async complete(request: ModelTurnRequest): Promise<ModelTurnResult> {
     const factory = this.results[this.index++];
     if (!factory) throw new Error("Unexpected model turn");
@@ -183,9 +195,7 @@ function assistant(
     message: { role: "assistant", content, toolCalls },
     stopReason: toolCalls.length > 0 ? "tool_calls" : "end_turn",
     usage: { inputTokens: 10, outputTokens: 5, costUsd: 0.001 },
-    requestHash: contentHash(
-      stableJson({ sequence, messages: request.messages }),
-    ),
+    requestHash: contentHash(stableJson({ sequence, messages: request.messages })),
     responseHash: contentHash(stableJson({ content, toolCalls })),
     responseFacts: {
       requestedModel: request.model,
@@ -216,9 +226,7 @@ function rejectedToolResult(code: string, message: string): ToolResult {
 class ManualTimingClock implements FlightRecorderClock {
   private milliseconds = 0;
   now(): Date {
-    return new Date(
-      `2026-08-30T00:00:00.${String(this.milliseconds).padStart(3, "0")}Z`,
-    );
+    return new Date(`2026-08-30T00:00:00.${String(this.milliseconds).padStart(3, "0")}Z`);
   }
   monotonicNow(): number {
     return this.milliseconds;
@@ -245,10 +253,7 @@ function recordlessRejectingToolHost(): AgentToolHost {
         feedback: calls.map((call) => ({
           id: call.id,
           name: call.name,
-          result: rejectedToolResult(
-            "TOOL_UNKNOWN",
-            `Unknown tool ${call.name}`,
-          ),
+          result: rejectedToolResult("TOOL_UNKNOWN", `Unknown tool ${call.name}`),
         })),
       };
     },
@@ -258,47 +263,8 @@ function recordlessRejectingToolHost(): AgentToolHost {
   };
 }
 
-function readResetToolHost(): AgentToolHost {
-  const value = { inspected: true };
-  const serialized = stableJson(value);
-  return {
-    definitions: () => [
-      {
-        name: "project.read",
-        description: "Read one bounded project fact.",
-        inputShape: {},
-        schema: { type: "object", additionalProperties: false },
-      },
-    ],
-    validateBatch(calls): ToolBatchDecision {
-      if (calls.every((call) => call.name === "project.read"))
-        return { valid: true, budgetExhausted: false, feedback: [] };
-      return {
-        valid: false,
-        budgetExhausted: false,
-        feedback: calls.map((call) => ({
-          id: call.id,
-          name: call.name,
-          result: rejectedToolResult(
-            "TOOL_UNKNOWN",
-            `Unknown tool ${call.name}`,
-          ),
-        })),
-      };
-    },
-    async execute(): Promise<ToolResult> {
-      return {
-        ok: true,
-        value,
-        truncated: false,
-        resultHash: contentHash(serialized),
-        bytes: Buffer.byteLength(serialized, "utf8"),
-      };
-    },
-  };
-}
-
-function executionFailingToolHost(): AgentToolHost {
+function repairableExecutionToolHost(): AgentToolHost {
+  let sealed = false;
   return {
     definitions: () => [
       {
@@ -313,12 +279,33 @@ function executionFailingToolHost(): AgentToolHost {
       budgetExhausted: false,
       feedback: [],
     }),
-    async execute(): Promise<ToolResult> {
+    async execute(_name, input): Promise<ToolResult> {
+      if ((input as { target?: string }).target === "accepted") {
+        sealed = true;
+        const value = { sealed: true };
+        const serialized = stableJson(value);
+        return {
+          ok: true,
+          value,
+          truncated: false,
+          resultHash: contentHash(serialized),
+          bytes: Buffer.byteLength(serialized, "utf8"),
+        };
+      }
       return rejectedToolResult(
         "TOOL_FAILURE",
-        "The test host rejected execution.",
+        `The test host rejected target ${(input as { target?: string }).target ?? "missing"}.`,
       );
     },
+    completionStatus: () =>
+      sealed
+        ? { ready: true }
+        : {
+            ready: false,
+            code: "PHASE_ARTIFACT_NOT_SEALED",
+            message: "The repairable phase artifact has not been sealed",
+          },
+    progressToken: () => (sealed ? "sealed" : "unsealed"),
   };
 }
 
@@ -352,11 +339,56 @@ function noProgressToolHost(): AgentToolHost {
   };
 }
 
+function completionRequiredToolHost(): AgentToolHost {
+  let sealed = false;
+  const value = { sealed: true };
+  const serialized = stableJson(value);
+  return {
+    definitions: () => [
+      {
+        name: "phase.seal",
+        description: "Seal the required test phase artifact.",
+        inputShape: {},
+        schema: { type: "object", additionalProperties: false },
+      },
+    ],
+    validateBatch(calls): ToolBatchDecision {
+      return calls.every((call) => call.name === "phase.seal")
+        ? { valid: true, budgetExhausted: false, feedback: [] }
+        : {
+            valid: false,
+            budgetExhausted: false,
+            feedback: calls.map((call) => ({
+              id: call.id,
+              name: call.name,
+              result: rejectedToolResult("TOOL_UNKNOWN", `Unknown tool ${call.name}`),
+            })),
+          };
+    },
+    async execute(): Promise<ToolResult> {
+      sealed = true;
+      return {
+        ok: true,
+        value,
+        truncated: false,
+        resultHash: contentHash(serialized),
+        bytes: Buffer.byteLength(serialized, "utf8"),
+      };
+    },
+    completionStatus: () =>
+      sealed
+        ? { ready: true as const }
+        : {
+            ready: false as const,
+            code: "PHASE_ARTIFACT_NOT_SEALED",
+            message: "The required phase artifact has not been sealed",
+          },
+    progressToken: () => (sealed ? "sealed" : "unsealed"),
+  };
+}
+
 async function repairingClient(withFeedback: boolean): Promise<ModelClient> {
-  const source = await readFile(
-    resolve(VULNERABLE, "src/server/ApplyAction.server.luau"),
-    "utf8",
-  );
+  const source = await readFile(resolve(VULNERABLE, "src/server/ApplyAction.server.luau"), "utf8");
   const repaired = source.replace("+ claimedAmount", "+ 1");
   return new ScriptedModelClient([
     assistant(1, [
@@ -381,9 +413,7 @@ async function repairingClient(withFeedback: boolean): Promise<ModelClient> {
         name: "project.read",
         arguments: { path: "src/server/ApplyAction.server.luau" },
       },
-      ...(withFeedback
-        ? [{ id: "verify-before", name: "forge.verify", arguments: {} }]
-        : []),
+      ...(withFeedback ? [{ id: "verify-before", name: "forge.verify", arguments: {} }] : []),
     ]),
     assistant(2, [
       {
@@ -397,11 +427,7 @@ async function repairingClient(withFeedback: boolean): Promise<ModelClient> {
       },
     ]),
     ...(withFeedback
-      ? [
-          assistant(3, [
-            { id: "verify-after", name: "forge.verify", arguments: {} },
-          ]),
-        ]
+      ? [assistant(3, [{ id: "verify-after", name: "forge.verify", arguments: {} }])]
       : []),
     assistant(withFeedback ? 4 : 3, [], "Server-owned update completed."),
   ]);
@@ -424,6 +450,93 @@ test("one default agent budget supports every bounded agent purpose", () => {
     maxInputTokens: 1_000_000,
     maxOutputTokens: 128_000,
   });
+});
+
+test("native runtime requires an in-session repair when a model ends before sealing the phase artifact", async () => {
+  let repairInstructionObserved = false;
+  const client = new ScriptedModelClient([
+    assistant(1, [], "Finished."),
+    (request) => {
+      const repair = request.messages.at(-1);
+      assert.equal(repair?.role, "user");
+      const payload = JSON.parse(String(repair?.content)) as {
+        forgeCompletionRequired?: boolean;
+        code?: string;
+      };
+      repairInstructionObserved = payload.forgeCompletionRequired === true;
+      assert.equal(payload.code, "PHASE_ARTIFACT_NOT_SEALED");
+      return assistant(2, [{ id: "seal", name: "phase.seal", arguments: {} }])(request);
+    },
+    assistant(3, [], "The phase artifact is sealed."),
+  ]);
+  const workspace = await CandidateWorkspace.create(
+    GENERIC_SEED,
+    await directory(),
+    DEFAULT_AGENT_BUDGETS,
+  );
+  const map = await workspace.semanticMap();
+  const requirementView = resolveRequirementView(requirements(), {
+    phase: "build",
+    environment: "production",
+    audience: "builder",
+  });
+  const orientation = compileAgentOrientation({
+    semanticMap: map,
+    projectSnapshotHash: createProjectSnapshot(map).projectSemanticHash,
+    requirementView,
+    sourceRoots: workspace.sourceRoots,
+  });
+  const result = await new ForgeNativeAgentRuntime(client).run({
+    systemPrompt: "Test required completion",
+    prompt: CREATOR_PROMPT,
+    orientation,
+    tools: completionRequiredToolHost(),
+    budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 6 },
+    model: "fake/model",
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(result.turns.length, 3);
+  assert.equal(repairInstructionObserved, true);
+  assert.equal(result.toolCalls[0]?.name, "phase.seal");
+});
+
+test("native runtime bounds repeated premature completion without a sealed artifact", async () => {
+  const workspace = await CandidateWorkspace.create(
+    GENERIC_SEED,
+    await directory(),
+    DEFAULT_AGENT_BUDGETS,
+  );
+  const map = await workspace.semanticMap();
+  const requirementView = resolveRequirementView(requirements(), {
+    phase: "build",
+    environment: "production",
+    audience: "builder",
+  });
+  const orientation = compileAgentOrientation({
+    semanticMap: map,
+    projectSnapshotHash: createProjectSnapshot(map).projectSemanticHash,
+    requirementView,
+    sourceRoots: workspace.sourceRoots,
+  });
+  const result = await new ForgeNativeAgentRuntime(
+    new ScriptedModelClient([
+      assistant(1, [], "Finished."),
+      assistant(2, [], "Still finished."),
+      assistant(3, [], "No artifact."),
+    ]),
+  ).run({
+    systemPrompt: "Test bounded required completion",
+    prompt: CREATOR_PROMPT,
+    orientation,
+    tools: completionRequiredToolHost(),
+    budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 6 },
+    model: "fake/model",
+  });
+  assert.equal(result.status, "failed");
+  assert.equal(result.failureKind, "model");
+  assert.equal(result.failureCode, "PHASE_ARTIFACT_NOT_SEALED");
+  assert.match(result.error ?? "", /exhausted 2 mandatory completion-repair attempts/);
+  assert.equal(result.turns.length, 3);
 });
 
 test("native runtime performs same-session verifier feedback repair and seals only a locally eligible candidate", async () => {
@@ -449,12 +562,16 @@ test("native runtime performs same-session verifier feedback repair and seals on
       .map((call) => (call.result.value as { gate: string }).gate),
     ["rejected", "locally_eligible"],
   );
+  const firstVerifierResult = result.run.toolCalls.find((call) => call.name === "forge.verify")
+    ?.result.value as { issues?: Array<{ message?: string; location?: unknown }> } | undefined;
+  assert.ok(
+    firstVerifierResult?.issues?.every(
+      (issue) => typeof issue.message === "string" && issue.message.length > 0,
+    ),
+  );
   assert.equal(result.run.workspaceDelta?.operations.length, 1);
   assert.equal(result.run.modelTurns.length, 4);
-  assert.equal(
-    (await stat(resolve(result.persistence.path))).mode & 0o777,
-    0o600,
-  );
+  assert.equal((await stat(resolve(result.persistence.path))).mode & 0o777, 0o600);
   assert.ok(result.candidateArtifact);
   const loaded = await loadWorkspaceCandidateArtifact(
     resolve(result.candidateArtifact!.persistence.path),
@@ -491,37 +608,25 @@ test("an empty declared source root is visible before planning, supports creatio
     (request) => {
       const firstMessage = request.messages[0];
       assert.equal(firstMessage?.role, "user");
-      const initial = JSON.parse(
-        firstMessage!.role === "user" ? firstMessage.content : "{}",
-      ) as {
+      const initial = JSON.parse(firstMessage!.role === "user" ? firstMessage.content : "{}") as {
         orientation: { content: { files: unknown[]; sourceRoots: string[] } };
       };
       assert.deepEqual(initial.orientation.content.files, []);
       assert.deepEqual(initial.orientation.content.sourceRoots, ["src/server"]);
       assert.equal(
-        firstMessage!.role === "user" &&
-          firstMessage.content.includes(runDirectory),
+        firstMessage!.role === "user" && firstMessage.content.includes(runDirectory),
         false,
       );
       assert.doesNotMatch(
         firstMessage!.role === "user" ? firstMessage.content : "",
         /HIDDEN_EMPTY_ROOT_EVALUATOR_999/,
       );
-      const write = request.tools.find(
-        (definition) => definition.name === "workspace.write",
-      );
+      const write = request.tools.find((definition) => definition.name === "workspace.write");
       assert.match(write?.description ?? "", /candidate-relative/);
-      assert.match(
-        write?.description ?? "",
-        /orientation\.content\.sourceRoots/,
-      );
-      orientationContentHash = contentHash(
-        stableJson(initial.orientation.content),
-      );
+      assert.match(write?.description ?? "", /orientation\.content\.sourceRoots/);
+      orientationContentHash = contentHash(stableJson(initial.orientation.content));
       toolDescriptionHash = contentHash(
-        stableJson(
-          request.tools.map(({ name, description }) => ({ name, description })),
-        ),
+        stableJson(request.tools.map(({ name, description }) => ({ name, description }))),
       );
       return assistant(1, [
         {
@@ -560,11 +665,7 @@ test("an empty declared source root is visible before planning, supports creatio
         verifierFeedback?.role === "tool" ? verifierFeedback.content : "",
         /locally_eligible/,
       );
-      return assistant(
-        3,
-        [],
-        "Bootstrap script created and locally verified.",
-      )(request);
+      return assistant(3, [], "Bootstrap script created and locally verified.")(request);
     },
   ]);
   const result = await runBoundedAgent({
@@ -589,10 +690,7 @@ test("an empty declared source root is visible before planning, supports creatio
     ["src/server/Bootstrap.server.luau"],
   );
   assert.equal(
-    await readFile(
-      join(result.candidateRoot, "src/server/Bootstrap.server.luau"),
-      "utf8",
-    ),
+    await readFile(join(result.candidateRoot, "src/server/Bootstrap.server.luau"), "utf8"),
     "local initialized = true\n",
   );
   assert.equal(
@@ -611,10 +709,7 @@ test("an empty declared source root is visible before planning, supports creatio
 });
 
 test("mixed invalid tool batches execute nothing, return feedback for every call, and recover in-session", async () => {
-  const source = await readFile(
-    resolve(VULNERABLE, "src/server/ApplyAction.server.luau"),
-    "utf8",
-  );
+  const source = await readFile(resolve(VULNERABLE, "src/server/ApplyAction.server.luau"), "utf8");
   const repaired = source.replace("+ claimedAmount", "+ 1");
   const client = new ScriptedModelClient([
     assistant(1, [
@@ -694,12 +789,7 @@ test("mixed invalid tool batches execute nothing, return feedback for every call
   assert.equal(result.run.plans.length, 1);
   assert.deepEqual(
     result.run.toolCalls.slice(0, 4).map((call) => call.result.error?.code),
-    [
-      "TOOL_BATCH_REJECTED",
-      "TOOL_CALL_ID_EMPTY",
-      "TOOL_ARGUMENTS_INVALID",
-      "TOOL_UNKNOWN",
-    ],
+    ["TOOL_BATCH_REJECTED", "TOOL_CALL_ID_EMPTY", "TOOL_ARGUMENTS_INVALID", "TOOL_UNKNOWN"],
   );
   assert.equal(result.run.toolCalls[0]?.name, "plan.update");
   assert.equal(result.run.toolCalls[0]?.result.ok, false);
@@ -724,12 +814,7 @@ test("mixed invalid tool batches execute nothing, return feedback for every call
   assert.equal(rejectedSpans.length, 4);
   assert.deepEqual(
     rejectedSpans.map((span) => span.attributes["forge.tool.error_code"]),
-    [
-      "TOOL_BATCH_REJECTED",
-      "TOOL_CALL_ID_EMPTY",
-      "TOOL_ARGUMENTS_INVALID",
-      "TOOL_UNKNOWN",
-    ],
+    ["TOOL_BATCH_REJECTED", "TOOL_CALL_ID_EMPTY", "TOOL_ARGUMENTS_INVALID", "TOOL_UNKNOWN"],
   );
   assert.ok(
     rejectedSpans.every(
@@ -762,9 +847,7 @@ test("runtime persists rejected atomic-batch evidence when a tool host only retu
   const toolHost = recordlessRejectingToolHost();
   const runtime = new ForgeNativeAgentRuntime(
     new ScriptedModelClient([
-      assistant(1, [
-        { id: "unknown", name: "forge.missing", arguments: { target: "x" } },
-      ]),
+      assistant(1, [{ id: "unknown", name: "forge.missing", arguments: { target: "x" } }]),
       assistant(2, [], "Stopped after receiving the validation result."),
     ]),
   );
@@ -814,35 +897,16 @@ test("runtime persists rejected atomic-batch evidence when a tool host only retu
     phase.run.toolCalls.map((call) => call.result.error?.code),
     ["TOOL_UNKNOWN"],
   );
-  assert.equal(
-    phase.run.toolCalls[0]?.inputHash,
-    runtimeResult.toolCalls[0]?.inputHash,
-  );
-  assert.equal(
-    phase.run.toolCalls[0]?.resultHash,
-    runtimeResult.toolCalls[0]?.resultHash,
-  );
+  assert.equal(phase.run.toolCalls[0]?.inputHash, runtimeResult.toolCalls[0]?.inputHash);
+  assert.equal(phase.run.toolCalls[0]?.resultHash, runtimeResult.toolCalls[0]?.resultHash);
   assert.equal(phase.run.budgets.consumed.toolCalls, 1);
-  assert.equal(
-    phase.run.budgets.consumed.toolResultBytes,
-    phase.run.toolCalls[0]?.bytes,
-  );
-  const persisted = JSON.parse(
-    await readFile(phase.persistence.path, "utf8"),
-  ) as typeof phase.run;
+  assert.equal(phase.run.budgets.consumed.toolResultBytes, phase.run.toolCalls[0]?.bytes);
+  const persisted = JSON.parse(await readFile(phase.persistence.path, "utf8")) as typeof phase.run;
   assert.equal(persisted.toolCalls[0]?.result.error?.code, "TOOL_UNKNOWN");
-  const span = phase.trace.spans.find(
-    (candidate) => candidate.name === "forge.tool.call",
-  );
+  const span = phase.trace.spans.find((candidate) => candidate.name === "forge.tool.call");
   assert.equal(span?.attributes["forge.tool.error_code"], "TOOL_UNKNOWN");
-  assert.equal(
-    span?.attributes["forge.tool.input_hash"],
-    phase.run.toolCalls[0]?.inputHash,
-  );
-  assert.equal(
-    span?.attributes["forge.tool.result_hash"],
-    phase.run.toolCalls[0]?.resultHash,
-  );
+  assert.equal(span?.attributes["forge.tool.input_hash"], phase.run.toolCalls[0]?.inputHash);
+  assert.equal(span?.attributes["forge.tool.result_hash"], phase.run.toolCalls[0]?.resultHash);
 });
 
 test("runtime owns exact monotonic timing for provider turns and executed tool calls", async () => {
@@ -869,9 +933,7 @@ test("runtime owns exact monotonic timing for provider turns and executed tool c
     new ScriptedModelClient([
       (request) => {
         clock.advance(5);
-        return assistant(1, [
-          { id: "read_1", name: "project.read", arguments: {} },
-        ])(request);
+        return assistant(1, [{ id: "read_1", name: "project.read", arguments: {} }])(request);
       },
       (request) => {
         clock.advance(2);
@@ -893,7 +955,11 @@ test("runtime owns exact monotonic timing for provider turns and executed tool c
           schema: { type: "object", additionalProperties: false },
         },
       ],
-      validateBatch: () => ({ valid: true, feedback: [], budgetExhausted: false }),
+      validateBatch: () => ({
+        valid: true,
+        feedback: [],
+        budgetExhausted: false,
+      }),
       async execute() {
         clock.advance(3);
         const serialized = stableJson(readValue);
@@ -940,9 +1006,7 @@ test("runtime owns exact monotonic timing for provider turns and executed tool c
   const zeroClock = new ManualTimingClock();
   const zeroResult = await new ForgeNativeAgentRuntime(
     new ScriptedModelClient([
-      assistant(1, [
-        { id: "read_zero", name: "project.read", arguments: {} },
-      ]),
+      assistant(1, [{ id: "read_zero", name: "project.read", arguments: {} }]),
       assistant(2, [], "The zero-tick read completed."),
     ]),
     { clock: zeroClock },
@@ -959,7 +1023,11 @@ test("runtime owns exact monotonic timing for provider turns and executed tool c
           schema: { type: "object", additionalProperties: false },
         },
       ],
-      validateBatch: () => ({ valid: true, feedback: [], budgetExhausted: false }),
+      validateBatch: () => ({
+        valid: true,
+        feedback: [],
+        budgetExhausted: false,
+      }),
       async execute() {
         const serialized = stableJson(readValue);
         return {
@@ -981,12 +1049,8 @@ test("runtime owns exact monotonic timing for provider turns and executed tool c
 test("repeating a semantically identical rejected batch terminates before the turn budget", async () => {
   const runtime = new ForgeNativeAgentRuntime(
     new ScriptedModelClient([
-      assistant(1, [
-        { id: "first", name: "forge.missing", arguments: { target: "x" } },
-      ]),
-      assistant(2, [
-        { id: "second", name: "forge.missing", arguments: { target: "x" } },
-      ]),
+      assistant(1, [{ id: "first", name: "forge.missing", arguments: { target: "x" } }]),
+      assistant(2, [{ id: "second", name: "forge.missing", arguments: { target: "x" } }]),
     ]),
   );
   const workspace = await CandidateWorkspace.create(
@@ -1024,18 +1088,86 @@ test("repeating a semantically identical rejected batch terminates before the tu
   );
 });
 
-test("varied consecutive all-failed tool batches terminate before the turn budget", async () => {
+test("rejected-batch repetition is scoped to one chronological host-state epoch", async () => {
+  let state: "a" | "b" = "a";
+  const host: AgentToolHost = {
+    definitions: () => [
+      {
+        name: "phase.reject",
+        description: "Reject one test proposal.",
+        inputShape: {},
+        schema: { type: "object", additionalProperties: false },
+      },
+      {
+        name: "phase.advance",
+        description: "Advance accepted test state.",
+        inputShape: {},
+        schema: { type: "object", additionalProperties: false },
+      },
+    ],
+    validateBatch(calls): ToolBatchDecision {
+      if (calls.every((call) => call.name === "phase.advance"))
+        return { valid: true, budgetExhausted: false, feedback: [] };
+      return {
+        valid: false,
+        budgetExhausted: false,
+        feedback: calls.map((call) => ({
+          id: call.id,
+          name: call.name,
+          result: rejectedToolResult(
+            "PROPOSAL_INVALID",
+            "The proposal is invalid in the current epoch.",
+          ),
+        })),
+      };
+    },
+    async execute(): Promise<ToolResult> {
+      state = state === "a" ? "b" : "a";
+      const value = { state };
+      const serialized = stableJson(value);
+      return {
+        ok: true,
+        value,
+        truncated: false,
+        resultHash: contentHash(serialized),
+        bytes: Buffer.byteLength(serialized, "utf8"),
+      };
+    },
+    progressToken: () => contentHash(`state-${state}`),
+  };
+  const result = await new ForgeNativeAgentRuntime(
+    new ScriptedModelClient([
+      assistant(1, [{ id: "reject-a-1", name: "phase.reject", arguments: { value: "x" } }]),
+      assistant(2, [{ id: "advance-b", name: "phase.advance", arguments: {} }]),
+      assistant(3, [{ id: "reject-b", name: "phase.reject", arguments: { value: "x" } }]),
+      assistant(4, [{ id: "advance-a", name: "phase.advance", arguments: {} }]),
+      assistant(5, [{ id: "reject-a-2", name: "phase.reject", arguments: { value: "x" } }]),
+      assistant(6, [], "Each chronological epoch retained independent rejection evidence."),
+    ]),
+  ).run({
+    systemPrompt: "Test runtime",
+    prompt: CREATOR_PROMPT,
+    orientation: await genericOrientation(),
+    tools: host,
+    budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 8 },
+    model: "fake/model",
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.turns.length, 6);
+  assert.deepEqual(
+    result.toolCalls.map((call) => call.disposition),
+    ["rejected", "executed", "rejected", "executed", "rejected"],
+  );
+});
+
+test("varied rejected tool batches remain repairable", async () => {
   const runtime = new ForgeNativeAgentRuntime(
     new ScriptedModelClient([
-      assistant(1, [
-        { id: "first", name: "forge.missing", arguments: { target: "one" } },
-      ]),
-      assistant(2, [
-        { id: "second", name: "forge.missing", arguments: { target: "two" } },
-      ]),
-      assistant(3, [
-        { id: "third", name: "forge.missing", arguments: { target: "three" } },
-      ]),
+      assistant(1, [{ id: "first", name: "forge.missing", arguments: { target: "one" } }]),
+      assistant(2, [{ id: "second", name: "forge.missing", arguments: { target: "two" } }]),
+      assistant(3, [{ id: "third", name: "forge.missing", arguments: { target: "three" } }]),
+      assistant(4, [], "The rejected attempts were distinct and are recorded."),
     ]),
   );
   const workspace = await CandidateWorkspace.create(
@@ -1063,10 +1195,8 @@ test("varied consecutive all-failed tool batches terminate before the turn budge
     budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 6 },
     model: "fake/model",
   });
-  assert.equal(result.status, "failed");
-  assert.equal(result.failureKind, "model");
-  assert.equal(result.failureCode, "CONSECUTIVE_ALL_FAILED_TOOL_BATCHES");
-  assert.equal(result.turns.length, 3);
+  assert.equal(result.status, "completed");
+  assert.equal(result.turns.length, 4);
   assert.deepEqual(
     result.toolCalls.map((call) => call.inputHash),
     [
@@ -1077,68 +1207,20 @@ test("varied consecutive all-failed tool batches terminate before the turn budge
   );
 });
 
-test("varied executed all-failed tool batches also terminate before the turn budget", async () => {
+test("varied executed failures remain repairable", async () => {
   const runtime = new ForgeNativeAgentRuntime(
     new ScriptedModelClient([
-      assistant(1, [
-        { id: "first", name: "project.read", arguments: { target: "one" } },
-      ]),
-      assistant(2, [
-        { id: "second", name: "project.read", arguments: { target: "two" } },
-      ]),
-      assistant(3, [
-        { id: "third", name: "project.read", arguments: { target: "three" } },
-      ]),
-    ]),
-  );
-  const workspace = await CandidateWorkspace.create(
-    GENERIC_SEED,
-    await directory(),
-    DEFAULT_AGENT_BUDGETS,
-  );
-  const map = await workspace.semanticMap();
-  const requirementView = resolveRequirementView(requirements(), {
-    phase: "build",
-    environment: "production",
-    audience: "builder",
-  });
-  const orientation = compileAgentOrientation({
-    semanticMap: map,
-    projectSnapshotHash: createProjectSnapshot(map).projectSemanticHash,
-    requirementView,
-    sourceRoots: workspace.sourceRoots,
-  });
-  const result = await runtime.run({
-    systemPrompt: "Test runtime",
-    prompt: CREATOR_PROMPT,
-    orientation,
-    tools: executionFailingToolHost(),
-    budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 6 },
-    model: "fake/model",
-  });
-  assert.equal(result.status, "failed");
-  assert.equal(result.failureKind, "model");
-  assert.equal(result.failureCode, "CONSECUTIVE_ALL_FAILED_TOOL_BATCHES");
-  assert.equal(result.turns.length, 3);
-});
-
-test("a successful read resets the consecutive all-failed tool-batch streak", async () => {
-  const runtime = new ForgeNativeAgentRuntime(
-    new ScriptedModelClient([
-      assistant(1, [
-        { id: "first", name: "forge.missing", arguments: { target: "one" } },
-      ]),
-      assistant(2, [
-        { id: "second", name: "forge.missing", arguments: { target: "two" } },
-      ]),
-      assistant(3, [{ id: "read", name: "project.read", arguments: {} }]),
+      assistant(1, [{ id: "first", name: "project.read", arguments: { target: "one" } }]),
+      assistant(2, [{ id: "second", name: "project.read", arguments: { target: "two" } }]),
+      assistant(3, [{ id: "third", name: "project.read", arguments: { target: "three" } }]),
       assistant(4, [
-        { id: "third", name: "forge.missing", arguments: { target: "three" } },
+        {
+          id: "accepted",
+          name: "project.read",
+          arguments: { target: "accepted" },
+        },
       ]),
-      assistant(5, [
-        { id: "fourth", name: "forge.missing", arguments: { target: "four" } },
-      ]),
-      assistant(6, [], "Read completed and invalid requests were corrected."),
+      assistant(5, [], "The corrected phase artifact is sealed."),
     ]),
   );
   const workspace = await CandidateWorkspace.create(
@@ -1162,29 +1244,61 @@ test("a successful read resets the consecutive all-failed tool-batch streak", as
     systemPrompt: "Test runtime",
     prompt: CREATOR_PROMPT,
     orientation,
-    tools: readResetToolHost(),
+    tools: repairableExecutionToolHost(),
     budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 6 },
     model: "fake/model",
   });
   assert.equal(result.status, "completed");
-  assert.equal(result.turns.length, 6);
+  assert.equal(result.turns.length, 5);
   assert.deepEqual(
-    result.toolCalls
-      .filter((call) => call.disposition === "rejected")
-      .map((call) => call.result.error?.code),
-    ["TOOL_UNKNOWN", "TOOL_UNKNOWN", "TOOL_UNKNOWN", "TOOL_UNKNOWN"],
+    result.toolCalls.map((call) => call.result.error?.code),
+    ["TOOL_FAILURE", "TOOL_FAILURE", "TOOL_FAILURE", undefined],
   );
+});
+
+test("varied rejected tool batches remain bounded by the ordinary turn budget", async () => {
+  const runtime = new ForgeNativeAgentRuntime(
+    new ScriptedModelClient([
+      assistant(1, [{ id: "first", name: "forge.missing", arguments: { target: "one" } }]),
+      assistant(2, [{ id: "second", name: "forge.missing", arguments: { target: "two" } }]),
+      assistant(3, [{ id: "read", name: "project.read", arguments: {} }]),
+    ]),
+  );
+  const workspace = await CandidateWorkspace.create(
+    GENERIC_SEED,
+    await directory(),
+    DEFAULT_AGENT_BUDGETS,
+  );
+  const map = await workspace.semanticMap();
+  const requirementView = resolveRequirementView(requirements(), {
+    phase: "build",
+    environment: "production",
+    audience: "builder",
+  });
+  const orientation = compileAgentOrientation({
+    semanticMap: map,
+    projectSnapshotHash: createProjectSnapshot(map).projectSemanticHash,
+    requirementView,
+    sourceRoots: workspace.sourceRoots,
+  });
+  const result = await runtime.run({
+    systemPrompt: "Test runtime",
+    prompt: CREATOR_PROMPT,
+    orientation,
+    tools: recordlessRejectingToolHost(),
+    budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 3 },
+    model: "fake/model",
+  });
+  assert.equal(result.status, "budget_exhausted");
+  assert.equal(result.error, "Turn budget exhausted");
+  assert.equal(result.turns.length, 3);
 });
 
 test("repeating an executed tool batch without semantic host progress terminates early", async () => {
   const runtime = new ForgeNativeAgentRuntime(
     new ScriptedModelClient([
-      assistant(1, [
-        { id: "inspect-first", name: "studio.inspect", arguments: {} },
-      ]),
-      assistant(2, [
-        { id: "inspect-second", name: "studio.inspect", arguments: {} },
-      ]),
+      assistant(1, [{ id: "inspect-first", name: "studio.inspect", arguments: {} }]),
+      assistant(2, [{ id: "inspect-second", name: "studio.inspect", arguments: {} }]),
     ]),
   );
   const workspace = await CandidateWorkspace.create(
@@ -1217,11 +1331,142 @@ test("repeating an executed tool batch without semantic host progress terminates
   assert.equal(result.turns.length, 2);
 });
 
-test("tool-call IDs are unique for the full run and valid batches execute sequentially", async () => {
-  const source = await readFile(
-    resolve(VULNERABLE, "src/server/ApplyAction.server.luau"),
-    "utf8",
+test("no-progress repetition is scoped to one accepted host-state epoch", async () => {
+  let state: "a" | "b" = "a";
+  const host: AgentToolHost = {
+    definitions: () => [
+      {
+        name: "studio.inspect",
+        description: "Read one bounded Studio fact.",
+        inputShape: {},
+        schema: { type: "object", additionalProperties: false },
+      },
+      {
+        name: "studio.stage",
+        description: "Advance accepted host state.",
+        inputShape: {},
+        schema: { type: "object", additionalProperties: false },
+      },
+    ],
+    validateBatch: () => ({
+      valid: true,
+      budgetExhausted: false,
+      feedback: [],
+    }),
+    async execute(name): Promise<ToolResult> {
+      if (name === "studio.stage") state = state === "a" ? "b" : "a";
+      const value = { name, state };
+      const serialized = stableJson(value);
+      return {
+        ok: true,
+        value,
+        truncated: false,
+        resultHash: contentHash(serialized),
+        bytes: Buffer.byteLength(serialized, "utf8"),
+      };
+    },
+    progressToken: () => contentHash(`state-${state}`),
+  };
+  const runtime = new ForgeNativeAgentRuntime(
+    new ScriptedModelClient([
+      assistant(1, [{ id: "inspect-before", name: "studio.inspect", arguments: {} }]),
+      assistant(2, [{ id: "stage-to-b", name: "studio.stage", arguments: {} }]),
+      assistant(3, [{ id: "inspect-b", name: "studio.inspect", arguments: {} }]),
+      assistant(4, [{ id: "stage-back-to-a", name: "studio.stage", arguments: {} }]),
+      assistant(5, [{ id: "inspect-new-a-epoch", name: "studio.inspect", arguments: {} }]),
+      assistant(6, [], "Each accepted host-state epoch was inspected."),
+    ]),
   );
+  const orientation = await genericOrientation();
+  const result = await runtime.run({
+    systemPrompt: "Test runtime",
+    prompt: CREATOR_PROMPT,
+    orientation,
+    tools: host,
+    budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 8 },
+    model: "fake/model",
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.turns.length, 6);
+  assert.deepEqual(
+    result.toolCalls.map((call) => call.name),
+    ["studio.inspect", "studio.stage", "studio.inspect", "studio.stage", "studio.inspect"],
+  );
+});
+
+test("a seal-ready host completes after the next read-only no-progress call", async () => {
+  let ready = false;
+  const host: AgentToolHost = {
+    definitions: () => [
+      {
+        name: "forge.verify",
+        description: "Seal the local gate.",
+        inputShape: {},
+        schema: { type: "object", additionalProperties: false },
+      },
+      {
+        name: "studio.diff",
+        description: "Read the current sealed diff.",
+        inputShape: {},
+        schema: { type: "object", additionalProperties: false },
+      },
+    ],
+    validateBatch: () => ({
+      valid: true,
+      budgetExhausted: false,
+      feedback: [],
+    }),
+    async execute(name): Promise<ToolResult> {
+      if (name === "forge.verify") ready = true;
+      const value = { name, ready };
+      const serialized = stableJson(value);
+      return {
+        ok: true,
+        value,
+        truncated: false,
+        resultHash: contentHash(serialized),
+        bytes: Buffer.byteLength(serialized, "utf8"),
+      };
+    },
+    completionStatus: () =>
+      ready
+        ? { ready: true }
+        : {
+            ready: false,
+            code: "LOCAL_GATE_NOT_READY",
+            message: "The local gate is not ready.",
+          },
+    progressToken: () => contentHash(ready ? "eligible" : "not-run"),
+  };
+  const runtime = new ForgeNativeAgentRuntime(
+    new ScriptedModelClient([
+      assistant(1, [{ id: "verify", name: "forge.verify", arguments: {} }]),
+      assistant(2, [{ id: "diff-first", name: "studio.diff", arguments: {} }]),
+      assistant(3, [{ id: "diff-second", name: "studio.diff", arguments: {} }]),
+    ]),
+  );
+  const orientation = await genericOrientation();
+  const result = await runtime.run({
+    systemPrompt: "Test runtime",
+    prompt: CREATOR_PROMPT,
+    orientation,
+    tools: host,
+    budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 6 },
+    model: "fake/model",
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.turns.length, 2);
+  assert.equal(result.failureCode, undefined);
+  assert.deepEqual(
+    result.toolCalls.map((call) => call.name),
+    ["forge.verify", "studio.diff"],
+  );
+});
+
+test("tool-call IDs are unique for the full run and valid batches execute sequentially", async () => {
+  const source = await readFile(resolve(VULNERABLE, "src/server/ApplyAction.server.luau"), "utf8");
   const repaired = source.replace("+ claimedAmount", "+ 1");
   const client = new ScriptedModelClient([
     assistant(1, [
@@ -1250,10 +1495,7 @@ test("tool-call IDs are unique for the full run and valid batches execute sequen
     ]),
     (request) => {
       const feedback = request.messages.at(-1);
-      assert.match(
-        feedback?.role === "user" ? feedback.content : "",
-        /TOOL_CALL_ID_DUPLICATE/,
-      );
+      assert.match(feedback?.role === "user" ? feedback.content : "", /TOOL_CALL_ID_DUPLICATE/);
       return assistant(3, [
         {
           id: "read-sequential",
@@ -1289,10 +1531,7 @@ test("tool-call IDs are unique for the full run and valid batches execute sequen
     result.run.toolCalls.map((call) => call.name),
     ["plan.update", "project.read", "project.read", "workspace.write"],
   );
-  assert.equal(
-    result.run.toolCalls[1]?.result.error?.code,
-    "TOOL_CALL_ID_DUPLICATE",
-  );
+  assert.equal(result.run.toolCalls[1]?.result.error?.code, "TOOL_CALL_ID_DUPLICATE");
   assert.equal(result.run.toolCalls[2]?.result.ok, true);
   assert.equal(result.run.toolCalls[3]?.result.ok, true);
 });
@@ -1326,7 +1565,9 @@ test("provider failures and model budget exhaustion normalize to incomplete outc
     seedRoot: GENERIC_SEED,
     creatorPrompt: CREATOR_PROMPT,
     requirementSet: requirements(),
-    runtime: new ForgeNativeAgentRuntime(failureClient, { clock: failureClock }),
+    runtime: new ForgeNativeAgentRuntime(failureClient, {
+      clock: failureClock,
+    }),
     model: "fake/model",
     runDirectory: failedDirectory,
     traceDirectory: join(failedDirectory, "traces"),
@@ -1498,11 +1739,7 @@ test("opaque model continuation is never persisted in AgentRun or BuildTrace", a
 });
 
 test("workspace requires a plan, safe relative source paths, fresh hashes, and explicit absent creation", async () => {
-  const workspace = await CandidateWorkspace.create(
-    SAFE,
-    await directory(),
-    DEFAULT_AGENT_BUDGETS,
-  );
+  const workspace = await CandidateWorkspace.create(SAFE, await directory(), DEFAULT_AGENT_BUDGETS);
   const tools = new BoundedToolHost(workspace, DEFAULT_AGENT_BUDGETS);
   const read = await tools.execute("project.read", {
     path: "src/server/ApplyAction.server.luau",
@@ -1521,15 +1758,12 @@ test("workspace requires a plan, safe relative source paths, fresh hashes, and e
     "PLAN_REQUIRED",
   );
   assert.equal(
-    (await tools.execute("project.read", { path: "../forge.fixture.json" }))
-      .error?.code,
+    (await tools.execute("project.read", { path: "../forge.fixture.json" })).error?.code,
     "PATH_FORBIDDEN",
   );
   await tools.execute("plan.update", {
     goal: "Add source",
-    steps: [
-      { id: "create", statement: "Create a file", status: "in_progress" },
-    ],
+    steps: [{ id: "create", statement: "Create a file", status: "in_progress" }],
     status: "active",
   });
   assert.equal(
@@ -1574,11 +1808,7 @@ test("workspace requires a plan, safe relative source paths, fresh hashes, and e
   );
   const outside = await directory();
   await writeFile(join(outside, "Escape.luau"), "return 'outside'", "utf8");
-  await symlink(
-    outside,
-    join(workspace.candidateRoot, "src/server/link"),
-    "dir",
-  );
+  await symlink(outside, join(workspace.candidateRoot, "src/server/link"), "dir");
   assert.equal(
     (
       await tools.execute("project.read", {
@@ -1628,10 +1858,7 @@ test("builder orientation withholds benchmark bodies and HarnessConfiguration ha
     requirementView: view,
     sourceRoots: ["src/shared", "src/server"],
   });
-  assert.deepEqual(sortedOrientation.content.sourceRoots, [
-    "src/server",
-    "src/shared",
-  ]);
+  assert.deepEqual(sortedOrientation.content.sourceRoots, ["src/server", "src/shared"]);
   for (const invalidRoots of [
     ["src/server", "src/server"],
     ["./src/server"],
@@ -1672,8 +1899,7 @@ test("builder orientation withholds benchmark bodies and HarnessConfiguration ha
     model: {
       transport: "fake",
       name: "fake/model",
-      transportConfiguration: new ScriptedModelClient([]).descriptor
-        .configuration,
+      transportConfiguration: new ScriptedModelClient([]).descriptor.configuration,
     },
   };
   const first = createHarnessConfiguration(input);
@@ -1691,9 +1917,7 @@ test("builder orientation withholds benchmark bodies and HarnessConfiguration ha
   assert.equal(first.hash, second.hash);
   assert.notEqual(first.hash, changed.hash);
   assert.notEqual(first.hash, reordered.hash);
-  assert.throws(() =>
-    assertHarnessConfiguration({ ...first, hash: contentHash("tampered") }),
-  );
+  assert.throws(() => assertHarnessConfiguration({ ...first, hash: contentHash("tampered") }));
   assert.throws(() =>
     assertHarnessConfiguration({
       ...first,
@@ -1706,8 +1930,7 @@ test("builder orientation withholds benchmark bodies and HarnessConfiguration ha
   assert.doesNotThrow(() =>
     createHarnessConfiguration({
       ...input,
-      systemPrompt:
-        "A reward, sell action, door, and fruit are ordinary domain words.",
+      systemPrompt: "A reward, sell action, door, and fruit are ordinary domain words.",
     }),
   );
 });
@@ -1741,15 +1964,9 @@ test("generic packages do not import deleted mechanics, adapters, fixtures, or S
       source,
       /from\s+["'][^"']*(agent-claude|generation|repair|studio-proof|patch-model|examples|fixtures|HarnessRegistry)[^"']*["']/,
     );
-    assert.doesNotMatch(
-      source,
-      /from\s+["'](?:ai|@openrouter\/ai-sdk-provider)["']/,
-    );
+    assert.doesNotMatch(source, /from\s+["'](?:ai|@openrouter\/ai-sdk-provider)["']/);
   }
-  const adapter = await readFile(
-    resolve("packages/model-client/src/openrouter-ai-sdk.ts"),
-    "utf8",
-  );
+  const adapter = await readFile(resolve("packages/model-client/src/openrouter-ai-sdk.ts"), "utf8");
   assert.match(adapter, /from "ai"/);
   assert.match(adapter, /from "@openrouter\/ai-sdk-provider"/);
 });

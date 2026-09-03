@@ -215,23 +215,23 @@ Forge already signals **a much stronger fit than a normal AI wrapper project**.
 
 Your strongest parts map almost one-to-one onto the job.
 
-| Lemonade criterion | Forge today | Signal |
-|---|---|---|
-| Harness is a core product | Models sit behind explicit boundaries; model output cannot certify itself | **Very strong** |
-| Deterministic verifier loops | Luau, Roblox-aware typing, remote trust analysis, PatchSet gates, ProofBundle | **Exceptional** |
-| Representative execution | Real Roblox Studio Play Solo, correlated server evidence | **Very strong** |
-| Regression discipline | Historical candidates/proofs retained; false-positive fixes become regressions | **Exceptional** |
-| Failure diagnosis | You separated model defects, verifier defects and harness defects repeatedly | **Exceptional** |
-| Security / adversarial eval | Real client reward and payout faults were exploited in Studio and rejected | **Very strong** |
-| Observability | BuildTrace / ProofBundle separation, hashes, provenance, outcomes | **Very strong** |
-| Rollback / fail-closed behavior | Rejected runtime fault restored exact prior revision | **Very strong** |
-| Model comparison | One primary model path; no meaningful model/harness matrix yet | **Weak** |
-| Production failure → eval | Forge's own failures become regressions, but not real user-failure mining | **Medium** |
-| Long-horizon agent | Not implemented | **Weak** |
-| Multiple-model coherent harness | Boundary exists, empirical proof does not | **Weak** |
-| Game taste / subjective evaluation | Almost entirely absent | **Weak** |
-| Fly/Docker agent infrastructure | Designed conceptually, not central to current artifact | **Weak** |
-| Broad game-generation generalization | Current acceptance is Collect + Sell | **Weak-to-medium** |
+| Lemonade criterion                   | Forge today                                                                    | Signal             |
+| ------------------------------------ | ------------------------------------------------------------------------------ | ------------------ |
+| Harness is a core product            | Models sit behind explicit boundaries; model output cannot certify itself      | **Very strong**    |
+| Deterministic verifier loops         | Luau, Roblox-aware typing, remote trust analysis, PatchSet gates, ProofBundle  | **Exceptional**    |
+| Representative execution             | Real Roblox Studio Play Solo, correlated server evidence                       | **Very strong**    |
+| Regression discipline                | Historical candidates/proofs retained; false-positive fixes become regressions | **Exceptional**    |
+| Failure diagnosis                    | You separated model defects, verifier defects and harness defects repeatedly   | **Exceptional**    |
+| Security / adversarial eval          | Real client reward and payout faults were exploited in Studio and rejected     | **Very strong**    |
+| Observability                        | BuildTrace / ProofBundle separation, hashes, provenance, outcomes              | **Very strong**    |
+| Rollback / fail-closed behavior      | Rejected runtime fault restored exact prior revision                           | **Very strong**    |
+| Model comparison                     | One primary model path; no meaningful model/harness matrix yet                 | **Weak**           |
+| Production failure → eval            | Forge's own failures become regressions, but not real user-failure mining      | **Medium**         |
+| Long-horizon agent                   | Not implemented                                                                | **Weak**           |
+| Multiple-model coherent harness      | Boundary exists, empirical proof does not                                      | **Weak**           |
+| Game taste / subjective evaluation   | Almost entirely absent                                                         | **Weak**           |
+| Fly/Docker agent infrastructure      | Designed conceptually, not central to current artifact                         | **Weak**           |
+| Broad game-generation generalization | Current acceptance is Collect + Sell                                           | **Weak-to-medium** |
 
 Forge's current evidence chain is genuinely impressive. M3 established real safe runs, a real runtime reward exploit, deterministic rejection and rollback rather than merely unit-test mocks. fileciteturn0file2 The M3.5 acceptance then starts from the sealed AI-authored Collect implementation, extends it with AI-authored Sell, and passes fourteen correlated Collect, Sell and composition assertions; a payout fault was separately rejected. fileciteturn0file1 fileciteturn0file3
 
@@ -239,7 +239,7 @@ That already says:
 
 > **“I naturally think like your verifier/evals engineer.”**
 
-What does *not* yet say “strongest possible hire” is breadth and experimentation.
+What does _not_ yet say “strongest possible hire” is breadth and experimentation.
 
 Right now a skeptical interviewer can still ask:
 
@@ -293,11 +293,7 @@ interface Requirement {
   source: RequirementSource;
 
   // Is this a hard fact, interpretation, or test-only oracle?
-  authority:
-    | "fact"
-    | "policy"
-    | "hypothesis"
-    | "evaluation_only";
+  authority: "fact" | "policy" | "hypothesis" | "evaluation_only";
 
   confidence?: number;
 
@@ -307,12 +303,7 @@ interface Requirement {
     observationId?: string;
   };
 
-  verification:
-    | "schema"
-    | "static"
-    | "studio"
-    | "evaluator"
-    | "human";
+  verification: "schema" | "static" | "studio" | "evaluator" | "human";
 
   blocking: boolean;
 }

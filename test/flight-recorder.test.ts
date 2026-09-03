@@ -4,8 +4,19 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { test } from "node:test";
-import { assertBuildTrace, contentHash, stableJson, type BuildOutcome } from "../packages/contracts/src/index.js";
-import { FlightRecorder, JsonFileTraceSink, createBuildKey, type FlightRecorderClock, type TraceSink } from "../packages/flight-recorder/src/index.js";
+import {
+  assertBuildTrace,
+  contentHash,
+  stableJson,
+  type BuildOutcome,
+} from "../packages/contracts/src/index.js";
+import {
+  FlightRecorder,
+  JsonFileTraceSink,
+  createBuildKey,
+  type FlightRecorderClock,
+  type TraceSink,
+} from "../packages/flight-recorder/src/index.js";
 import { verifyProject } from "../packages/verifier/src/index.js";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -15,15 +26,30 @@ const insecureFixture = resolve(root, "test/fixtures/client-controlled-authorita
 
 test("build keys are deterministic while execution trace IDs remain distinct", () => {
   const context = {
-    project: { id: "project_test", startingSnapshotHash: "snapshot_a", resultingSnapshotHash: "snapshot_a", manifestHash: "manifest_a", snapshotRetention: "not_retained" as const },
+    project: {
+      id: "project_test",
+      startingSnapshotHash: "snapshot_a",
+      resultingSnapshotHash: "snapshot_a",
+      manifestHash: "manifest_a",
+      snapshotRetention: "not_retained" as const,
+    },
     references: {},
-    components: { toolchain: [{ name: "luau-analyze", configHash: "a".repeat(64) }], verifiers: [{ name: "forge", configHash: "b".repeat(64) }] }
+    components: {
+      toolchain: [{ name: "luau-analyze", configHash: "a".repeat(64) }],
+      verifiers: [{ name: "forge", configHash: "b".repeat(64) }],
+    },
   };
   assert.equal(createBuildKey(context), createBuildKey(context));
 
   const clock = fixedClock();
-  const one = new FlightRecorder({ projectId: "project_test", project: context.project, components: context.components }, { clock, traceIdFactory: () => "trace_one" });
-  const two = new FlightRecorder({ projectId: "project_test", project: context.project, components: context.components }, { clock, traceIdFactory: () => "trace_two" });
+  const one = new FlightRecorder(
+    { projectId: "project_test", project: context.project, components: context.components },
+    { clock, traceIdFactory: () => "trace_one" },
+  );
+  const two = new FlightRecorder(
+    { projectId: "project_test", project: context.project, components: context.components },
+    { clock, traceIdFactory: () => "trace_two" },
+  );
   const outcome = acceptedOutcome();
   const traceOne = one.complete(outcome, { issues: [] }, semanticReplayability());
   const traceTwo = two.complete(outcome, { issues: [] }, semanticReplayability());
@@ -39,7 +65,10 @@ test("local sink writes a content-addressed, privacy-minimized trace that trace 
     assert.equal(run.tracePersistence.status, "written");
     assert.equal(run.trace.outcome.localGate, "rejected");
     assert.equal(run.trace.outcome.runtimeGate, "not_run");
-    assert.deepEqual(run.trace.spans.map((span) => span.name), ["forge.project.snapshot", "forge.verify.luau", "forge.verify.replication"]);
+    assert.deepEqual(
+      run.trace.spans.map((span) => span.name),
+      ["forge.project.snapshot", "forge.verify.luau", "forge.verify.replication"],
+    );
     assert.ok(run.trace.events.some((event) => event.name === "forge.issue.detected"));
     assert.equal(run.trace.privacy.rawSourceStored, false);
     assert.ok(!stableJson(run.trace).includes("claimedAmount"));
@@ -48,7 +77,11 @@ test("local sink writes a content-addressed, privacy-minimized trace that trace 
     assert.deepEqual(loaded, run.trace);
     assertBuildTrace(loaded);
 
-    const output = execFileSync(process.execPath, [cli, "trace", "show", run.trace.id, "--trace-dir", traceDirectory], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const output = execFileSync(
+      process.execPath,
+      [cli, "trace", "show", run.trace.id, "--trace-dir", traceDirectory],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    );
     assert.equal((JSON.parse(output) as { id: string }).id, run.trace.id);
   } finally {
     await rm(traceDirectory, { recursive: true, force: true });
@@ -59,7 +92,7 @@ test("trace persistence failures are explicit and never alter a verification dec
   const failingSink: TraceSink = {
     async persist() {
       throw new Error("disk intentionally unavailable");
-    }
+    },
   };
   const run = await verifyProject(cleanFixture, { traceSink: failingSink });
   assert.equal(run.report.gate.status, "eligible");
@@ -110,7 +143,10 @@ test("flight recorder uses monotonic intervals and BuildTrace rejects impossible
 function fixedClock(): FlightRecorderClock {
   let milliseconds = 0;
   return {
-    now: () => new Date(`2026-08-29T00:00:${String(Math.floor(milliseconds / 1_000)).padStart(2, "0")}.${String(milliseconds++ % 1_000).padStart(3, "0")}Z`),
+    now: () =>
+      new Date(
+        `2026-08-29T00:00:${String(Math.floor(milliseconds / 1_000)).padStart(2, "0")}.${String(milliseconds++ % 1_000).padStart(3, "0")}Z`,
+      ),
     monotonicNow: () => milliseconds,
   };
 }
@@ -136,10 +172,14 @@ function acceptedOutcome(): BuildOutcome {
     assertions: { total: 0, passed: 0 },
     modelUsage: { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
     latencyMs: { total: 0 },
-    issueCounts: { info: 0, warning: 0, error: 0, critical: 0 }
+    issueCounts: { info: 0, warning: 0, error: 0, critical: 0 },
   };
 }
 
 function semanticReplayability() {
-  return { level: "semantic_reproduction" as const, reasons: [contentHash("fixture")], randomSeeds: {} };
+  return {
+    level: "semantic_reproduction" as const,
+    reasons: [contentHash("fixture")],
+    randomSeeds: {},
+  };
 }

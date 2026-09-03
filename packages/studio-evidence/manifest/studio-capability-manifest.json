@@ -10,6 +10,60 @@
     "maximumStringUtf8Bytes": 4096,
     "reservedPrefix": "_forge"
   },
+  "authoringContainers": [
+    {
+      "className": "Lighting",
+      "path": "Lighting"
+    },
+    {
+      "className": "ReplicatedFirst",
+      "path": "ReplicatedFirst"
+    },
+    {
+      "className": "ReplicatedStorage",
+      "path": "ReplicatedStorage"
+    },
+    {
+      "className": "ServerScriptService",
+      "path": "ServerScriptService"
+    },
+    {
+      "className": "ServerStorage",
+      "path": "ServerStorage"
+    },
+    {
+      "className": "SoundService",
+      "path": "SoundService"
+    },
+    {
+      "className": "StarterGui",
+      "path": "StarterGui"
+    },
+    {
+      "className": "StarterPack",
+      "path": "StarterPack"
+    },
+    {
+      "className": "StarterPlayer",
+      "path": "StarterPlayer"
+    },
+    {
+      "className": "StarterCharacterScripts",
+      "path": "StarterPlayer/StarterCharacterScripts"
+    },
+    {
+      "className": "StarterPlayerScripts",
+      "path": "StarterPlayer/StarterPlayerScripts"
+    },
+    {
+      "className": "Teams",
+      "path": "Teams"
+    },
+    {
+      "className": "Workspace",
+      "path": "Workspace"
+    }
+  ],
   "classes": [
     {
       "creatable": true,
@@ -24,6 +78,7 @@
           "declaringClass": "Attachment",
           "maximum": 100000,
           "name": "Axis",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -48,6 +103,7 @@
           "declaringClass": "Attachment",
           "maximumAbsoluteTranslation": 100000,
           "name": "CFrame",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -71,6 +127,7 @@
           "declaringClass": "Attachment",
           "maximum": 100000,
           "name": "SecondaryAxis",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -94,6 +151,7 @@
           "codec": "boolean",
           "declaringClass": "Attachment",
           "name": "Visible",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -107,6 +165,79 @@
             "engineType": "bool",
             "scriptType": "boolean"
           }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Vector3"
+          },
+          "codec": "vector3_f32",
+          "declaringClass": "Attachment",
+          "name": "WorldAxis",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Vector3",
+            "scriptType": "Vector3"
+          },
+          "serialized": false
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "CFrame"
+          },
+          "codec": "cframe_f32x12",
+          "declaringClass": "Attachment",
+          "maximumAbsoluteTranslation": 100000,
+          "name": "WorldCFrame",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "CoordinateFrame",
+            "scriptType": "CFrame"
+          },
+          "serialized": false
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Vector3"
+          },
+          "codec": "vector3_f32",
+          "declaringClass": "Attachment",
+          "name": "WorldSecondaryAxis",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Vector3",
+            "scriptType": "Vector3"
+          },
+          "serialized": false
         }
       ],
       "source": "forbidden"
@@ -123,6 +254,7 @@
           "codec": "instance_ref",
           "declaringClass": "Beam",
           "name": "Attachment0",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -147,6 +279,7 @@
           "codec": "instance_ref",
           "declaringClass": "Beam",
           "name": "Attachment1",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -173,6 +306,7 @@
           "maximum": 1000,
           "minimum": 0,
           "name": "Brightness",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -196,6 +330,7 @@
           "declaringClass": "Beam",
           "maximumEntries": 20,
           "name": "Color",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -220,6 +355,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "CurveSize0",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -244,6 +380,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "CurveSize1",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -266,6 +403,7 @@
           "codec": "boolean",
           "declaringClass": "Beam",
           "name": "Enabled",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -288,6 +426,7 @@
           "codec": "boolean",
           "declaringClass": "Beam",
           "name": "FaceCamera",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -312,6 +451,7 @@
           "maximum": 1,
           "minimum": 0,
           "name": "LightEmission",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -336,6 +476,105 @@
           "maximum": 1,
           "minimum": 0,
           "name": "LightInfluence",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "Beam",
+          "name": "Segments",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "Beam",
+          "name": "TextureLength",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "allowed": [
+            "Static",
+            "Stretch",
+            "Wrap"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "TextureMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "Beam",
+          "name": "TextureMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "TextureMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "Beam",
+          "name": "TextureSpeed",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -359,6 +598,7 @@
           "declaringClass": "Beam",
           "maximumEntries": 20,
           "name": "Transparency",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -383,6 +623,7 @@
           "maximum": 100000,
           "minimum": 0,
           "name": "Width0",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -407,6 +648,30 @@
           "maximum": 100000,
           "minimum": 0,
           "name": "Width1",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "Beam",
+          "name": "ZOffset",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -436,6 +701,7 @@
           "codec": "boolean",
           "declaringClass": "BoolValue",
           "name": "Value",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -466,6 +732,7 @@
           "declaringClass": "CFrameValue",
           "maximumAbsoluteTranslation": 100000,
           "name": "Value",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -495,6 +762,7 @@
           "codec": "color3_rgb8",
           "declaringClass": "Color3Value",
           "name": "Value",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -518,12 +786,36 @@
       "properties": [
         {
           "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "Decal",
+          "name": "AutoLocalize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
             "category": "datatype",
             "name": "Color3"
           },
           "codec": "color3_rgb8",
           "declaringClass": "Decal",
           "name": "Color3",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -539,6 +831,38 @@
           }
         },
         {
+          "allowed": [
+            "Back",
+            "Bottom",
+            "Front",
+            "Left",
+            "Right",
+            "Top"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "NormalId"
+          },
+          "codec": "enum_name",
+          "declaringClass": "FaceInstance",
+          "name": "Face",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "NormalId",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
           "catalogType": {
             "category": "primitive",
             "name": "float"
@@ -548,6 +872,7 @@
           "maximum": 360000,
           "minimum": -360000,
           "name": "Rotation",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -572,6 +897,7 @@
           "maximum": 1,
           "minimum": 0,
           "name": "Transparency",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -596,6 +922,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "UVOffset",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -620,6 +947,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "UVScale",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -644,6 +972,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "ZIndex",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -679,6 +1008,7 @@
           "codec": "boolean",
           "declaringClass": "GuiObject",
           "name": "Active",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -703,6 +1033,7 @@
           "maximum": 100,
           "minimum": -100,
           "name": "AnchorPoint",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -719,12 +1050,66 @@
         },
         {
           "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "AutoLocalize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "None",
+            "X",
+            "XY",
+            "Y"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "AutomaticSize"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "AutomaticSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "AutomaticSize",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
             "category": "datatype",
             "name": "Color3"
           },
           "codec": "color3_rgb8",
           "declaringClass": "GuiObject",
           "name": "BackgroundColor3",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -749,6 +1134,7 @@
           "maximum": 1,
           "minimum": 0,
           "name": "BackgroundTransparency",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -771,6 +1157,7 @@
           "codec": "color3_rgb8",
           "declaringClass": "GuiObject",
           "name": "BorderColor3",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -786,6 +1173,35 @@
           }
         },
         {
+          "allowed": [
+            "Inset",
+            "Middle",
+            "Outline"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "BorderMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "BorderMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "BorderMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
           "catalogType": {
             "category": "primitive",
             "name": "int"
@@ -795,6 +1211,7 @@
           "maximum": 1000,
           "minimum": 0,
           "name": "BorderSizePixel",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -817,6 +1234,30 @@
           "codec": "boolean",
           "declaringClass": "GuiObject",
           "name": "ClipsDescendants",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Interactable",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -841,6 +1282,388 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "LayoutOrder",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim2"
+          },
+          "codec": "udim2",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "Position",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim2",
+            "scriptType": "UDim2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "LocalizationTable"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiBase2d",
+          "name": "RootLocalizationTable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "LocalizationTable",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "LocalizationTable",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "GuiObject",
+          "maximum": 360000,
+          "minimum": -360000,
+          "name": "Rotation",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Selectable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionGroup",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "SelectionImageObject",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "name": "SelectionOrder",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -864,55 +1687,8 @@
           "declaringClass": "GuiObject",
           "maximum": 100000,
           "minimum": -100000,
-          "name": "Position",
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "UDim2",
-            "scriptType": "UDim2"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "GuiObject",
-          "maximum": 360000,
-          "minimum": -360000,
-          "name": "Rotation",
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "UDim2"
-          },
-          "codec": "udim2",
-          "declaringClass": "GuiObject",
-          "maximum": 100000,
-          "minimum": -100000,
           "name": "Size",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -925,6 +1701,68 @@
           "reflection": {
             "engineType": "UDim2",
             "scriptType": "UDim2"
+          }
+        },
+        {
+          "allowed": [
+            "RelativeXX",
+            "RelativeXY",
+            "RelativeYY"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SizeConstraint"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "SizeConstraint",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SizeConstraint",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "ChatBlue",
+            "ChatGreen",
+            "ChatRed",
+            "Custom",
+            "DropShadow",
+            "RobloxRound",
+            "RobloxSquare"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "FrameStyle"
+          },
+          "codec": "enum_name",
+          "declaringClass": "Frame",
+          "name": "Style",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "FrameStyle",
+            "scriptType": "EnumItem"
           }
         },
         {
@@ -935,6 +1773,7 @@
           "codec": "boolean",
           "declaringClass": "GuiObject",
           "name": "Visible",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -959,6 +1798,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "ZIndex",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -988,6 +1828,7 @@
           "codec": "boolean",
           "declaringClass": "GuiObject",
           "name": "Active",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1012,6 +1853,7 @@
           "maximum": 100,
           "minimum": -100,
           "name": "AnchorPoint",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1028,12 +1870,66 @@
         },
         {
           "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "AutoLocalize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "None",
+            "X",
+            "XY",
+            "Y"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "AutomaticSize"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "AutomaticSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "AutomaticSize",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
             "category": "datatype",
             "name": "Color3"
           },
           "codec": "color3_rgb8",
           "declaringClass": "GuiObject",
           "name": "BackgroundColor3",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1058,6 +1954,7 @@
           "maximum": 1,
           "minimum": 0,
           "name": "BackgroundTransparency",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1080,6 +1977,7 @@
           "codec": "color3_rgb8",
           "declaringClass": "GuiObject",
           "name": "BorderColor3",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1095,6 +1993,35 @@
           }
         },
         {
+          "allowed": [
+            "Inset",
+            "Middle",
+            "Outline"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "BorderMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "BorderMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "BorderMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
           "catalogType": {
             "category": "primitive",
             "name": "int"
@@ -1104,6 +2031,7 @@
           "maximum": 1000,
           "minimum": 0,
           "name": "BorderSizePixel",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1126,6 +2054,7 @@
           "codec": "boolean",
           "declaringClass": "GuiObject",
           "name": "ClipsDescendants",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1148,6 +2077,7 @@
           "codec": "color3_rgb8",
           "declaringClass": "ImageLabel",
           "name": "ImageColor3",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1172,6 +2102,7 @@
           "maximum": 100000,
           "minimum": 0,
           "name": "ImageRectOffset",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1196,6 +2127,7 @@
           "maximum": 100000,
           "minimum": 0,
           "name": "ImageRectSize",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1220,6 +2152,7 @@
           "maximum": 1,
           "minimum": 0,
           "name": "ImageTransparency",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1237,6 +2170,29 @@
         {
           "catalogType": {
             "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Interactable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
             "name": "int"
           },
           "codec": "int32",
@@ -1244,6 +2200,447 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "LayoutOrder",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim2"
+          },
+          "codec": "udim2",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "Position",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim2",
+            "scriptType": "UDim2"
+          }
+        },
+        {
+          "allowed": [
+            "Default",
+            "Pixelated"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ResamplerMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ImageLabel",
+          "name": "ResampleMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ResamplerMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "LocalizationTable"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiBase2d",
+          "name": "RootLocalizationTable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "LocalizationTable",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "LocalizationTable",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "GuiObject",
+          "maximum": 360000,
+          "minimum": -360000,
+          "name": "Rotation",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "allowed": [
+            "Crop",
+            "Fit",
+            "Slice",
+            "Stretch",
+            "Tile"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ScaleType"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ImageLabel",
+          "name": "ScaleType",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ScaleType",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Selectable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionGroup",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "SelectionImageObject",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "name": "SelectionOrder",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1267,55 +2664,8 @@
           "declaringClass": "GuiObject",
           "maximum": 100000,
           "minimum": -100000,
-          "name": "Position",
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "UDim2",
-            "scriptType": "UDim2"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "GuiObject",
-          "maximum": 360000,
-          "minimum": -360000,
-          "name": "Rotation",
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "UDim2"
-          },
-          "codec": "udim2",
-          "declaringClass": "GuiObject",
-          "maximum": 100000,
-          "minimum": -100000,
           "name": "Size",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1328,6 +2678,35 @@
           "reflection": {
             "engineType": "UDim2",
             "scriptType": "UDim2"
+          }
+        },
+        {
+          "allowed": [
+            "RelativeXX",
+            "RelativeXY",
+            "RelativeYY"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SizeConstraint"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "SizeConstraint",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SizeConstraint",
+            "scriptType": "EnumItem"
           }
         },
         {
@@ -1340,6 +2719,7 @@
           "maximum": 100000,
           "minimum": 0,
           "name": "SliceCenter",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1364,6 +2744,7 @@
           "maximum": 1000,
           "minimum": 0,
           "name": "SliceScale",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1388,6 +2769,7 @@
           "maximum": 100000,
           "minimum": 0,
           "name": "TileSize",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1410,6 +2792,7 @@
           "codec": "boolean",
           "declaringClass": "GuiObject",
           "name": "Visible",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1434,6 +2817,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "ZIndex",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1463,6 +2847,7 @@
           "codec": "int64_decimal",
           "declaringClass": "IntValue",
           "name": "Value",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1512,6 +2897,7 @@
           "maximum": 1000000000,
           "minimum": -1000000000,
           "name": "Value",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1541,6 +2927,7 @@
           "codec": "instance_ref",
           "declaringClass": "ObjectValue",
           "name": "Value",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1572,6 +2959,7 @@
           "codec": "boolean",
           "declaringClass": "BasePart",
           "name": "Anchored",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1589,12 +2977,108 @@
         {
           "catalogType": {
             "category": "datatype",
+            "name": "Vector3"
+          },
+          "codec": "vector3_f32",
+          "declaringClass": "BasePart",
+          "name": "AssemblyAngularVelocity",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Vector3",
+            "scriptType": "Vector3"
+          },
+          "serialized": false
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Vector3"
+          },
+          "codec": "vector3_f32",
+          "declaringClass": "BasePart",
+          "name": "AssemblyLinearVelocity",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Vector3",
+            "scriptType": "Vector3"
+          },
+          "serialized": false
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "BasePart",
+          "name": "AudioCanCollide",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "BrickColor"
+          },
+          "codec": "brick_color",
+          "declaringClass": "BasePart",
+          "name": "BrickColor",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "BrickColor",
+            "scriptType": "BrickColor"
+          },
+          "serialized": false
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
             "name": "CFrame"
           },
           "codec": "cframe_f32x12",
           "declaringClass": "BasePart",
           "maximumAbsoluteTranslation": 100000,
           "name": "CFrame",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1617,6 +3101,7 @@
           "codec": "boolean",
           "declaringClass": "BasePart",
           "name": "CanCollide",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1639,6 +3124,7 @@
           "codec": "boolean",
           "declaringClass": "BasePart",
           "name": "CanQuery",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1661,6 +3147,7 @@
           "codec": "boolean",
           "declaringClass": "BasePart",
           "name": "CanTouch",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1683,6 +3170,7 @@
           "codec": "boolean",
           "declaringClass": "BasePart",
           "name": "CastShadow",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1705,7 +3193,9 @@
           "codec": "string_utf8",
           "declaringClass": "BasePart",
           "maximumUtf8Bytes": 100,
+          "minimumUtf8Bytes": 1,
           "name": "CollisionGroup",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1728,6 +3218,7 @@
           "codec": "color3_rgb8",
           "declaringClass": "BasePart",
           "name": "Color",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1745,12 +3236,82 @@
         },
         {
           "catalogType": {
+            "category": "datatype",
+            "name": "PhysicalProperties"
+          },
+          "codec": "physical_properties",
+          "declaringClass": "BasePart",
+          "name": "CustomPhysicalProperties",
+          "nullable": true,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "PhysicalProperties",
+            "scriptType": "PhysicalProperties"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "BasePart",
+          "name": "EnableFluidForces",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "BasePart",
+          "name": "Locked",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
             "category": "primitive",
             "name": "boolean"
           },
           "codec": "boolean",
           "declaringClass": "BasePart",
           "name": "Massless",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1820,6 +3381,7 @@
           "codec": "enum_name",
           "declaringClass": "BasePart",
           "name": "Material",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1837,6 +3399,30 @@
         },
         {
           "catalogType": {
+            "category": "datatype",
+            "name": "CFrame"
+          },
+          "codec": "cframe_f32x12",
+          "declaringClass": "BasePart",
+          "maximumAbsoluteTranslation": 100000,
+          "name": "PivotOffset",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "CoordinateFrame",
+            "scriptType": "CFrame"
+          }
+        },
+        {
+          "catalogType": {
             "category": "primitive",
             "name": "float"
           },
@@ -1845,6 +3431,7 @@
           "maximum": 1,
           "minimum": 0,
           "name": "Reflectance",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1861,6 +3448,85 @@
         },
         {
           "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "BasePart",
+          "name": "RootPriority",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Vector3"
+          },
+          "codec": "vector3_f32",
+          "declaringClass": "BasePart",
+          "name": "Rotation",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Vector3",
+            "scriptType": "Vector3"
+          },
+          "serialized": false
+        },
+        {
+          "allowed": [
+            "Ball",
+            "Block",
+            "CornerWedge",
+            "Cylinder",
+            "Wedge"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "PartType"
+          },
+          "codec": "enum_name",
+          "declaringClass": "Part",
+          "name": "Shape",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "PartType",
+            "scriptType": "EnumItem"
+          },
+          "serialized": false
+        },
+        {
+          "catalogType": {
             "category": "datatype",
             "name": "Vector3"
           },
@@ -1869,6 +3535,7 @@
           "maximum": 2048,
           "minimumExclusive": 0,
           "name": "Size",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1894,6 +3561,7 @@
           "maximum": 1,
           "minimum": 0,
           "name": "Transparency",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1925,6 +3593,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "Acceleration",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1941,6 +3610,29 @@
         },
         {
           "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "ParticleEmitter",
+          "name": "Brightness",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
             "category": "datatype",
             "name": "ColorSequence"
           },
@@ -1948,6 +3640,7 @@
           "declaringClass": "ParticleEmitter",
           "maximumEntries": 20,
           "name": "Color",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1972,6 +3665,7 @@
           "maximum": 1000,
           "minimum": 0,
           "name": "Drag",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -1987,6 +3681,38 @@
           }
         },
         {
+          "allowed": [
+            "Back",
+            "Bottom",
+            "Front",
+            "Left",
+            "Right",
+            "Top"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "NormalId"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ParticleEmitter",
+          "name": "EmissionDirection",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "NormalId",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
           "catalogType": {
             "category": "primitive",
             "name": "boolean"
@@ -1994,6 +3720,207 @@
           "codec": "boolean",
           "declaringClass": "ParticleEmitter",
           "name": "Enabled",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "ParticleEmitter",
+          "name": "FlipbookBlendFrames",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "NumberRange"
+          },
+          "codec": "number_range",
+          "declaringClass": "ParticleEmitter",
+          "name": "FlipbookFramerate",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "NumberRange",
+            "scriptType": "NumberRange"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "string"
+          },
+          "codec": "string_utf8",
+          "declaringClass": "ParticleEmitter",
+          "maximumUtf8Bytes": 4096,
+          "name": "FlipbookIncompatible",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "string",
+            "scriptType": "string"
+          }
+        },
+        {
+          "allowed": [
+            "Custom",
+            "Grid2x2",
+            "Grid4x4",
+            "Grid8x8",
+            "None"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ParticleFlipbookLayout"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ParticleEmitter",
+          "name": "FlipbookLayout",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ParticleFlipbookLayout",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Loop",
+            "OneShot",
+            "PingPong",
+            "Random"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ParticleFlipbookMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ParticleEmitter",
+          "name": "FlipbookMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ParticleFlipbookMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "ParticleEmitter",
+          "name": "FlipbookSizeX",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "ParticleEmitter",
+          "name": "FlipbookSizeY",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "ParticleEmitter",
+          "name": "FlipbookStartRandom",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2016,6 +3943,7 @@
           "codec": "number_range",
           "declaringClass": "ParticleEmitter",
           "name": "Lifetime",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2037,9 +3965,109 @@
           },
           "codec": "number_f32",
           "declaringClass": "ParticleEmitter",
+          "name": "LightEmission",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "ParticleEmitter",
+          "name": "LightInfluence",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "ParticleEmitter",
+          "name": "LockedToPart",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "FacingCamera",
+            "FacingCameraWorldUp",
+            "VelocityParallel",
+            "VelocityPerpendicular"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ParticleOrientation"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ParticleEmitter",
+          "name": "Orientation",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ParticleOrientation",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "ParticleEmitter",
           "maximum": 10000,
           "minimum": 0,
           "name": "Rate",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2061,7 +4089,8 @@
           },
           "codec": "number_range",
           "declaringClass": "ParticleEmitter",
-          "name": "Rotation",
+          "name": "RotSpeed",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2079,12 +4108,146 @@
         {
           "catalogType": {
             "category": "datatype",
+            "name": "NumberRange"
+          },
+          "codec": "number_range",
+          "declaringClass": "ParticleEmitter",
+          "name": "Rotation",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "NumberRange",
+            "scriptType": "NumberRange"
+          }
+        },
+        {
+          "allowed": [
+            "Box",
+            "Cylinder",
+            "Disc",
+            "Sphere"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ParticleEmitterShape"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ParticleEmitter",
+          "name": "Shape",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ParticleEmitterShape",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "InAndOut",
+            "Inward",
+            "Outward"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ParticleEmitterShapeInOut"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ParticleEmitter",
+          "name": "ShapeInOut",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ParticleEmitterShapeInOut",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "ParticleEmitter",
+          "name": "ShapePartial",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "allowed": [
+            "Surface",
+            "Volume"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ParticleEmitterShapeStyle"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ParticleEmitter",
+          "name": "ShapeStyle",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ParticleEmitterShapeStyle",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
             "name": "NumberSequence"
           },
           "codec": "number_sequence",
           "declaringClass": "ParticleEmitter",
           "maximumEntries": 20,
           "name": "Size",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2107,6 +4270,7 @@
           "codec": "number_range",
           "declaringClass": "ParticleEmitter",
           "name": "Speed",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2131,6 +4295,7 @@
           "maximum": 360000,
           "minimum": -360000,
           "name": "SpreadAngle",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2153,7 +4318,8 @@
           "codec": "number_sequence",
           "declaringClass": "ParticleEmitter",
           "maximumEntries": 20,
-          "name": "Transparency",
+          "name": "Squash",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2166,6 +4332,122 @@
           "reflection": {
             "engineType": "NumberSequence",
             "scriptType": "NumberSequence"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "ParticleEmitter",
+          "name": "TimeScale",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "NumberSequence"
+          },
+          "codec": "number_sequence",
+          "declaringClass": "ParticleEmitter",
+          "maximumEntries": 20,
+          "name": "Transparency",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "NumberSequence",
+            "scriptType": "NumberSequence"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "ParticleEmitter",
+          "name": "VelocityInheritance",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "ParticleEmitter",
+          "name": "WindAffectsDrag",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "ParticleEmitter",
+          "name": "ZOffset",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
           }
         }
       ],
@@ -2185,6 +4467,7 @@
           "maximum": 1000,
           "minimum": 0,
           "name": "Brightness",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2207,6 +4490,7 @@
           "codec": "color3_rgb8",
           "declaringClass": "Light",
           "name": "Color",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2229,6 +4513,7 @@
           "codec": "boolean",
           "declaringClass": "Light",
           "name": "Enabled",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2253,6 +4538,7 @@
           "maximum": 100000,
           "minimum": 0,
           "name": "Range",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2275,6 +4561,7 @@
           "codec": "boolean",
           "declaringClass": "Light",
           "name": "Shadows",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2305,6 +4592,7 @@
           "declaringClass": "ProximityPrompt",
           "maximumUtf8Bytes": 200,
           "name": "ActionText",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2326,7 +4614,8 @@
           },
           "codec": "boolean",
           "declaringClass": "ProximityPrompt",
-          "name": "Enabled",
+          "name": "AutoLocalize",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2344,6 +4633,290 @@
         {
           "catalogType": {
             "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "ProximityPrompt",
+          "name": "ClickablePrompt",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "ProximityPrompt",
+          "name": "Enabled",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "AlwaysShow",
+            "OneGlobally",
+            "OnePerButton"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ProximityPromptExclusivity"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ProximityPrompt",
+          "name": "Exclusivity",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ProximityPromptExclusivity",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "A",
+            "Ampersand",
+            "Asterisk",
+            "At",
+            "B",
+            "BackSlash",
+            "Backquote",
+            "Backspace",
+            "Break",
+            "ButtonA",
+            "ButtonB",
+            "ButtonBack",
+            "ButtonCenter",
+            "ButtonDown",
+            "ButtonL1",
+            "ButtonL2",
+            "ButtonL3",
+            "ButtonLeft",
+            "ButtonR1",
+            "ButtonR2",
+            "ButtonR3",
+            "ButtonRight",
+            "ButtonSelect",
+            "ButtonStart",
+            "ButtonUp",
+            "ButtonX",
+            "ButtonY",
+            "C",
+            "CapsLock",
+            "Caret",
+            "Clear",
+            "Colon",
+            "Comma",
+            "Compose",
+            "D",
+            "DPadDown",
+            "DPadLeft",
+            "DPadRight",
+            "DPadUp",
+            "Delete",
+            "Dollar",
+            "Down",
+            "E",
+            "Eight",
+            "End",
+            "Equals",
+            "Escape",
+            "Euro",
+            "F",
+            "F1",
+            "F10",
+            "F11",
+            "F12",
+            "F13",
+            "F14",
+            "F15",
+            "F2",
+            "F3",
+            "F4",
+            "F5",
+            "F6",
+            "F7",
+            "F8",
+            "F9",
+            "Five",
+            "Four",
+            "G",
+            "GreaterThan",
+            "H",
+            "Hash",
+            "Help",
+            "Home",
+            "I",
+            "Insert",
+            "J",
+            "K",
+            "KeypadDivide",
+            "KeypadEight",
+            "KeypadEnter",
+            "KeypadEquals",
+            "KeypadFive",
+            "KeypadFour",
+            "KeypadMinus",
+            "KeypadMultiply",
+            "KeypadNine",
+            "KeypadOne",
+            "KeypadPeriod",
+            "KeypadPlus",
+            "KeypadSeven",
+            "KeypadSix",
+            "KeypadThree",
+            "KeypadTwo",
+            "KeypadZero",
+            "L",
+            "Left",
+            "LeftAlt",
+            "LeftBracket",
+            "LeftControl",
+            "LeftCurly",
+            "LeftMeta",
+            "LeftParenthesis",
+            "LeftShift",
+            "LeftSuper",
+            "LessThan",
+            "M",
+            "Menu",
+            "Minus",
+            "Mode",
+            "MouseDelta",
+            "MouseLeftButton",
+            "MouseMiddleButton",
+            "MousePosition",
+            "MouseRightButton",
+            "MouseWheel",
+            "N",
+            "Nine",
+            "None",
+            "NumLock",
+            "O",
+            "One",
+            "P",
+            "PageDown",
+            "PageUp",
+            "Pause",
+            "Percent",
+            "Period",
+            "Pipe",
+            "Plus",
+            "Power",
+            "Print",
+            "Q",
+            "Question",
+            "Quote",
+            "QuotedDouble",
+            "R",
+            "Return",
+            "Right",
+            "RightAlt",
+            "RightBracket",
+            "RightControl",
+            "RightCurly",
+            "RightMeta",
+            "RightParenthesis",
+            "RightShift",
+            "RightSuper",
+            "S",
+            "ScrollLock",
+            "Semicolon",
+            "Seven",
+            "Six",
+            "Slash",
+            "Space",
+            "SysReq",
+            "T",
+            "Tab",
+            "Three",
+            "Thumbstick1",
+            "Thumbstick1Down",
+            "Thumbstick1Left",
+            "Thumbstick1Right",
+            "Thumbstick1Up",
+            "Thumbstick2",
+            "Thumbstick2Down",
+            "Thumbstick2Left",
+            "Thumbstick2Right",
+            "Thumbstick2Up",
+            "Tilde",
+            "TouchDelta",
+            "TouchPinch",
+            "TouchPosition",
+            "TrackpadPan",
+            "TrackpadPinch",
+            "Two",
+            "U",
+            "Underscore",
+            "Undo",
+            "Up",
+            "V",
+            "W",
+            "X",
+            "Y",
+            "Z",
+            "Zero"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "KeyCode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ProximityPrompt",
+          "name": "GamepadKeyCode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "KeyCode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
             "name": "float"
           },
           "codec": "number_f32",
@@ -2351,6 +4924,241 @@
           "maximum": 3600,
           "minimum": 0,
           "name": "HoldDuration",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "allowed": [
+            "A",
+            "Ampersand",
+            "Asterisk",
+            "At",
+            "B",
+            "BackSlash",
+            "Backquote",
+            "Backspace",
+            "Break",
+            "ButtonA",
+            "ButtonB",
+            "ButtonBack",
+            "ButtonCenter",
+            "ButtonDown",
+            "ButtonL1",
+            "ButtonL2",
+            "ButtonL3",
+            "ButtonLeft",
+            "ButtonR1",
+            "ButtonR2",
+            "ButtonR3",
+            "ButtonRight",
+            "ButtonSelect",
+            "ButtonStart",
+            "ButtonUp",
+            "ButtonX",
+            "ButtonY",
+            "C",
+            "CapsLock",
+            "Caret",
+            "Clear",
+            "Colon",
+            "Comma",
+            "Compose",
+            "D",
+            "DPadDown",
+            "DPadLeft",
+            "DPadRight",
+            "DPadUp",
+            "Delete",
+            "Dollar",
+            "Down",
+            "E",
+            "Eight",
+            "End",
+            "Equals",
+            "Escape",
+            "Euro",
+            "F",
+            "F1",
+            "F10",
+            "F11",
+            "F12",
+            "F13",
+            "F14",
+            "F15",
+            "F2",
+            "F3",
+            "F4",
+            "F5",
+            "F6",
+            "F7",
+            "F8",
+            "F9",
+            "Five",
+            "Four",
+            "G",
+            "GreaterThan",
+            "H",
+            "Hash",
+            "Help",
+            "Home",
+            "I",
+            "Insert",
+            "J",
+            "K",
+            "KeypadDivide",
+            "KeypadEight",
+            "KeypadEnter",
+            "KeypadEquals",
+            "KeypadFive",
+            "KeypadFour",
+            "KeypadMinus",
+            "KeypadMultiply",
+            "KeypadNine",
+            "KeypadOne",
+            "KeypadPeriod",
+            "KeypadPlus",
+            "KeypadSeven",
+            "KeypadSix",
+            "KeypadThree",
+            "KeypadTwo",
+            "KeypadZero",
+            "L",
+            "Left",
+            "LeftAlt",
+            "LeftBracket",
+            "LeftControl",
+            "LeftCurly",
+            "LeftMeta",
+            "LeftParenthesis",
+            "LeftShift",
+            "LeftSuper",
+            "LessThan",
+            "M",
+            "Menu",
+            "Minus",
+            "Mode",
+            "MouseDelta",
+            "MouseLeftButton",
+            "MouseMiddleButton",
+            "MousePosition",
+            "MouseRightButton",
+            "MouseWheel",
+            "N",
+            "Nine",
+            "None",
+            "NumLock",
+            "O",
+            "One",
+            "P",
+            "PageDown",
+            "PageUp",
+            "Pause",
+            "Percent",
+            "Period",
+            "Pipe",
+            "Plus",
+            "Power",
+            "Print",
+            "Q",
+            "Question",
+            "Quote",
+            "QuotedDouble",
+            "R",
+            "Return",
+            "Right",
+            "RightAlt",
+            "RightBracket",
+            "RightControl",
+            "RightCurly",
+            "RightMeta",
+            "RightParenthesis",
+            "RightShift",
+            "RightSuper",
+            "S",
+            "ScrollLock",
+            "Semicolon",
+            "Seven",
+            "Six",
+            "Slash",
+            "Space",
+            "SysReq",
+            "T",
+            "Tab",
+            "Three",
+            "Thumbstick1",
+            "Thumbstick1Down",
+            "Thumbstick1Left",
+            "Thumbstick1Right",
+            "Thumbstick1Up",
+            "Thumbstick2",
+            "Thumbstick2Down",
+            "Thumbstick2Left",
+            "Thumbstick2Right",
+            "Thumbstick2Up",
+            "Tilde",
+            "TouchDelta",
+            "TouchPinch",
+            "TouchPosition",
+            "TrackpadPan",
+            "TrackpadPinch",
+            "Two",
+            "U",
+            "Underscore",
+            "Undo",
+            "Up",
+            "V",
+            "W",
+            "X",
+            "Y",
+            "Z",
+            "Zero"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "KeyCode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ProximityPrompt",
+          "name": "KeyboardKeyCode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "KeyCode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "ProximityPrompt",
+          "maximum": 1000,
+          "minimum": 0,
+          "name": "MaxActivationDistance",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2372,9 +5180,8 @@
           },
           "codec": "number_f32",
           "declaringClass": "ProximityPrompt",
-          "maximum": 1000,
-          "minimum": 0,
-          "name": "MaxActivationDistance",
+          "name": "MaxIndicatorDistance",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2398,6 +5205,7 @@
           "declaringClass": "ProximityPrompt",
           "maximumUtf8Bytes": 200,
           "name": "ObjectText",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2420,6 +5228,7 @@
           "codec": "boolean",
           "declaringClass": "ProximityPrompt",
           "name": "RequiresLineOfSight",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2432,6 +5241,82 @@
           "reflection": {
             "engineType": "bool",
             "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "LocalizationTable"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "ProximityPrompt",
+          "name": "RootLocalizationTable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "LocalizationTable",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "LocalizationTable",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "allowed": [
+            "Custom",
+            "Default"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ProximityPromptStyle"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ProximityPrompt",
+          "name": "Style",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ProximityPromptStyle",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Vector2"
+          },
+          "codec": "vector2_f32",
+          "declaringClass": "ProximityPrompt",
+          "name": "UIOffset",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Vector2",
+            "scriptType": "Vector2"
           }
         }
       ],
@@ -2459,8 +5344,32 @@
             "name": "boolean"
           },
           "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "AutoLocalize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
           "declaringClass": "ScreenGui",
           "name": "ClipToDeviceSafeArea",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2485,6 +5394,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "DisplayOrder",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2507,6 +5417,7 @@
           "codec": "boolean",
           "declaringClass": "LayerCollector",
           "name": "Enabled",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2527,8 +5438,9 @@
             "name": "boolean"
           },
           "codec": "boolean",
-          "declaringClass": "LayerCollector",
-          "name": "ResetOnSpawn",
+          "declaringClass": "ScreenGui",
+          "name": "IgnoreGuiInset",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2541,6 +5453,276 @@
           "reflection": {
             "engineType": "bool",
             "scriptType": "boolean"
+          },
+          "serialized": false
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "LayerCollector",
+          "name": "ResetOnSpawn",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "LocalizationTable"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiBase2d",
+          "name": "RootLocalizationTable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "LocalizationTable",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "LocalizationTable",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "allowed": [
+            "FullscreenExtension",
+            "None"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SafeAreaCompatibility"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ScreenGui",
+          "name": "SafeAreaCompatibility",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SafeAreaCompatibility",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "CoreUISafeInsets",
+            "DeviceSafeInsets",
+            "None",
+            "TopbarSafeInsets"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ScreenInsets"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ScreenGui",
+          "name": "ScreenInsets",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ScreenInsets",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionGroup",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "Global",
+            "Sibling"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ZIndexBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "LayerCollector",
+          "name": "ZIndexBehavior",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ZIndexBehavior",
+            "scriptType": "EnumItem"
           }
         }
       ],
@@ -2558,12 +5740,105 @@
       "properties": [
         {
           "catalogType": {
+            "category": "datatype",
+            "name": "NumberRange"
+          },
+          "codec": "number_range",
+          "declaringClass": "Sound",
+          "name": "LoopRegion",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "NumberRange",
+            "scriptType": "NumberRange"
+          }
+        },
+        {
+          "catalogType": {
             "category": "primitive",
             "name": "boolean"
           },
           "codec": "boolean",
           "declaringClass": "Sound",
           "name": "Looped",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "Sound",
+          "name": "PlayOnRemove",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "NumberRange"
+          },
+          "codec": "number_range",
+          "declaringClass": "Sound",
+          "name": "PlaybackRegion",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "NumberRange",
+            "scriptType": "NumberRange"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "Sound",
+          "name": "PlaybackRegionsEnabled",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2588,6 +5863,7 @@
           "maximum": 1000,
           "minimum": 0,
           "name": "PlaybackSpeed",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2605,6 +5881,29 @@
         {
           "catalogType": {
             "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "Sound",
+          "name": "Playing",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
             "name": "float"
           },
           "codec": "number_f32",
@@ -2612,6 +5911,7 @@
           "maximum": 100000,
           "minimum": 0,
           "name": "RollOffMaxDistance",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2636,6 +5936,7 @@
           "maximum": 100000,
           "minimum": 0,
           "name": "RollOffMinDistance",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2651,6 +5952,84 @@
           }
         },
         {
+          "allowed": [
+            "Inverse",
+            "InverseTapered",
+            "Linear",
+            "LinearSquare"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "RollOffMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "Sound",
+          "name": "RollOffMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "RollOffMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "SoundGroup"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "Sound",
+          "name": "SoundGroup",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "SoundGroup",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "SoundGroup",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "double"
+          },
+          "codec": "number_f64",
+          "declaringClass": "Sound",
+          "name": "TimePosition",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "double",
+            "scriptType": "number"
+          }
+        },
+        {
           "catalogType": {
             "category": "primitive",
             "name": "float"
@@ -2660,6 +6039,7 @@
           "maximum": 1000,
           "minimum": 0,
           "name": "Volume",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2691,6 +6071,7 @@
           "maximum": 180,
           "minimum": 0,
           "name": "Angle",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2715,6 +6096,7 @@
           "maximum": 1000,
           "minimum": 0,
           "name": "Brightness",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2737,6 +6119,7 @@
           "codec": "color3_rgb8",
           "declaringClass": "Light",
           "name": "Color",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2759,6 +6142,7 @@
           "codec": "boolean",
           "declaringClass": "Light",
           "name": "Enabled",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2774,6 +6158,38 @@
           }
         },
         {
+          "allowed": [
+            "Back",
+            "Bottom",
+            "Front",
+            "Left",
+            "Right",
+            "Top"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "NormalId"
+          },
+          "codec": "enum_name",
+          "declaringClass": "SpotLight",
+          "name": "Face",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "NormalId",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
           "catalogType": {
             "category": "primitive",
             "name": "float"
@@ -2783,6 +6199,7 @@
           "maximum": 100000,
           "minimum": 0,
           "name": "Range",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2805,6 +6222,7 @@
           "codec": "boolean",
           "declaringClass": "Light",
           "name": "Shadows",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2835,6 +6253,7 @@
           "declaringClass": "StringValue",
           "maximumUtf8Bytes": 4096,
           "name": "Value",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2866,6 +6285,7 @@
           "maximum": 180,
           "minimum": 0,
           "name": "Angle",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2890,6 +6310,7 @@
           "maximum": 1000,
           "minimum": 0,
           "name": "Brightness",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2912,6 +6333,7 @@
           "codec": "color3_rgb8",
           "declaringClass": "Light",
           "name": "Color",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2934,6 +6356,7 @@
           "codec": "boolean",
           "declaringClass": "Light",
           "name": "Enabled",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2949,6 +6372,38 @@
           }
         },
         {
+          "allowed": [
+            "Back",
+            "Bottom",
+            "Front",
+            "Left",
+            "Right",
+            "Top"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "NormalId"
+          },
+          "codec": "enum_name",
+          "declaringClass": "SurfaceLight",
+          "name": "Face",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "NormalId",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
           "catalogType": {
             "category": "primitive",
             "name": "float"
@@ -2958,6 +6413,7 @@
           "maximum": 100000,
           "minimum": 0,
           "name": "Range",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -2980,6 +6436,7 @@
           "codec": "boolean",
           "declaringClass": "Light",
           "name": "Shadows",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3009,6 +6466,7 @@
           "codec": "boolean",
           "declaringClass": "GuiObject",
           "name": "Active",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3033,6 +6491,7 @@
           "maximum": 100,
           "minimum": -100,
           "name": "AnchorPoint",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3055,6 +6514,7 @@
           "codec": "boolean",
           "declaringClass": "GuiButton",
           "name": "AutoButtonColor",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3071,12 +6531,66 @@
         },
         {
           "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "AutoLocalize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "None",
+            "X",
+            "XY",
+            "Y"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "AutomaticSize"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "AutomaticSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "AutomaticSize",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
             "category": "datatype",
             "name": "Color3"
           },
           "codec": "color3_rgb8",
           "declaringClass": "GuiObject",
           "name": "BackgroundColor3",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3101,6 +6615,7 @@
           "maximum": 1,
           "minimum": 0,
           "name": "BackgroundTransparency",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3123,6 +6638,7 @@
           "codec": "color3_rgb8",
           "declaringClass": "GuiObject",
           "name": "BorderColor3",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3138,6 +6654,35 @@
           }
         },
         {
+          "allowed": [
+            "Inset",
+            "Middle",
+            "Outline"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "BorderMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "BorderMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "BorderMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
           "catalogType": {
             "category": "primitive",
             "name": "int"
@@ -3147,6 +6692,7 @@
           "maximum": 1000,
           "minimum": 0,
           "name": "BorderSizePixel",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3169,6 +6715,55 @@
           "codec": "boolean",
           "declaringClass": "GuiObject",
           "name": "ClipsDescendants",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "HapticEffect"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiButton",
+          "name": "HoverHapticEffect",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "HapticEffect",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "HapticEffect",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Interactable",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3193,6 +6788,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "LayoutOrder",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3217,6 +6813,7 @@
           "maximum": 100,
           "minimum": 0,
           "name": "LineHeight",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3233,6 +6830,176 @@
         },
         {
           "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "TextButton",
+          "name": "MaxVisibleGraphemes",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiButton",
+          "name": "Modal",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "string"
+          },
+          "codec": "string_utf8",
+          "declaringClass": "TextButton",
+          "maximumUtf8Bytes": 4096,
+          "name": "OpenTypeFeatures",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "string",
+            "scriptType": "string"
+          }
+        },
+        {
+          "catalogType": {
             "category": "datatype",
             "name": "UDim2"
           },
@@ -3241,6 +7008,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "Position",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3257,12 +7025,111 @@
         },
         {
           "catalogType": {
+            "category": "class",
+            "name": "HapticEffect"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiButton",
+          "name": "PressHapticEffect",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "HapticEffect",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "HapticEffect",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
             "category": "primitive",
             "name": "boolean"
           },
           "codec": "boolean",
           "declaringClass": "TextButton",
           "name": "RichText",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "LocalizationTable"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiBase2d",
+          "name": "RootLocalizationTable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "LocalizationTable",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "LocalizationTable",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "GuiObject",
+          "maximum": 360000,
+          "minimum": -360000,
+          "name": "Rotation",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Selectable",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3280,13 +7147,12 @@
         {
           "catalogType": {
             "category": "primitive",
-            "name": "float"
+            "name": "boolean"
           },
-          "codec": "number_f32",
-          "declaringClass": "GuiObject",
-          "maximum": 360000,
-          "minimum": -360000,
-          "name": "Rotation",
+          "codec": "boolean",
+          "declaringClass": "GuiButton",
+          "name": "Selected",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3297,7 +7163,190 @@
             "compare"
           ],
           "reflection": {
-            "engineType": "float",
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionGroup",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "SelectionImageObject",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "name": "SelectionOrder",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
             "scriptType": "number"
           }
         },
@@ -3311,6 +7360,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "Size",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3326,6 +7376,67 @@
           }
         },
         {
+          "allowed": [
+            "RelativeXX",
+            "RelativeXY",
+            "RelativeYY"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SizeConstraint"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "SizeConstraint",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SizeConstraint",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Custom",
+            "RobloxButton",
+            "RobloxButtonDefault",
+            "RobloxRoundButton",
+            "RobloxRoundDefaultButton",
+            "RobloxRoundDropdownButton"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ButtonStyle"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiButton",
+          "name": "Style",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ButtonStyle",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
           "catalogType": {
             "category": "primitive",
             "name": "string"
@@ -3334,6 +7445,7 @@
           "declaringClass": "TextButton",
           "maximumUtf8Bytes": 4096,
           "name": "Text",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3356,6 +7468,7 @@
           "codec": "color3_rgb8",
           "declaringClass": "TextButton",
           "name": "TextColor3",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3371,6 +7484,58 @@
           }
         },
         {
+          "allowed": [
+            "Auto",
+            "LeftToRight",
+            "RightToLeft"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "TextDirection"
+          },
+          "codec": "enum_name",
+          "declaringClass": "TextButton",
+          "name": "TextDirection",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "TextDirection",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "TextButton",
+          "name": "TextScaled",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
           "catalogType": {
             "category": "primitive",
             "name": "float"
@@ -3380,6 +7545,7 @@
           "maximum": 1000,
           "minimum": 1,
           "name": "TextSize",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3402,6 +7568,7 @@
           "codec": "color3_rgb8",
           "declaringClass": "TextButton",
           "name": "TextStrokeColor3",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3426,6 +7593,7 @@
           "maximum": 1,
           "minimum": 0,
           "name": "TextStrokeTransparency",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3450,6 +7618,7 @@
           "maximum": 1,
           "minimum": 0,
           "name": "TextTransparency",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3465,6 +7634,116 @@
           }
         },
         {
+          "allowed": [
+            "AtEnd",
+            "None",
+            "SplitWord"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "TextTruncate"
+          },
+          "codec": "enum_name",
+          "declaringClass": "TextButton",
+          "name": "TextTruncate",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "TextTruncate",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "TextButton",
+          "name": "TextWrapped",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "Center",
+            "Left",
+            "Right"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "TextXAlignment"
+          },
+          "codec": "enum_name",
+          "declaringClass": "TextButton",
+          "name": "TextXAlignment",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "TextXAlignment",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Bottom",
+            "Center",
+            "Top"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "TextYAlignment"
+          },
+          "codec": "enum_name",
+          "declaringClass": "TextButton",
+          "name": "TextYAlignment",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "TextYAlignment",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
           "catalogType": {
             "category": "primitive",
             "name": "boolean"
@@ -3472,6 +7751,7 @@
           "codec": "boolean",
           "declaringClass": "GuiObject",
           "name": "Visible",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3496,6 +7776,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "ZIndex",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3525,6 +7806,7 @@
           "codec": "boolean",
           "declaringClass": "GuiObject",
           "name": "Active",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3549,6 +7831,7 @@
           "maximum": 100,
           "minimum": -100,
           "name": "AnchorPoint",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3565,12 +7848,66 @@
         },
         {
           "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "AutoLocalize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "None",
+            "X",
+            "XY",
+            "Y"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "AutomaticSize"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "AutomaticSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "AutomaticSize",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
             "category": "datatype",
             "name": "Color3"
           },
           "codec": "color3_rgb8",
           "declaringClass": "GuiObject",
           "name": "BackgroundColor3",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3595,6 +7932,7 @@
           "maximum": 1,
           "minimum": 0,
           "name": "BackgroundTransparency",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3617,6 +7955,7 @@
           "codec": "color3_rgb8",
           "declaringClass": "GuiObject",
           "name": "BorderColor3",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3632,6 +7971,35 @@
           }
         },
         {
+          "allowed": [
+            "Inset",
+            "Middle",
+            "Outline"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "BorderMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "BorderMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "BorderMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
           "catalogType": {
             "category": "primitive",
             "name": "int"
@@ -3641,6 +8009,7 @@
           "maximum": 1000,
           "minimum": 0,
           "name": "BorderSizePixel",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3663,6 +8032,30 @@
           "codec": "boolean",
           "declaringClass": "GuiObject",
           "name": "ClipsDescendants",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Interactable",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3687,6 +8080,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "LayoutOrder",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3711,6 +8105,7 @@
           "maximum": 100,
           "minimum": 0,
           "name": "LineHeight",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3727,6 +8122,153 @@
         },
         {
           "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "TextLabel",
+          "name": "MaxVisibleGraphemes",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "string"
+          },
+          "codec": "string_utf8",
+          "declaringClass": "TextLabel",
+          "maximumUtf8Bytes": 4096,
+          "name": "OpenTypeFeatures",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "string",
+            "scriptType": "string"
+          }
+        },
+        {
+          "catalogType": {
             "category": "datatype",
             "name": "UDim2"
           },
@@ -3735,6 +8277,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "Position",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3757,6 +8300,7 @@
           "codec": "boolean",
           "declaringClass": "TextLabel",
           "name": "RichText",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3773,6 +8317,31 @@
         },
         {
           "catalogType": {
+            "category": "class",
+            "name": "LocalizationTable"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiBase2d",
+          "name": "RootLocalizationTable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "LocalizationTable",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "LocalizationTable",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
             "category": "primitive",
             "name": "float"
           },
@@ -3781,6 +8350,7 @@
           "maximum": 360000,
           "minimum": -360000,
           "name": "Rotation",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3797,6 +8367,212 @@
         },
         {
           "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Selectable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionGroup",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "SelectionImageObject",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "name": "SelectionOrder",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
             "category": "datatype",
             "name": "UDim2"
           },
@@ -3805,6 +8581,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "Size",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3820,6 +8597,35 @@
           }
         },
         {
+          "allowed": [
+            "RelativeXX",
+            "RelativeXY",
+            "RelativeYY"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SizeConstraint"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "SizeConstraint",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SizeConstraint",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
           "catalogType": {
             "category": "primitive",
             "name": "string"
@@ -3828,6 +8634,7 @@
           "declaringClass": "TextLabel",
           "maximumUtf8Bytes": 4096,
           "name": "Text",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3850,6 +8657,7 @@
           "codec": "color3_rgb8",
           "declaringClass": "TextLabel",
           "name": "TextColor3",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3865,6 +8673,58 @@
           }
         },
         {
+          "allowed": [
+            "Auto",
+            "LeftToRight",
+            "RightToLeft"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "TextDirection"
+          },
+          "codec": "enum_name",
+          "declaringClass": "TextLabel",
+          "name": "TextDirection",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "TextDirection",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "TextLabel",
+          "name": "TextScaled",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
           "catalogType": {
             "category": "primitive",
             "name": "float"
@@ -3874,6 +8734,7 @@
           "maximum": 1000,
           "minimum": 1,
           "name": "TextSize",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3896,6 +8757,7 @@
           "codec": "color3_rgb8",
           "declaringClass": "TextLabel",
           "name": "TextStrokeColor3",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3920,6 +8782,7 @@
           "maximum": 1,
           "minimum": 0,
           "name": "TextStrokeTransparency",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3944,6 +8807,7 @@
           "maximum": 1,
           "minimum": 0,
           "name": "TextTransparency",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3959,6 +8823,116 @@
           }
         },
         {
+          "allowed": [
+            "AtEnd",
+            "None",
+            "SplitWord"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "TextTruncate"
+          },
+          "codec": "enum_name",
+          "declaringClass": "TextLabel",
+          "name": "TextTruncate",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "TextTruncate",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "TextLabel",
+          "name": "TextWrapped",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "Center",
+            "Left",
+            "Right"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "TextXAlignment"
+          },
+          "codec": "enum_name",
+          "declaringClass": "TextLabel",
+          "name": "TextXAlignment",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "TextXAlignment",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Bottom",
+            "Center",
+            "Top"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "TextYAlignment"
+          },
+          "codec": "enum_name",
+          "declaringClass": "TextLabel",
+          "name": "TextYAlignment",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "TextYAlignment",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
           "catalogType": {
             "category": "primitive",
             "name": "boolean"
@@ -3966,6 +8940,7 @@
           "codec": "boolean",
           "declaringClass": "GuiObject",
           "name": "Visible",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -3990,6 +8965,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "ZIndex",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4013,12 +8989,36 @@
       "properties": [
         {
           "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "Decal",
+          "name": "AutoLocalize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
             "category": "datatype",
             "name": "Color3"
           },
           "codec": "color3_rgb8",
           "declaringClass": "Decal",
           "name": "Color3",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4034,6 +9034,38 @@
           }
         },
         {
+          "allowed": [
+            "Back",
+            "Bottom",
+            "Front",
+            "Left",
+            "Right",
+            "Top"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "NormalId"
+          },
+          "codec": "enum_name",
+          "declaringClass": "FaceInstance",
+          "name": "Face",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "NormalId",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
           "catalogType": {
             "category": "primitive",
             "name": "float"
@@ -4043,6 +9075,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "OffsetStudsU",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4067,6 +9100,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "OffsetStudsV",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4091,6 +9125,7 @@
           "maximum": 360000,
           "minimum": -360000,
           "name": "Rotation",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4115,6 +9150,7 @@
           "maximum": 100000,
           "minimumExclusive": 0,
           "name": "StudsPerTileU",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4139,6 +9175,7 @@
           "maximum": 100000,
           "minimumExclusive": 0,
           "name": "StudsPerTileV",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4163,6 +9200,7 @@
           "maximum": 1,
           "minimum": 0,
           "name": "Transparency",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4187,6 +9225,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "UVOffset",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4211,6 +9250,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "UVScale",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4235,6 +9275,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "ZIndex",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4264,6 +9305,7 @@
           "codec": "instance_ref",
           "declaringClass": "Trail",
           "name": "Attachment0",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4288,6 +9330,7 @@
           "codec": "instance_ref",
           "declaringClass": "Trail",
           "name": "Attachment1",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4306,6 +9349,29 @@
         },
         {
           "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "Trail",
+          "name": "Brightness",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
             "category": "datatype",
             "name": "ColorSequence"
           },
@@ -4313,6 +9379,7 @@
           "declaringClass": "Trail",
           "maximumEntries": 20,
           "name": "Color",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4335,6 +9402,30 @@
           "codec": "boolean",
           "declaringClass": "Trail",
           "name": "Enabled",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "Trail",
+          "name": "FaceCamera",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4359,6 +9450,7 @@
           "maximum": 100000,
           "minimum": 0,
           "name": "Lifetime",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4375,6 +9467,150 @@
         },
         {
           "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "Trail",
+          "name": "LightEmission",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "Trail",
+          "name": "LightInfluence",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "Trail",
+          "name": "MaxLength",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "Trail",
+          "name": "MinLength",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "Trail",
+          "name": "TextureLength",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "allowed": [
+            "Static",
+            "Stretch",
+            "Wrap"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "TextureMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "Trail",
+          "name": "TextureMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "TextureMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
             "category": "datatype",
             "name": "NumberSequence"
           },
@@ -4382,6 +9618,7 @@
           "declaringClass": "Trail",
           "maximumEntries": 20,
           "name": "Transparency",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4405,6 +9642,7 @@
           "declaringClass": "Trail",
           "maximumEntries": 20,
           "name": "WidthScale",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4436,6 +9674,7 @@
           "maximum": 100000,
           "minimum": -100000,
           "name": "Value",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4465,6 +9704,7 @@
           "codec": "boolean",
           "declaringClass": "WeldConstraint",
           "name": "Enabled",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4488,6 +9728,7 @@
           "codec": "instance_ref",
           "declaringClass": "WeldConstraint",
           "name": "Part0",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4513,6 +9754,7 @@
           "codec": "instance_ref",
           "declaringClass": "WeldConstraint",
           "name": "Part1",
+          "nullable": false,
           "proof": [
             "canonicalize",
             "validate",
@@ -4534,8 +9776,10 @@
       "source": "forbidden"
     }
   ],
+  "evidenceContractHash": "018a1ab92e27fe2d8bd6bbb86a527fcf7182470fbdc6cc94079ac6b3c726611f",
   "kind": "StudioCapabilityManifest",
   "limits": {
+    "maximumDiagnostics": 32,
     "maximumOperations": 128,
     "maximumProjectionBytes": 524288,
     "maximumProjectionFacts": 16384,
@@ -4547,23 +9791,10 @@
   "operationKinds": [
     "create",
     "delete",
+    "edit_source",
     "move",
-    "update",
-    "write_source"
+    "update"
   ],
-  "projectState": {
-    "facts": [
-      "attributes",
-      "inventory",
-      "properties",
-      "remote",
-      "source_body",
-      "source_hash",
-      "tags"
-    ],
-    "maximumEvidenceBytes": 8388608,
-    "maximumInstances": 2048
-  },
   "roots": [
     "Lighting",
     "ReplicatedFirst",
@@ -4607,19 +9838,6 @@
   ],
   "source": {
     "evidence": "sha256",
-    "maximumUtf8Bytes": 48000
-  },
-  "stateRevision": {
-    "comparableDomain": [
-      "project",
-      "requirements",
-      "scope"
-    ],
-    "projectionHashRole": "provenance_only",
-    "stateMaterial": [
-      "facts",
-      "manifest",
-      "state_domain"
-    ]
+    "maximumUtf8Bytes": 134217728
   }
 }

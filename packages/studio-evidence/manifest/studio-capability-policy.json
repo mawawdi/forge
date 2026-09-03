@@ -2,7 +2,22 @@
   "kind": "StudioCapabilityPolicy",
   "catalogCommit": "d025c96bdb1c81570221997092fbe0ad94b5337c",
   "roots": ["Lighting", "ReplicatedFirst", "ReplicatedStorage", "ServerScriptService", "ServerStorage", "SoundService", "StarterGui", "StarterPack", "StarterPlayer", "Teams", "Workspace"],
-  "operationKinds": ["create", "delete", "move", "update", "write_source"],
+  "authoringContainers": [
+    {"path": "Lighting", "className": "Lighting"},
+    {"path": "ReplicatedFirst", "className": "ReplicatedFirst"},
+    {"path": "ReplicatedStorage", "className": "ReplicatedStorage"},
+    {"path": "ServerScriptService", "className": "ServerScriptService"},
+    {"path": "ServerStorage", "className": "ServerStorage"},
+    {"path": "SoundService", "className": "SoundService"},
+    {"path": "StarterGui", "className": "StarterGui"},
+    {"path": "StarterPack", "className": "StarterPack"},
+    {"path": "StarterPlayer", "className": "StarterPlayer"},
+    {"path": "StarterPlayer/StarterCharacterScripts", "className": "StarterCharacterScripts"},
+    {"path": "StarterPlayer/StarterPlayerScripts", "className": "StarterPlayerScripts"},
+    {"path": "Teams", "className": "Teams"},
+    {"path": "Workspace", "className": "Workspace"}
+  ],
+  "operationKinds": ["create", "delete", "edit_source", "move", "update"],
   "authoringGroups": [
     {"name": "containers", "classes": ["Folder", "Model"], "propertyMode": "structure_only"},
     {"name": "scripts", "classes": ["LocalScript", "ModuleScript", "Script"], "propertyMode": "structure_only"},
@@ -36,6 +51,15 @@
     "int64": "int64_decimal",
     "string": "string_utf8"
   },
+  "propertyDefaults": {
+    "maximumUtf8Bytes": 4096,
+    "maximumEntries": 20,
+    "maximumAbsoluteTranslation": 100000
+  },
+  "propertyExclusions": {
+    "Instance.Name": {"reason": "structure_managed"},
+    "Instance.Parent": {"reason": "parent_policy_missing"}
+  },
   "propertyOverrides": {
     "Attachment.Axis": {"maximum": 100000},
     "Attachment.CFrame": {"maximumAbsoluteTranslation": 100000},
@@ -48,7 +72,8 @@
     "BasePart.CastShadow": {},
     "BasePart.CFrame": {"maximumAbsoluteTranslation": 100000},
     "BasePart.Color": {},
-    "BasePart.CollisionGroup": {"maximumUtf8Bytes": 100},
+    "BasePart.CollisionGroup": {"minimumUtf8Bytes": 1, "maximumUtf8Bytes": 100},
+    "BasePart.CustomPhysicalProperties": {"nullable": true},
     "BasePart.Massless": {},
     "BasePart.Material": {},
     "BasePart.Reflectance": {"minimum": 0, "maximum": 1},
@@ -175,6 +200,5 @@
     {"name": "instance.property_series", "result": "manifest_property_series", "maximumSamples": 128, "minimumIntervalMs": 100, "maximumIntervalMs": 1000},
     {"name": "instance.resolve", "result": "instance_identity"}
   ],
-  "projectState": {"maximumInstances": 2048, "maximumEvidenceBytes": 8388608},
-  "limits": {"maximumOperations": 128, "maximumProjectionFacts": 16384, "maximumProjectionBytes": 524288, "maximumRuntimeTargets": 64, "maximumRuntimeCalls": 128, "maximumRuntimeMs": 300000, "maximumRuntimeResultBytes": 524288}
+  "limits": {"maximumOperations": 128, "maximumProjectionFacts": 16384, "maximumProjectionBytes": 524288, "maximumRuntimeTargets": 64, "maximumRuntimeCalls": 128, "maximumRuntimeMs": 300000, "maximumRuntimeResultBytes": 524288, "maximumDiagnostics": 32}
 }

@@ -41,15 +41,20 @@ The normalized catalog has content hash
 It contains 1,215 class/datatype/enum/library entries and 8,470 member/global
 occurrences. The generated coverage report classifies all 9,685 exactly once
 and has content hash
-`0edebaf18174ae59ef01595340d0c461021084a3cc0b281de61ec23af39cdd5e`.
+`54e9ebcaa55030c5ab962f749316d0cf1c149a8b6edcf77cf1f01efcf231fec0`.
 Its current proof-closed manifest has hash
-`6a190dc414c6ed537e462118c46ae3f3e146494c75599f3578ca32a2ff47636f`
-and enables 33 classes with 183 distinct writable properties. Inherited
-applicability produces 209 authorable coverage rows; it does not create 209
-separate manifest grants.
+`40638508b13ca4d0d9759c2a3ebd5a36af0f54d76c8e04290ef75899fd6560b9`
+and binds evidence-contract hash
+`ffe622d01eba3ab1171db8587ed368a539a9bbc7bad2f1304fcf597facaf46c4`.
+The contract hash covers the generator and the TypeScript evidence and
+project-index algebra, so a canonical-material change necessarily changes the
+manifest identity. The manifest enables 33 classes with 364 writable property applications from 248 distinct
+catalog declarations plus 13 generated engine-owned authoring containers.
+Inherited applicability and enum closure produce 635 authorable coverage rows;
+they do not create separate manifest grants.
 
-The exhaustive partition is 209 `authorable`, 16 `observable_only`, 7,986
-`source_only`, and 1,474 `unsupported`. Source-only rows are nondeprecated and
+The exhaustive partition is 635 `authorable`, 16 `observable_only`, 7,509
+`source_only`, and 1,525 `unsupported`. Source-only rows are nondeprecated and
 script-accessible according to the pinned official metadata; creator agents can
 query their exact signature, security/capability context, and YAML provenance
 for bounded Luau authoring. This does not create a typed Studio writer or an
@@ -62,26 +67,41 @@ misreported as unsupported merely because Forge cannot create them with a
 transactional `Instance.new` operation.
 
 The current policy groups containers, scripts, remotes, value objects, 3D
-instances, UI, and effects/audio. It adds bounded compound codecs and stable
-Instance references, including an explicit class-bound nil value, while deliberately leaving content-bearing identifiers
+instances, UI, and effects/audio. For every selected direct-authoring class,
+generation resolves the effective official property surface and enables each
+current writable property whose catalog type has a bounded codec, retaining
+only explicit per-property bounds and structural/authority exclusions. It adds
+bounded compound codecs and stable Instance references, including an explicit
+class-bound nil value, while deliberately leaving content-bearing identifiers
 disabled. Five fixed runtime capabilities cover resolution, point position,
 position series, manifest-property observation, and manifest-property series.
 The CLI and dashboard expose the full accountability record without turning it
 into an alternate authoring interface.
 
 Capacity is deliberately generic rather than curated per class, fixture, or
-mechanic. The tracked policy sets one Studio ceiling for every creator run,
-registered evaluation, canary, evidence collection, and fixed runner: 128
-operations, 16,384 projected facts, 64 runtime targets, 128 runtime calls,
-five minutes, 512 KiB of runtime results, 128 samples per series, 2,048
-project-state instances, and 8 MiB of state evidence. The creator product
-reserves 90 seconds within that ceiling when human interaction is required.
-These bounds contain the trust boundary; they are not a claim-specific
-capability allowlist or a fixture-selected budget.
+mechanic. Exact mutation and runtime envelopes retain one generated ceiling:
+128 operations, 16,384 projected facts, 64 runtime targets, 128 runtime calls,
+five minutes, 512 KiB of runtime results, and 128 samples per series. Whole-
+project truth no longer uses that envelope or its predecessor's 2,048-instance
+and 8 MiB state ceilings. It uses the separately persisted
+`CreatorResourcePolicy`: 1,048,576 indexed instances, 1 GiB aggregate canonical
+index material, 128 MiB per source blob, ten minutes, 512 records or 4 MiB per
+shard, and 256 KiB transport chunks. These bounds contain the trust boundary;
+they are not a claim-specific capability allowlist or a fixture-selected
+budget, and resource exhaustion cannot yield a partial revision.
 
 Offline checks recompute the catalog, coverage, manifest, generated
 TypeScript/Luau dispatch, and canonical vectors. Refresh is a distinct explicit
-networked operation; ordinary generation does not consult the network.
+networked operation; ordinary generation does not consult the network. A local
+refresh source must be the root of a Git checkout at the pinned commit; matching
+files in an arbitrary directory are not accepted as provenance.
+
+The standalone coverage check independently recomputes the exact catalog-ID
+partition, source metadata, inherited property applicability, disposition
+totals, and report hash. A restricted enum cannot make a property that names it
+authorable. Its individually public items remain searchable source context, but
+automatic catalog coverage can never turn a deprecated, hidden, NotScriptable,
+or security-gated enum into a mutation grant.
 
 The final closure audit found and removed a namespace collision between official
 `Datatype.Font` and `Enum.Font`; neither is authorable until a bounded Font

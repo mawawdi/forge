@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { createConnection } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -44,11 +46,20 @@ test("creator control exchanges one-time launch grants and separates cookie and 
             mismatchedFacts: 0,
             missingFacts: 1,
             findingsTruncated: false,
-            findings: [{
-              key: "reflection:project:Beam.Attachment0",
-              code: "missing_fact",
-              expected: { catalogType: { category: "class", name: "Attachment" }, reflection: { engineType: "RefType", scriptType: "Instance", instanceType: "Attachment" } },
-            }],
+            findings: [
+              {
+                key: "reflection:project:Beam.Attachment0",
+                code: "missing_fact",
+                expected: {
+                  catalogType: { category: "class", name: "Attachment" },
+                  reflection: {
+                    engineType: "RefType",
+                    scriptType: "Instance",
+                    instanceType: "Attachment",
+                  },
+                },
+              },
+            ],
           },
         },
         stages: [],
@@ -88,7 +99,7 @@ test("creator control exchanges one-time launch grants and separates cookie and 
       headers: { cookie: cookie! },
     });
     assert.equal(state.status, 200);
-    const dashboardState = await state.json() as {
+    const dashboardState = (await state.json()) as {
       kind: string;
       pairedStudio: {
         attestation?: { missingFacts?: number; findings?: Array<{ code?: string }> };
@@ -106,14 +117,13 @@ test("creator control exchanges one-time launch grants and separates cookie and 
     });
     assert.equal(catalog.status, 200);
     assert.equal(catalog.headers.get("cache-control"), "no-store");
-    assert.equal((await catalog.json() as { kind: string }).kind, "StudioCatalogSummary");
+    assert.equal(((await catalog.json()) as { kind: string }).kind, "StudioCatalogSummary");
 
-    const capabilities = await fetch(
-      `${origin}/api/control/capabilities?class=Part&limit=1`,
-      { headers: { authorization: `Bearer ${address.bearerToken}` } },
-    );
+    const capabilities = await fetch(`${origin}/api/control/capabilities?class=Part&limit=1`, {
+      headers: { authorization: `Bearer ${address.bearerToken}` },
+    });
     assert.equal(capabilities.status, 200);
-    const capabilityPage = await capabilities.json() as {
+    const capabilityPage = (await capabilities.json()) as {
       kind: string;
       entries: unknown[];
       page: { limit: number };
@@ -158,13 +168,35 @@ test("creator control exchanges one-time launch grants and separates cookie and 
       body: JSON.stringify({ action: "start", prompt: "x".repeat(70_000) }),
     });
     assert.equal(oversized.status, 413);
-    for (let index = 0; index < 257; index += 1)
-      for (const listener of listeners) listener();
-    const expiredEvents = await fetch(
-      `${origin}/api/control/events?after=0`,
-      { headers: { authorization: `Bearer ${address.bearerToken}` } },
+    for (let index = 0; index < 257; index += 1) for (const listener of listeners) listener();
+    const expiredEventsAbort = new AbortController();
+    const expiredEvents = await fetch(`${origin}/api/control/events?after=0`, {
+      headers: { authorization: `Bearer ${address.bearerToken}` },
+      signal: expiredEventsAbort.signal,
+    });
+    assert.equal(expiredEvents.status, 200);
+    const reader = expiredEvents.body?.getReader();
+    assert.ok(reader);
+    const reset = await reader.read();
+    assert.match(new TextDecoder().decode(reset.value), /event: reset/);
+    assert.match(new TextDecoder().decode(reset.value), /id: 257/);
+    for (const listener of listeners) listener();
+    const invalidation = await reader.read();
+    assert.match(new TextDecoder().decode(invalidation.value), /id: 258/);
+    await reader.cancel();
+    expiredEventsAbort.abort();
+    // A dropped SSE peer is removed before the next coordinator invalidation.
+    // Invalidation must not throw or take down the control server.
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    for (const listener of listeners) listener();
+    assert.equal(
+      (
+        await fetch(`${origin}/api/control/state`, {
+          headers: { authorization: `Bearer ${address.bearerToken}` },
+        })
+      ).status,
+      200,
     );
-    assert.equal(expiredEvents.status, 409);
     const artifact = await fetch(`${origin}/api/artifacts/${"a".repeat(64)}`, {
       headers: { authorization: `Bearer ${address.bearerToken}` },
     });
@@ -199,6 +231,157 @@ test("creator control discovery is private and validated", async () => {
     await writeCreatorControlDiscovery(discovery, path);
     assert.deepEqual(await readCreatorControlDiscovery(path), discovery);
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("creator control drops a backpressured SSE peer instead of retaining its write buffer", async () => {
+  const listeners = new Set<() => void>();
+  const fake = {
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  } as unknown as CreatorSessionCoordinator;
+  const server = new CreatorControlServer({
+    coordinator: fake,
+    dashboardDirectory: process.cwd(),
+    port: 0,
+  });
+  const internal = server as unknown as {
+    subscribers: Set<unknown>;
+    invalidate(): void;
+  };
+  let writes = 0;
+  let ends = 0;
+  const response = {
+    destroyed: false,
+    writableEnded: false,
+    write() {
+      writes += 1;
+      return false;
+    },
+    end() {
+      ends += 1;
+      this.writableEnded = true;
+    },
+  };
+  try {
+    internal.subscribers.add(response);
+    for (const listener of listeners) listener();
+    assert.equal(writes, 1);
+    assert.equal(ends, 1);
+    assert.equal(internal.subscribers.size, 0);
+  } finally {
+    await server.close();
+  }
+});
+
+test("creator control survives an aborted client after its action is admitted", async () => {
+  const root = await mkdtemp(join(tmpdir(), "forge-creator-control-abort-"));
+  const dashboard = join(root, "dashboard");
+  await mkdir(dashboard);
+  await writeFile(join(dashboard, "index.html"), "<!doctype html><title>Forge</title>");
+  let actionCalls = 0;
+  let beginAction!: () => void;
+  let completeAction!: () => void;
+  const actionStarted = new Promise<void>((resolvePromise) => {
+    beginAction = resolvePromise;
+  });
+  const actionCompletion = new Promise<void>((resolvePromise) => {
+    completeAction = resolvePromise;
+  });
+  const fake = {
+    subscribe: () => () => undefined,
+    async action() {
+      actionCalls += 1;
+      beginAction();
+      await actionCompletion;
+    },
+    async dashboardState() {
+      return { kind: "CreatorDashboardState" };
+    },
+  } as unknown as CreatorSessionCoordinator;
+  const server = new CreatorControlServer({
+    coordinator: fake,
+    dashboardDirectory: dashboard,
+    port: 0,
+    bearerToken: "bearer_token_aborted_request_123456789012",
+  });
+  try {
+    const address = await server.listen();
+    const body = JSON.stringify({ action: "start", prompt: "Bounded request" });
+    const socket = createConnection({ host: address.host, port: address.port });
+    await once(socket, "connect");
+    socket.write(
+      [
+        "POST /api/control/action HTTP/1.1",
+        `Host: ${address.host}:${address.port}`,
+        `Authorization: Bearer ${address.bearerToken}`,
+        "Content-Type: application/json",
+        `Content-Length: ${Buffer.byteLength(body, "utf8")}`,
+        "",
+        body,
+      ].join("\r\n"),
+    );
+    await actionStarted;
+    const closed = once(socket, "close");
+    socket.destroy();
+    await closed;
+    completeAction();
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 20));
+
+    assert.equal(actionCalls, 1);
+    const health = await fetch(`http://${address.host}:${address.port}/api/control/state`, {
+      headers: { authorization: `Bearer ${address.bearerToken}` },
+    });
+    assert.equal(health.status, 200);
+  } finally {
+    await server.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a completed action whose resulting view fails is reported as an ambiguous outcome", async () => {
+  const root = await mkdtemp(join(tmpdir(), "forge-creator-control-ambiguous-"));
+  const dashboard = join(root, "dashboard");
+  await mkdir(dashboard);
+  await writeFile(join(dashboard, "index.html"), "<!doctype html><title>Forge</title>");
+  let actionCalls = 0;
+  const fake = {
+    subscribe: () => () => undefined,
+    async action() {
+      actionCalls += 1;
+    },
+    async dashboardState() {
+      throw new Error("change presentation failed after persistence");
+    },
+  } as unknown as CreatorSessionCoordinator;
+  const server = new CreatorControlServer({
+    coordinator: fake,
+    dashboardDirectory: dashboard,
+    port: 0,
+    bearerToken: "bearer_token_ambiguous_123456789012345678",
+  });
+  try {
+    const address = await server.listen();
+    const response = await fetch(`http://${address.host}:${address.port}/api/control/action`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${address.bearerToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ action: "start", prompt: "Bounded request" }),
+    });
+    assert.equal(actionCalls, 1);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), {
+      kind: "CreatorControlActionOutcomeUnknown",
+      message:
+        "The creator action completed, but Forge could not materialize its resulting dashboard state: change presentation failed after persistence",
+    });
+  } finally {
+    await server.close();
     await rm(root, { recursive: true, force: true });
   }
 });

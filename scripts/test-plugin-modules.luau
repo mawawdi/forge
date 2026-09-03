@@ -1,448 +1,1439 @@
 local Generated = require("../plugin/src/Forge/GeneratedStudioEvidence")
+local Hash = require("../plugin/src/Forge/Hash")
 local StudioAuthoring = require("../plugin/src/Forge/StudioAuthoring")
 local StudioEvidenceCollector = require("../plugin/src/Forge/StudioEvidenceCollector")
 local StudioInstancePolicy = require("../plugin/src/Forge/StudioInstancePolicy")
+local StudioProjectChangeMonitor = require("../plugin/src/Forge/StudioProjectChangeMonitor")
+local StudioProjectIndexCanonical = require("../plugin/src/Forge/StudioProjectIndexCanonical")
+local StudioSemanticTransport = require("../plugin/src/Forge/StudioSemanticTransport")
+local SerializedStudioWorker = require("../plugin/src/Forge/SerializedStudioWorker")
+local Utf8Transport = require("../plugin/src/Forge/Utf8Transport")
+local DirectRuntimeObserver = require("../plugin/src/Forge/DirectRuntimeObserver")
+local Constants = require("../plugin/src/Forge/Constants")
 local fs = require("@lune/fs")
 
 local runtimeExecutorSource = fs.readFile("plugin/src/Forge/RuntimeCapabilityExecutor.luau")
+local generatedEvidenceSource = fs.readFile("plugin/src/Forge/GeneratedStudioEvidence.luau")
+local directObserverSource = fs.readFile("plugin/src/Forge/DirectRuntimeObserver.luau")
 local runtimeSource = fs.readFile("plugin/src/Forge/Runtime.luau")
 local evidenceCollectorSource = fs.readFile("plugin/src/Forge/StudioEvidenceCollector.luau")
-assert(string.find(runtimeExecutorSource, 'expectedProjectionPurpose = plan.purpose == "creator_verification" and "creator_verification" or "runtime_evaluation"', 1, true), "plugin runtime projection purpose must derive from the execution-plan purpose")
-assert(not string.find(runtimeExecutorSource, 'decoded.purpose ~= "runtime_evaluation"', 1, true), "creator verification must not be rejected by a runtime-only projection predicate")
-assert(string.find(runtimeExecutorSource, 'typeof(plan.observationWindowMs) ~= "number"', 1, true), "plugin runtime must validate the explicit creator-observation window")
-assert(string.find(runtimeExecutorSource, "remainingObservationMs", 1, true), "Play Solo must remain open for the approved observation window")
-assert(string.find(runtimeExecutorSource, 'requirement.kind == "runtime_property"', 1, true), "fixed manifest property observations must have a dedicated executor path")
-assert(string.find(runtimeExecutorSource, 'requirement.kind == "runtime_property_series"', 1, true), "fixed manifest property series must have a dedicated executor path")
-assert(string.find(runtimeSource, "return Generated.connectorBuildHash", 1, true), "plugin pairing must use the generated protocol identity")
-assert(string.find(runtimeSource, "status >= 400 and status < 500 then autoConnectEnabled = false", 1, true), "deterministic pairing rejection must pause automatic retries")
-assert(string.find(runtimeSource, 'unpair(false, "session_replaced", true)', 1, true), "post-pair protocol rejection must pause automatic retries")
+local scriptSource = fs.readFile("plugin/src/Forge/StudioScriptSource.luau")
+local projectIndexSource = fs.readFile("plugin/src/Forge/StudioProjectIndexCollector.luau")
+local projectChangeMonitorSource = fs.readFile("plugin/src/Forge/StudioProjectChangeMonitor.luau")
+local identityRegistrySource = fs.readFile("plugin/src/Forge/IdentityRegistry.luau")
+local authoringSource = fs.readFile("plugin/src/Forge/StudioAuthoring.luau")
+local semanticTransportSource = fs.readFile("plugin/src/Forge/StudioSemanticTransport.luau")
+local utf8TransportSource = fs.readFile("plugin/src/Forge/Utf8Transport.luau")
 
--- The collector serializes ReflectionService facts and leaves all semantic
--- comparison to the provider-free verifier. These vectors cover the public
--- alias and class-reference dimensions that EngineType alone cannot express.
-assert(not string.find(evidenceCollectorSource, "Generated.reflectionExpectation", 1, true), "the plugin collector must not grade reflection facts against manifest expectations")
-assert(not string.find(evidenceCollectorSource, "reflection_type_mismatch", 1, true), "a reflected type contradiction must remain observed evidence")
-assert(not string.find(evidenceCollectorSource, "reflection_enum_type_mismatch", 1, true), "a reflected enum contradiction must remain observed evidence")
-assert(not string.find(evidenceCollectorSource, "reflection_serialization_mismatch", 1, true), "a reflected serialization contradiction must remain observed evidence")
+assert(string.find(runtimeSource, 'message.type == "CollectStudioProjectIndex"', 1, true), "the connector must accept the bounded project-index request")
+assert(not string.find(runtimeSource, "RequestStudioProjectIndex", 1, true), "the superseded project-index request must be absent")
+assert(string.find(runtimeSource, '"StudioProjectIndexStarted"', 1, true) and string.find(runtimeSource, '"StudioProjectIndexCompleted"', 1, true), "the connector must delimit every project index stream")
+assert(string.find(runtimeSource, 'local beforeCapture = requireCurrentProjectIndex("creator prepare")', 1, true), "Prepare must bind the complete pre-Apply capture without publishing an unclaimed transaction stream")
+assert(string.find(runtimeSource, 'local beforeCapture = requireCurrentProjectIndex("creator preflight")', 1, true), "preflight must retain the same monitored pre-Apply capture without publishing an unclaimed transaction stream")
+assert(string.find(runtimeSource, 'local beforeCapture = requireCurrentProjectIndex("creator apply")', 1, true), "Apply must recheck the monitored pre-Apply binding before its one receipt-bound post-state stream")
+assert(not string.find(runtimeSource, 'publishProjectIndex("creator prepare"', 1, true) and not string.find(runtimeSource, 'publishProjectIndex("creator preflight"', 1, true) and not string.find(runtimeSource, 'publishProjectIndex("creator apply"', 1, true), "one transaction request ID must never carry discarded pre-phase project-index streams")
+assert(string.find(runtimeSource, 'projectChangeMonitor:detectorEpoch() ~= currentProjectIndexDetectorEpoch', 1, true), "every preflight boundary must reject changes after the authoritative pre-Apply capture")
+assert(string.find(runtimeSource, "local function requireFinalizationGate", 1, true) and string.find(runtimeSource, 'requireFinalizationGate(message.payload, active.binding, "creator finalization")', 1, true) and string.find(runtimeSource, 'requireFinalizationGate(message.payload, recovery.recording, "interrupted creator recording cancellation", true)', 1, true) and string.find(runtimeSource, 'original.action ~= payload.replacesAction', 1, true) and string.find(runtimeSource, 'manifestId = recovery.projectIndexManifestId', 1, true), "every FinishRecording path must bind its durable recording cursor to the exact current monitored project capture; recovery cancellation must use only its durable recovery gate and explicit original-action provenance")
+assert(string.find(runtimeSource, "beforeProjectDetectorEpoch", 1, true) and string.find(runtimeSource, "expectedCurrentProjectDetectorEpoch", 1, true) and string.find(runtimeSource, "postApplyProjectDetectorEpoch", 1, true) and string.find(runtimeSource, "recoveryProjectDetectorEpoch", 1, true), "pre-Apply, provisional, recovery, and finalization receipts must retain their phase-appropriate monitor epochs")
+assert(string.find(runtimeSource, "requireDurableFinalizationGate(intent", 1, true) and string.find(authoringSource, "local function requirePreFinishGate", 1, true) and string.find(authoringSource, "finalization gate rejected", 1, true), "every durable intent must recheck its exact project-index and monitor gate immediately before FinishRecording")
+assert(string.find(runtimeSource, "provisional_cursor_persistence_failed", 1, true) and string.find(runtimeSource, "projectDetectorEpoch = post.detectorEpoch", 1, true), "a provisional persistence failure must bind its cancellation intent to the last complete post-Apply capture, not a later post-cancel capture")
+assert(string.find(authoringSource, "beforeProjectDetectorEpoch = prepared.beforeProjectDetectorEpoch", 1, true) and string.find(authoringSource, "payload.beforeProjectDetectorEpoch ~= beforeCapture.detectorEpoch", 1, true), "Prepare, preflight, and Apply must echo and enforce the exact pre-Apply detector epoch")
+assert(string.find(authoringSource, "finalizationKind = stored.finalization.finalizationKind", 1, true) and string.find(runtimeSource, "finalizationKind = receipt.finalizationKind", 1, true), "the durable intent, receipt, and protocol finalization gate must distinguish an ordinary action from recovery cancellation")
+assert(string.find(runtimeSource, "payload.replacesAction = replacesAction", 1, true) and string.find(runtimeSource, "payload.replacesAction = receipt.replacesAction", 1, true) and string.find(runtimeSource, 'recording.finalization.finalizationKind == "ordinary"', 1, true) and string.find(runtimeSource, "recording.finalization.recovery ~= true", 1, true) and string.find(authoringSource, "payload.replacesAction ~= stored.finalization.action", 1, true), "only an original ordinary finalization intent may expose recovery-cancel provenance; an uncertain recovery cancellation cannot advertise a retryable action")
+assert(string.find(authoringSource, "or not sameRecordingBinding(payload, stored)", 1, true), "recovery cancellation must preserve the complete original recording binding while its expected-current gate uses the later recovery capture")
+assert(string.find(runtimeSource, "clearFinalizationMonitorState", 1, true) and string.find(runtimeSource, "finalization_post_index_failed", 1, true), "a failed final project-index capture must clear exact monitor exemptions and leave recovery fail-closed")
+assert(string.find(projectIndexSource, '"StudioProjectEvidenceShard"', 1, true) and string.find(projectIndexSource, '"StudioSourceBlobManifest"', 1, true) and string.find(projectIndexSource, '"StudioSourceBlobChunk"', 1, true), "the connector must stream typed project-index artifacts")
+assert(string.find(projectIndexSource, "local capturePayload = { detectorEpoch = detectorEpoch", 1, true) and string.find(projectIndexSource, 'return { kind = "StudioProjectIndexCapture", detectorEpoch = detectorEpoch', 1, true), "the Luau producer must hash and emit the same detector-epoch-bound capture shape required by the TypeScript consumer")
+assert(string.find(projectIndexSource, "PROJECT_INDEX_MAXIMUM_SHARD_BYTES", 1, true) and string.find(projectIndexSource, "project index node exceeds configured shard resource policy", 1, true), "project shards must respect both count and byte resource bounds")
+assert(string.find(projectIndexSource, "local emptyShardPending = #records == 0", 1, true) and string.find(projectIndexSource, "emptyShardPending = false", 1, true), "an empty or missing root must emit exactly one shard and terminate")
+assert(not string.find(projectIndexSource, "cursor == 1 and #records == 0", 1, true), "project indexing must not use a non-advancing empty-root loop condition")
+assert(string.find(projectIndexSource, "Canonical.objectMaterialLength", 1, true) and string.find(projectIndexSource, "Canonical.arrayMaterialLength", 1, true), "shard admission must use incremental exact sizing rather than repeatedly materializing a growing shard")
+assert(string.find(projectIndexSource, "task.wait()", 1, true) and string.find(projectIndexSource, "local function cooperate", 1, true), "large project collection and transport must yield cooperatively")
+assert(string.find(projectIndexSource, "local function cooperativeSort", 1, true) and string.find(projectIndexSource, "local function rootRecords", 1, true) and not string.find(projectIndexSource, "root:GetDescendants()", 1, true), "project enumeration and canonical ordering must remain cooperatively schedulable")
+assert(string.find(projectIndexSource, "Canonical.transportJson", 1, true) and not string.find(projectIndexSource, "Canonical.json", 1, true), "transport JSON must use the buffered encoder rather than recursive string concatenation")
+assert(string.find(projectIndexSource, "Utf8Transport.boundaries", 1, true) and string.find(projectIndexSource, "PROJECT_INDEX_TRANSPORT_CHUNK_BYTES", 1, true), "index transport must use the shared UTF-8-safe fragmenter")
+assert(string.find(utf8TransportSource, "utf8.len", 1, true) and string.find(utf8TransportSource, "0xC0", 1, true), "every transport must validate UTF-8 and split only at code-point boundaries")
+assert(string.find(projectIndexSource, "emit = function", 1, true) and not string.find(projectIndexSource, "local pieces", 1, true) and not string.find(projectIndexSource, "artifact.fragments", 1, true), "index transport must emit one encoded leaf at a time without retaining a second full stream")
+local projectIndexTransportStart = string.find(projectIndexSource, "function StudioProjectIndexCollector:transport(capture: any)", 1, true)
+assert(projectIndexTransportStart ~= nil, "the project-index transport must accept one immutable capture")
+local projectIndexTransportSource = string.sub(projectIndexSource, projectIndexTransportStart)
+assert(not string.find(projectIndexTransportSource, "project index changed during transport", 1, true) and not string.find(projectIndexTransportSource, "currentDetectorEpoch", 1, true), "an immutable completed project capture must not be invalidated by callbacks which arrive while its bytes are transported")
+assert(string.find(runtimeSource, 'mode ~= "current" and mode ~= "transaction_evidence"', 1, true) and string.find(runtimeSource, 'publishProjectIndex("creator post-apply", message.requestId, nil, "transaction_evidence")', 1, true) and string.find(runtimeSource, "projectChangeMonitor:detectorEpoch() == detectorEpoch", 1, true), "Runtime must separate historical transaction evidence from a still-current command-authority binding")
+assert(string.find(runtimeSource, "while true do", 1, true) and string.find(runtimeSource, "Restart the complete capture under the same overall resource bound", 1, true), "a detector callback during project reading must restart the whole bounded capture rather than mixing epochs or failing a valid transaction immediately")
+assert(string.find(runtimeSource, "end, deadline)", 1, true) and string.find(projectIndexSource, "collectionDeadline: number", 1, true) and string.find(projectIndexSource, "assertBeforeDeadline(collectionDeadline)", 1, true), "every whole-capture retry must consume one caller-owned absolute deadline rather than minting a fresh resource budget")
+assert(string.find(runtimeSource, "automatic cancellation was not attempted because current project authority could not be proven", 1, true) and string.find(runtimeSource, 'mutationFailed(active, stage, failureCode, requestId, false, exactFailure)', 1, true), "an unsafe automatic-cancellation gate must emit bound recovery evidence before rejecting the command")
+assert(string.find(scriptSource, "FindScriptDocument", 1, true) and string.find(scriptSource, "UpdateSourceAsync", 1, true) and string.find(scriptSource, "expectedBeforeHash", 1, true), "source reads and edits must bind the current ScriptEditorService document")
+assert(string.find(scriptSource, "function StudioScriptSource.writeAndReadback", 1, true) and string.find(scriptSource, "StudioScriptSource.write(instance, expectedBeforeHash, source)", 1, true) and string.find(scriptSource, "StudioScriptSource.read(instance)", 1, true), "all source writes must share one exact ScriptEditorService-aware write/readback route")
+assert(string.find(authoringSource, "StudioScriptSource.writeAndReadback", 1, true) and not string.find(authoringSource, "StudioScriptSource.write(", 1, true) and not string.find(authoringSource, "(scratch :: any).Source", 1, true), "detached source canaries and provisional source writes must not bypass the common source route")
+assert(string.find(authoringSource, 'capture.state ~= "accepted"', 1, true) and string.find(authoringSource, "source-write blob is absent or incomplete before Prepare", 1, true), "a source-write body must be acknowledged before it can reach Prepare")
+assert(string.find(authoringSource, "source-write binding is absent or duplicated", 1, true) and string.find(authoringSource, "payload.sequence ~= capture.nextSequence", 1, true) and string.find(authoringSource, "source-write fragment is duplicate or inconsistent", 1, true), "undeclared, missing, reordered, and duplicate source-write pieces must fail before mutation")
+assert(string.find(authoringSource, "source-write blob chunk hash mismatch", 1, true) and string.find(authoringSource, "source-write blob final hash mismatch", 1, true), "source-write chunk and complete-body hashes must be reverified in Studio")
+assert(string.find(authoringSource, "local function validatedSourceEdit", 1, true) and string.find(authoringSource, "validatedSourceEdit(operation, self.registry, function(binding) return resolvedSourceWrite(self, binding) end)", 1, true), "validation, detached preflight, and apply must share request-bound source-edit materialization")
+assert(string.find(authoringSource, 'capture.state ~= "receiving"', 1, true) and string.find(authoringSource, 'capture.state = "accepted"', 1, true), "source-write acceptance must be an explicit one-way state transition")
+assert(string.find(authoringSource, "capture.requestId ~= payload.requestId", 1, true) and string.find(authoringSource, "self.sourceWriteRequestId ~= payload.requestId", 1, true), "source-write leaves, acceptance, and Prepare must share one exact request")
+assert(string.find(authoringSource, "Generated.matchesStudioCreatorMutationBinding", 1, true) and string.find(authoringSource, "revisionHash = revision", 1, true), "creator projections must use the generated closed revisionHash binding matcher")
+assert(not string.find(authoringSource, "binding.projectRevisionHash", 1, true), "creator evidence bindings must not alias revisionHash as projectRevisionHash")
+assert(not string.find(authoringSource, "for name, value in pairs(properties)", 1, true) and string.find(authoringSource, "Generated.sortedMutationPropertyNames", 1, true), "property mutation order must come from the generated canonical manifest helper rather than a Lua hash map")
+assert(StudioAuthoring.validateStudioMutationAuthorityForTest({ mutationAuthority = "studio_document" }), "Studio authoring must accept its one exact writer domain")
+assert(not pcall(function() StudioAuthoring.validateStudioMutationAuthorityForTest({ mutationAuthority = "rojo_source" }) end), "a Rojo-authority change set must never cross the Studio authoring trust boundary")
+assert(not pcall(function() StudioAuthoring.validateStudioMutationAuthorityForTest({}) end), "a missing mutation authority must fail closed in Studio")
+assert(StudioAuthoring.validateAuthoringContainerClassForTest("StarterPlayer/StarterPlayerScripts", "StarterPlayerScripts"), "a generated structural container must retain its exact engine class")
+assert(not pcall(function() StudioAuthoring.validateAuthoringContainerClassForTest("Workspace/Undeclared", "Folder") end), "an arbitrary allowed-root path must not impersonate an engine-owned authoring container")
+assert(not pcall(function() StudioAuthoring.validateAuthoringContainerClassForTest("StarterPlayer/StarterPlayerScripts", "Folder") end), "an engine-owned authoring container must reject a class mismatch")
+assert(StudioAuthoring.requiresDetachedStructureCanaryForTest({ className = "Folder" }), "an authorable delete root must retain its detached create/destroy canary")
+assert(not StudioAuthoring.requiresDetachedStructureCanaryForTest({ className = "Camera" }), "a consequential unsupported delete descendant must remain a structure-only postcondition and must not be instantiated during preflight")
+local folderCreatable = Generated.classes.Folder.creatable
+Generated.classes.Folder.creatable = false
+assert(not StudioAuthoring.requiresDetachedStructureCanaryForTest({ className = "Folder" }), "a manifest-known but noncreatable class must never reach Instance.new during detached preflight")
+Generated.classes.Folder.creatable = folderCreatable
 
-local classReference, classReferenceError = StudioEvidenceCollector.reflectedPropertyValueForTest({
-	Name = "Attachment0",
-	Owner = "Beam",
-	Serialized = true,
-	Type = { EngineType = "Object", ScriptType = "Instance", InstanceType = "Attachment" },
-	Permits = { Write = {}, Read = {} },
-}, "Beam", "Attachment0")
-assert(classReferenceError == nil and classReference ~= nil, "a readable class-reference descriptor must be observed")
-assert(classReference.className == "Beam" and classReference.propertyName == "Attachment0", "raw reflection facts bind their requested class and property")
-assert(classReference.owner == "Beam" and classReference.inherited == false and classReference.serialized == true, "reflection owner, inheritance, and serialization must be preserved")
-assert(classReference.type.engineType == "Object" and classReference.type.scriptType == "Instance" and classReference.type.instanceType == "Attachment" and classReference.type.enumType == nil, "class-reference type dimensions must be preserved without EngineType aliasing")
-assert(classReference.permits[1] == "read" and classReference.permits[2] == "write" and #classReference.permits == 2, "reflection permits must remain sorted and bounded")
+-- ScriptEditorService can schedule TextDocumentDidChange after UpdateSourceAsync
+-- returns. The project monitor must consume that event only when the exact
+-- script and its current source state match Forge's approved result. This is
+-- deliberately not a writer-active timer: an unrelated field or a different
+-- current source still advances the detector epoch.
+local observedNotices = {}
+local attributionMonitor = StudioProjectChangeMonitor.new(function(notice: any) table.insert(observedNotices, notice) end, {})
+local observedScript = {}
+local observedSource = "before"
+attributionMonitor:expectExactForgeMutationFact({
+	source = "script_editor",
+	instance = observedScript,
+	matchesBefore = function() return observedSource == "before" end,
+	matchesAfter = function() return observedSource == "after" end,
+	beforeEventBudget = 1,
+	afterEventBudget = 1,
+})
+attributionMonitor:expectExactForgeMutationFact({
+	source = "property",
+	instance = observedScript,
+	field = "Source",
+	matchesBefore = function() return observedSource == "before" end,
+	matchesAfter = function() return observedSource == "after" end,
+	beforeEventBudget = 1,
+	afterEventBudget = 1,
+})
+observedSource = "after"
+attributionMonitor:emit("script_editor", observedScript)
+attributionMonitor:emit("property", observedScript, "Source")
+assert(attributionMonitor:detectorEpoch() == 0 and #observedNotices == 0, "a delayed exact Forge editor/source notification must not dirty the approved transaction")
+attributionMonitor:emit("script_editor", observedScript)
+assert(attributionMonitor:detectorEpoch() == 1 and #observedNotices == 1, "an exact fact must be one-shot so a later editor event cannot inherit Forge authority")
+attributionMonitor:emit("property", observedScript, "Name")
+assert(attributionMonitor:detectorEpoch() == 2 and #observedNotices == 2, "an unrelated field on the same script must remain an external dirty event")
+observedSource = "creator edit"
+attributionMonitor:emit("script_editor", observedScript)
+assert(attributionMonitor:detectorEpoch() == 3 and #observedNotices == 3, "a concurrent editor change with a different exact source must never be suppressed")
+local otherScript = {}
+attributionMonitor:emit("script_editor", otherScript)
+assert(attributionMonitor:detectorEpoch() == 4 and #observedNotices == 4, "an identical-looking edit on another instance must remain dirty")
+attributionMonitor:expectExactForgeRecordingFinish("opaque-recording-id")
+	attributionMonitor:recordingFinished("Forge creator change friendly-name", "Creator change", "opaque-recording-id", nil, {})
+	assert(attributionMonitor:detectorEpoch() == 4, "OnRecordingFinished must match the third opaque identifier, not its human-readable name")
+	attributionMonitor:recordingFinished("opaque-recording-id", "Creator change", "different-opaque-recording-id", nil, {})
+	assert(attributionMonitor:detectorEpoch() == 5, "a foreign recording with Forge's name must remain an external dirty event")
+	-- A missing terminal callback must not accumulate opaque suppression ids. The
+	-- finalization path explicitly clears this one bounded id when its receipt
+	-- cannot be retained or once it is acknowledged.
+	attributionMonitor:expectExactForgeRecordingFinish("missing-terminal-callback")
+	attributionMonitor:expectExactForgeRecordingFinish("missing-terminal-callback")
+	assert(not pcall(function()
+		attributionMonitor:expectExactForgeRecordingFinish("second-missing-terminal-callback")
+	end), "only one exact Forge recording finish may await its engine callback")
+	attributionMonitor:clearExpectedForgeRecordingFinish("missing-terminal-callback")
+	attributionMonitor:expectExactForgeRecordingFinish("replacement-terminal-callback")
+	attributionMonitor:clearExpectedForgeRecordingFinish("replacement-terminal-callback")
+	attributionMonitor:recordingFinished("Forge creator change", "Creator change", "replacement-terminal-callback")
+	assert(attributionMonitor:detectorEpoch() == 6, "a delayed completion after its exact allowance is cleared must be dirty rather than remain indefinitely suppressed")
 
-local datatypeAlias, datatypeAliasError = StudioEvidenceCollector.reflectedPropertyValueForTest({
-	Name = "SliceCenter",
-	Owner = "ImageLabel",
-	Serialized = false,
-	Type = { EngineType = "Rect2D", ScriptType = "Rect" },
-	Permits = { Read = {}, Write = {} },
-}, "ImageLabel", "SliceCenter")
-assert(datatypeAliasError == nil and datatypeAlias ~= nil, "a readable datatype alias must be observed")
-assert(datatypeAlias.type.engineType == "Rect2D" and datatypeAlias.type.scriptType == "Rect", "a public datatype alias must retain both raw type dimensions")
-assert(datatypeAlias.type.enumType == nil and datatypeAlias.type.instanceType == nil, "unavailable reflection type dimensions must not be fabricated")
+local cancellationNotices = {}
+local cancellationMonitor = StudioProjectChangeMonitor.new(function(notice: any) table.insert(cancellationNotices, notice) end, {})
+local restoredScript = {}
+local restoredSource = "after"
+cancellationMonitor:expectExactForgeMutationFact({
+	source = "script_editor",
+	instance = restoredScript,
+	matchesBefore = function() return restoredSource == "before" end,
+	matchesAfter = function() return restoredSource == "after" end,
+	beforeEventBudget = 1,
+	afterEventBudget = 1,
+})
+cancellationMonitor:setExactForgeMutationPhase("before")
+restoredSource = "before"
+cancellationMonitor:emit("script_editor", restoredScript)
+assert(cancellationMonitor:detectorEpoch() == 0, "an exact cancellation restoration may consume only its recorded before-state event")
+cancellationMonitor:emit("script_editor", restoredScript)
+assert(cancellationMonitor:detectorEpoch() == 1 and #cancellationNotices == 1, "a cancellation matcher must not become a reusable exemption")
 
-local inheritedEnum, inheritedEnumError = StudioEvidenceCollector.reflectedPropertyValueForTest({
-	Name = "Material",
-	Owner = "BasePart",
-	Serialized = true,
-	Type = { EngineType = "EnumItem", ScriptType = "EnumItem", EnumType = "Material" },
-	Permits = { Read = {}, Write = {} },
-}, "Part", "Material")
-assert(inheritedEnumError == nil and inheritedEnum ~= nil, "a readable enum descriptor must be observed")
-assert(inheritedEnum.owner == "BasePart" and inheritedEnum.inherited == true, "inherited reflection ownership must be explicit")
-assert(inheritedEnum.type.engineType == "EnumItem" and inheritedEnum.type.scriptType == "EnumItem" and inheritedEnum.type.enumType == "Material", "enum identity must remain independent from EngineType")
-
-local unreadableType, unreadableTypeError = StudioEvidenceCollector.reflectedPropertyValueForTest({ Owner = "Part", Serialized = true, Type = {}, Permits = { Read = {}, Write = {} } }, "Part", "Anchored")
-assert(unreadableType == nil and unreadableTypeError == "reflection_engine_type_unavailable", "only missing required raw reflection evidence becomes a read error")
-local unreadableOwner, unreadableOwnerError = StudioEvidenceCollector.reflectedPropertyValueForTest({ Owner = nil, Serialized = true, Type = { EngineType = "bool" }, Permits = { Read = {}, Write = {} } }, "Part", "Anchored")
-assert(unreadableOwner == nil and unreadableOwnerError == "reflection_owner_unavailable", "missing reflection ownership must not be invented")
-
-local function fakeInstance(className: string)
-	return { ClassName = className }
+-- A real transaction applies first and may later cancel the same recording.
+-- Source writes can report through both ScriptEditorService and Changed,
+-- while reparenting can report through both Parent and hierarchy callbacks.
+-- Each exact channel has one Apply and one cancellation allowance; consuming
+-- the former must not erase the latter, and no third same-field/value event
+-- may be hidden as Forge activity.
+local phaseNotices = {}
+local phaseMonitor = StudioProjectChangeMonitor.new(function(notice: any) table.insert(phaseNotices, notice) end, {})
+local phaseScript = {}
+local phaseSource = "before"
+local phaseParent = "none"
+local function phaseFact(source: string, instance: any, field: string?, beforeMatches: () -> boolean, afterMatches: () -> boolean): any
+	return {
+		source = source,
+		instance = instance,
+		field = field,
+		matchesBefore = beforeMatches,
+		matchesAfter = afterMatches,
+		beforeEventBudget = 1,
+		afterEventBudget = 1,
+	}
 end
+phaseMonitor:expectExactForgeMutationFact(phaseFact("script_editor", phaseScript, nil, function() return phaseSource == "before" end, function() return phaseSource == "after" end))
+phaseMonitor:expectExactForgeMutationFact(phaseFact("property", phaseScript, "Source", function() return phaseSource == "before" end, function() return phaseSource == "after" end))
+phaseMonitor:expectExactForgeMutationFact(phaseFact("property", phaseScript, "Parent", function() return phaseParent == "none" end, function() return phaseParent == "approved" end))
+phaseMonitor:expectExactForgeMutationFact(phaseFact("hierarchy", phaseScript, "added", function() return phaseParent == "none" end, function() return phaseParent == "approved" end))
+phaseMonitor:expectExactForgeMutationFact(phaseFact("hierarchy", phaseScript, "removing", function() return phaseParent == "approved" end, function() return phaseParent == "none" end))
 
--- The identity policy obtains its coverage directly from the generated
--- manifest, so a manifest class never needs a hand-maintained parallel list.
-for className in pairs(Generated.classes) do
-	assert(StudioInstancePolicy.isEvidenceRelevant(fakeInstance(className)), className .. " must participate in generated evidence eligibility")
-end
-assert(not StudioInstancePolicy.isEvidenceRelevant(fakeInstance("Camera")), "unmanifested classes must not gain evidence identity")
+phaseSource = "after"
+phaseParent = "approved"
+phaseMonitor:emit("script_editor", phaseScript)
+phaseMonitor:emit("property", phaseScript, "Source")
+phaseMonitor:emit("property", phaseScript, "Parent")
+phaseMonitor:emit("hierarchy", phaseScript, "added")
+assert(phaseMonitor:detectorEpoch() == 0, "all exact Apply channels must be independently suppressible")
 
-local roots = StudioInstancePolicy.rootNames()
-assert(roots[1] == "Lighting" and roots[#roots] == "Workspace", "generated authoring roots must be canonical")
-roots[1] = "mutated"
-assert(StudioInstancePolicy.rootNames()[1] == "Lighting", "callers must not mutate generated authoring roots")
+phaseMonitor:setExactForgeMutationPhase("before")
+phaseSource = "before"
+phaseMonitor:emit("script_editor", phaseScript)
+phaseMonitor:emit("property", phaseScript, "Source")
+-- DescendantRemoving is observed while the object still has its approved
+-- parent; Changed("Parent") is observed after the rollback detached it.
+phaseParent = "approved"
+phaseMonitor:emit("hierarchy", phaseScript, "removing")
+phaseParent = "none"
+phaseMonitor:emit("property", phaseScript, "Parent")
+assert(phaseMonitor:detectorEpoch() == 0, "Apply notifications must not consume the exact rollback allowance for source or Parent channels")
+phaseMonitor:emit("property", phaseScript, "Source")
+assert(phaseMonitor:detectorEpoch() == 1 and #phaseNotices == 1, "a later creator event on the same field and value must be dirty once its rollback allowance is consumed")
+assert(string.find(authoringSource, 'ACTIVE_RECORDING_SETTING = "ForgeCreatorTransactionCursorV6"', 1, true) and string.find(authoringSource, 'FINALIZATION_RECEIPT_SETTING = "ForgeCreatorFinalizationReceiptV6"', 1, true) and string.find(authoringSource, 'LAST_COMMIT_SETTING = "ForgeCreatorLastCommitV6"', 1, true), "creator transaction state must use only the current clean-break keys")
+assert(not string.find(authoringSource, '"ForgeCreatorTransactionCursorV5"', 1, true) and not string.find(authoringSource, '"ForgeCreatorFinalizationReceiptV5"', 1, true) and not string.find(authoringSource, '"ForgeCreatorLastCommitV5"', 1, true) and not string.find(authoringSource, '"ForgeCreatorTransactionCursorV4"', 1, true) and not string.find(authoringSource, '"ForgeCreatorFinalizationReceiptV4"', 1, true) and not string.find(authoringSource, '"ForgeCreatorLastCommitV4"', 1, true) and not string.find(authoringSource, '"ForgeCreatorTransactionCursorV3"', 1, true) and not string.find(authoringSource, '"ForgeCreatorFinalizationReceiptV3"', 1, true) and not string.find(authoringSource, '"ForgeCreatorLastCommitV3"', 1, true) and not string.find(authoringSource, '"ForgeCreatorActiveRecordingV3"', 1, true) and not string.find(authoringSource, '"ForgeCreatorActiveRecording"', 1, true) and not string.find(authoringSource, '"ForgeCreatorFinalizationReceiptV2"', 1, true) and not string.find(authoringSource, '"ForgeCreatorLastCommitV2"', 1, true) and not string.find(authoringSource, "discardIncompatibleSettledState", 1, true), "the constructor must never inspect, migrate, or delete predecessor transaction-state keys")
+local creatorSettingKeys = StudioAuthoring.settingKeysForTest()
+assert(creatorSettingKeys.active == "ForgeCreatorTransactionCursorV6" and creatorSettingKeys.finalization == "ForgeCreatorFinalizationReceiptV6" and creatorSettingKeys.lastCommit == "ForgeCreatorLastCommitV6", "active-recording recovery and settled receipts must share the clean-break key boundary")
+assert(string.find(authoringSource, "local function beginFinalization", 1, true) and string.find(authoringSource, 'phase = "finalization_intent"', 1, true) and string.find(authoringSource, 'phase = "finalization_finished"', 1, true), "every creator finalization must persist a closed intent before it can become finished")
+assert(string.find(authoringSource, "local finalizationIntent = beginFinalization", 1, true) and string.find(authoringSource, "closeRecordingAndPersistFinalization", 1, true) and string.find(authoringSource, "IsRecordingInProgress(recordingId)", 1, true), "Finalize must durably record intent, then prove the exact recording closed before finished persistence")
+assert(string.find(authoringSource, "changeHistoryService():IsRecordingInProgress()", 1, true) and string.find(authoringSource, "return not checked or open == true", 1, true), "a clean-break connector must fail closed when Studio has any unbound recording")
+assert(string.find(runtimeSource, 'recovery.recording.phase == "finalization_finished"', 1, true), "reconnect may mint a finalization receipt only from a durable finished state")
+assert(string.find(runtimeSource, 'sendRequired("CreatorSourceWriteBlobAccepted"', 1, true), "Studio must acknowledge every complete source-write blob before Prepare")
+assert(string.find(runtimeSource, 'message.type == "CreatorChangePrepareStarted"', 1, true) and string.find(runtimeSource, 'message.type == "CreatorChangePrepareChunk"', 1, true) and string.find(runtimeSource, 'message.type == "CreatorChangePrepareCompleted"', 1, true), "Prepare must arrive as a bounded start/chunk/complete command stream")
+assert(not string.find(runtimeSource, 'message.type == "PrepareCreatorChangeSet"', 1, true), "the unbounded single-command Prepare transport must be absent")
+assert(string.find(authoringSource, "payload.sequence ~= capture.nextSequence", 1, true) and string.find(authoringSource, "creator Prepare document hash mismatch", 1, true), "Prepare fragments must be ordered and bind the exact reassembled document")
+assert(string.find(authoringSource, "prepared.prepareDocumentHash == payload.documentHash", 1, true), "an exact redelivered Prepare completion must reproduce its semantic receipt")
+assert(string.find(projectChangeMonitorSource, "AttributeChanged", 1, true) and string.find(projectChangeMonitorSource, ".Changed:Connect", 1, true), "the project monitor must observe property and attribute changes")
+assert(string.find(projectChangeMonitorSource, "PROJECT_CHANGE_MONITOR_MAXIMUM_INSTANCES", 1, true) and string.find(projectChangeMonitorSource, "monitoring_failure", 1, true), "monitor resource exhaustion must fail closed")
+assert(string.find(projectChangeMonitorSource, "expectExactForgeMutationFact", 1, true) and string.find(projectChangeMonitorSource, "matchesExactForgeMutation", 1, true) and string.find(projectChangeMonitorSource, "document:GetScript()", 1, true), "monitor must bind delayed editor signals to exact instance/state facts")
+assert(not string.find(projectChangeMonitorSource, "beginSynchronousForgeMutation", 1, true) and not string.find(projectChangeMonitorSource, "synchronousForgeMutationDepth", 1, true), "the monitor must not hide arbitrary concurrent edits behind a Forge-active interval")
+assert(string.find(projectChangeMonitorSource, "beforeEventBudget", 1, true) and string.find(projectChangeMonitorSource, "afterEventBudget", 1, true) and string.find(projectChangeMonitorSource, "beforeEventsRemaining", 1, true) and string.find(projectChangeMonitorSource, "afterEventsRemaining", 1, true), "exact monitor facts must retain independent bounded notification budgets for Apply and cancellation")
+assert(string.find(projectChangeMonitorSource, "function(name: any, displayName: any, identifier: any)", 1, true), "OnRecordingFinished must bind its third opaque identifier argument")
+assert(Constants.PROJECT_CHANGE_MONITOR_MAXIMUM_INSTANCES == Constants.PROJECT_INDEX_MAXIMUM_INSTANCES, "a policy-valid project cannot hit a smaller hidden monitor ceiling")
+assert(string.find(projectChangeMonitorSource, "self:attachInstance(instance); self:emit(\"hierarchy\", instance, \"added\")", 1, true) and string.find(projectChangeMonitorSource, "self:emit(\"hierarchy\", instance, \"removing\"); self:detachInstance(instance)", 1, true), "dynamic hierarchy callbacks must stay constant-time, identity-bound, and ignore out-of-scope changes")
+assert(string.find(projectChangeMonitorSource, "expectExactForgeRecordingFinish", 1, true) and string.find(projectChangeMonitorSource, "OnRecordingFinished", 1, true), "only the exact Forge recording completion may be suppressed")
+assert(string.find(runtimeSource, "setRecordingFinishObserver", 1, true) and string.find(runtimeSource, "clearExpectedForgeRecordingFinish", 1, true), "runtime must bind settled Forge recordings to the monitor")
+assert(string.find(runtimeSource, "expectExactForgeMutationFact(fact)", 1, true) and string.find(runtimeSource, 'setExactForgeMutationPhase("before")', 1, true), "Runtime must register exact authoring effects before writes and select exact pre-state facts only for cancellation")
+assert(string.find(authoringSource, "exactSourceFacts", 1, true) and string.find(authoringSource, "exactMutationFact", 1, true) and string.find(authoringSource, "onExpectedMutationFact", 1, true) and string.find(authoringSource, "onMutationPhase", 1, true) and string.find(authoringSource, "exactHierarchyFact", 1, true), "authoring must derive phase-scoped instance/field-bound facts instead of granting the monitor a broad writer exemption, including a failed batch's exact cancellation")
+assert(string.find(authoringSource, "\treturn payload\nend\n\nlocal function referenceEncoder", 1, true), "exact mutation-fact construction must return its bounded matcher payload for monitor attribution")
+assert(string.find(authoringSource, "compileMutationTransactionTopologyFromIndex", 1, true) and string.find(authoringSource, "canonicalOperations(changeSet, topology)", 1, true) and string.find(authoringSource, "detachedScratchGraph(prepared)", 1, true), "Prepare, detached preflight, and Apply must consume one generated transaction topology")
+assert(string.find(authoringSource, "for _, operation in ipairs(prepared.operations) do", 1, true) and not string.find(authoringSource, "for _, operation in ipairs(prepared.changeSet.operations) do validateOperation", 1, true), "Apply must validate and materialize each operation only at its canonical execution point")
+assert(string.find(authoringSource, "local function allocateCreatedHandles", 1, true) and string.find(authoringSource, "createdHandles:resolveReference(reference)", 1, true) and string.find(authoringSource, "registry:enrollInstance(instance, operation.target.identity.stableId)", 1, true) and string.find(authoringSource, "applyProperties(instance, operation.className, operation.properties, registry, onExpectedMutationFact, resolveReference, encodeReference)", 1, true), "Apply must allocate private detached create handles before recording and use their exact reference resolver while materializing created identities")
+assert(string.find(authoringSource, "local function boundedFailureDetail", 1, true) and string.find(authoringSource, "failureDetail = boundedFailureDetail", 1, true) and string.find(authoringSource, "recordingAttempted = false", 1, true), "pre-recording and recording failures must retain bounded actionable detail without fabricating a mutation attempt")
+local preRecordingFailure = assert(string.find(authoringSource, 'failureCode = "pre_recording_validation_failed"', 1, true), "Apply must classify a pre-recording validation failure distinctly")
+local noCancellationAcknowledgement = string.find(authoringSource, "cancellationProven = false", preRecordingFailure - 512, true)
+assert(noCancellationAcknowledgement ~= nil and noCancellationAcknowledgement < preRecordingFailure, "a pre-recording failure cannot claim a cancellation acknowledgement")
+assert(string.find(runtimeSource, "local recordingAttempted = failed == nil or failed.recordingAttempted ~= false", 1, true) and string.find(runtimeSource, 'recordingState = "not_open"', 1, true) and string.find(runtimeSource, 'if recordingAttempted and recordingId == nil then return false end', 1, true), "Runtime must emit an unnamed failure only for a proven pre-TryBegin boundary and keep an indeterminate recording attempt on recovery/settlement")
+assert(string.find(runtimeSource, 'string.sub(binding.recordingId, 1, #"pending_recording_") ~= "pending_recording_"', 1, true) and string.find(authoringSource, "recordingId = recording, cancellationProven = false, recordingState = \"unknown\"", 1, true), "an opening placeholder must never be a mutation receipt id; a returned exact recording id survives a cursor-persistence failure as unknown-state evidence")
+assert(string.find(runtimeSource, 'recordingState = "not_open",\n\t\t}, requestId)', 1, true) and string.find(runtimeSource, 'if cancellationProven == true and (recordingId == nil or recordingState ~= "not_open") then cancellationProven = false end', 1, true), "detached preflight must report the protocol-valid no-recording state, and Runtime must not claim cancellation without a named closed recording")
+assert(not string.find(runtimeSource, "mutationFailed(nil", 1, true) and string.find(runtimeSource, "mutationFailed({ binding = bindingOrFailure }", 1, true) and string.find(runtimeSource, "mutationFailed({ binding = stored }", 1, true), "every post-recording cancellation/finalization failure must retain the exact named recording binding")
+assert(string.find(authoringSource, "prepared.beforeProjectIndexManifestId ~= beforeCapture.indexManifest.id", 1, true) and string.find(authoringSource, "prepared.beforeProjectDetectorEpoch ~= beforeCapture.detectorEpoch", 1, true) and string.find(authoringSource, "prepared.changeSet.expectedRevisionHash ~= beforeCapture.revision.hash", 1, true), "Apply must independently bind the entire prepared project-index tuple before opening a recording")
+assert(string.find(authoringSource, 'instance.Parent == oldParent and instance.Name == operation.name end, function() return instance.Parent == parent and instance.Name == operation.name', 1, true), "a move-and-rename cancellation must match DescendantAdded after the parent is restored but before ChangeHistory reverses the rename")
+assert(string.find(runtimeSource, "StudioProjectIndexCanonical.material", 1, true) and string.find(runtimeSource, 'kind = "StudioConnectorEpoch"', 1, true) and string.find(runtimeSource, "projectId = projectId", 1, true), "opaque identities must use the shared project-index canonical connector epoch")
+assert(not string.find(runtimeSource, 'sessionId .. ":" .. connectorBuildHash()', 1, true), "connector epochs must not use an ad hoc concatenation")
+assert(string.find(evidenceCollectorSource, "StudioScriptSource.read", 1, true), "index/evidence source reads must observe current editor state")
+assert(not string.find(evidenceCollectorSource, "project_state", 1, true), "the removed project-state envelope collector must be absent")
+assert(string.find(runtimeExecutorSource, 'PASSIVE_RUNTIME_SETTING = "ForgePassiveRuntimeDirectV2"', 1, true), "runtime observation must use the current direct-observer durable setting")
+assert(not string.find(runtimeExecutorSource, 'PASSIVE_RUNTIME_SETTING = "ForgePassiveRuntimeDirectV1"', 1, true), "the superseded passive-runtime setting must not have a current reader")
+assert(string.find(runtimeExecutorSource, "function RuntimeCapabilityExecutor.discardInvalidPassive", 1, true) and string.find(runtimeExecutorSource, "refusing to discard valid durable passive runtime evidence", 1, true), "invalid passive evidence must have an explicit recovery boundary that rejects valid evidence")
+local commandSettlementCache = string.find(runtimeSource, "handledCommands[command.messageId] = record", 1, true)
+local commandSettlementSend = commandSettlementCache and string.find(runtimeSource, "sendCommandSettlement(record, command.requestId)", commandSettlementCache, true)
+assert(commandSettlementCache and commandSettlementSend and commandSettlementCache < commandSettlementSend, "terminal command settlement must be cached before transport")
+assert(string.find(runtimeSource, 'disposition = if executed then "executed" else "rejected"', 1, true), "command settlement must represent both executed and rejected handler outcomes")
+assert(string.find(runtimeSource, "local function boundedCommandDiagnostic", 1, true) and string.find(runtimeSource, "utf8.len(candidate)", 1, true), "rejected command diagnostics must remain valid bounded UTF-8 on the wire")
+assert(not string.find(runtimeSource, "StudioCommandAcknowledged", 1, true), "the success-only command acknowledgement protocol must not remain")
+assert(string.find(runtimeSource, 'sendOrderedRequired("StudioProjectIndexStarted"', 1, true) and string.find(runtimeSource, 'sendOrderedRequired("StudioProjectIndexCompleted"', 1, true), "project-index boundaries must use exact ordered transport acknowledgements")
+assert(string.find(runtimeSource, "sendOrderedRequired(pieceType, piecePayload, requestId)", 1, true), "a project-index fragment failure must stop emission before the next fragment")
+assert(string.find(semanticTransportSource, "StudioEvidenceProduced = true", 1, true) and string.find(semanticTransportSource, "CreatorChangePreflighted = true", 1, true) and string.find(semanticTransportSource, "CreatorMutationProvisional = true", 1, true), "every potentially-large Studio evidence outcome must share one sealed semantic stream")
+assert(not string.find(runtimeSource, 'send("StudioEvidenceProduced"', 1, true) and not string.find(runtimeSource, 'send("CreatorChangePreflighted"', 1, true) and not string.find(runtimeSource, 'send("CreatorMutationProvisional"', 1, true), "large semantic evidence must never use the direct wire path")
+assert(not string.find(evidenceCollectorSource, "function StudioEvidenceCollector:chunks", 1, true), "the superseded evidence-only raw-byte chunker must be absent")
+assert(string.find(runtimeSource, 'studioWorker:enqueue("command:"', 1, true) and string.find(runtimeSource, 'studioWorker:enqueue("pairing"', 1, true), "pairing and command handling must share one serialized Studio worker")
+assert(string.find(runtimeSource, 'studioWorker:enqueue("project-change-notice"', 1, true), "engine change callbacks must defer and coalesce network transport")
+assert(string.find(runtimeSource, 'outcomeMessageId("StudioProjectChangeDetected"', 1, true) and string.find(runtimeSource, "retainPending({ message = noticeMessage", 1, true), "a transient dirty-notice transport failure must retain and retry the exact notice identity")
+assert(string.find(identityRegistrySource, "function IdentityRegistry:indexProject(cooperate", 1, true) and not string.find(identityRegistrySource, ":GetDescendants(", 1, true), "identity bootstrap must use one cooperative traversal with no mutation-time whole-project fallback")
+assert(string.find(evidenceCollectorSource, "function StudioEvidenceCollector:attestation(projection: any, cooperate", 1, true), "capability reflection must yield cooperatively between bounded reads")
+assert(string.find(runtimeSource, "Discard invalid receipt & recover", 1, true) and string.find(runtimeSource, "RECOVERY PAIRING", 1, true), "the connector must expose explicit invalid-receipt recovery instead of deadlocking pairing")
+assert(not string.find(runtimeExecutorSource, "Instance.new(\"Script\")", 1, true) and not string.find(runtimeExecutorSource, "checkpoint", 1, true), "runtime observation must not inject a runner Script or use log checkpoints")
+assert(string.find(directObserverSource, "resolveTarget", 1, true) and string.find(directObserverSource, "_forgeStableId", 1, true), "Play targets must bind a Forge identity rather than a display path")
+assert(string.find(directObserverSource, '"unavailable"', 1, true), "non-Forge Play identities must fail as unavailable rather than invented absence")
+
+local unicodeTransport = "ab😀c✓def"
+local unicodeFragments = {}
+Utf8Transport.each(unicodeTransport, 4, function(fragment: string)
+	assert(#fragment <= 4 and utf8.len(fragment) ~= nil, "transport fragments must be byte-bounded valid UTF-8")
+	table.insert(unicodeFragments, fragment)
+end)
+assert(table.concat(unicodeFragments) == unicodeTransport, "UTF-8 transport fragmentation must be lossless")
+assert(not pcall(function() Utf8Transport.boundaries("\255", 4) end), "invalid UTF-8 must fail before any transport frame is emitted")
+local cooperativeUtf8Steps = 0
+Utf8Transport.boundaries(string.rep("é", 32), 8, function() cooperativeUtf8Steps += 1 end)
+assert(cooperativeUtf8Steps >= 8, "large UTF-8 validation must expose cooperative scheduling points")
+local cancelledUtf8, cancellationFailure = pcall(function()
+	Utf8Transport.boundaries("valid", 4, function() error("index collection cancelled") end)
+end)
+assert(not cancelledUtf8 and string.find(tostring(cancellationFailure), "index collection cancelled", 1, true), "cooperative cancellation must not be misclassified as invalid UTF-8")
+local deliveredFrames = {}
+local completed, failure = StudioSemanticTransport.deliver({ { id = 1 }, { id = 2 }, { id = 3 } }, function(frame: any): (boolean, any?, number?)
+	table.insert(deliveredFrames, frame.id)
+	if frame.id == 2 then return false, "injected loss", 0 end
+	return true, nil, 202
+end)
+assert(not completed and failure == "injected loss" and #deliveredFrames == 2, "a failed semantic fragment must stop the stream before any later fragment")
+
+local scheduledJobs = {}
+local workerOrder = {}
+local workerErrors = {}
+local workerYields = 0
+local serializedWorker: any = nil
+serializedWorker = SerializedStudioWorker.new({
+	spawn = function(callback: () -> ()) table.insert(scheduledJobs, callback) end,
+	yieldBetween = function() workerYields += 1 end,
+	onError = function(failure: any, key: string) table.insert(workerErrors, key .. ":" .. tostring(failure)) end,
+})
+assert(serializedWorker:enqueue("first", function()
+	table.insert(workerOrder, "first")
+	assert(not serializedWorker:enqueue("first", function() error("duplicate active job ran") end), "an active bridge head must remain de-duplicated")
+end), "the first serialized job must be accepted")
+assert(not serializedWorker:enqueue("first", function() error("duplicate queued job ran") end), "a queued bridge head must remain de-duplicated")
+assert(serializedWorker:enqueue("failure", function() error("injected worker failure") end), "a distinct second job must be queued")
+assert(serializedWorker:enqueue("third", function() table.insert(workerOrder, "third") end), "a distinct third job must be queued")
+assert(serializedWorker:isBusy() and #scheduledJobs == 1, "one and only one drain coroutine may own queued Studio work")
+scheduledJobs[1]()
+assert(not serializedWorker:isBusy(), "the worker must become idle after draining")
+assert(table.concat(workerOrder, ",") == "first,third", "a failed job must not reorder or strand later work")
+assert(#workerErrors == 1 and string.sub(workerErrors[1], 1, 8) == "failure:" and string.find(workerErrors[1], "injected worker failure", 1, true), "worker failures must retain their exact job key")
+assert(workerYields == 2, "the worker must yield between each ordered job")
+
+local closedJobs = {}
+local closeRan = false
+local closedWorker = SerializedStudioWorker.new({ spawn = function(callback: () -> ()) table.insert(closedJobs, callback) end, yieldBetween = function() end })
+closedWorker:enqueue("active", function() closeRan = true end)
+closedWorker:enqueue("queued", function() closeRan = true end)
+closedWorker:close()
+closedJobs[1]()
+assert(not closeRan and not closedWorker:isBusy(), "closing must discard work that has not begun")
 
 for _, vector in ipairs(Generated.vectors) do
-	assert(Generated.canonicalValueMaterial(vector.value) == vector.material, vector.name .. " must retain cross-language canonical material")
+	assert(Generated.canonicalValueMaterial(vector.value) == vector.material, vector.name .. " must retain shared canonical value material")
 end
-assert(Generated.canonicalValueMaterial({ kind = "boolean", value = false }) ~= Generated.canonicalValueMaterial({ kind = "boolean", value = true }), "false must never be confused with an omitted fact")
-assert(Generated.canonicalValueMaterial({ kind = "number_f32", value = -0 }) ~= Generated.canonicalValueMaterial({ kind = "number_f32", value = 0 }), "negative zero must retain its float32 bit pattern")
-local emptyListTarget = { kind = "instance", stableId = "empty-list-instance", path = "Workspace/EmptyList", className = "Folder" }
-local emptyListEnvelope = {
-	kind = "StudioEvidenceEnvelope",
-	manifestHash = string.rep("a", 64),
-	projectionId = "empty-list-projection",
-	projectionHash = string.rep("b", 64),
-	bindingHash = string.rep("c", 64),
-	project = { name = "Empty List Vector", placeId = 0, universeId = 0 },
-	authoritative = true,
-	startedAt = "2026-09-01T00:00:00.000Z",
-	endedAt = "2026-09-01T00:00:00.000Z",
-	completion = "complete",
-	facts = {
-		{ kind = "tags", key = Generated.factKey("tags", emptyListTarget), target = emptyListTarget, result = { status = "observed", value = {} } },
-	},
-}
-local emptyListMaterial = Generated.envelopeMaterial(emptyListEnvelope)
-assert(string.find(emptyListMaterial, "5:array", 1, true) ~= nil and string.find(emptyListMaterial, "6:object", 1, true) == nil, "empty evidence lists must use the shared array material domain")
-assert(not pcall(function() Generated.validateValue("number_f32", { kind = "number_f32", value = math.huge }) end), "non-finite values must fail closed")
-assert(not pcall(function() Generated.validateValue("color3_rgb8", { kind = "color3_rgb8", r = 0, g = 128.5, b = 255 }) end), "RGB values must be exact bytes")
-assert(typeof(Generated.runtimeRunnerDispatchSource) == "string" and string.find(Generated.runtimeRunnerDispatchSource, "base_part.position_series", 1, true), "Play-Solo runtime dispatch must be generated from the manifest")
-local generatedSeriesBound = nil
-for _, capability in ipairs(Generated.manifest.runtimeCapabilities) do
-	if capability.name == "base_part.position_series" then generatedSeriesBound = capability.maximumSamples end
+for _, vector in ipairs(Generated.projectIndexVectors) do
+	assert(StudioProjectIndexCanonical.material(vector.value) == vector.material, vector.name .. " must retain shared tagged project-index material")
 end
-assert(generatedSeriesBound ~= nil and string.find(Generated.runtimeRunnerDispatchSource, "call.sampleCount > " .. tostring(generatedSeriesBound), 1, true), "generated runner dispatch must carry manifest series bounds")
-
--- Projection provenance changes across pairing, approval, and transaction
--- phases. It must remain exact evidence without changing the identity of an
--- otherwise identical complete Studio state.
-local stateRequirements = {
-	{ kind = "inventory", key = Generated.factKey("inventory", { kind = "project" }), target = { kind = "project" } },
+local creatorMutationBinding = {
+	sessionId = "creator_session_binding_fixture",
+	changeSetHash = string.rep("a", 64),
+	approvalHash = string.rep("b", 64),
+	revisionHash = string.rep("c", 64),
+	buildHash = string.rep("d", 64),
+	dashboardReviewHash = string.rep("e", 64),
 }
-local stateProjectionA = {
-	id = "pairing-state", manifestHash = Generated.manifestHash, purpose = "project_state",
-	project = { name = "Revision Vector", placeId = 0, universeId = 0 },
-	binding = { sessionId = "studio-session", projectId = "studio-project", buildHash = string.rep("a", 64) },
-	requirements = stateRequirements,
-	scope = { mode = "project_state", roots = { "Workspace" }, requireCompleteInventory = true },
-	bounds = { maximumFacts = 32, maximumBytes = 4096, roots = { "Workspace" }, maximumInstances = 16 },
-}
-local stateProjectionB = table.clone(stateProjectionA)
-stateProjectionB.id = "approved-before-state"
-stateProjectionB.binding = { sessionId = "creator-session", changeSetHash = string.rep("b", 64), approvalHash = string.rep("c", 64), revisionHash = string.rep("d", 64) }
-local stateFacts = {
-	{ kind = "inventory", key = Generated.factKey("inventory", { kind = "project" }), target = { kind = "project" }, result = { status = "observed", value = {} } },
-}
-local reboundStateFacts = {
-	{ kind = "inventory", key = Generated.factKey("inventory", { kind = "project" }), target = { kind = "project" }, result = { status = "observed", value = {} } },
-}
-assert(Generated.stateDomainMaterial(stateProjectionA) == Generated.stateDomainMaterial(stateProjectionB), "approval bindings must not change the comparable state domain")
-assert(Generated.stateRevisionMaterial(Generated.manifestHash, string.rep("e", 64), stateFacts) == Generated.stateRevisionMaterial(Generated.manifestHash, string.rep("e", 64), reboundStateFacts), "identical facts in the same state domain must retain one revision material")
-
--- The generated recompiler's hash-free requirement vector proves that the
--- sealed change-set shape, including explicit false and deletion/absence, is
--- compiled from the manifest rather than a StudioAuthoring property table.
-local mutationRequirements = Generated.compileMutationRequirements({
-	kind = "CreatorChangeSet",
-	id = "creator_change_vector",
-	operations = {
-		{
-			id = "update_prompt",
-			kind = "update",
-			stableId = "prompt_1",
-			expectedPath = "Workspace/Door/Prompt",
-			expectedClass = "ProximityPrompt",
-			properties = { RequiresLineOfSight = { kind = "boolean", value = false } },
-			attributes = { EnabledByForge = false },
-			removedAttributes = { "LegacyPrompt" },
-		},
-		{
-			id = "delete_old_door",
-			kind = "delete",
-			stableId = "old_door_1",
-			expectedPath = "Workspace/OldDoor",
-			expectedClass = "Model",
-		},
-	},
+assert(Generated.matchesStudioCreatorMutationBinding(creatorMutationBinding, creatorMutationBinding), "the generated creator mutation binding matcher must accept the backend schema")
+local rejectedRevisionAliasBinding = table.clone(creatorMutationBinding)
+rejectedRevisionAliasBinding.revisionHash = nil
+rejectedRevisionAliasBinding.projectRevisionHash = string.rep("c", 64)
+assert(not Generated.matchesStudioCreatorMutationBinding(rejectedRevisionAliasBinding, creatorMutationBinding), "projectRevisionHash must not be accepted as a creator evidence binding alias")
+assert(StudioProjectIndexCanonical.material(-0) ~= StudioProjectIndexCanonical.material(0), "project index material must retain binary64 negative zero")
+local markedEmptyObject = StudioProjectIndexCanonical.object({})
+assert(StudioProjectIndexCanonical.material(markedEmptyObject) ~= StudioProjectIndexCanonical.material({}), "empty objects must not collapse into empty arrays")
+assert(StudioProjectIndexCanonical.objectMaterialLength({}) == #StudioProjectIndexCanonical.material(markedEmptyObject), "empty object material sizing must remain exact")
+local shardNodes = { { id = "a" }, { id = "b", enabled = false } }
+local taggedNodeBytes = 0
+for _, node in ipairs(shardNodes) do taggedNodeBytes += StudioProjectIndexCanonical.taggedMaterialLength("item", #StudioProjectIndexCanonical.material(node)) end
+local measuredShardBytes = StudioProjectIndexCanonical.objectMaterialLength({
+	root = #StudioProjectIndexCanonical.material("Workspace"),
+	ordinal = #StudioProjectIndexCanonical.material(0),
+	nodes = StudioProjectIndexCanonical.arrayMaterialLength(#shardNodes, taggedNodeBytes),
 })
-local sawExplicitFalse, sawAbsentDelete = false, false
-for _, requirement in ipairs(mutationRequirements) do
-	if requirement.kind == "property" and requirement.propertyName == "RequiresLineOfSight" then
-		sawExplicitFalse = requirement.expected.kind == "boolean" and requirement.expected.value == false
-	end
-	if requirement.kind == "structure" and requirement.target.stableId == "old_door_1" then
-		sawAbsentDelete = requirement.expectedStatus == "absent" and requirement.expected == nil
+assert(measuredShardBytes == #StudioProjectIndexCanonical.material({ root = "Workspace", ordinal = 0, nodes = shardNodes }), "incremental shard sizing must equal exact canonical material bytes")
+assert(StudioProjectIndexCanonical.objectMaterialLength({ root = #StudioProjectIndexCanonical.material("Teams"), ordinal = #StudioProjectIndexCanonical.material(0), nodes = StudioProjectIndexCanonical.arrayMaterialLength(0, 0) }) == #StudioProjectIndexCanonical.material({ root = "Teams", ordinal = 0, nodes = {} }), "empty-root shard sizing must remain exact")
+assert(Generated.canonicalValueMaterial({ kind = "boolean", value = false }) ~= Generated.canonicalValueMaterial({ kind = "boolean", value = true }), "false must not collapse into omitted evidence")
+assert(Generated.canonicalValueMaterial({ kind = "number_f32", value = -0 }) ~= Generated.canonicalValueMaterial({ kind = "number_f32", value = 0 }), "negative zero must retain its float bit pattern")
+assert(Generated.canonicalValueMaterial({ kind = "nil", expectedCodec = "physical_properties" }) ~= Generated.canonicalValueMaterial({ kind = "physical_properties", density = 0.7, friction = 0.3, elasticity = 0.5, frictionWeight = 1, elasticityWeight = 1 }), "explicit nil must not collapse into a present datatype value")
+assert(Generated.canonicalValueMaterial({ kind = "nil", expectedCodec = "physical_properties" }) ~= Generated.canonicalValueMaterial({ kind = "nil", expectedCodec = "boolean" }), "generic nil material must bind the exact expected codec")
+assert(not pcall(function() Generated.canonicalValue({ kind = "nil", expectedCodec = "instance_ref" }) end), "generic nil must reject the class-constrained instance-reference codec")
+local nilPhysicalProperty = Generated.propertyMetadata("Part", "CustomPhysicalProperties")
+assert(nilPhysicalProperty ~= nil and nilPhysicalProperty.declaringClass == "BasePart" and nilPhysicalProperty.codec == "physical_properties" and nilPhysicalProperty.nullable == true, "inherited nullable metadata must be generated on the exact physical-properties capability")
+local nilPhysical = Generated.fromStudio(nilPhysicalProperty.codec, nil, nil, nilPhysicalProperty)
+assert(nilPhysical.kind == "nil" and nilPhysical.expectedCodec == nilPhysicalProperty.codec, "nullable direct readback must bind engine nil to its exact manifest codec without datatype field access")
+assert(Generated.validateValue(nilPhysicalProperty.codec, nilPhysical, nilPhysicalProperty).kind == "nil", "nullable direct readback must remain a valid property value")
+assert(Generated.toStudio(nilPhysicalProperty.codec, nilPhysical, nilPhysicalProperty) == nil, "nullable direct write materialization must round-trip nil")
+assert(not pcall(function() Generated.validateValue(nilPhysicalProperty.codec, { kind = "nil", expectedCodec = "boolean" }, nilPhysicalProperty) end), "a nullable property must reject a generic nil bound to another codec")
+local collisionGroupProperty = Generated.propertyMetadata("Part", "CollisionGroup")
+assert(collisionGroupProperty.minimumUtf8Bytes == 1 and collisionGroupProperty.maximumUtf8Bytes == 100, "CollisionGroup must retain its manifest-bound nonempty UTF-8 domain")
+assert(Generated.validateValue(collisionGroupProperty.codec, { kind = "string_utf8", value = "Default" }, collisionGroupProperty).value == "Default", "a nonempty CollisionGroup must remain valid")
+assert(not pcall(function() Generated.validateValue(collisionGroupProperty.codec, { kind = "string_utf8", value = "" }, collisionGroupProperty) end), "an empty CollisionGroup must fail the generated minimum UTF-8 bound")
+local byteBoundStringProperty = { codec = "string_utf8", minimumUtf8Bytes = 3, maximumUtf8Bytes = 4 }
+assert(not pcall(function() Generated.validateValue("string_utf8", { kind = "string_utf8", value = "é" }, byteBoundStringProperty) end), "generated text minima must count UTF-8 bytes rather than code points")
+assert(Generated.validateValue("string_utf8", { kind = "string_utf8", value = "éx" }, byteBoundStringProperty).value == "éx", "generated text minima must accept an exact UTF-8 byte-bound value")
+assert(not pcall(function() Generated.fromStudio("instance_ref", nil, nil, nil) end), "instance-reference readback without manifest metadata must reject before dereferencing the property")
+for className, class in pairs(Generated.classes) do
+	for _, property in ipairs(class.propertyList) do
+		if property.codec == "instance_ref" then
+			local referenceNil = Generated.fromStudio(property.codec, nil, nil, property)
+			assert(referenceNil.kind == "instance_ref" and referenceNil.state == "nil", className .. "." .. property.name .. " must retain the typed instance-reference nil domain")
+		elseif property.nullable == true then
+			local observedNil = Generated.fromStudio(property.codec, nil, nil, property)
+			assert(observedNil.kind == "nil", className .. "." .. property.name .. " must round-trip its declared nullable domain")
+			assert(Generated.toStudio(property.codec, observedNil, property) == nil, className .. "." .. property.name .. " must materialize a declared nil without an engine codec")
+		else
+			local accepted, failure = pcall(function() return Generated.fromStudio(property.codec, nil, nil, property) end)
+			assert(not accepted and string.find(tostring(failure), "nil Studio value is not declared for property", 1, true), className .. "." .. property.name .. " must reject nil before any codec field access")
+		end
 	end
 end
-assert(sawExplicitFalse, "generated mutation vector must retain false as an observed value")
-assert(sawAbsentDelete, "generated mutation vector must compile delete as explicit absence")
-local deletedDescendantRequirements = Generated.compileMutationRequirements({
+local fromStudioStart = assert(string.find(generatedEvidenceSource, "function Generated.fromStudio", 1, true))
+local nilGuard = string.find(generatedEvidenceSource, 'if value == nil then', fromStudioStart, true)
+local physicalDereference = string.find(generatedEvidenceSource, "value.Density", 1, true)
+assert(nilGuard ~= nil and physicalDereference ~= nil and nilGuard < physicalDereference, "generated nullable dispatch must guard nil before every datatype field dereference")
+assert(string.find(projectIndexSource, "Generated.canonicalProjectAttribute", 1, true), "project indexing must use the complete compound-attribute observer rather than mutation-only primitive codecs")
+assert(string.find(projectIndexSource, "Generated.projectPropertyMetadata(instance.ClassName)", 1, true) and not string.find(projectIndexSource, "ipairs(metadata.properties)", 1, true), "project indexing must consume the generated ordered property rows rather than treating the keyed mutation dispatch as a sequence")
+local projectPartProperties = Generated.projectPropertyMetadata("Part")
+local sawAnchoredProjectProperty = false
+for index, property in ipairs(projectPartProperties) do
+	assert(index == 1 or projectPartProperties[index - 1].name < property.name, "project property metadata must be canonical and strictly ordered")
+	assert(Generated.propertyMetadata("Part", property.name) == property, "ordered project property rows and keyed mutation dispatch must share the exact manifest row")
+	if property.name == "Anchored" then sawAnchoredProjectProperty = true end
+end
+assert(#projectPartProperties > 0 and sawAnchoredProjectProperty, "a manifest-supported Part must produce non-empty project-index property coverage")
+local orderedMutationProperties = Generated.sortedMutationPropertyNames("Part", {
+	Transparency = { kind = "number_f32", value = 0 },
+	Anchored = { kind = "boolean", value = true },
+})
+assert(#orderedMutationProperties == 2 and orderedMutationProperties[1] == "Anchored" and orderedMutationProperties[2] == "Transparency", "generated mutation property ordering must be canonical regardless of input-map construction order")
+assert(not pcall(function() Generated.sortedMutationPropertyNames("Part", { NotInManifest = { kind = "boolean", value = true } }) end), "the canonical mutation property orderer must reject an unmanifested field")
+local function acceptsStudioObjectIdentity(value: any): boolean
+	return pcall(function() Generated.studioObjectIdentity(value) end)
+end
+assert(acceptsStudioObjectIdentity({ kind = "forge_attribute", stableId = "stable-\226\156\147" }), "valid UTF-8 identity tokens must be accepted")
+assert(acceptsStudioObjectIdentity({ kind = "studio_ephemeral", connectorEpoch = "epoch-\226\156\147", opaqueHash = string.rep("a", 64) }), "valid epoch-bound opaque identities must be accepted")
+assert(not acceptsStudioObjectIdentity({ kind = "forge_attribute", stableId = "contains space" }), "identity whitespace must be rejected exactly at the generated boundary")
+assert(not acceptsStudioObjectIdentity({ kind = "forge_attribute", stableId = string.rep("a", 513) }), "identity byte bounds must be enforced at the generated boundary")
+assert(not acceptsStudioObjectIdentity({ kind = "forge_attribute", stableId = "\255" }), "invalid UTF-8 identity data must be rejected at the generated boundary")
+assert(not acceptsStudioObjectIdentity({ kind = "rojo_sourcemap", authorityMapHash = string.rep("a", 64), sourcemapHash = string.rep("b", 64), mappingId = "\194\160" }), "Unicode whitespace in a Rojo mapping identity must be rejected")
+assert(#Generated.projectPropertyMetadata("Folder") == 0 and #Generated.projectPropertyMetadata("Camera") == 0, "classes with no covered properties and unsupported classes must expose an explicit empty project-property sequence")
+for _, class in ipairs(Generated.manifest.classes) do
+	local indexedProperties = Generated.projectPropertyMetadata(class.name)
+	assert(#indexedProperties == #class.properties, "every manifest property must have exactly one project-index row")
+	for index, property in ipairs(indexedProperties) do
+		assert(Generated.propertyMetadata(class.name, property.name) == property, "project-index rows must remain the exact keyed manifest rows")
+		assert(index == 1 or indexedProperties[index - 1].name < property.name, "every manifest class must expose strictly ordered project-index rows")
+	end
+end
+
+local scriptSourceHash = string.rep("f", 64)
+local scriptRequirements = Generated.compileMutationRequirements({
 	kind = "CreatorChangeSet",
-	id = "creator_change_vector",
+	id = "creator_change_set_script_blob",
 	operations = {
-		{ id = "delete_old_door", kind = "delete", stableId = "old_door_1", expectedPath = "Workspace/OldDoor", expectedClass = "Model" },
+		{
+			id = "create_script",
+			kind = "create",
+			target = { kind = "instance", identity = { kind = "forge_attribute", stableId = "created_script" }, path = "ServerScriptService/Created", className = "Script" },
+			parent = { kind = "engine_container", path = "ServerScriptService", className = "ServerScriptService" },
+			className = "Script",
+			name = "Created",
+			properties = {},
+			attributes = {},
+			sourceBlob = { manifestId = "creator_source_write_blob_manifest_fixture", manifestHash = string.rep("e", 64), sourceHash = scriptSourceHash, utf8Bytes = 13 },
+		},
+	},
+}, nil, {
+	create_script = { kind = "forge_attribute", stableId = "captured-server-script-service" },
+})
+local foundScriptSourceRequirement = false
+local foundServerParentIdentity = false
+for _, requirement in ipairs(scriptRequirements) do
+	if requirement.kind == "source_hash" then
+		assert(requirement.expected == scriptSourceHash, "created script source proof must use the immutable source blob hash")
+		foundScriptSourceRequirement = true
+	end
+	if requirement.kind == "structure" and requirement.expected.parentIdentity and requirement.expected.parentIdentity.stableId == "captured-server-script-service" then
+		foundServerParentIdentity = true
+	end
+end
+assert(foundScriptSourceRequirement, "created script mutation projection must contain a source-hash obligation")
+assert(foundServerParentIdentity, "a ServerScriptService create must retain the exact captured engine-parent identity")
+
+-- The project index deliberately retains opaque engine objects. They must not
+-- block an otherwise authorable change, nor acquire a writable-fact surface
+-- merely because they sit below a deleted authorable parent.
+local opaqueIndexCapture = {
+	kind = "StudioProjectIndexCapture",
+	indexManifest = { manifestHash = Generated.manifestHash, hash = string.rep("a", 64) },
+	revision = { manifestHash = Generated.manifestHash, indexManifestHash = string.rep("a", 64), projectionHash = string.rep("b", 64) },
+	projection = { hash = string.rep("b", 64) },
+	shards = {
+		{
+			kind = "StudioProjectEvidenceShard",
+				nodes = {
+					{ identity = { kind = "forge_attribute", stableId = "authorable_folder" }, displayPath = "Workspace/Authorable", name = "Authorable", className = "Folder", attributes = {} },
+					{ identity = { kind = "forge_attribute", stableId = "move_to_structural_parent" }, displayPath = "Workspace/MoveToStructuralParent", name = "MoveToStructuralParent", className = "Folder", attributes = {} },
+					{ identity = { kind = "studio_ephemeral", connectorEpoch = "connector_epoch_plugin_fixture", opaqueHash = string.rep("c", 64) }, parentIdentity = { kind = "forge_attribute", stableId = "authorable_folder" }, displayPath = "Workspace/Authorable/Camera", name = "Camera", className = "Camera", attributes = {} },
+					{ identity = { kind = "studio_ephemeral", connectorEpoch = "connector_epoch_plugin_fixture", opaqueHash = string.rep("d", 64) }, displayPath = "StarterPlayer/StarterPlayerScripts", name = "StarterPlayerScripts", className = "StarterPlayerScripts", engineContainer = { path = "StarterPlayer/StarterPlayerScripts", className = "StarterPlayerScripts" }, attributes = {} },
+			},
+		},
+	},
+}
+local opaqueDeleteChangeSet = {
+	kind = "CreatorChangeSet",
+	id = "creator_change_set_opaque_index",
+	operations = {
+		{
+			id = "delete_authorable_folder",
+			kind = "delete",
+			target = { kind = "instance", identity = { kind = "forge_attribute", stableId = "authorable_folder" }, path = "Workspace/Authorable", className = "Folder" },
+		},
+	},
+}
+local opaqueProjectionInputs = Generated.compileMutationProjectionInputsFromIndex(opaqueDeleteChangeSet, opaqueIndexCapture)
+assert(#opaqueProjectionInputs.requirements == 2, "a delete must prove structural absence for every indexed descendant")
+assert(opaqueProjectionInputs.requirements[1].kind == "structure" and opaqueProjectionInputs.requirements[1].expectedStatus == "absent", "delete descendants must remain structure-only proof obligations")
+assert(opaqueProjectionInputs.requirements[2].kind == "structure" and opaqueProjectionInputs.requirements[2].expectedStatus == "absent", "delete roots must retain their structural proof obligation")
+assert(opaqueProjectionInputs.allowedProjectDelta == nil, "mutation projections must not carry a second project-delta authority")
+
+-- Existing project-index parents are containment authority, not writable
+-- mutation targets. StarterPlayerScripts is intentionally outside the
+-- writable manifest, but its exact opaque identity may anchor an approved
+-- LocalScript create beneath it.
+local indexedContainerProjectionInputs = Generated.compileMutationProjectionInputsFromIndex({
+	kind = "CreatorChangeSet",
+	id = "creator_change_set_indexed_engine_parent",
+	operations = {
+		{
+			id = "create_client_under_observed_container",
+			kind = "create",
+			target = { kind = "instance", identity = { kind = "forge_attribute", stableId = "created_client" }, path = "StarterPlayer/StarterPlayerScripts/Client", className = "LocalScript" },
+			parent = { kind = "engine_container", path = "StarterPlayer/StarterPlayerScripts", className = "StarterPlayerScripts" },
+			className = "LocalScript",
+			name = "Client",
+			properties = {},
+			attributes = {},
+			sourceBlob = { manifestId = "creator_source_write_blob_manifest_fixture", manifestHash = string.rep("e", 64), sourceHash = scriptSourceHash, utf8Bytes = 13 },
+		},
+	},
+}, opaqueIndexCapture)
+assert(#indexedContainerProjectionInputs.requirements == 2, "an indexed unwriteable parent must permit only the authorable child structure and source obligations")
+assert(indexedContainerProjectionInputs.requirements[1].kind == "source_hash" or indexedContainerProjectionInputs.requirements[2].kind == "source_hash", "the indexed-parent create must retain its exact source proof")
+local indexedContainerStructure = indexedContainerProjectionInputs.requirements[1].kind == "structure" and indexedContainerProjectionInputs.requirements[1] or indexedContainerProjectionInputs.requirements[2]
+assert(indexedContainerStructure.kind == "structure" and indexedContainerStructure.expected.parentIdentity and indexedContainerStructure.expected.parentIdentity.opaqueHash == string.rep("d", 64), "a StarterPlayerScripts engine parent must retain the exact captured identity")
+local movedToIndexedContainer = Generated.compileMutationProjectionInputsFromIndex({
+	kind = "CreatorChangeSet",
+	id = "creator_change_set_move_to_indexed_engine_parent",
+	operations = {
+		{
+			id = "move_folder_under_observed_container",
+			kind = "move",
+			target = { kind = "instance", identity = { kind = "forge_attribute", stableId = "move_to_structural_parent" }, path = "Workspace/MoveToStructuralParent", className = "Folder" },
+			parent = { kind = "instance", identity = { kind = "studio_ephemeral", connectorEpoch = "connector_epoch_plugin_fixture", opaqueHash = string.rep("d", 64) }, path = "StarterPlayer/StarterPlayerScripts", className = "StarterPlayerScripts" },
+			name = "MovedUnderStructuralParent",
+			properties = {},
+			attributes = {},
+			removedAttributes = {},
+		},
+	},
+}, opaqueIndexCapture)
+assert(#movedToIndexedContainer.requirements == 1 and movedToIndexedContainer.requirements[1].kind == "structure", "an indexed non-authorable parent must remain valid containment authority for move")
+assert(not pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex({
+		kind = "CreatorChangeSet",
+		id = "creator_change_set_missing_structural_parent",
+		operations = {
+			{
+				id = "create_under_missing_parent",
+				kind = "create",
+				target = { kind = "instance", identity = { kind = "forge_attribute", stableId = "missing_parent_child" }, path = "Workspace/Missing/Child", className = "Folder" },
+				parent = { kind = "instance", identity = { kind = "studio_ephemeral", connectorEpoch = "connector_epoch_plugin_fixture", opaqueHash = string.rep("9", 64) }, path = "Workspace/Missing", className = "Camera" },
+				className = "Folder",
+				name = "Child",
+				properties = {},
+				attributes = {},
+			},
+		},
+	}, opaqueIndexCapture)
+end), "structural-parent authority must still require exact identity/path/class membership in the complete index")
+assert(not pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex({
+		kind = "CreatorChangeSet",
+		id = "creator_change_set_move_to_missing_structural_parent",
+		operations = {
+			{
+				id = "move_to_missing_parent",
+				kind = "move",
+				target = { kind = "instance", identity = { kind = "forge_attribute", stableId = "move_to_structural_parent" }, path = "Workspace/MoveToStructuralParent", className = "Folder" },
+				parent = { kind = "instance", identity = { kind = "studio_ephemeral", connectorEpoch = "connector_epoch_plugin_fixture", opaqueHash = string.rep("8", 64) }, path = "Workspace/Missing", className = "Camera" },
+				name = "Moved",
+				properties = {},
+				attributes = {},
+				removedAttributes = {},
+			},
+		},
+	}, opaqueIndexCapture)
+end), "moves must reject a structural parent that is absent from the complete index")
+assert(not pcall(function()
+	Generated.compileMutationRequirements({
+		kind = "CreatorChangeSet",
+		id = "creator_change_set_opaque_target",
+		operations = {
+			{ id = "update_opaque_camera", kind = "update", target = { kind = "instance", identity = { kind = "forge_attribute", stableId = "opaque_camera" }, path = "Workspace/Camera", className = "Camera" } },
+		},
+	})
+end), "a planner-emitted mutation target outside the manifest must be rejected before approval")
+assert(not pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex({
+		kind = "CreatorChangeSet",
+		id = "creator_change_set_delete_opaque_root",
+		operations = {
+			{
+				id = "delete_opaque_camera_root",
+				kind = "delete",
+				target = { kind = "instance", identity = { kind = "studio_ephemeral", connectorEpoch = "connector_epoch_plugin_fixture", opaqueHash = string.rep("c", 64) }, path = "Workspace/Authorable/Camera", className = "Camera" },
+			},
+		},
+	}, opaqueIndexCapture)
+end), "an unmanifest index node may be structural delete evidence but may not become the delete root")
+
+-- Collision authority is the exact selected parent identity plus the captured
+-- Instance.Name. Duplicate display paths are legal diagnostics, never lookup
+-- keys: a child below the other duplicate parent must not block this create.
+local collisionIndexCapture = {
+	kind = "StudioProjectIndexCapture",
+	indexManifest = { manifestHash = Generated.manifestHash, hash = string.rep("a", 64) },
+	revision = { manifestHash = Generated.manifestHash, indexManifestHash = string.rep("a", 64), projectionHash = string.rep("b", 64) },
+	projection = { hash = string.rep("b", 64) },
+	shards = {
+		{ kind = "StudioProjectEvidenceShard", nodes = {
+			{ identity = { kind = "forge_attribute", stableId = "collision_workspace" }, displayPath = "Workspace", name = "Workspace", className = "Workspace", engineContainer = { path = "Workspace", className = "Workspace" }, attributes = {} },
+			{ identity = { kind = "forge_attribute", stableId = "collision_parent_a" }, parentIdentity = { kind = "forge_attribute", stableId = "collision_workspace" }, displayPath = "Workspace/Duplicate", name = "Duplicate", className = "Folder", attributes = {} },
+			{ identity = { kind = "forge_attribute", stableId = "collision_parent_b" }, parentIdentity = { kind = "forge_attribute", stableId = "collision_workspace" }, displayPath = "Workspace/Duplicate", name = "Duplicate", className = "Folder", attributes = {} },
+			{ identity = { kind = "forge_attribute", stableId = "collision_other_parent_child" }, parentIdentity = { kind = "forge_attribute", stableId = "collision_parent_b" }, displayPath = "Workspace/Duplicate/Snap", name = "Snap", className = "Folder", attributes = {} },
+			{ identity = { kind = "studio_ephemeral", connectorEpoch = "connector_epoch_plugin_fixture", opaqueHash = string.rep("7", 64) }, parentIdentity = { kind = "forge_attribute", stableId = "collision_workspace" }, displayPath = "Workspace/OpaqueParent", name = "OpaqueParent", className = "Camera", attributes = {} },
+		} },
+	},
+}
+local function collisionCreate(id: string, parent: any, name: string): any
+	return {
+		kind = "CreatorChangeSet", id = id, operations = {
+			{
+				id = id .. "_operation", kind = "create",
+				target = { kind = "instance", identity = { kind = "forge_attribute", stableId = id .. "_target" }, path = parent.path .. "/" .. name, className = "Folder" },
+				parent = parent, className = "Folder", name = name, properties = {}, attributes = {},
+			},
+		},
+	}
+end
+local duplicateParentA = { kind = "instance", identity = { kind = "forge_attribute", stableId = "collision_parent_a" }, path = "Workspace/Duplicate", className = "Folder" }
+assert(pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex(collisionCreate("collision_other_parent_accept", duplicateParentA, "Snap"), collisionIndexCapture)
+end), "a child with the same display path under a different parent identity must not collide")
+local opaqueStructuralParent = { kind = "instance", identity = { kind = "studio_ephemeral", connectorEpoch = "connector_epoch_plugin_fixture", opaqueHash = string.rep("7", 64) }, path = "Workspace/OpaqueParent", className = "Camera" }
+assert(pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex(collisionCreate("collision_opaque_parent_accept", opaqueStructuralParent, "Snap"), collisionIndexCapture)
+end), "an opaque indexed parent remains exact structural authority without becoming a writable target")
+table.insert(collisionIndexCapture.shards[1].nodes, { identity = { kind = "forge_attribute", stableId = "collision_selected_parent_child" }, parentIdentity = { kind = "forge_attribute", stableId = "collision_parent_a" }, displayPath = "Workspace/Duplicate/Snap", name = "Snap", className = "Folder", attributes = {} })
+assert(not pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex(collisionCreate("collision_selected_parent_reject", duplicateParentA, "Snap"), collisionIndexCapture)
+end), "a same-name child under the selected exact parent must collide")
+local workspaceParent = { kind = "engine_container", path = "Workspace", className = "Workspace" }
+assert(pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex(collisionCreate("collision_engine_parent_accept", workspaceParent, "EngineFree"), collisionIndexCapture)
+end), "a declared engine container must resolve through its captured identity")
+table.insert(collisionIndexCapture.shards[1].nodes, { identity = { kind = "forge_attribute", stableId = "collision_engine_child" }, parentIdentity = { kind = "forge_attribute", stableId = "collision_workspace" }, displayPath = "Workspace/EngineTaken", name = "EngineTaken", className = "Folder", attributes = {} })
+assert(not pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex(collisionCreate("collision_engine_parent_reject", workspaceParent, "EngineTaken"), collisionIndexCapture)
+end), "an engine-container create must collide only with the captured child under that exact container")
+
+-- The generated compiler validates hierarchy as one proposed transaction, not
+-- as independent operations. These fixtures deliberately use initial opaque
+-- identities, because enrollment must not rewrite the pre-Apply topology used
+-- to reject cycles and deleted-subtree dependencies.
+do
+local topologyEpoch = "connector_epoch_virtual_topology"
+local function topologyOpaque(seed: string): any
+	return { kind = "studio_ephemeral", connectorEpoch = topologyEpoch, opaqueHash = string.rep(seed, 64) }
+end
+local topologyWorkspaceIdentity = { kind = "forge_attribute", stableId = "topology_workspace" }
+local topologyA, topologyB, topologyC = topologyOpaque("1"), topologyOpaque("2"), topologyOpaque("3")
+local function topologyTarget(identity: any, path: string, className: string): any
+	return { kind = "instance", identity = identity, path = path, className = className }
+end
+local function topologyCapture(extraNodes: {any}?): any
+	local nodes = {
+		{ identity = topologyWorkspaceIdentity, displayPath = "Workspace", name = "Workspace", className = "Workspace", engineContainer = { path = "Workspace", className = "Workspace" }, attributes = {} },
+		{ identity = topologyA, parentIdentity = topologyWorkspaceIdentity, displayPath = "Workspace/A", name = "A", className = "Folder", attributes = {} },
+		{ identity = topologyB, parentIdentity = topologyWorkspaceIdentity, displayPath = "Workspace/B", name = "B", className = "Folder", attributes = {} },
+		{ identity = topologyC, parentIdentity = topologyWorkspaceIdentity, displayPath = "Workspace/C", name = "C", className = "Folder", attributes = {} },
+	}
+	for _, node in ipairs(extraNodes or {}) do table.insert(nodes, node) end
+	return {
+		kind = "StudioProjectIndexCapture",
+		indexManifest = { manifestHash = Generated.manifestHash, hash = string.rep("d", 64) },
+		revision = { manifestHash = Generated.manifestHash, indexManifestHash = string.rep("d", 64), projectionHash = string.rep("e", 64) },
+		projection = { hash = string.rep("e", 64) },
+		shards = { { kind = "StudioProjectEvidenceShard", nodes = nodes } },
+	}
+end
+local function moveTopologyOperation(id: string, target: any, parent: any, name: string): any
+	return { id = id, kind = "move", target = target, parent = parent, name = name, properties = {}, attributes = {}, removedAttributes = {} }
+end
+local topologyAPath, topologyBPath, topologyCPath = topologyTarget(topologyA, "Workspace/A", "Folder"), topologyTarget(topologyB, "Workspace/B", "Folder"), topologyTarget(topologyC, "Workspace/C", "Folder")
+assert(not pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex({ kind = "CreatorChangeSet", id = "virtual_two_node_cycle", operations = {
+		moveTopologyOperation("move_a_under_b", topologyAPath, topologyBPath, "A"),
+		moveTopologyOperation("move_b_under_a", topologyBPath, topologyAPath, "B"),
+	} }, topologyCapture())
+end), "two-node virtual move cycles must fail before recording")
+assert(not pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex({ kind = "CreatorChangeSet", id = "virtual_three_node_cycle", operations = {
+		moveTopologyOperation("move_a_under_b", topologyAPath, topologyBPath, "A"),
+		moveTopologyOperation("move_b_under_c", topologyBPath, topologyCPath, "B"),
+		moveTopologyOperation("move_c_under_a", topologyCPath, topologyAPath, "C"),
+	} }, topologyCapture())
+end), "three-node virtual move cycles must fail before recording")
+assert(not pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex({ kind = "CreatorChangeSet", id = "virtual_final_sibling_collision", operations = {
+		{ id = "create_left", kind = "create", target = topologyTarget({ kind = "forge_attribute", stableId = "virtual_left" }, "Workspace/Shared", "Folder"), parent = { kind = "engine_container", path = "Workspace", className = "Workspace" }, className = "Folder", name = "Shared", properties = {}, attributes = {} },
+		{ id = "create_right", kind = "create", target = topologyTarget({ kind = "forge_attribute", stableId = "virtual_right" }, "Workspace/Shared", "Folder"), parent = { kind = "engine_container", path = "Workspace", className = "Workspace" }, className = "Folder", name = "Shared", properties = {}, attributes = {} },
+	} }, topologyCapture())
+end), "two individually-free creates that collide in final sibling topology must fail before recording")
+local topologyChild = topologyOpaque("4")
+local topologyDeleteCapture = topologyCapture({ { identity = topologyChild, parentIdentity = topologyA, displayPath = "Workspace/A/Child", name = "Child", className = "Folder", attributes = {} } })
+local topologyChildPath = topologyTarget(topologyChild, "Workspace/A/Child", "Folder")
+assert(not pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex({ kind = "CreatorChangeSet", id = "virtual_update_deleted_descendant", operations = {
+		{ id = "delete_a", kind = "delete", target = topologyAPath },
+		{ id = "update_child", kind = "update", target = topologyChildPath, properties = {}, attributes = {}, removedAttributes = {} },
+	} }, topologyDeleteCapture)
+end), "operations on a deleted subtree must fail before recording")
+assert(not pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex({ kind = "CreatorChangeSet", id = "virtual_create_under_deleted_parent", operations = {
+		{ id = "delete_a", kind = "delete", target = topologyAPath },
+		{ id = "create_child", kind = "create", target = topologyTarget({ kind = "forge_attribute", stableId = "virtual_deleted_child" }, "Workspace/A/NewChild", "Folder"), parent = topologyAPath, className = "Folder", name = "NewChild", properties = {}, attributes = {} },
+	} }, topologyDeleteCapture)
+end), "creates below a deleted parent must fail before recording")
+assert(not pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex({ kind = "CreatorChangeSet", id = "virtual_nested_delete", operations = {
+		{ id = "delete_a", kind = "delete", target = topologyAPath },
+		{ id = "delete_child", kind = "delete", target = topologyChildPath },
+	} }, topologyDeleteCapture)
+end), "nested delete dependencies must fail before recording")
+assert(not pcall(function()
+	Generated.compileMutationTransactionTopologyFromIndex({ kind = "CreatorChangeSet", id = "virtual_noncanonical_independent_order", operations = {
+		{ id = "update_b", kind = "update", target = topologyBPath, properties = {}, attributes = {}, removedAttributes = {} },
+		{ id = "update_a", kind = "update", target = topologyAPath, properties = {}, attributes = {}, removedAttributes = {} },
+	} }, topologyCapture())
+end), "a sealed operation list must reject a noncanonical transport order rather than silently reorder approved bytes")
+
+-- One enrollment map must flow through every post-state location. The writer
+-- still receives the original opaque identities, while the projection binds
+-- the post-state target, parent, and instance reference to their durable IDs.
+local topologyWeld, topologyReference, topologyParent = topologyOpaque("5"), topologyOpaque("6"), topologyOpaque("7")
+local topologyEnrollmentCapture = topologyCapture({
+	{ identity = topologyWeld, parentIdentity = topologyWorkspaceIdentity, displayPath = "Workspace/Weld", name = "Weld", className = "WeldConstraint", attributes = {} },
+	{ identity = topologyReference, parentIdentity = topologyParent, displayPath = "Workspace/Parent/Reference", name = "Reference", className = "Part", attributes = {} },
+	{ identity = topologyParent, parentIdentity = topologyWorkspaceIdentity, displayPath = "Workspace/Parent", name = "Parent", className = "Folder", attributes = {} },
+})
+local enrolledProjectionInputs = Generated.compileMutationProjectionInputsFromIndex({ kind = "CreatorChangeSet", id = "virtual_enrollment_closure", operations = {
+	-- This is the host's canonical safe order: every original-path operation
+	-- completes before the parent move. The created child nevertheless carries
+	-- its final display path, and the unchanged reference inherits that final
+	-- path through the moved parent.
+	{ id = "create_under_moved_parent", kind = "create", target = topologyTarget({ kind = "forge_attribute", stableId = "virtual_child" }, "Workspace/ParentMoved/Child", "Folder"), parent = topologyTarget(topologyParent, "Workspace/Parent", "Folder"), className = "Folder", name = "Child", properties = {}, attributes = {} },
+	{ id = "enroll_reference", kind = "update", target = topologyTarget(topologyReference, "Workspace/Parent/Reference", "Part"), enrollment = { identity = topologyReference, stableId = "virtual_reference" }, properties = {}, attributes = {}, removedAttributes = {} },
+	{ id = "enroll_weld", kind = "update", target = topologyTarget(topologyWeld, "Workspace/Weld", "WeldConstraint"), enrollment = { identity = topologyWeld, stableId = "virtual_weld" }, properties = { Part0 = { kind = "instance_ref", state = "reference", identity = topologyReference, path = "Workspace/Parent/Reference", className = "Part", expectedClass = "BasePart" } }, attributes = {}, removedAttributes = {} },
+	{ id = "move_and_enroll_parent", kind = "move", target = topologyTarget(topologyParent, "Workspace/Parent", "Folder"), enrollment = { identity = topologyParent, stableId = "virtual_parent" }, parent = { kind = "engine_container", path = "Workspace", className = "Workspace" }, name = "ParentMoved", properties = {}, attributes = {}, removedAttributes = {} },
+} }, topologyEnrollmentCapture)
+local sawEnrolledTarget, sawEnrolledParent, sawEnrolledReference, sawFinalChild = false, false, false, false
+for _, requirement in ipairs(enrolledProjectionInputs.requirements) do
+	if requirement.target.identity.kind == "forge_attribute" and requirement.target.identity.stableId == "virtual_weld" then sawEnrolledTarget = true end
+	if requirement.kind == "structure" and requirement.expected.parentIdentity and requirement.expected.parentIdentity.kind == "forge_attribute" and requirement.expected.parentIdentity.stableId == "virtual_parent" and requirement.expected.parentPath == "Workspace/ParentMoved" then sawEnrolledParent = true end
+	if requirement.kind == "structure" and requirement.target.identity.kind == "forge_attribute" and requirement.target.identity.stableId == "virtual_child" and requirement.target.path == "Workspace/ParentMoved/Child" then sawFinalChild = true end
+	if requirement.kind == "property" and requirement.propertyName == "Part0" and requirement.expected.identity and requirement.expected.identity.kind == "forge_attribute" and requirement.expected.identity.stableId == "virtual_reference" and requirement.expected.path == "Workspace/ParentMoved/Reference" then sawEnrolledReference = true end
+end
+assert(sawEnrolledTarget and sawEnrolledParent and sawEnrolledReference and sawFinalChild, "transaction-wide enrollment must canonicalize final targets, parents, descendant paths, and instance references")
+assert(not pcall(function()
+	Generated.compileMutationTransactionTopologyFromIndex({ kind = "CreatorChangeSet", id = "virtual_moved_parent_wrong_order", operations = {
+		{ id = "move_and_enroll_parent", kind = "move", target = topologyTarget(topologyParent, "Workspace/Parent", "Folder"), enrollment = { identity = topologyParent, stableId = "virtual_parent" }, parent = { kind = "engine_container", path = "Workspace", className = "Workspace" }, name = "ParentMoved", properties = {}, attributes = {}, removedAttributes = {} },
+		{ id = "create_under_moved_parent", kind = "create", target = topologyTarget({ kind = "forge_attribute", stableId = "virtual_child" }, "Workspace/ParentMoved/Child", "Folder"), parent = topologyTarget(topologyParent, "Workspace/Parent", "Folder"), className = "Folder", name = "Child", properties = {}, attributes = {} },
+	} }, topologyEnrollmentCapture)
+end), "a create below a moved parent must precede the exact-parent move in the approved operation sequence")
+
+-- The plugin consumes this generated graph directly, so cover the three
+-- previously divergent virtual cases here rather than relying on an
+-- operation-by-operation live-registry approximation.
+local createdParentIdentity = { kind = "forge_attribute", stableId = "virtual_created_parent" }
+local createdChildIdentity = { kind = "forge_attribute", stableId = "virtual_created_child" }
+local createdParentTarget = topologyTarget(createdParentIdentity, "Workspace/CreatedParent", "Folder")
+local createdChildTarget = topologyTarget(createdChildIdentity, "Workspace/CreatedParent/CreatedChild", "Folder")
+local nestedCreateChangeSet = { kind = "CreatorChangeSet", id = "virtual_created_parent_child", operations = {
+	{ id = "create_parent", kind = "create", target = createdParentTarget, parent = { kind = "engine_container", path = "Workspace", className = "Workspace" }, className = "Folder", name = "CreatedParent", properties = {}, attributes = {} },
+	{ id = "create_child", kind = "create", target = createdChildTarget, parent = createdParentTarget, className = "Folder", name = "CreatedChild", properties = {}, attributes = {} },
+} }
+local nestedTopology = Generated.compileMutationTransactionTopologyFromIndex(nestedCreateChangeSet, topologyCapture())
+assert(nestedTopology.canonicalOperationIds[1] == "create_parent" and nestedTopology.canonicalOperationIds[2] == "create_child", "compiled topology must materialize a created parent before its created child")
+assert(nestedTopology.postTargets["forge_attribute:virtual_created_child"].path == "Workspace/CreatedParent/CreatedChild", "created-child final path must bind to its virtual parent")
+assert(pcall(function() Generated.compileMutationProjectionInputsFromIndex(nestedCreateChangeSet, topologyCapture()) end), "proof compilation must accept the same nested-create topology exposed to StudioAuthoring")
+local preparedNestedTopology = StudioAuthoring.prepareTransactionTopologyForTest(nestedCreateChangeSet, topologyCapture())
+assert(preparedNestedTopology.operations[1].id == "create_parent" and preparedNestedTopology.operations[2].id == "create_child", "StudioAuthoring Prepare must retain the generated canonical graph order for nested creates")
+
+local createdPartIdentity = { kind = "forge_attribute", stableId = "virtual_created_part" }
+local createdPartTarget = topologyTarget(createdPartIdentity, "Workspace/CreatedPart", "Part")
+local createdReferenceChangeSet = { kind = "CreatorChangeSet", id = "virtual_created_reference", operations = {
+	{ id = "create_part", kind = "create", target = createdPartTarget, parent = { kind = "engine_container", path = "Workspace", className = "Workspace" }, className = "Part", name = "CreatedPart", properties = {}, attributes = {} },
+	{ id = "update_weld_reference", kind = "update", target = topologyTarget(topologyWeld, "Workspace/Weld", "WeldConstraint"), properties = { Part0 = { kind = "instance_ref", state = "reference", identity = createdPartIdentity, path = "Workspace/CreatedPart", className = "Part", expectedClass = "BasePart" } }, attributes = {}, removedAttributes = {} },
+} }
+local createdReferenceTopology = Generated.compileMutationTransactionTopologyFromIndex(createdReferenceChangeSet, topologyEnrollmentCapture)
+assert(createdReferenceTopology.canonicalOperationIds[1] == "create_part" and createdReferenceTopology.canonicalOperationIds[2] == "update_weld_reference", "created instance references must depend on their creating operation")
+assert(pcall(function() Generated.compileMutationProjectionInputsFromIndex(createdReferenceChangeSet, topologyEnrollmentCapture) end), "proof compilation must accept a property reference to a created instance")
+
+local selfValueIdentity = { kind = "forge_attribute", stableId = "virtual_self_value" }
+local selfValueTarget = topologyTarget(selfValueIdentity, "Workspace/SelfValue", "ObjectValue")
+local selfReferenceChangeSet = { kind = "CreatorChangeSet", id = "virtual_self_reference", operations = {
+	{ id = "create_self_value", kind = "create", target = selfValueTarget, parent = { kind = "engine_container", path = "Workspace", className = "Workspace" }, className = "ObjectValue", name = "SelfValue", properties = { Value = { kind = "instance_ref", state = "reference", identity = selfValueIdentity, path = "Workspace/SelfValue", className = "ObjectValue", expectedClass = "Instance" } }, attributes = {} },
+} }
+assert(pcall(function() Generated.compileMutationProjectionInputsFromIndex(selfReferenceChangeSet, topologyCapture()) end), "a created object may carry an exact self reference inside the same transaction")
+
+-- Every create is allocated as a detached transaction-local handle before
+-- recording. Mutual references are therefore a closed graph, not an
+-- artificial topological cycle that would force weaker identity binding.
+local mutualAIdentity = { kind = "forge_attribute", stableId = "virtual_mutual_a" }
+local mutualBIdentity = { kind = "forge_attribute", stableId = "virtual_mutual_b" }
+local mutualATarget = topologyTarget(mutualAIdentity, "Workspace/MutualA", "ObjectValue")
+local mutualBTarget = topologyTarget(mutualBIdentity, "Workspace/MutualB", "ObjectValue")
+local mutualReferenceChangeSet = { kind = "CreatorChangeSet", id = "virtual_mutual_created_references", operations = {
+	{ id = "create_mutual_a", kind = "create", target = mutualATarget, parent = { kind = "engine_container", path = "Workspace", className = "Workspace" }, className = "ObjectValue", name = "MutualA", properties = { Value = { kind = "instance_ref", state = "reference", identity = mutualBIdentity, path = "Workspace/MutualB", className = "ObjectValue", expectedClass = "Instance" } }, attributes = {} },
+	{ id = "create_mutual_b", kind = "create", target = mutualBTarget, parent = { kind = "engine_container", path = "Workspace", className = "Workspace" }, className = "ObjectValue", name = "MutualB", properties = { Value = { kind = "instance_ref", state = "reference", identity = mutualAIdentity, path = "Workspace/MutualA", className = "ObjectValue", expectedClass = "Instance" } }, attributes = {} },
+} }
+local mutualReferenceTopology = Generated.compileMutationTransactionTopologyFromIndex(mutualReferenceChangeSet, topologyCapture())
+assert(mutualReferenceTopology.canonicalOperationIds[1] == "create_mutual_a" and mutualReferenceTopology.canonicalOperationIds[2] == "create_mutual_b", "mutual created references must retain their sealed canonical order without a fabricated dependency cycle")
+assert(pcall(function() Generated.compileMutationProjectionInputsFromIndex(mutualReferenceChangeSet, topologyCapture()) end), "projection compilation must accept mutually referencing approved creates")
+local preparedMutualTopology = StudioAuthoring.prepareTransactionTopologyForTest(mutualReferenceChangeSet, topologyCapture())
+assert(preparedMutualTopology.operations[1].id == "create_mutual_a" and preparedMutualTopology.operations[2].id == "create_mutual_b", "StudioAuthoring Prepare must consume the same mutual-created-reference topology as the projection compiler")
+
+-- Delete closure is final-state based. An existing child may be extracted
+-- before its former parent is deleted, and new work may be placed below that
+-- extracted child. The sealed order must make the create complete first, the
+-- extraction second, and the delete last; placing anything final-under the
+-- deleted root remains prohibited.
+local topologyDeleteRoot, topologyExtracted = topologyOpaque("a"), topologyOpaque("b")
+local topologyExtractionCapture = topologyCapture({
+	{ identity = topologyDeleteRoot, parentIdentity = topologyWorkspaceIdentity, displayPath = "Workspace/DeleteRoot", name = "DeleteRoot", className = "Folder", attributes = {} },
+	{ identity = topologyExtracted, parentIdentity = topologyDeleteRoot, displayPath = "Workspace/DeleteRoot/Extracted", name = "Extracted", className = "Folder", attributes = {} },
+})
+local topologyDeleteRootTarget = topologyTarget(topologyDeleteRoot, "Workspace/DeleteRoot", "Folder")
+local topologyExtractedTarget = topologyTarget(topologyExtracted, "Workspace/DeleteRoot/Extracted", "Folder")
+local topologyExtractedChildTarget = topologyTarget({ kind = "forge_attribute", stableId = "virtual_extracted_child" }, "Workspace/Extracted/Child", "Folder")
+local extractedBeforeDeleteChangeSet = { kind = "CreatorChangeSet", id = "virtual_extract_before_delete", operations = {
+	{ id = "create_extracted_child", kind = "create", target = topologyExtractedChildTarget, parent = topologyExtractedTarget, className = "Folder", name = "Child", properties = {}, attributes = {} },
+	{ id = "move_extracted_out", kind = "move", target = topologyExtractedTarget, parent = { kind = "engine_container", path = "Workspace", className = "Workspace" }, name = "Extracted", properties = {}, attributes = {}, removedAttributes = {} },
+	{ id = "delete_root", kind = "delete", target = topologyDeleteRootTarget },
+} }
+local extractedTopology = Generated.compileMutationTransactionTopologyFromIndex(extractedBeforeDeleteChangeSet, topologyExtractionCapture)
+assert(extractedTopology.canonicalOperationIds[1] == "create_extracted_child" and extractedTopology.canonicalOperationIds[2] == "move_extracted_out" and extractedTopology.canonicalOperationIds[3] == "delete_root", "extraction, descendant work, and delete must have one deterministic safe order")
+assert(extractedTopology.postTargets["studio_ephemeral:" .. topologyEpoch .. ":" .. string.rep("b", 64)].path == "Workspace/Extracted" and extractedTopology.postTargets["forge_attribute:virtual_extracted_child"].path == "Workspace/Extracted/Child" and extractedTopology.postTargets["studio_ephemeral:" .. topologyEpoch .. ":" .. string.rep("a", 64)] == nil, "only the final delete closure may disappear from the generated post-state")
+local extractedRequirements = Generated.compileMutationProjectionInputsFromIndex(extractedBeforeDeleteChangeSet, topologyExtractionCapture).requirements
+local sawDeletedRoot, inventedExtractedAbsence = false, false
+for _, requirement in ipairs(extractedRequirements) do
+	if requirement.kind == "structure" and requirement.expectedStatus == "absent" then
+		if requirement.target.identity.kind == "studio_ephemeral" and requirement.target.identity.opaqueHash == string.rep("a", 64) then sawDeletedRoot = true end
+		if requirement.target.identity.kind == "forge_attribute" and requirement.target.identity.stableId == "virtual_extracted_child" then inventedExtractedAbsence = true end
+	end
+end
+assert(sawDeletedRoot and not inventedExtractedAbsence, "mutation proof must require the root deletion but never invent absence for an extracted child")
+assert(not pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex({ kind = "CreatorChangeSet", id = "virtual_move_into_deleted_root", operations = {
+		{ id = "move_b_into_deleted_root", kind = "move", target = topologyBPath, parent = topologyDeleteRootTarget, name = "B", properties = {}, attributes = {}, removedAttributes = {} },
+		{ id = "delete_root", kind = "delete", target = topologyDeleteRootTarget },
+	} }, topologyExtractionCapture)
+end), "an operation whose final placement remains under a deleted root must fail before recording")
+
+-- A complete project index also carries generated covered-property values.
+-- An inbound reference to a deleted object must be cleared before the delete;
+-- accepting it would prove a post-state whose surviving instance still points
+-- at an absent identity.
+local topologyVictim, topologyInbound = topologyOpaque("8"), topologyOpaque("9")
+local topologyInboundCapture = topologyCapture({
+	{ identity = topologyVictim, parentIdentity = topologyWorkspaceIdentity, displayPath = "Workspace/Victim", name = "Victim", className = "Part", attributes = {}, coveredProperties = {}, coveredPropertyNames = {} },
+	{ identity = topologyInbound, parentIdentity = topologyWorkspaceIdentity, displayPath = "Workspace/InboundWeld", name = "InboundWeld", className = "WeldConstraint", attributes = {}, coveredProperties = { Part0 = { kind = "instance_ref", state = "reference", identity = topologyVictim, path = "Workspace/Victim", className = "Part", expectedClass = "BasePart" } }, coveredPropertyNames = { "Part0" } },
+})
+local topologyVictimTarget = topologyTarget(topologyVictim, "Workspace/Victim", "Part")
+local topologyInboundTarget = topologyTarget(topologyInbound, "Workspace/InboundWeld", "WeldConstraint")
+assert(not pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex({ kind = "CreatorChangeSet", id = "virtual_reject_inbound_delete", operations = {
+		{ id = "delete_victim", kind = "delete", target = topologyVictimTarget },
+	} }, topologyInboundCapture)
+end), "a delete must reject a surviving covered Instance reference to its target")
+assert(pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex({ kind = "CreatorChangeSet", id = "virtual_clear_inbound_then_delete", operations = {
+		{ id = "clear_inbound_ref", kind = "update", target = topologyInboundTarget, properties = { Part0 = { kind = "instance_ref", state = "nil", expectedClass = "BasePart" } }, attributes = {}, removedAttributes = {} },
+		{ id = "delete_victim", kind = "delete", target = topologyVictimTarget },
+	} }, topologyInboundCapture)
+end), "a covered inbound reference may be cleared before the referenced object is deleted")
+assert(not pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex({ kind = "CreatorChangeSet", id = "virtual_retain_inbound_then_delete", operations = {
+		{ id = "retain_inbound_ref", kind = "update", target = topologyInboundTarget, properties = { Part0 = { kind = "instance_ref", state = "reference", identity = topologyVictim, path = "Workspace/Victim", className = "Part", expectedClass = "BasePart" } }, attributes = {}, removedAttributes = {} },
+		{ id = "delete_victim", kind = "delete", target = topologyVictimTarget },
+	} }, topologyInboundCapture)
+end), "an update that retains a deleted covered Instance reference must still fail")
+
+-- A replacement sibling can use a slot only after the exact prior occupant is
+-- deleted or moved. This is a graph dependency, not a path-string exception.
+local replacementTarget = topologyTarget({ kind = "forge_attribute", stableId = "virtual_replacement" }, "Workspace/A", "Folder")
+assert(pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex({ kind = "CreatorChangeSet", id = "virtual_delete_frees_slot", operations = {
+		{ id = "delete_a", kind = "delete", target = topologyAPath },
+		{ id = "create_replacement", kind = "create", target = replacementTarget, parent = { kind = "engine_container", path = "Workspace", className = "Workspace" }, className = "Folder", name = "A", properties = {}, attributes = {} },
+	} }, topologyCapture())
+end), "a delete may free an exact sibling slot for a later canonical create")
+assert(pcall(function()
+	Generated.compileMutationProjectionInputsFromIndex({ kind = "CreatorChangeSet", id = "virtual_move_frees_slot", operations = {
+		{ id = "move_a_out", kind = "move", target = topologyAPath, parent = { kind = "engine_container", path = "Workspace", className = "Workspace" }, name = "AOld", properties = {}, attributes = {}, removedAttributes = {} },
+		{ id = "create_replacement", kind = "create", target = replacementTarget, parent = { kind = "engine_container", path = "Workspace", className = "Workspace" }, className = "Folder", name = "A", properties = {}, attributes = {} },
+	} }, topologyCapture())
+end), "a move may free an exact sibling slot for a later canonical create")
+end
+
+local identity = { kind = "forge_attribute", stableId = "prompt_1" }
+local target = { kind = "instance", identity = identity, path = "Workspace/Door/Prompt", className = "ProximityPrompt" }
+local targetMaterial = Generated.factKey("structure", target)
+assert(string.find(targetMaterial, "forge_attribute", 1, true), "evidence fact keys must materialize closed object identities")
+assert(not pcall(function()
+	Generated.factKey("structure", { kind = "instance", path = "Workspace/Door/Prompt", className = "ProximityPrompt" })
+end), "display paths cannot stand in for object identity")
+
+local function fakePart(x: number): any
+	return {
+		Position = { X = x, Y = 0, Z = 0 },
+		IsA = function(_self: any, className: string): boolean return className == "BasePart" or className == "Part" end,
+	}
+end
+
+local now = 0
+local heartbeat: any = nil
+local disconnected = false
+local first, second = fakePart(0), fakePart(10)
+local observer = DirectRuntimeObserver.new({
+	observationWindowMs = 1000,
+	targets = {
+		{ id = "first", identity = { kind = "forge_attribute", stableId = "first" }, path = "Workspace/First", expectedClass = "BasePart" },
+		{ id = "second", identity = { kind = "forge_attribute", stableId = "second" }, path = "Workspace/Second", expectedClass = "BasePart" },
+	},
+	calls = {
+		{ id = "resolve-first", capability = "instance.resolve", targetId = "first" },
+		{ id = "resolve-second", capability = "instance.resolve", targetId = "second" },
+		{ id = "series-first", capability = "base_part.position_series", targetId = "first", sampleCount = 2, intervalMs = 100 },
+		{ id = "series-second", capability = "base_part.position_series", targetId = "second", sampleCount = 2, intervalMs = 100 },
 	},
 }, {
-	delete_old_door = {
-		{ kind = "instance", stableId = "old_prompt_1", path = "Workspace/OldDoor/Prompt", className = "ProximityPrompt" },
-	},
+	generated = Generated,
+	clock = function(): number return now end,
+	resolveTarget = function(item: any): any return item.path == "Workspace/First" and first or item.path == "Workspace/Second" and second or nil end,
+	connectHeartbeat = function(callback: any): any heartbeat = callback; return { Disconnect = function() disconnected = true end } end,
 })
-local sawAbsentDescendant = false
-for _, requirement in ipairs(deletedDescendantRequirements) do
-	if requirement.kind == "structure" and requirement.target.stableId == "old_prompt_1" then sawAbsentDescendant = requirement.expectedStatus == "absent" end
-end
-assert(sawAbsentDescendant, "generated mutation vector must compile bounded delete descendants as absence")
+assert(observer:start(), "observer must install after direct target resolution")
+assert(#observer.results["series-first"].samples == 1 and #observer.results["series-second"].samples == 1, "series targets must receive an immediate sample")
+now = 0.05; heartbeat()
+assert(#observer.results["series-first"].samples == 1, "short clock ticks must not fabricate samples")
+first.Position = { X = 4, Y = 0, Z = 0 }; second.Position = { X = 14, Y = 0, Z = 0 }
+now = 0.1; heartbeat()
+local results, failure = observer:seal()
+assert(failure == nil and disconnected and #results == 4, "early Stop must seal the captured prefix and disconnect")
+assert(#results[3].samples == 2 and #results[4].samples == 2, "concurrent series must preserve their actual prefixes")
+
+local missingObserver = DirectRuntimeObserver.new({
+	observationWindowMs = 0,
+	targets = { { id = "missing", identity = { kind = "forge_attribute", stableId = "missing" }, path = "Workspace/Missing", expectedClass = "BasePart" } },
+	calls = {
+		{ id = "resolve", capability = "instance.resolve", targetId = "missing" },
+		{ id = "series", capability = "base_part.position_series", targetId = "missing", sampleCount = 1, intervalMs = 100 },
+	},
+}, {
+	generated = Generated,
+	clock = function(): number return 0 end,
+	resolveTarget = function(_item: any): any return nil end,
+	connectHeartbeat = function(_callback: any): any return { Disconnect = function() end } end,
+})
+assert(missingObserver:start(), "authoritative target absence must not be an observer exception")
+local missing, missingFailure = missingObserver:seal()
+assert(missingFailure == nil and missing[1].status == "missing" and missing[2].status == "missing", "absent targets must remain complete absence evidence candidates")
+
+local opaqueObserver = DirectRuntimeObserver.new({
+	observationWindowMs = 0,
+	targets = { { id = "opaque", identity = { kind = "studio_ephemeral", connectorEpoch = "epoch", opaqueHash = string.rep("a", 64) }, path = "Workspace/Opaque", expectedClass = "BasePart" } },
+	calls = { { id = "resolve", capability = "instance.resolve", targetId = "opaque" } },
+}, {
+	generated = Generated,
+	clock = function(): number return 0 end,
+	-- An edit-mode opaque identity cannot identify a Play clone. This remains a
+	-- technical observation gap, never a false absence verdict.
+	resolveTarget = function(_item: any): (any, any) return nil, "unavailable" end,
+	connectHeartbeat = function(_callback: any): any return { Disconnect = function() end } end,
+})
+assert(opaqueObserver:start(), "closed opaque runtime identities must not be rejected as malformed")
+local opaqueResults, opaqueFailure = opaqueObserver:seal()
+assert(opaqueFailure == nil and opaqueResults[1].status == "unavailable", "an unresolved Play clone must produce unavailable evidence rather than absence")
+
+local edit = StudioAuthoring.applySourceEditsForTest("local answer = 1\n", { { startByte = 15, endByte = 16, replacementBlob = { manifestHash = "test" } } }, function(_blob: any): string return "2" end)
+assert(edit == "local answer = 2\n", "source edits must be applied as bounded UTF-8 byte edits")
+assert(not pcall(function() StudioAuthoring.applySourceEditsForTest("😀", { { startByte = 1, endByte = 1, replacementBlob = { manifestHash = "test" } } }, function(_blob: any): string return "x" end) end), "source edit byte boundaries must not split UTF-8")
+
+-- Exercise the same hash-bound source materialization used by validation,
+-- detached preflight, and provisional apply. A missing resolver used to make
+-- edit_source fail only after the creator approved the exact change.
+local beforeEditSource = "local answer = 1\n"
+local afterEditSource = "local answer = 2\n"
+local beforeDigest = string.rep("A", 32)
+local afterDigest = string.rep("B", 32)
+Hash.setDigestForTest(function(value: string): string
+	if value == beforeEditSource then return beforeDigest end
+	if value == afterEditSource then return afterDigest end
+	error("unexpected source material")
+end)
+local resolverCalls = 0
+local validatedEdit = StudioAuthoring.validatedSourceEditMaterialForTest(beforeEditSource, {
+	beforeSourceHash = string.rep("41", 32),
+	edits = { { startByte = 15, endByte = 16, replacementBlob = { manifestHash = "replacement" } } },
+	finalSourceHash = string.rep("42", 32),
+	finalByteCount = #afterEditSource,
+}, function(binding: any): string
+	resolverCalls += 1
+	assert(binding.manifestHash == "replacement", "source edit must resolve its exact approved replacement binding")
+	return "2"
+end)
+assert(validatedEdit == afterEditSource and resolverCalls == 1, "source edit materialization must resolve and verify each replacement exactly once")
 assert(not pcall(function()
-	Generated.compileMutationRequirements({ kind = "CreatorChangeSet", id = "bad", operations = {
-		{ id = "bad_property", kind = "update", stableId = "part", expectedPath = "Workspace/Part", expectedClass = "Part", properties = { Unknown = { kind = "boolean", value = false } }, attributes = {}, removedAttributes = {} },
-	} })
-end), "generated mutation recompiler must reject a property outside the manifest")
+	StudioAuthoring.validatedSourceEditMaterialForTest(beforeEditSource, {
+		beforeSourceHash = string.rep("41", 32),
+		edits = { { startByte = 15, endByte = 16, replacementBlob = { manifestHash = "replacement" } } },
+		finalSourceHash = string.rep("43", 32),
+		finalByteCount = #afterEditSource,
+	}, function(_binding: any): string return "2" end)
+end), "source edit materialization must reject a final-source binding mismatch")
+Hash.setDigestForTest(nil)
 
-local function payload(properties, source, sourceRequired)
-	return { className = sourceRequired and "Script" or "Part", properties = properties, attributes = { CreatorOwned = true }, source = source, sourceRequired = sourceRequired == true }
+-- Exercise the actual receiving -> accepted transition. This specifically
+-- prevents the completion handler from trying to resolve through its own
+-- accepted-only guard before it has crossed the acceptance boundary.
+local sourceWriteCapture = { state = "receiving" }
+local sourceWriteBinding = { manifestHash = "manifest" }
+local sourceAccepted = StudioAuthoring.acceptSourceWriteCaptureForTest(sourceWriteCapture, sourceWriteBinding, function(capture: any, binding: any): string
+	assert(capture.state == "receiving" and binding == sourceWriteBinding, "source validation must run before acceptance")
+	return "return 1\n"
+end)
+assert(sourceAccepted == "return 1\n" and sourceWriteCapture.state == "accepted", "a fully verified source-write body must cross exactly once from receiving to accepted")
+sourceWriteCapture.binding = { manifestId = "manifest-id", manifestHash = "manifest-hash", sourceHash = "source-hash", utf8Bytes = 9 }
+local sourceAcceptancePayload = StudioAuthoring.sourceWriteAcceptedPayloadForTest(sourceWriteCapture, "request-a")
+assert(sourceAcceptancePayload.requestId == "request-a" and sourceAcceptancePayload.status == "accepted" and sourceAcceptancePayload.manifestHash == "manifest-hash", "the accepted payload must retain the exact request and immutable source binding required by the wire contract")
+assert(not pcall(function()
+	StudioAuthoring.acceptSourceWriteCaptureForTest(sourceWriteCapture, sourceWriteBinding, function(): string return "return 1\n" end)
+end), "an accepted source-write completion must not be acknowledged twice")
+
+-- Source stream pieceCount describes canonical JSON fragments, not source
+-- bytes. Empty replacement text still has one immutable chunk, and escape-heavy
+-- text may expand substantially in JSON; both must be legal at the boundary.
+Hash.setDigestForTest(function(_value: string): string return string.rep("a", 32) end)
+local function sourceWriteManifestForBoundary(utf8Bytes: number, chunkCount: number): any
+	local chunkHashes = {}
+	for index = 1, chunkCount do table.insert(chunkHashes, Hash.sha256("source-boundary-chunk-" .. tostring(index))) end
+	local semantic = { sourceHash = Hash.sha256(string.rep("s", utf8Bytes)), utf8Bytes = utf8Bytes, chunkHashes = chunkHashes }
+	local hash = Hash.sha256(StudioProjectIndexCanonical.material(semantic))
+	return {
+		kind = "CreatorSourceWriteBlobManifest",
+		id = "creator_source_write_blob_manifest_" .. string.sub(hash, 1, 24),
+		hash = hash,
+		sourceHash = semantic.sourceHash,
+		utf8Bytes = utf8Bytes,
+		chunkHashes = chunkHashes,
+	}
 end
-
-assert(StudioAuthoring.validatePayloadForTest(payload({
-	Transparency = { kind = "number_f32", value = 0 },
-	Size = { kind = "vector3_f32", x = 4, y = 1, z = 4 },
-	Color = { kind = "color3_rgb8", r = 0, g = 255, b = 0 },
-	CFrame = { kind = "cframe_f32x12", components = { 0, 2, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1 } },
-	Material = { kind = "enum_name", value = "Neon" },
-}, nil, false)), "generated Part values must pass manifest validation")
-
-local invalidPayloads = {
-	payload({ Transparency = { kind = "number_f32", value = -0.001 } }, nil, false),
-	payload({ Transparency = { kind = "number_f32", value = 1.001 } }, nil, false),
-	payload({ Size = { kind = "vector3_f32", x = 0, y = 1, z = 1 } }, nil, false),
-	payload({ Size = { kind = "vector3_f32", x = 2049, y = 1, z = 1 } }, nil, false),
-	payload({ Color = { kind = "color3_rgb8", r = 256, g = 0, b = 0 } }, nil, false),
-	payload({ Material = { kind = "enum_name", value = "ExploitMaterial" } }, nil, false),
-	payload({ RequiresLineOfSight = { kind = "boolean", value = false } }, nil, false),
-}
-for _, invalid in ipairs(invalidPayloads) do
-	assert(not pcall(function() StudioAuthoring.validatePayloadForTest(invalid) end), "out-of-manifest or out-of-bounds payload must fail before recording")
+local function sourceWriteReceiver(): any
+	return {
+		hasPossibleRecording = function(): boolean return false end,
+		prepared = nil,
+		prepareTransfer = nil,
+		sourceWriteRequestId = nil,
+		sourceWrites = {},
+	}
 end
-
-assert(StudioAuthoring.validatePayloadForTest(payload({}, string.rep("é", 24000), true)), "48,000-byte valid UTF-8 source must pass")
-assert(not pcall(function() StudioAuthoring.validatePayloadForTest(payload({}, string.rep("é", 24001), true)) end), "source byte cap must count UTF-8 bytes")
-assert(not pcall(function() StudioAuthoring.validatePayloadForTest(payload({}, string.char(255), true)) end), "invalid UTF-8 source must fail")
-assert(not pcall(function() StudioAuthoring.validatePayloadForTest(payload({}, "   \n", true)) end), "empty script source must fail")
-assert(not pcall(function() StudioAuthoring.validatePayloadForTest({ className = "Part", properties = {}, attributes = { _forgeReserved = true } }) end), "reserved attributes must fail")
-assert(StudioAuthoring.validatePayloadForTest({ className = "Part", properties = {}, attributes = { Current = true }, removedAttributes = { "Legacy" } }), "disjoint attribute removal must pass")
-assert(not pcall(function() StudioAuthoring.validatePayloadForTest({ className = "Part", properties = {}, attributes = { Same = true }, removedAttributes = { "Same" } }) end), "an attribute cannot be set and removed together")
-
--- Mutation requirements are rebuilt from the sealed change, not accepted from
--- a dashboard-supplied requirement list.  `false` remains an exact property
--- value rather than a special branch or an omitted fact.
-local requirements = Generated.compileMutationRequirements({
-	kind = "CreatorChangeSet",
-	id = "creator_change_set_test",
-	operations = {
-		{
-			id = "operation_prompt",
-			kind = "create",
-			tempId = "prompt",
-			parentPath = "Workspace",
-			name = "DoorPrompt",
-			className = "ProximityPrompt",
-			properties = { RequiresLineOfSight = { kind = "boolean", value = false } },
-			attributes = {},
-		},
-	},
+local emptySourceReceiver = sourceWriteReceiver()
+local emptySourceManifest = sourceWriteManifestForBoundary(0, 1)
+StudioAuthoring.beginSourceWriteForTest(emptySourceReceiver, {
+	requestId = "empty-source-request",
+	manifest = emptySourceManifest,
+	pieceCount = 1,
 })
-assert(#requirements == 2, "create must recompile structure and changed-property obligations")
-local lineOfSight = nil
-for _, requirement in ipairs(requirements) do
-	assert(requirement.target.stableId == "creator_change_set_test:prompt", "create identity must be deterministic")
-	if requirement.kind == "property" then lineOfSight = requirement end
-end
-assert(lineOfSight ~= nil and lineOfSight.expected.value == false, "RequiresLineOfSight false must remain an explicit expected value")
+assert(emptySourceReceiver.sourceWrites[emptySourceManifest.hash] ~= nil, "an empty source replacement must retain its one canonical transport leaf")
+local escapedSourceReceiver = sourceWriteReceiver()
+local escapedSourceManifest = sourceWriteManifestForBoundary(Constants.BACKEND_COMMAND_TRANSPORT_CHUNK_BYTES, 1)
+StudioAuthoring.beginSourceWriteForTest(escapedSourceReceiver, {
+	requestId = "escaped-source-request",
+	manifest = escapedSourceManifest,
+	pieceCount = 3,
+})
+assert(escapedSourceReceiver.sourceWrites[escapedSourceManifest.hash].pieceCount == 3, "source transport must accept JSON expansion independently of raw source bytes")
+local impossibleSourceReceiver = sourceWriteReceiver()
+local impossibleSourceManifest = sourceWriteManifestForBoundary(1, 2)
+assert(not pcall(function()
+	StudioAuthoring.beginSourceWriteForTest(impossibleSourceReceiver, {
+		requestId = "impossible-source-request",
+		manifest = impossibleSourceManifest,
+		pieceCount = 1,
+	})
+end), "source transport cannot declare fewer fragments than immutable chunks")
+Hash.setDigestForTest(nil)
 
--- A committed/cancelled recording is not forgotten at the transport boundary.
--- The durable receipt is replayed on re-pair and only an exact backend
--- acknowledgement may clear it; a stale acknowledgement cannot clear a
--- different recording's proof.
-local settings = {}
-local fakePlugin = {}
-function fakePlugin:GetSetting(key) return settings[key] end
-function fakePlugin:SetSetting(key, value) settings[key] = value end
-local receiptAuthoring = StudioAuthoring.new(fakePlugin, {}, {})
-local settingKeys = StudioAuthoring.settingKeysForTest()
-assert(not string.find(settingKeys.active, ".", 1, true) and not string.find(settingKeys.finalization, ".", 1, true) and not string.find(settingKeys.lastCommit, ".", 1, true), "transaction setting keys must respect Roblox JSON key restrictions")
-local finalizationBinding = {
-	creatorSessionId = "creator_session_receipt",
-	changeSetId = "creator_change_set_receipt",
+-- A maximum-sized poll response must never be needed to carry Prepare. The
+-- plugin accepts only an ordered, leaf-hashed stream and then rechecks the
+-- complete document hash before the pure authoring parser sees any payload.
+local prepareFirst = string.rep("a", Constants.BACKEND_COMMAND_TRANSPORT_CHUNK_BYTES)
+local prepareSecond = "tail"
+local prepareDocument = prepareFirst .. prepareSecond
+Hash.setDigestForTest(function(value: string): string
+	if value == prepareFirst then return string.rep("A", 32) end
+	if value == prepareSecond then return string.rep("B", 32) end
+	if value == prepareDocument then return string.rep("C", 32) end
+	error("unexpected Prepare transfer material")
+end)
+local prepareBoundary = {
+	requestId = "prepare-request",
+	transferId = "creator_prepare_transfer_" .. string.rep("43", 12),
+	documentHash = string.rep("43", 32),
+	utf8Bytes = #prepareDocument,
+	pieceCount = 2,
+}
+local prepareCapture = StudioAuthoring.newPrepareTransferCaptureForTest(prepareBoundary)
+StudioAuthoring.appendPrepareTransferFragmentForTest(prepareCapture, {
+	requestId = prepareBoundary.requestId,
+	transferId = prepareBoundary.transferId,
+	documentHash = prepareBoundary.documentHash,
+	sequence = 0,
+	encoding = "json",
+	payload = prepareFirst,
+	payloadHash = string.rep("41", 32),
+})
+StudioAuthoring.appendPrepareTransferFragmentForTest(prepareCapture, {
+	requestId = prepareBoundary.requestId,
+	transferId = prepareBoundary.transferId,
+	documentHash = prepareBoundary.documentHash,
+	sequence = 1,
+	encoding = "json",
+	payload = prepareSecond,
+	payloadHash = string.rep("42", 32),
+})
+assert(StudioAuthoring.completePrepareTransferMaterialForTest(prepareCapture, prepareBoundary) == prepareDocument, "Prepare completion must reconstruct exactly one fully bound document")
+local reorderedCapture = StudioAuthoring.newPrepareTransferCaptureForTest(prepareBoundary)
+assert(not pcall(function()
+	StudioAuthoring.appendPrepareTransferFragmentForTest(reorderedCapture, {
+		requestId = prepareBoundary.requestId,
+		transferId = prepareBoundary.transferId,
+		documentHash = prepareBoundary.documentHash,
+		sequence = 1,
+		encoding = "json",
+		payload = prepareSecond,
+		payloadHash = string.rep("42", 32),
+	})
+end), "Prepare must reject reordered fragments before parsing")
+local incompleteCapture = StudioAuthoring.newPrepareTransferCaptureForTest(prepareBoundary)
+assert(not pcall(function()
+	StudioAuthoring.completePrepareTransferMaterialForTest(incompleteCapture, prepareBoundary)
+end), "Prepare must reject an incomplete transfer before parsing")
+local replayPrepared = {
+	requestId = prepareBoundary.requestId,
+	prepareTransferId = prepareBoundary.transferId,
+	prepareDocumentHash = prepareBoundary.documentHash,
+	prepareDocumentBytes = prepareBoundary.utf8Bytes,
+	preparePieceCount = prepareBoundary.pieceCount,
+	changeSet = { sessionId = "creator-session", id = "change-set", hash = string.rep("d", 64) },
+	projection = { id = "readback", contentHash = string.rep("e", 64) },
+	preflightProjection = { id = "preflight", contentHash = string.rep("f", 64) },
+	beforeProjectIndexManifestId = "before-index",
+	beforeProjectRevisionHash = string.rep("1", 64),
+	beforeProjectDetectorEpoch = 0,
+}
+local replayReceipt = StudioAuthoring.completePrepareTransfer({ prepareTransfer = nil, prepared = replayPrepared }, prepareBoundary, nil)
+assert(replayReceipt.status == "prepared" and replayReceipt.changeSetHash == replayPrepared.changeSet.hash and replayReceipt.beforeProjectRevisionHash == replayPrepared.beforeProjectRevisionHash and replayReceipt.beforeProjectDetectorEpoch == replayPrepared.beforeProjectDetectorEpoch, "an exact redelivered completion must reproduce the same Prepare receipt without reparsing")
+local conflictingCompletion = table.clone(prepareBoundary)
+conflictingCompletion.documentHash = string.rep("44", 32)
+conflictingCompletion.transferId = "creator_prepare_transfer_" .. string.rep("44", 12)
+assert(not pcall(function()
+	StudioAuthoring.completePrepareTransfer({ prepareTransfer = nil, prepared = replayPrepared }, conflictingCompletion, nil)
+end), "a conflicting completion must not reuse a prepared receipt")
+Hash.setDigestForTest(nil)
+
+local finalizationSettings = {}
+local finalizationPlugin = {
+	GetSetting = function(_self: any, key: string): any return finalizationSettings[key] end,
+	SetSetting = function(_self: any, key: string, value: any) finalizationSettings[key] = value end,
+}
+Hash.setDigestForTest(function(value: string): string
+	local digest = 0
+	for index = 1, #value do digest = (digest + string.byte(value, index) * index) % 268435455 end
+	local bytes = string.char(
+		digest % 256,
+		math.floor(digest / 256) % 256,
+		math.floor(digest / 65536) % 256,
+		math.floor(digest / 16777216) % 256
+	)
+	return string.rep(bytes, 8)
+end)
+assert(not StudioAuthoring.possibleRecordingForTest(nil, nil, function(): boolean return false end), "Prepare may proceed only after Studio proves there is no unbound recording")
+assert(StudioAuthoring.possibleRecordingForTest(nil, nil, function(): boolean return true end), "an unbound engine recording must block Prepare across clean-break setting changes")
+assert(StudioAuthoring.possibleRecordingForTest(nil, nil, function(): boolean error("unavailable") end), "an unreadable engine recording state must fail closed")
+assert(StudioAuthoring.possibleRecordingForTest(nil, { recordingId = "retained" }, function(): boolean return false end), "a durable current recording cursor must block Prepare independently of engine observation")
+local recoveryProject = { name = "RecoveryFixture", placeId = 17, universeId = 23 }
+local recoveryBounds = {
+	kind = "CreatorResourcePolicy",
+	maximumInstances = Constants.PROJECT_INDEX_MAXIMUM_INSTANCES,
+	maximumCanonicalIndexBytes = Constants.PROJECT_INDEX_MAXIMUM_CANONICAL_BYTES,
+	maximumSourceBlobBytes = Constants.PROJECT_INDEX_MAXIMUM_SOURCE_BLOB_BYTES,
+	maximumIndexingDurationMs = Constants.PROJECT_INDEX_MAXIMUM_DURATION_MS,
+	maximumNodesPerShard = Constants.PROJECT_INDEX_MAXIMUM_NODES_PER_SHARD,
+	maximumCanonicalShardBytes = Constants.PROJECT_INDEX_MAXIMUM_SHARD_BYTES,
+	transportChunkBytes = Constants.PROJECT_INDEX_TRANSPORT_CHUNK_BYTES,
+}
+local recoverySemantic = {
+	manifestHash = Generated.manifestHash,
+	project = recoveryProject,
+	connectorEpoch = "connector_epoch_before_restart",
+	purpose = "creator_project_index",
+	roots = Generated.authoringRoots,
+	bounds = recoveryBounds,
+}
+local recoveryContentIdentity = Hash.sha256(StudioProjectIndexCanonical.material(recoverySemantic))
+local recoveryProjectionPayload = {
+	manifestHash = recoverySemantic.manifestHash,
+	project = recoverySemantic.project,
+	connectorEpoch = recoverySemantic.connectorEpoch,
+	purpose = recoverySemantic.purpose,
+	roots = recoverySemantic.roots,
+	bounds = recoverySemantic.bounds,
+	contentIdentity = recoveryContentIdentity,
+}
+local recoveryProjectionHash = Hash.sha256(StudioProjectIndexCanonical.material(recoveryProjectionPayload))
+local recoveryProjection = {
+	kind = "StudioProjectIndexProjection",
+	id = "studio_project_index_projection_" .. string.sub(recoveryProjectionHash, 1, 24),
+	hash = recoveryProjectionHash,
+	manifestHash = recoverySemantic.manifestHash,
+	project = recoverySemantic.project,
+	connectorEpoch = recoverySemantic.connectorEpoch,
+	purpose = recoverySemantic.purpose,
+	roots = recoverySemantic.roots,
+	bounds = recoverySemantic.bounds,
+	contentIdentity = recoveryContentIdentity,
+}
+local finalizationBinding = StudioAuthoring.sealTransactionCursorForTest({
+	kind = "ForgeCreatorTransactionCursor",
+	phase = "open",
+	creatorSessionId = "creator_finalization_fixture",
+	changeSetId = "change_set_finalization_fixture",
 	changeSetHash = string.rep("a", 64),
-	projectionId = "studio_projection_receipt",
+	projectionId = "projection_finalization_fixture",
 	projectionHash = string.rep("b", 64),
 	manifestHash = Generated.manifestHash,
-	beforeRevisionHash = string.rep("c", 64),
-	recordingId = "recording_receipt",
-	beforeStateProjection = { id = "studio_state_projection_receipt" },
-	finalization = { action = "commit" },
-}
-settings[settingKeys.active] = finalizationBinding
-local finalizationReceipt = receiptAuthoring:recordFinalizationEvidence(finalizationBinding, {
-	projection = { id = "studio_state_projection_receipt", contentHash = string.rep("d", 64) },
-	envelope = { completion = "complete", contentHash = string.rep("e", 64) },
-	revision = { stateHash = string.rep("f", 64) },
+	preflightProjectionId = "preflight_projection_finalization_fixture",
+	preflightProjectionHash = string.rep("e", 64),
+	beforeProjectIndexManifestId = "index_finalization_fixture",
+	beforeProjectRevisionHash = string.rep("c", 64),
+	beforeProjectDetectorEpoch = 0,
+	recordingId = "recording_finalization_fixture",
+	preflightHash = string.rep("d", 64),
+	recoveryProjection = recoveryProjection,
 })
-assert(settings[settingKeys.active] == nil, "receipt persistence must settle the active recording binding")
-assert(receiptAuthoring:finalizationReceipt() == finalizationReceipt, "settled receipt must remain available for replay")
-assert(not receiptAuthoring:hasPossibleRecording(), "a settled finalization receipt must not be treated as an open recording")
-assert(receiptAuthoring:hasPendingFinalizationReceipt(), "a settled receipt must still block a second transaction until acknowledged")
-local staleAcknowledgement = {
-	creatorSessionId = finalizationReceipt.creatorSessionId,
-	changeSetId = finalizationReceipt.changeSetId,
-	changeSetHash = finalizationReceipt.changeSetHash,
-	projectionId = finalizationReceipt.projectionId,
-	projectionHash = finalizationReceipt.projectionHash,
-	manifestHash = finalizationReceipt.manifestHash,
-	beforeRevisionHash = finalizationReceipt.beforeRevisionHash,
-	recordingId = finalizationReceipt.recordingId,
-	action = "commit",
-	status = "committed",
-	afterRevisionHash = string.rep("0", 64),
-	postFinalizeProjectionHash = finalizationReceipt.postFinalizeStateProjection.contentHash,
-	postFinalizeEvidenceHash = finalizationReceipt.postFinalizeStateEvidence.contentHash,
+assert(#StudioProjectIndexCanonical.material(finalizationBinding) <= StudioAuthoring.transactionSettingMaterialLimitForTest(), "the durable transaction cursor must remain strictly bounded")
+assert(finalizationBinding.beforeProjectIndexCapture == nil and finalizationBinding.changeSet == nil and finalizationBinding.projection == nil and finalizationBinding.preflightEvidence == nil, "the durable cursor must never retain project shards, source bodies, or cloned mutation documents")
+local openingBinding = table.clone(finalizationBinding)
+openingBinding.cursorHash = nil
+openingBinding.phase = "opening"
+openingBinding = StudioAuthoring.sealTransactionCursorForTest(openingBinding)
+assert(StudioAuthoring.finalizationRecoveryStateForTest(finalizationBinding) == "open" and StudioAuthoring.finalizationRecoveryStateForTest(openingBinding) == "unknown", "restart must report the exact durable transaction phase without mutating Studio")
+local recordingBeginCalls = 0
+local refusedOpening = StudioAuthoring.beginRecordingAfterDurableIntentForTest({
+	GetSetting = function(): any return nil end,
+	SetSetting = function() error("settings unavailable") end,
+}, openingBinding, function(): string
+	recordingBeginCalls += 1
+	return "must_not_open"
+end)
+assert(not refusedOpening.opened and refusedOpening.recordingAttempted == false and recordingBeginCalls == 0, "a failed durable-intent write must prove TryBeginRecording was never invoked")
+local reboundRecoveryProjection = StudioAuthoring.rebindRecoveryProjectionForTest(recoveryProjection, "connector_epoch_after_restart")
+assert(reboundRecoveryProjection.connectorEpoch == "connector_epoch_after_restart" and reboundRecoveryProjection.hash ~= recoveryProjection.hash and reboundRecoveryProjection.project.name == recoveryProjection.project.name and reboundRecoveryProjection.project.placeId == recoveryProjection.project.placeId and reboundRecoveryProjection.project.universeId == recoveryProjection.project.universeId, "recovery must bind the compact read contract to the new connector epoch without changing project authority")
+local tamperedFinalizationBinding = table.clone(finalizationBinding)
+tamperedFinalizationBinding.changeSetHash = string.rep("f", 64)
+assert(not pcall(function() StudioAuthoring.beginFinalizationForTest(finalizationPlugin, tamperedFinalizationBinding, "commit") end), "a tampered durable transaction cursor must fail closed")
+local finalizationIntent = StudioAuthoring.beginFinalizationForTest(finalizationPlugin, finalizationBinding, "commit")
+assert(finalizationIntent.phase == "finalization_intent" and finalizationSettings.ForgeCreatorTransactionCursorV6.phase == "finalization_intent", "finalization intent must be durably read back before FinishRecording")
+assert(StudioAuthoring.finalizationRecoveryStateForTest(finalizationIntent) == "finalizing", "an interrupted finalization intent must remain recovery-required without retrying FinishRecording")
+assert(StudioAuthoring.exactRecordingStateForTest(finalizationBinding.recordingId, function(): boolean return true end) == "open", "a finalization intent must expose an exact still-open recording for creator-authorized recovery")
+assert(StudioAuthoring.exactRecordingStateForTest(finalizationBinding.recordingId, function(): boolean return false end) == "not_open", "a finalization intent must expose an exact closed recording for stale-cursor acknowledgement only")
+assert(StudioAuthoring.exactRecordingStateForTest(finalizationBinding.recordingId, function() error("unavailable") end) == "unknown", "a finalization readback fault must remain fail-closed")
+local normalFinishCalls, normalReadCalls, normalFinishEvents = 0, 0, {}
+local finishedNormally, finalizationFinished = StudioAuthoring.closeAndPersistFinalizationForTest(finalizationPlugin, finalizationIntent, finalizationBinding.recordingId, function()
+	normalFinishCalls += 1
+end, function(): boolean
+	normalReadCalls += 1
+	return false
+end, function(settling: boolean)
+	table.insert(normalFinishEvents, settling)
+end, function() end)
+assert(finishedNormally and normalFinishCalls == 1 and normalReadCalls == 1 and #normalFinishEvents == 2 and normalFinishEvents[1] == true and normalFinishEvents[2] == false, "normal finalization must finish once, read back closed, and clear its exact finish allowance")
+assert(finalizationFinished.phase == "finalization_finished" and finalizationSettings.ForgeCreatorTransactionCursorV6.phase == "finalization_finished", "only an exact closed-recording readback may persist finished state")
+assert(StudioAuthoring.finalizationRecoveryStateForTest(finalizationFinished) == "not_open", "a durable finished state is not an open recording")
+local gateRejectedIntent = StudioAuthoring.beginFinalizationForTest(finalizationPlugin, finalizationBinding, "cancel")
+local gateRejectedFinishCalls, gateRejectedReadCalls = 0, 0
+local gateRejected, gateRejectedFailure = StudioAuthoring.closeAndPersistFinalizationForTest(finalizationPlugin, gateRejectedIntent, finalizationBinding.recordingId, function()
+	gateRejectedFinishCalls += 1
+end, function(): boolean
+	gateRejectedReadCalls += 1
+	return false
+end, nil, function()
+	error("stale authority")
+end)
+assert(not gateRejected and string.find(tostring(gateRejectedFailure), "finalization gate rejected", 1, true) and gateRejectedFinishCalls == 0 and gateRejectedReadCalls == 0, "a centralized pre-Finish gate failure must retain intent without calling FinishRecording or its closure readback")
+assert(finalizationSettings.ForgeCreatorTransactionCursorV6.phase == "finalization_intent", "a failed centralized gate leaves the durable finalization intent recoverable")
+local stillOpenIntent = StudioAuthoring.beginFinalizationForTest(finalizationPlugin, finalizationBinding, "cancel")
+local stillOpenFinishCalls, stillOpenReadCalls, stillOpenEvents = 0, 0, {}
+local closedWhileOpen, openFailure = StudioAuthoring.closeAndPersistFinalizationForTest(finalizationPlugin, stillOpenIntent, finalizationBinding.recordingId, function()
+	stillOpenFinishCalls += 1
+end, function(): boolean
+	stillOpenReadCalls += 1
+	return true
+end, function(settling: boolean)
+	table.insert(stillOpenEvents, settling)
+end, function() end)
+assert(not closedWhileOpen and string.find(tostring(openFailure), "remains open", 1, true) and stillOpenFinishCalls == 1 and stillOpenReadCalls == 1 and #stillOpenEvents == 2 and stillOpenEvents[1] == true and stillOpenEvents[2] == false, "a nonthrowing finalization that remains open must retain intent and never be persisted finished")
+assert(finalizationSettings.ForgeCreatorTransactionCursorV6.phase == "finalization_intent" and StudioAuthoring.finalizationRecoveryStateForTest(stillOpenIntent) == "finalizing", "an unclosed finalization must remain explicitly recoverable")
+local readErrorIntent = StudioAuthoring.beginFinalizationForTest(finalizationPlugin, finalizationBinding, "cancel")
+local readErrorFinishCalls, readErrorEvents = 0, {}
+local closedOnReadError, readErrorFailure = StudioAuthoring.closeAndPersistFinalizationForTest(finalizationPlugin, readErrorIntent, finalizationBinding.recordingId, function()
+	readErrorFinishCalls += 1
+end, function()
+	error("readback unavailable")
+end, function(settling: boolean)
+	table.insert(readErrorEvents, settling)
+end, function() end)
+assert(not closedOnReadError and string.find(tostring(readErrorFailure), "readback failed", 1, true) and readErrorFinishCalls == 1 and #readErrorEvents == 2 and readErrorEvents[1] == true and readErrorEvents[2] == false, "a finalization readback error must retain finalization intent and clear the finish allowance")
+assert(finalizationSettings.ForgeCreatorTransactionCursorV6.phase == "finalization_intent", "a readback error must not create a durable finished receipt")
+local recoveryBoundCursor = table.clone(finalizationBinding)
+recoveryBoundCursor.cursorHash = nil
+recoveryBoundCursor.provisional = {
+	directReadbackEvidenceHash = string.rep("5", 64),
+	postApplyProjectIndexManifestId = "post_apply_index_finalization_fixture",
+	postApplyProjectRevisionHash = string.rep("6", 64),
+	postApplyProjectDetectorEpoch = 2,
 }
-assert(not pcall(function() receiptAuthoring:acknowledgeFinalization(staleAcknowledgement) end), "a stale finalization acknowledgement must fail closed")
-assert(receiptAuthoring:finalizationReceipt() == finalizationReceipt, "a rejected acknowledgement must retain the receipt for replay")
-staleAcknowledgement.afterRevisionHash = finalizationReceipt.afterRevision.stateHash
-receiptAuthoring:acknowledgeFinalization(staleAcknowledgement)
-assert(receiptAuthoring:finalizationReceipt() == nil, "the exact acknowledgement must clear the durable receipt")
-assert(not receiptAuthoring:hasPendingFinalizationReceipt(), "acknowledgement must release the next transaction boundary")
-assert(settings[settingKeys.lastCommit] ~= nil and settings[settingKeys.lastCommit].recordingId == finalizationReceipt.recordingId, "a committed receipt becomes rollback-eligible only after acknowledgement")
-
--- A mid-batch failure that its own Apply call cancels is still a durable
--- cancellation finalization, not merely an optional diagnostic envelope.  It
--- must be receipt-backed before a reconnect can safely report it.
-settings[settingKeys.active] = {
-	creatorSessionId = "creator_session_failed_apply",
-	changeSetId = "creator_change_set_failed_apply",
-	changeSetHash = string.rep("7", 64),
-	projectionId = "studio_projection_failed_apply",
-	projectionHash = string.rep("8", 64),
-	manifestHash = Generated.manifestHash,
-	beforeRevisionHash = string.rep("9", 64),
-	recordingId = "recording_failed_apply",
-	beforeStateProjection = { id = "studio_state_projection_failed_apply" },
-	finalization = { action = "cancel", failedApply = true },
+recoveryBoundCursor.recovery = {
+	projectIndexManifestId = "recovery_index_finalization_fixture",
+	projectRevisionHash = string.rep("7", 64),
+	projectDetectorEpoch = 3,
 }
-local failedApplyBinding = settings[settingKeys.active]
-local failedApplyReceipt = receiptAuthoring:recordFinalizationEvidence(failedApplyBinding, {
-	projection = { id = "studio_state_projection_failed_apply", contentHash = string.rep("a", 64) },
-	envelope = { completion = "complete", contentHash = string.rep("b", 64) },
-	revision = { stateHash = string.rep("c", 64) },
+recoveryBoundCursor = StudioAuthoring.sealTransactionCursorForTest(recoveryBoundCursor)
+local interruptedCommitIntent = StudioAuthoring.beginFinalizationForTest(finalizationPlugin, recoveryBoundCursor, "commit")
+assert(interruptedCommitIntent.finalization.expectedCurrentProjectRevisionHash == recoveryBoundCursor.provisional.postApplyProjectRevisionHash and interruptedCommitIntent.finalization.expectedCurrentProjectRevisionHash ~= recoveryBoundCursor.recovery.projectRevisionHash, "the interrupted ordinary intent must retain its original post-Apply gate, distinct from later recovery evidence")
+local recoveryCancelIntent = StudioAuthoring.beginRecoveryCancellationForTest(finalizationPlugin, interruptedCommitIntent, {
+	projectIndexManifestId = recoveryBoundCursor.recovery.projectIndexManifestId,
+	projectRevisionHash = recoveryBoundCursor.recovery.projectRevisionHash,
+	projectDetectorEpoch = recoveryBoundCursor.recovery.projectDetectorEpoch,
 })
-assert(failedApplyReceipt.action == "cancel" and failedApplyReceipt.status == "cancelled", "same-call cancellation must produce a cancelled receipt")
-assert(settings[settingKeys.active] == nil and not receiptAuthoring:hasPossibleRecording(), "a receipt-backed failed-apply cancellation must not masquerade as an open recording")
-receiptAuthoring:acknowledgeFinalization({
-	creatorSessionId = failedApplyReceipt.creatorSessionId,
-	changeSetId = failedApplyReceipt.changeSetId,
-	changeSetHash = failedApplyReceipt.changeSetHash,
-	projectionId = failedApplyReceipt.projectionId,
-	projectionHash = failedApplyReceipt.projectionHash,
-	manifestHash = failedApplyReceipt.manifestHash,
-	beforeRevisionHash = failedApplyReceipt.beforeRevisionHash,
-	recordingId = failedApplyReceipt.recordingId,
-	action = "cancel",
-	status = "cancelled",
-	afterRevisionHash = failedApplyReceipt.afterRevision.stateHash,
-	postFinalizeProjectionHash = failedApplyReceipt.postFinalizeStateProjection.contentHash,
-	postFinalizeEvidenceHash = failedApplyReceipt.postFinalizeStateEvidence.contentHash,
+assert(recoveryCancelIntent.phase == "finalization_intent" and recoveryCancelIntent.finalization.action == "cancel" and recoveryCancelIntent.finalization.recovery == true and recoveryCancelIntent.finalization.replacesAction == "commit" and recoveryCancelIntent.finalization.expectedCurrentProjectRevisionHash == recoveryBoundCursor.recovery.projectRevisionHash, "an explicit recovery cancellation must replace, not retry, the original finalization action")
+local mixedRecoveryBinding = table.clone(recoveryCancelIntent)
+mixedRecoveryBinding.beforeProjectIndexManifestId = recoveryBoundCursor.recovery.projectIndexManifestId
+assert(not StudioAuthoring.sameRecordingBindingForTest(mixedRecoveryBinding, recoveryCancelIntent), "a recovery capture must never replace one field of the original recording binding")
+assert(not pcall(function()
+	StudioAuthoring.beginRecoveryCancellationForTest(finalizationPlugin, recoveryCancelIntent, {
+		projectIndexManifestId = recoveryBoundCursor.recovery.projectIndexManifestId,
+		projectRevisionHash = recoveryBoundCursor.recovery.projectRevisionHash,
+	projectDetectorEpoch = recoveryBoundCursor.recovery.projectDetectorEpoch,
 })
-assert(receiptAuthoring:finalizationReceipt() == nil, "the exact cancelled receipt acknowledgement must clear it")
-
--- The recording-open boundary is persisted before Studio returns its opaque
--- recording id.  A restart at that boundary is explicitly unknown rather than
--- being treated as a safe no-recording state.
-settings[settingKeys.active] = {
-	creatorSessionId = "creator_session_opening",
-	changeSetId = "creator_change_set_opening",
-	changeSetHash = string.rep("1", 64),
-	projectionId = "studio_projection_opening",
-	projectionHash = string.rep("2", 64),
-	manifestHash = Generated.manifestHash,
-	beforeRevisionHash = string.rep("3", 64),
-	recordingId = "pending_recording_creator_change_set_opening",
-	opening = true,
+end), "a failed recovery cancellation must never receive an automatic or repeated Finish")
+local recoveredClosed, recoveredFinished = StudioAuthoring.closeAndPersistFinalizationForTest(finalizationPlugin, recoveryCancelIntent, recoveryBoundCursor.recordingId, function() end, function(): boolean return false end, nil, function(intent: any)
+	assert(intent.finalization.finalizationKind == "recovery_cancel" and intent.finalization.replacesAction == "commit" and intent.finalization.expectedCurrentProjectIndexManifestId == recoveryBoundCursor.recovery.projectIndexManifestId and intent.finalization.expectedCurrentProjectRevisionHash == recoveryBoundCursor.recovery.projectRevisionHash and intent.finalization.expectedCurrentProjectDetectorEpoch == recoveryBoundCursor.recovery.projectDetectorEpoch, "the immediately pre-Finish callback must see the replacement recovery-cancel intent and its recovery gate, never the original post-Apply gate")
+end)
+assert(recoveredClosed, "a creator-authorized recovery cancellation must still prove exact closure")
+local recoveryAuthoring = StudioAuthoring.new(finalizationPlugin, {}, {})
+local recoveryReceipt = recoveryAuthoring:recordFinalizationEvidence(recoveredFinished, {
+	indexManifest = { id = "post_recovery_cancel_index" },
+	revision = { hash = string.rep("c", 64) },
+	detectorEpoch = 4,
+})
+assert(recoveryReceipt.finalizationKind == "recovery_cancel" and recoveryReceipt.replacesAction == "commit" and recoveryReceipt.afterProjectDetectorEpoch == 4, "a recovery cancellation receipt must retain immutable provenance and the exact final project-capture epoch")
+recoveryAuthoring:acknowledgeFinalization(recoveryReceipt)
+StudioAuthoring.persistActiveForTest(finalizationPlugin, finalizationFinished)
+local finalizationAuthoring = StudioAuthoring.new(finalizationPlugin, {}, {})
+local finalizationReceipt = finalizationAuthoring:recordFinalizationEvidence(finalizationFinished, {
+	indexManifest = { id = "post_commit_index" },
+	revision = { hash = string.rep("6", 64) },
+	detectorEpoch = 0,
+})
+assert(finalizationReceipt.afterProjectDetectorEpoch == 0, "a commit receipt must bind the exact post-finalization project-capture epoch")
+StudioAuthoring.persistActiveForTest(finalizationPlugin, finalizationFinished)
+finalizationAuthoring:acknowledgeFinalization(finalizationReceipt)
+assert(finalizationSettings.ForgeCreatorTransactionCursorV6 == nil and finalizationSettings.ForgeCreatorFinalizationReceiptV6 == nil, "acknowledging an exact receipt must clear a matching finished cursor left by an interrupted cleanup")
+assert(finalizationSettings.ForgeCreatorLastCommitV6 ~= nil, "an acknowledged commit receipt must remain available for guarded rollback")
+local failedApplyIntent = StudioAuthoring.beginFinalizationForTest(finalizationPlugin, finalizationBinding, "cancel", { failedApply = true, failureCode = "mutation_apply_failed" })
+local failedApplyClosed, failedApplyFinished = StudioAuthoring.closeAndPersistFinalizationForTest(finalizationPlugin, failedApplyIntent, finalizationBinding.recordingId, function() end, function(): boolean return false end, nil, function() end)
+assert(failedApplyClosed, "an apply-failure cancellation must prove closure before finalization evidence")
+local failedApplyReceipt = finalizationAuthoring:recordFinalizationEvidence(failedApplyFinished, {
+	indexManifest = { id = "post_failed_apply_index" },
+	revision = { hash = string.rep("8", 64) },
+	detectorEpoch = 1,
+})
+assert(failedApplyReceipt.expectedCurrentProjectIndexManifestId == finalizationBinding.beforeProjectIndexManifestId and failedApplyReceipt.expectedCurrentProjectRevisionHash == finalizationBinding.beforeProjectRevisionHash and failedApplyReceipt.expectedCurrentProjectDetectorEpoch == finalizationBinding.beforeProjectDetectorEpoch, "apply-failure cancellation receipts must bind the pre-Apply capture, never a post-cancel collection")
+finalizationAuthoring:acknowledgeFinalization(failedApplyReceipt)
+local provisionalCursor = table.clone(finalizationBinding)
+provisionalCursor.cursorHash = nil
+provisionalCursor.provisional = {
+	directReadbackEvidenceHash = string.rep("9", 64),
+	postApplyProjectIndexManifestId = "post_apply_authority_index",
+	postApplyProjectRevisionHash = string.rep("a", 64),
+	postApplyProjectDetectorEpoch = 2,
 }
-local openingRecovery = receiptAuthoring:recovery()
-assert(openingRecovery.recordingState == "unknown" and openingRecovery.recording ~= nil, "an interrupted recording-open boundary must require recovery")
-settings[settingKeys.active] = nil
+provisionalCursor = StudioAuthoring.sealTransactionCursorForTest(provisionalCursor)
+local evidenceFailureIntent = StudioAuthoring.beginFinalizationForTest(finalizationPlugin, provisionalCursor, "cancel", { failureCode = "mutation_readback_failed" })
+local evidenceFailureClosed, evidenceFailureFinished = StudioAuthoring.closeAndPersistFinalizationForTest(finalizationPlugin, evidenceFailureIntent, provisionalCursor.recordingId, function() end, function(): boolean return false end, nil, function() end)
+assert(evidenceFailureClosed, "an evidence-failure cancellation must prove closure before finalization evidence")
+local evidenceFailureReceipt = finalizationAuthoring:recordFinalizationEvidence(evidenceFailureFinished, {
+	indexManifest = { id = "post_evidence_failure_index" },
+	revision = { hash = string.rep("b", 64) },
+	detectorEpoch = 3,
+})
+assert(evidenceFailureReceipt.expectedCurrentProjectIndexManifestId == provisionalCursor.provisional.postApplyProjectIndexManifestId and evidenceFailureReceipt.expectedCurrentProjectRevisionHash == provisionalCursor.provisional.postApplyProjectRevisionHash and evidenceFailureReceipt.expectedCurrentProjectDetectorEpoch == provisionalCursor.provisional.postApplyProjectDetectorEpoch, "evidence-failure cancellation receipts must bind the durable provisional capture, never a post-cancel collection")
+finalizationAuthoring:acknowledgeFinalization(evidenceFailureReceipt)
+Hash.setDigestForTest(nil)
 
--- A reset coordinator store may no longer contain the session named by a
--- connector cursor. The cursor may be cleared only after Studio reports the
--- exact recording is closed and the backend acknowledges the exact persisted
--- recovery projection/envelope. Open, unknown, or stale evidence stays blocked.
-local closedCursor = {
-	creatorSessionId = "creator_session_orphaned",
-	changeSetId = "creator_change_set_orphaned",
-	changeSetHash = string.rep("4", 64),
-	projectionId = "studio_projection_orphaned",
-	projectionHash = string.rep("5", 64),
-	manifestHash = Generated.manifestHash,
-	beforeRevisionHash = string.rep("6", 64),
-	recordingId = "recording_orphaned",
-	beforeStateProjection = { contentHash = string.rep("7", 64) },
-	recoveryEvidenceHash = string.rep("8", 64),
-}
-local closedAcknowledgement = {
-	creatorSessionId = closedCursor.creatorSessionId,
-	changeSetId = closedCursor.changeSetId,
-	changeSetHash = closedCursor.changeSetHash,
-	projectionId = closedCursor.projectionId,
-	projectionHash = closedCursor.projectionHash,
-	manifestHash = closedCursor.manifestHash,
-	beforeRevisionHash = closedCursor.beforeRevisionHash,
-	recordingId = closedCursor.recordingId,
-	recoveryProjectionHash = closedCursor.beforeStateProjection.contentHash,
-	recoveryEvidenceHash = closedCursor.recoveryEvidenceHash,
-}
-settings[settingKeys.active] = closedCursor
-assert(not pcall(function() StudioAuthoring.acknowledgeClosedRecordingForTest(fakePlugin, closedAcknowledgement, "open") end), "an open recording must never be cleared by acknowledgement")
-assert(settings[settingKeys.active] == closedCursor, "rejected open-recording acknowledgement must retain the cursor")
-assert(not pcall(function() StudioAuthoring.acknowledgeClosedRecordingForTest(fakePlugin, closedAcknowledgement, "unknown") end), "an unknown recording must never be cleared by acknowledgement")
-assert(settings[settingKeys.active] == closedCursor, "rejected unknown-recording acknowledgement must retain the cursor")
-closedAcknowledgement.recoveryEvidenceHash = string.rep("9", 64)
-assert(not pcall(function() StudioAuthoring.acknowledgeClosedRecordingForTest(fakePlugin, closedAcknowledgement, "not_open") end), "stale recovery evidence must not clear a cursor")
-assert(settings[settingKeys.active] == closedCursor, "rejected stale acknowledgement must retain the cursor")
-closedAcknowledgement.recoveryEvidenceHash = closedCursor.recoveryEvidenceHash
-StudioAuthoring.acknowledgeClosedRecordingForTest(fakePlugin, closedAcknowledgement, "not_open")
-assert(settings[settingKeys.active] == nil, "exact proved-closed acknowledgement must clear only the connector cursor")
-
--- Roblox setting writes may retain the last table identity and silently skip a
--- later write of that same mutated table. Every Forge transaction phase must
--- therefore cross the persistence boundary with a fresh immutable snapshot.
-local identitySensitiveSettings = {}
-local lastInput = nil
-local identitySensitivePlugin = {}
-function identitySensitivePlugin:GetSetting(key) return identitySensitiveSettings[key] end
-function identitySensitivePlugin:SetSetting(key, value)
-	if value ~= nil and value == lastInput then return end
-	lastInput = value
-	identitySensitiveSettings[key] = value
+for className in pairs(Generated.classes) do
+	assert(StudioInstancePolicy.isEvidenceRelevant({ ClassName = className }), className .. " must use generated evidence eligibility")
 end
-local openingCursor = {
-	creatorSessionId = "creator_session_persistence",
-	changeSetId = "creator_change_set_persistence",
-	changeSetHash = string.rep("1", 64),
-	projectionId = "studio_projection_persistence",
-	projectionHash = string.rep("2", 64),
-	manifestHash = Generated.manifestHash,
-	preflightHash = string.rep("3", 64),
-	beforeRevisionHash = string.rep("4", 64),
-	recordingId = "pending_recording_persistence",
-	opening = true,
-	beforeStateProjection = { contentHash = string.rep("5", 64) },
-}
-local persistedOpening = StudioAuthoring.persistActiveForTest(identitySensitivePlugin, openingCursor)
-local recordedCursor = table.clone(persistedOpening)
-recordedCursor.recordingId = "recording_persistence"
-recordedCursor.opening = nil
-local persistedRecording = StudioAuthoring.persistActiveForTest(identitySensitivePlugin, recordedCursor)
-assert(persistedRecording.recordingId == "recording_persistence" and persistedRecording.opening == nil, "the real recording id must replace opening intent before mutation")
-assert(persistedOpening ~= openingCursor and persistedRecording ~= recordedCursor and persistedOpening ~= persistedRecording, "setting phases must use distinct immutable snapshots")
+assert(not StudioInstancePolicy.isEvidenceRelevant({ ClassName = "Camera" }), "unmanifested classes must not gain implicit evidence authority")
+
+local reflected, reflectionFailure = StudioEvidenceCollector.reflectedPropertyValueForTest({
+	Name = "Attachment0", Owner = "Beam", Serialized = true,
+	Type = { EngineType = "Object", ScriptType = "Instance", InstanceType = "Attachment" },
+	Permits = { Read = {}, Write = {} },
+}, "Beam", "Attachment0")
+assert(reflectionFailure == nil and reflected ~= nil and reflected.type.instanceType == "Attachment", "reflection must preserve raw class-reference information without claiming a verdict")
 
 print("plugin module tests passed")

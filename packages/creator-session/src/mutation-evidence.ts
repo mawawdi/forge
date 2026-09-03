@@ -1,19 +1,19 @@
 import {
+  STUDIO_CAPABILITY_MANIFEST,
   assertEvidenceAgainstProjection,
-  assertStudioCapabilityAttestation,
   assertStudioCapabilityManifest,
   assertStudioEvidenceEnvelope,
   assertStudioEvidenceProjection,
-  assertStudioStateRevision,
   assertStudioValue,
   compileMutationEvidenceProjection,
   compileMutationEvidenceProjectionForManifest,
-  createStudioStateRevision,
-  studioEvidenceFactMaterial,
+  isStudioCreatorMutationBinding,
+  matchesStudioCreatorMutationBinding,
   studioValuesEqual,
   type MutationEvidenceOperation,
   type MutationEvidenceProjectionInput,
   type StudioCapabilityManifest,
+  type StudioCreatorMutationBinding,
   type StudioEvidenceBinding,
   type StudioEvidenceEnvelope,
   type StudioEvidenceFact,
@@ -21,21 +21,104 @@ import {
   type StudioEvidenceTarget,
   type StudioProjectIdentity,
   type StudioRequirementValue,
-  type StudioStateRevision,
   type StudioValue,
 } from "../../studio-evidence/src/index.js";
+import {
+  assertStudioProjectIndexCapture,
+  studioObjectIdentityKey,
+  type StudioProjectIndexCapture,
+  type StudioProjectIndexNode,
+  type StudioIdentityEnrollment,
+} from "../../studio-evidence/src/project-index.js";
 import {
   ImmutableJsonArtifactStore,
   type ArtifactReference,
 } from "../../artifact-store/src/index.js";
 import { contentHash, stableJson } from "../../contracts/src/index.js";
-import type { CreatorChangeSet, StudioChangeOperation } from "./index.js";
+import {
+  creatorProjectIndexArtifactReferences,
+  readCreatorProjectIndexArtifacts,
+  type CreatorProjectIndexArtifactBinding,
+} from "./project-refresh.js";
+import {
+  assertCreatorTransactionTopologyOrder,
+  compileCreatorTransactionTopology,
+  type CreatorTransactionTopologyNode,
+} from "./transaction-topology.js";
+import type { CreatorSourceEdit, CreatorSourceWriteBlobBinding } from "./index.js";
+
+/**
+ * The small sealed-change-set surface needed to derive readback projections.
+ * This deliberately avoids coupling replay to the coordinator runtime.
+ */
+export interface CreatorMutationSealedChangeSet {
+  readonly id: string;
+  readonly hash: string;
+  readonly sessionId: string;
+  readonly expectedRevisionHash: string;
+  readonly buildContractHash: string;
+  readonly operations: readonly CreatorMutationStudioOperation[];
+}
+
+export type CreatorMutationStudioOperation =
+  | {
+      readonly id: string;
+      readonly kind: "create";
+      readonly target: StudioInstanceEvidenceTarget;
+      readonly parent: CreatorMutationParent;
+      readonly className: string;
+      readonly name: string;
+      readonly properties: Readonly<Record<string, StudioValue>>;
+      readonly attributes: Readonly<Record<string, string | number | boolean>>;
+      readonly sourceBlob?: CreatorSourceWriteBlobBinding;
+    }
+  | {
+      readonly id: string;
+      readonly kind: "update";
+      readonly target: StudioInstanceEvidenceTarget;
+      readonly enrollment?: StudioIdentityEnrollment;
+      readonly properties: Readonly<Record<string, StudioValue>>;
+      readonly attributes: Readonly<Record<string, string | number | boolean>>;
+      readonly removedAttributes: readonly string[];
+    }
+  | {
+      readonly id: string;
+      readonly kind: "move";
+      readonly target: StudioInstanceEvidenceTarget;
+      readonly enrollment?: StudioIdentityEnrollment;
+      readonly parent: CreatorMutationParent;
+      readonly name: string;
+      readonly properties: Readonly<Record<string, StudioValue>>;
+      readonly attributes: Readonly<Record<string, string | number | boolean>>;
+      readonly removedAttributes: readonly string[];
+    }
+  | {
+      readonly id: string;
+      readonly kind: "delete";
+      readonly target: StudioInstanceEvidenceTarget;
+      readonly enrollment?: StudioIdentityEnrollment;
+    }
+  | {
+      readonly id: string;
+      readonly kind: "edit_source";
+      readonly target: StudioInstanceEvidenceTarget;
+      readonly enrollment?: StudioIdentityEnrollment;
+      readonly beforeSourceHash: string;
+      readonly edits: readonly CreatorSourceEdit[];
+      readonly finalSourceHash: string;
+      readonly finalByteCount: number;
+    };
+
+type CreatorMutationParent =
+  | StudioInstanceEvidenceTarget
+  | {
+      readonly kind: "engine_container";
+      readonly path: string;
+      readonly className: string;
+    };
 
 /** The only statuses a mutation reconciler can produce. */
-export type CreatorMutationReconciliationStatus =
-  | "matched"
-  | "mismatched"
-  | "incomplete";
+export type CreatorMutationReconciliationStatus = "matched" | "mismatched" | "incomplete";
 
 export interface CreatorMutationFailureFact {
   readonly code: string;
@@ -44,9 +127,13 @@ export interface CreatorMutationFailureFact {
 }
 
 export type CreatorMutationFailureInput =
-  | string
-  | { readonly code: string; readonly detail: string };
+  string | { readonly code: string; readonly detail: string };
 
+/**
+ * The mutation's direct-readback contract. Project-wide change authority is
+ * derived from `operations` during reconciliation; it is never supplied as a
+ * project-state fact-key allowlist.
+ */
 export interface CreatorMutationChangeSetLike {
   readonly kind: "CreatorChangeSet";
   readonly id: string;
@@ -55,8 +142,6 @@ export interface CreatorMutationChangeSetLike {
   readonly binding: StudioEvidenceBinding;
   readonly projectionId: string;
   readonly operations: readonly MutationEvidenceOperation[];
-  /** Every state-fact key that the approved mutation is permitted to change. */
-  readonly allowedStateDelta: readonly string[];
 }
 
 export type StudioInstanceEvidenceTarget = Extract<
@@ -64,41 +149,173 @@ export type StudioInstanceEvidenceTarget = Extract<
   { readonly kind: "instance" }
 >;
 
-/**
- * Extra delete identities are supplied from complete pre-apply inventory
- * evidence. The root delete is always included by the adapter itself.
- */
 export interface CreatorChangeSetDeleteSubtree {
   readonly operationId: string;
   readonly descendants: readonly StudioInstanceEvidenceTarget[];
 }
 
+/**
+ * An engine-container parent is named by the approved change set but its
+ * actual identity comes only from the immutable pre-Apply index. Carry that
+ * exact captured target into the projection so structure readback has the
+ * same shape as StudioEvidenceCollector's observed fact.
+ */
+export interface CreatorChangeSetStructuralParent {
+  readonly operationId: string;
+  readonly target: StudioInstanceEvidenceTarget;
+}
+
 export interface CreatorChangeSetProjectionContext {
   readonly project: StudioProjectIdentity;
   readonly binding: StudioEvidenceBinding;
-  /** Complete, canonical fact-key allowlist for the project-state delta. */
-  readonly allowedStateDelta: readonly string[];
+  /** Complete pre-Prepare topology; final paths derive only from this authority. */
+  readonly initialTopology: readonly CreatorTransactionTopologyNode[];
   readonly purpose?: MutationEvidenceProjectionInput["purpose"];
   readonly projectionId?: string;
   readonly deletedSubtrees?: readonly CreatorChangeSetDeleteSubtree[];
+  readonly structuralParents?: readonly CreatorChangeSetStructuralParent[];
 }
 
 /**
- * The connector persists this deterministic identity before it reads a newly
- * created object back. It is never a random Studio-generated identity.
+ * Resolve every engine-owned create/move parent to its exact identity from the
+ * immutable pre-Apply index. Instance parents already carry their identity in
+ * the sealed operation, so they require no additional projection input.
  */
-export function creatorMutationCreateStableId(
-  changeSet: Pick<CreatorChangeSet, "id">,
-  tempId: string,
-): string {
-  if (!isNonEmpty(changeSet.id) || !isNonEmpty(tempId))
-    throw new Error("Creator mutation create identity requires a change set and temp ID");
-  return `${changeSet.id}:${tempId}`;
+export function creatorStructuralParentsFromProjectIndex(
+  changeSet: CreatorMutationSealedChangeSet,
+  capture: StudioProjectIndexCapture,
+  manifest: StudioCapabilityManifest = STUDIO_CAPABILITY_MANIFEST,
+): readonly CreatorChangeSetStructuralParent[] {
+  assertStudioCapabilityManifest(manifest);
+  assertStudioProjectIndexCapture(capture, manifest);
+  const authoringContainers = new Map(
+    manifest.authoringContainers.map((entry) => [entry.path, entry.className] as const),
+  );
+  const engineContainers = new Map<string, StudioProjectIndexNode>();
+  for (const node of capture.shards.flatMap((shard) => shard.nodes)) {
+    if (!node.engineContainer) continue;
+    if (authoringContainers.get(node.engineContainer.path) !== node.engineContainer.className)
+      throw new Error("Project index engine container is outside the Studio capability manifest");
+    if (node.className !== node.engineContainer.className)
+      throw new Error("Project index engine container class is inconsistent");
+    const key = `${node.engineContainer.path}\u0000${node.engineContainer.className}`;
+    if (engineContainers.has(key)) throw new Error("Project index has duplicate engine containers");
+    engineContainers.set(key, node);
+  }
+  const structuralParents: CreatorChangeSetStructuralParent[] = [];
+  for (const operation of changeSet.operations) {
+    if (
+      (operation.kind !== "create" && operation.kind !== "move") ||
+      operation.parent.kind !== "engine_container"
+    )
+      continue;
+    if (authoringContainers.get(operation.parent.path) !== operation.parent.className)
+      throw new Error("Approved engine parent is not an exact generated authoring container");
+    const parent = engineContainers.get(
+      `${operation.parent.path}\u0000${operation.parent.className}`,
+    );
+    if (!parent) throw new Error("Approved engine parent is missing from the bound project index");
+    structuralParents.push({
+      operationId: operation.id,
+      target: {
+        kind: "instance",
+        identity: parent.identity,
+        path: parent.displayPath,
+        className: parent.className,
+      },
+    });
+  }
+  return Object.freeze(structuralParents);
 }
 
-/** The projection identity is data-derived and independent of wall-clock time. */
+/**
+ * Derive every consequentially deleted identity from opaque project-index
+ * parent edges. Display paths are descriptive only and duplicate-named
+ * objects remain distinct. Unsupported descendant classes receive only a
+ * structural-absence proof obligation; they never gain a writable surface.
+ */
+export function creatorDeleteSubtreesFromProjectIndex(
+  changeSet: CreatorMutationSealedChangeSet,
+  capture: StudioProjectIndexCapture,
+  manifest: StudioCapabilityManifest = STUDIO_CAPABILITY_MANIFEST,
+): readonly CreatorChangeSetDeleteSubtree[] {
+  assertStudioCapabilityManifest(manifest);
+  assertStudioProjectIndexCapture(capture, manifest);
+  const nodes = capture.shards.flatMap((shard) => shard.nodes);
+  const byIdentity = new Map(
+    nodes.map((node) => [studioObjectIdentityKey(node.identity), node] as const),
+  );
+  const children = new Map<string, typeof nodes>();
+  for (const node of nodes) {
+    if (!node.parentIdentity) continue;
+    const parentKey = studioObjectIdentityKey(node.parentIdentity);
+    children.set(parentKey, [...(children.get(parentKey) ?? []), node]);
+  }
+  const authorableClasses = new Set(manifest.classes.map((entry) => entry.name));
+  // The final path of a create or move can depend on another move in this
+  // same recording. Validate the complete graph once rather than comparing
+  // individual operations against stale pre-transaction display paths. Its
+  // delete closure is also authoritative: an initially nested subtree may be
+  // moved out before its former ancestor is destroyed.
+  const topology = compileCreatorTransactionTopology({
+    initial: nodes.map((node) => ({
+      identity: node.identity,
+      ...(node.parentIdentity === undefined ? {} : { parentIdentity: node.parentIdentity }),
+      path: node.displayPath,
+      name: node.name,
+      className: node.className,
+      ...(node.engineContainer === undefined ? {} : { engineContainer: node.engineContainer }),
+      properties: node.coveredProperties as Readonly<Record<string, StudioValue>>,
+    })),
+    operations: changeSet.operations,
+  });
+  const deletedIdentityKeys = new Set(topology.deletedIdentityKeys);
+  for (const operation of changeSet.operations) {
+    if (!authorableClasses.has(operation.target.className))
+      throw new Error("Approved mutation target is outside the Studio capability manifest");
+    if (operation.kind === "create" && operation.target.className !== operation.className)
+      throw new Error("Approved create target class is inconsistent");
+  }
+  const result: CreatorChangeSetDeleteSubtree[] = [];
+  for (const operation of changeSet.operations) {
+    if (operation.kind !== "delete") continue;
+    const rootKey = studioObjectIdentityKey(operation.target.identity);
+    const root = byIdentity.get(rootKey);
+    if (
+      !root ||
+      root.displayPath !== operation.target.path ||
+      root.className !== operation.target.className
+    )
+      throw new Error("Approved delete target is missing from the bound project index");
+    if (!authorableClasses.has(root.className))
+      throw new Error("Approved delete target is outside the Studio capability manifest");
+    const descendants: CreatorChangeSetDeleteSubtree["descendants"][number][] = [];
+    const queue = [...(children.get(rootKey) ?? [])];
+    const visited = new Set<string>();
+    while (queue.length > 0) {
+      const node = queue.shift()!;
+      const nodeKey = studioObjectIdentityKey(node.identity);
+      if (visited.has(nodeKey)) throw new Error("Project index contains a cyclic delete subtree");
+      visited.add(nodeKey);
+      if (deletedIdentityKeys.has(nodeKey))
+        descendants.push({
+          kind: "instance",
+          identity: node.identity,
+          path: node.displayPath,
+          className: node.className,
+        });
+      queue.push(...(children.get(nodeKey) ?? []));
+    }
+    descendants.sort((left, right) =>
+      studioObjectIdentityKey(left.identity).localeCompare(studioObjectIdentityKey(right.identity)),
+    );
+    result.push({ operationId: operation.id, descendants });
+  }
+  return Object.freeze(result);
+}
+
 export function creatorChangeSetMutationProjectionId(
-  changeSet: Pick<CreatorChangeSet, "hash">,
+  changeSet: Pick<CreatorMutationSealedChangeSet, "hash">,
   purpose: NonNullable<MutationEvidenceProjectionInput["purpose"]> = "mutation_direct_readback",
 ): string {
   if (!isHash(changeSet.hash))
@@ -106,14 +323,18 @@ export function creatorChangeSetMutationProjectionId(
   return `creator_mutation_${purpose}_${changeSet.hash.slice(0, 24)}`;
 }
 
-/**
- * Convert the real sealed CreatorChangeSet operation union into generated
- * evidence operations. It is pure and cannot inspect Studio or any provider.
- */
+/** Convert sealed Studio operations to direct-readback evidence operations. */
 export function adaptCreatorChangeSetMutationOperations(
-  changeSet: CreatorChangeSet,
+  changeSet: CreatorMutationSealedChangeSet,
+  initialTopology: readonly CreatorTransactionTopologyNode[],
   deletedSubtrees: readonly CreatorChangeSetDeleteSubtree[] = [],
+  structuralParents: readonly CreatorChangeSetStructuralParent[] = [],
 ): readonly MutationEvidenceOperation[] {
+  // Identity enrollment is a transaction-wide post-state transition, not an
+  // operation-local presentation detail. Build it before deriving any proof
+  // obligation so a property or structural edge can refer to another object
+  // enrolled by this same recording.
+  const postStateTargets = collectPostStateTargets(changeSet.operations, initialTopology);
   const subtreeByOperation = new Map<string, readonly StudioInstanceEvidenceTarget[]>();
   const deleteOperationIds = new Set(
     changeSet.operations
@@ -125,74 +346,87 @@ export function adaptCreatorChangeSetMutationOperations(
       throw new Error("Deleted subtree entries must have unique operation IDs");
     if (!deleteOperationIds.has(subtree.operationId))
       throw new Error("Deleted subtree evidence must bind an approved delete operation");
-    const descendants = [...subtree.descendants];
-    if (descendants.length > 64)
+    if (subtree.descendants.length > STUDIO_CAPABILITY_MANIFEST.limits.maximumProjectionFacts)
       throw new Error("Deleted subtree exceeds the bounded evidence limit");
     const seen = new Set<string>();
-    for (const descendant of descendants) {
+    for (const descendant of subtree.descendants) {
+      const identity = studioObjectIdentityKey(descendant.identity);
       if (
         descendant.kind !== "instance" ||
-        !isNonEmpty(descendant.stableId) ||
-        !isNonEmpty(descendant.path) ||
+        !isStudioPath(descendant.path) ||
         !isNonEmpty(descendant.className) ||
-        seen.has(descendant.stableId)
+        seen.has(identity)
       )
         throw new Error("Deleted subtree contains an invalid or duplicate identity");
-      seen.add(descendant.stableId);
+      seen.add(identity);
     }
-    subtreeByOperation.set(subtree.operationId, descendants);
+    subtreeByOperation.set(subtree.operationId, subtree.descendants);
+  }
+  const structuralParentByOperation = new Map<string, StudioInstanceEvidenceTarget>();
+  for (const parent of structuralParents) {
+    if (
+      !isNonEmpty(parent.operationId) ||
+      parent.target.kind !== "instance" ||
+      !isStudioPath(parent.target.path) ||
+      !isNonEmpty(parent.target.className) ||
+      structuralParentByOperation.has(parent.operationId)
+    )
+      throw new Error("Structural parent bindings must be unique exact instance targets");
+    structuralParentByOperation.set(parent.operationId, parent.target);
   }
 
   const operations: MutationEvidenceOperation[] = [];
   for (const operation of changeSet.operations) {
-    operations.push(adaptStudioChangeOperation(changeSet, operation));
+    operations.push(
+      adaptStudioChangeOperation(
+        operation,
+        structuralParentByOperation.get(operation.id),
+        postStateTargets,
+      ),
+    );
     if (operation.kind !== "delete") continue;
-    const descendants = subtreeByOperation.get(operation.id) ?? [];
-    for (const descendant of descendants) {
+    for (const descendant of subtreeByOperation.get(operation.id) ?? []) {
       if (
-        descendant.stableId === operation.stableId ||
-        !isDescendantPath(descendant.path, operation.expectedPath)
+        studioObjectIdentityKey(descendant.identity) ===
+          studioObjectIdentityKey(operation.target.identity) ||
+        !isDescendantPath(descendant.path, operation.target.path)
       )
         throw new Error("Deleted subtree identity is not a proper descendant of its delete target");
       operations.push({
-        id: `${operation.id}:delete:${descendant.stableId}`,
+        id: `${operation.id}:delete:${studioObjectIdentityKey(descendant.identity)}`,
         kind: "delete",
         target: descendant,
         structureStatus: "absent",
+        consequentialStructureOnly: true,
       });
     }
   }
-  const operationIds = new Set<string>();
-  for (const operation of operations) {
-    if (operationIds.has(operation.id))
-      throw new Error("Mutation evidence operation IDs must be unique");
-    operationIds.add(operation.id);
-  }
+  if (new Set(operations.map((operation) => operation.id)).size !== operations.length)
+    throw new Error("Mutation evidence operation IDs must be unique");
   return Object.freeze(operations.map((operation) => Object.freeze(operation)));
 }
 
-/**
- * Compile a real sealed CreatorChangeSet to its deterministic, manifest-bound
- * projection. Coordinator code can call this without unsafe type casts.
- */
 export function compileCreatorChangeSetMutationProjection(
-  changeSet: CreatorChangeSet,
+  changeSet: CreatorMutationSealedChangeSet,
   context: CreatorChangeSetProjectionContext,
 ): StudioEvidenceProjection {
   assertCreatorChangeSetProjectionContext(changeSet, context);
+  assertCreatorTransactionTopologyOrder({
+    initial: context.initialTopology,
+    operations: changeSet.operations,
+  });
   const purpose = context.purpose ?? "mutation_direct_readback";
   return compileMutationEvidenceProjection({
-    id:
-      context.projectionId ??
-      creatorChangeSetMutationProjectionId(changeSet, purpose),
+    id: context.projectionId ?? creatorChangeSetMutationProjectionId(changeSet, purpose),
     project: context.project,
     binding: context.binding,
     operations: adaptCreatorChangeSetMutationOperations(
       changeSet,
+      context.initialTopology,
       context.deletedSubtrees,
+      context.structuralParents,
     ),
     purpose,
-    allowedStateDelta: context.allowedStateDelta,
   });
 }
 
@@ -201,24 +435,19 @@ export interface CreatorMutationEvidence {
   readonly envelope: StudioEvidenceEnvelope;
 }
 
-export interface CreatorMutationStateEvidence extends CreatorMutationEvidence {
-  readonly revision: StudioStateRevision;
-}
-
 export interface CreatorMutationReconciliationInput {
   readonly sessionId: string;
   readonly attemptId: string;
   readonly manifest: StudioCapabilityManifest;
   readonly manifestHash: string;
   readonly changeSet: CreatorMutationChangeSetLike;
-  /** The sealed projection that describes exact mutation postconditions. */
   readonly projection: StudioEvidenceProjection;
-  /** Detached canary proof. It has its own explicitly bound projection. */
   readonly preflight: CreatorMutationEvidence;
-  /** Direct engine readback from the provisionally changed objects. */
   readonly directReadback: StudioEvidenceEnvelope;
-  readonly beforeState: CreatorMutationStateEvidence;
-  readonly afterState: CreatorMutationStateEvidence;
+  /** Complete, immutable capture immediately before provisional mutation. */
+  readonly beforeIndexCapture: StudioProjectIndexCapture;
+  /** Complete, immutable capture immediately after direct engine readback. */
+  readonly afterIndexCapture: StudioProjectIndexCapture;
 }
 
 export interface CreatorMutationReconciliation {
@@ -236,16 +465,16 @@ export interface CreatorMutationReconciliation {
   readonly preflightBindingHash: string;
   readonly preflightEnvelopeHash: string;
   readonly directReadbackHash: string;
-  readonly beforeStateProjectionHash: string;
-  readonly beforeStateBindingHash: string;
-  readonly beforeStateHash: string;
-  readonly afterStateProjectionHash: string;
-  readonly afterStateBindingHash: string;
-  readonly afterStateHash: string;
+  readonly beforeIndexCaptureHash: string;
+  readonly beforeIndexRevisionHash: string;
+  readonly beforeIndexMerkleRoot: string;
+  readonly afterIndexCaptureHash: string;
+  readonly afterIndexRevisionHash: string;
+  readonly afterIndexMerkleRoot: string;
   readonly failureFacts: readonly CreatorMutationFailureFact[];
 }
 
-/** A hash-bound immutable artifact. `hash` is the semantic object hash. */
+/** A hash-bound immutable artifact. `hash` is the evidence object's hash. */
 export interface CreatorMutationArtifactBinding {
   readonly artifact: ArtifactReference;
   readonly hash: string;
@@ -256,10 +485,8 @@ export interface CreatorMutationArtifactEvidence {
   readonly envelope: CreatorMutationArtifactBinding;
 }
 
-export interface CreatorMutationArtifactStateEvidence
-  extends CreatorMutationArtifactEvidence {
-  readonly revision: CreatorMutationArtifactBinding;
-}
+/** A complete, independently verified graph of bounded project-index leaves. */
+export type CreatorMutationArtifactIndexCapture = CreatorProjectIndexArtifactBinding;
 
 export interface CreatorMutationFinalization {
   readonly kind: "CreatorMutationFinalization";
@@ -272,25 +499,18 @@ export interface CreatorMutationFinalization {
   readonly projectionId: string;
   readonly projectionHash: string;
   readonly manifestHash: string;
-  readonly beforeRevisionHash: string;
+  readonly beforeIndexCaptureHash: string;
+  readonly beforeIndexRevisionHash: string;
+  readonly afterIndexCaptureHash: string;
+  readonly afterIndexRevisionHash: string;
+  readonly finalIndexCaptureHash: string;
+  readonly finalIndexRevisionHash: string;
   readonly recordingId: string;
-  /** Present only when a complete mutation reconciliation was produced. */
   readonly reconciliationHash?: string;
   readonly action: "commit" | "cancel" | "recovery_cancel";
-  readonly afterRevisionHash: string;
-  readonly postFinalizeProjectionHash: string;
-  readonly postFinalizeEvidenceHash: string;
-  readonly status:
-    | "committed"
-    | "cancelled"
-    | "recovery_cancelled"
-    | "recovery_required";
+  readonly status: "committed" | "cancelled" | "recovery_cancelled" | "recovery_required";
 }
 
-/**
- * Append-only mutation evidence.  The store owns the bytes; this object owns
- * just content-addressed references and the semantically meaningful hashes.
- */
 export interface CreatorSettledMutationAttempt {
   readonly kind: "CreatorMutationAttempt";
   readonly id: string;
@@ -298,15 +518,14 @@ export interface CreatorSettledMutationAttempt {
   readonly sessionId: string;
   readonly completion: "settled";
   readonly manifest: CreatorMutationArtifactBinding;
-  /** Exact ReflectionService evidence from the paired connector used for this attempt. */
   readonly attestation: CreatorMutationArtifactEvidence;
   readonly changeSet: CreatorMutationArtifactBinding;
   readonly projection: CreatorMutationArtifactBinding;
   readonly preflight: CreatorMutationArtifactEvidence;
   readonly directReadback: CreatorMutationArtifactBinding;
-  readonly beforeState: CreatorMutationArtifactStateEvidence;
-  readonly afterState: CreatorMutationArtifactStateEvidence;
-  readonly finalState: CreatorMutationArtifactStateEvidence;
+  readonly beforeIndexCapture: CreatorMutationArtifactIndexCapture;
+  readonly afterIndexCapture: CreatorMutationArtifactIndexCapture;
+  readonly finalIndexCapture: CreatorMutationArtifactIndexCapture;
   readonly reconciliation: CreatorMutationArtifactBinding;
   readonly finalization: CreatorMutationArtifactBinding;
 }
@@ -323,33 +542,32 @@ interface CreatorIncompleteMutationAttemptBase {
   readonly projection: CreatorMutationArtifactBinding;
   readonly preflightProjection: CreatorMutationArtifactBinding;
   readonly preflight?: CreatorMutationArtifactEvidence;
-  readonly beforeState: CreatorMutationArtifactStateEvidence;
+  readonly beforeIndexCapture: CreatorMutationArtifactIndexCapture;
   readonly failureFacts: readonly CreatorMutationFailureFact[];
 }
 
-/** A failed detached canary is evidence, but never a reconciliation verdict. */
-export interface CreatorIncompletePreflightMutationAttempt
-  extends CreatorIncompleteMutationAttemptBase {
+export interface CreatorIncompletePreflightMutationAttempt extends CreatorIncompleteMutationAttemptBase {
   readonly phase: "preflight";
-  readonly preflight?: CreatorMutationArtifactEvidence;
 }
 
-/** A same-call execution failure is closed only by cancellation and final state evidence. */
-export interface CreatorIncompleteApplyMutationAttempt
-  extends CreatorIncompleteMutationAttemptBase {
+export interface CreatorIncompleteDurableIntentMutationAttempt extends CreatorIncompleteMutationAttemptBase {
+  readonly phase: "durable_intent";
+  readonly preflight: CreatorMutationArtifactEvidence;
+}
+
+export interface CreatorIncompleteApplyMutationAttempt extends CreatorIncompleteMutationAttemptBase {
   readonly phase: "apply";
   readonly preflight: CreatorMutationArtifactEvidence;
-  readonly finalState: CreatorMutationArtifactStateEvidence;
+  readonly finalIndexCapture: CreatorMutationArtifactIndexCapture;
   readonly finalization: CreatorMutationArtifactBinding;
 }
 
 export type CreatorIncompleteMutationAttempt =
   | CreatorIncompletePreflightMutationAttempt
+  | CreatorIncompleteDurableIntentMutationAttempt
   | CreatorIncompleteApplyMutationAttempt;
-
 export type CreatorMutationAttempt =
-  | CreatorSettledMutationAttempt
-  | CreatorIncompleteMutationAttempt;
+  CreatorSettledMutationAttempt | CreatorIncompleteMutationAttempt;
 
 export interface CreatorMutationReplay {
   readonly kind: "CreatorMutationReplay";
@@ -367,14 +585,20 @@ export function createCreatorMutationFinalization(
 ): CreatorMutationFinalization {
   const base = { kind: "CreatorMutationFinalization" as const, ...input };
   const id = `creator_mutation_finalization_${contentHash(stableJson(base)).slice(0, 24)}`;
-  const payload = { ...base, id };
   const finalization = Object.freeze({
-    ...payload,
-    hash: contentHash(stableJson(payload)),
+    ...base,
+    id,
+    hash: contentHash(stableJson({ ...base, id })),
   });
-  if (!isFinalization(finalization))
-    throw new Error("Invalid CreatorMutationFinalization");
+  assertCreatorMutationFinalization(finalization);
   return finalization;
+}
+
+export function assertCreatorMutationFinalization(
+  value: unknown,
+): asserts value is CreatorMutationFinalization {
+  if (!isFinalization(value) || !hasCanonicalHash(value))
+    throw new Error("Invalid CreatorMutationFinalization");
 }
 
 export function createCreatorMutationAttempt(
@@ -382,15 +606,26 @@ export function createCreatorMutationAttempt(
   input: Omit<CreatorSettledMutationAttempt, "kind" | "id" | "hash" | "completion">,
 ): CreatorSettledMutationAttempt {
   if (!isNonEmpty(id)) throw new Error("Creator mutation attempt requires an ID");
-  const payload = { kind: "CreatorMutationAttempt" as const, id, completion: "settled" as const, ...input };
-  const attempt = Object.freeze({ ...payload, hash: contentHash(stableJson(payload)) });
+  const payload = {
+    kind: "CreatorMutationAttempt" as const,
+    id,
+    completion: "settled" as const,
+    ...input,
+  };
+  const attempt = Object.freeze({
+    ...payload,
+    hash: contentHash(stableJson(payload)),
+  });
   assertCreatorMutationAttempt(attempt);
   return attempt;
 }
 
 export function createIncompleteCreatorMutationAttempt(
   id: string,
-  input: Omit<CreatorIncompletePreflightMutationAttempt, "kind" | "id" | "hash" | "completion" | "phase">,
+  input: Omit<
+    CreatorIncompletePreflightMutationAttempt,
+    "kind" | "id" | "hash" | "completion" | "phase"
+  >,
 ): CreatorIncompletePreflightMutationAttempt {
   if (!isNonEmpty(id)) throw new Error("Creator mutation attempt requires an ID");
   const payload = {
@@ -400,14 +635,20 @@ export function createIncompleteCreatorMutationAttempt(
     phase: "preflight" as const,
     ...input,
   };
-  const attempt = Object.freeze({ ...payload, hash: contentHash(stableJson(payload)) });
+  const attempt = Object.freeze({
+    ...payload,
+    hash: contentHash(stableJson(payload)),
+  });
   assertCreatorMutationAttempt(attempt);
   return attempt;
 }
 
 export function createIncompleteApplyMutationAttempt(
   id: string,
-  input: Omit<CreatorIncompleteApplyMutationAttempt, "kind" | "id" | "hash" | "completion" | "phase">,
+  input: Omit<
+    CreatorIncompleteApplyMutationAttempt,
+    "kind" | "id" | "hash" | "completion" | "phase"
+  >,
 ): CreatorIncompleteApplyMutationAttempt {
   if (!isNonEmpty(id)) throw new Error("Creator mutation attempt requires an ID");
   const payload = {
@@ -417,16 +658,37 @@ export function createIncompleteApplyMutationAttempt(
     phase: "apply" as const,
     ...input,
   };
-  const attempt = Object.freeze({ ...payload, hash: contentHash(stableJson(payload)) });
+  const attempt = Object.freeze({
+    ...payload,
+    hash: contentHash(stableJson(payload)),
+  });
   assertCreatorMutationAttempt(attempt);
   return attempt;
 }
 
-/**
- * Canonical, de-duplicated failure facts.  They are intentionally descriptive
- * evidence rather than inferred Studio values, so a missing read cannot turn
- * into a fabricated mismatch.
- */
+export function createIncompleteDurableIntentMutationAttempt(
+  id: string,
+  input: Omit<
+    CreatorIncompleteDurableIntentMutationAttempt,
+    "kind" | "id" | "hash" | "completion" | "phase"
+  >,
+): CreatorIncompleteDurableIntentMutationAttempt {
+  if (!isNonEmpty(id)) throw new Error("Creator mutation attempt requires an ID");
+  const payload = {
+    kind: "CreatorMutationAttempt" as const,
+    id,
+    completion: "incomplete" as const,
+    phase: "durable_intent" as const,
+    ...input,
+  };
+  const attempt = Object.freeze({
+    ...payload,
+    hash: contentHash(stableJson(payload)),
+  });
+  assertCreatorMutationAttempt(attempt);
+  return attempt;
+}
+
 export function createMutationFailureFacts(
   inputs: readonly CreatorMutationFailureInput[],
 ): readonly CreatorMutationFailureFact[] {
@@ -444,93 +706,52 @@ export function createMutationFailureFacts(
       hash: contentHash(stableJson({ code: candidate.code, detail })),
     });
   });
-  const deduplicated = new Map<string, CreatorMutationFailureFact>();
-  for (const fact of facts) deduplicated.set(fact.hash, fact);
-  return Object.freeze(
-    [...deduplicated.values()].sort(
-      (left, right) =>
-        left.hash.localeCompare(right.hash) ||
-        left.code.localeCompare(right.code) ||
-        left.detail.localeCompare(right.detail),
-    ),
-  );
+  const unique = new Map(facts.map((fact) => [fact.hash, fact]));
+  return Object.freeze([...unique.values()].sort(compareFailureFacts));
 }
 
 /**
- * Pure reconciliation of stored evidence.  It has no connector, provider, or
- * Studio dependency: malformed or unavailable evidence is always incomplete.
+ * Pure reconciliation. A valid complete project-index capture is the only
+ * project-wide evidence accepted here. There is no project-state projection,
+ * project-state envelope, or StudioStateRevision fallback.
  */
 export function reconcileCreatorMutation(
   input: CreatorMutationReconciliationInput,
 ): CreatorMutationReconciliation {
   const incomplete: CreatorMutationFailureInput[] = [];
   const mismatched: CreatorMutationFailureInput[] = [];
-  const addIncomplete = (code: string, detail: string): void => {
-    incomplete.push({ code, detail });
-  };
-  const addMismatch = (code: string, detail: string): void => {
-    mismatched.push({ code, detail });
-  };
+  const addIncomplete = (code: string, detail: string) => incomplete.push({ code, detail });
+  const addMismatch = (code: string, detail: string) => mismatched.push({ code, detail });
 
   if (!isNonEmpty(input.sessionId) || !isNonEmpty(input.attemptId))
     addIncomplete("mutation_binding_invalid", "Mutation session or attempt identity is missing.");
   try {
     assertStudioCapabilityManifest(input.manifest);
   } catch (error) {
-    addIncomplete("manifest_invalid", `Stored capability manifest is invalid: ${errorMessage(error)}`);
+    addIncomplete(
+      "manifest_invalid",
+      `Stored capability manifest is invalid: ${errorMessage(error)}`,
+    );
   }
   if (contentHash(stableJson(input.manifest)) !== input.manifestHash)
-    addIncomplete("manifest_binding_invalid", "Stored capability manifest does not match its immutable hash binding.");
+    addIncomplete(
+      "manifest_binding_invalid",
+      "Stored capability manifest does not match its immutable hash binding.",
+    );
 
   const changeSet = input.changeSet;
   if (!isChangeSet(changeSet)) {
     addIncomplete("change_set_invalid", "The sealed creator change set is invalid.");
-  } else {
-    if (!isHash(changeSet.hash))
-      addIncomplete("change_set_binding_invalid", "The sealed creator change set has no valid hash.");
-    if (changeSet.binding.changeSetHash !== changeSet.hash)
-      addIncomplete("change_set_binding_invalid", "The change-set binding does not name the sealed change-set hash.");
-    if (!sortedUnique(changeSet.allowedStateDelta))
-      addIncomplete("state_delta_invalid", "The approved state delta is missing, duplicated, or not in canonical order.");
   }
-
   const projection = input.projection;
-  try {
-    assertStudioEvidenceProjection(projection, input.manifest);
-  } catch (error) {
-    addIncomplete("mutation_projection_invalid", `Mutation projection is invalid: ${errorMessage(error)}`);
-  }
-  if (projection.manifestHash !== input.manifestHash)
-    addIncomplete("mutation_projection_binding_invalid", "Mutation projection manifest binding differs from the attempt manifest.");
-  if (projection.purpose !== "mutation_direct_readback")
-    addIncomplete("mutation_projection_invalid", "Mutation projection must be a direct-readback projection.");
-  if (isChangeSet(changeSet)) {
-    if (!sameBinding(projection.binding, changeSet.binding))
-      addIncomplete("mutation_projection_binding_invalid", "Mutation projection binding differs from the sealed change set.");
-    if (projection.id !== changeSet.projectionId)
-      addIncomplete("mutation_projection_binding_invalid", "Mutation projection identity differs from the sealed change set.");
-    if (!sameStringArray(projection.allowedStateDelta ?? [], changeSet.allowedStateDelta))
-      addIncomplete("state_delta_binding_invalid", "Mutation projection does not declare the complete approved state delta.");
-    try {
-      const recompiled = compileMutationEvidenceProjectionForManifest(
-        {
-          id: changeSet.projectionId,
-          project: changeSet.project,
-          binding: changeSet.binding,
-          operations: changeSet.operations,
-          purpose: "mutation_direct_readback",
-          allowedStateDelta: changeSet.allowedStateDelta,
-        },
-        input.manifest,
-        input.manifestHash,
-      );
-      if (recompiled.contentHash !== projection.contentHash)
-        addIncomplete("mutation_projection_recompile_failed", "Stored mutation projection does not equal deterministic recompilation.");
-    } catch (error) {
-      addIncomplete("mutation_projection_recompile_failed", `Mutation projection could not be recompiled: ${errorMessage(error)}`);
-    }
-  }
-
+  validateStoredMutationProjection(
+    changeSet,
+    projection,
+    input.manifest,
+    input.manifestHash,
+    addIncomplete,
+  );
+  validatePreflight(input.preflight, input.manifest, input.manifestHash, changeSet, addIncomplete);
   validateExactEvidence(
     input.directReadback,
     projection,
@@ -539,63 +760,60 @@ export function reconcileCreatorMutation(
     addIncomplete,
     addMismatch,
   );
-  validatePreflight(
-    input.preflight,
-    input.manifest,
-    input.manifestHash,
-    changeSet,
-    addIncomplete,
-  );
-  validateProjectState(
-    input.beforeState,
-    input.manifest,
-    input.manifestHash,
-    changeSet,
-    "before_state",
-    addIncomplete,
-  );
-  validateProjectState(
-    input.afterState,
-    input.manifest,
-    input.manifestHash,
-    changeSet,
-    "after_state",
-    addIncomplete,
-  );
 
-  if (incomplete.length === 0) {
-    const allowed = new Set(changeSet.allowedStateDelta);
-    const before = indexFacts(input.beforeState.envelope.facts);
-    const after = indexFacts(input.afterState.envelope.facts);
-    for (const key of new Set([...before.keys(), ...after.keys()])) {
-      const left = before.get(key);
-      const right = after.get(key);
-      if (sameFact(left, right)) continue;
-      if (!allowed.has(key))
-        addMismatch("unapproved_observable_delta", `Observable project-state fact changed outside the approved delta: ${key}.`);
-    }
-    const afterFacts = indexFacts(input.afterState.envelope.facts);
-    for (const requirement of projection.requirements) {
-      const direct = indexFacts(input.directReadback.facts).get(requirement.key);
-      const postState = afterFacts.get(requirement.key);
-      if (requirement.expectedStatus === "absent" && direct?.result.status === "absent" && postState === undefined) {
-        continue;
+  const before = validateIndexCapture(
+    input.beforeIndexCapture,
+    "before_index",
+    input.manifest,
+    input.manifestHash,
+    changeSet.project,
+    addIncomplete,
+  );
+  const after = validateIndexCapture(
+    input.afterIndexCapture,
+    "after_index",
+    input.manifest,
+    input.manifestHash,
+    changeSet.project,
+    addIncomplete,
+  );
+  if (before && after && before.revision.connectorEpoch !== after.revision.connectorEpoch)
+    addIncomplete(
+      "index_capture_epoch_changed",
+      "Before and after index captures use different connector epochs.",
+    );
+
+  if (incomplete.length === 0 && before && after && isChangeSet(changeSet)) {
+    const transitions = mutationObjectTransitions(changeSet.operations);
+    if (validateObjectTransitionsInCaptures(transitions, before, after, addMismatch)) {
+      const difference = indexDifference(before, after, transitions);
+      const allowed = approvedIndexDelta(changeSet.operations, before, after, transitions);
+      for (const change of difference.changes) {
+        if (!allowed.has(change.key))
+          addMismatch(
+            "unapproved_index_delta",
+            `Project index changed outside approved operations: ${change.key}.`,
+          );
       }
-      if (direct === undefined || postState === undefined) {
-        addIncomplete("post_state_coverage_incomplete", `Post-apply state lacks projected mutation fact: ${requirement.key}.`);
-        continue;
-      }
-      if (!sameFact(direct, postState))
-        addMismatch("direct_readback_state_difference", `Direct readback and post-apply project state differ for: ${requirement.key}.`);
+      if (
+        before.revision.merkleRoot !== after.revision.merkleRoot &&
+        difference.changes.length === 0
+      )
+        addMismatch(
+          "unexplained_merkle_delta",
+          "Project index Merkle root changed without a node, source, or identity difference.",
+        );
+      if (before.revision.merkleRoot === after.revision.merkleRoot && difference.changes.length > 0)
+        addMismatch(
+          "unexplained_index_difference",
+          "Project index nodes, source, or identity changed without a Merkle-root change.",
+        );
     }
+    validateOperationsInAfterCapture(changeSet.operations, after, addMismatch);
   }
 
   const status: CreatorMutationReconciliationStatus =
-    incomplete.length > 0
-      ? "incomplete"
-      : mismatched.length > 0
-        ? "mismatched"
-        : "matched";
+    incomplete.length > 0 ? "incomplete" : mismatched.length > 0 ? "mismatched" : "matched";
   const failureFacts = createMutationFailureFacts(
     status === "incomplete" ? incomplete : mismatched,
   );
@@ -605,178 +823,99 @@ export function reconcileCreatorMutation(
     sessionId: input.sessionId,
     attemptId: input.attemptId,
     status,
-    manifestHash: input.manifestHash,
-    changeSetHash: changeSet.hash,
-    projectionHash: projection.contentHash,
-    bindingHash: projection.bindingHash,
-    preflightProjectionHash: input.preflight.projection.contentHash,
-    preflightBindingHash: input.preflight.projection.bindingHash,
-    preflightEnvelopeHash: input.preflight.envelope.contentHash,
-    directReadbackHash: input.directReadback.contentHash,
-    beforeStateProjectionHash: input.beforeState.projection.contentHash,
-    beforeStateBindingHash: input.beforeState.projection.bindingHash,
-    beforeStateHash: input.beforeState.revision.stateHash,
-    afterStateProjectionHash: input.afterState.projection.contentHash,
-    afterStateBindingHash: input.afterState.projection.bindingHash,
-    afterStateHash: input.afterState.revision.stateHash,
+    manifestHash: safeHash(input.manifestHash),
+    changeSetHash: recordHash(changeSet, "hash"),
+    projectionHash: recordHash(projection, "contentHash"),
+    bindingHash: recordHash(projection, "bindingHash"),
+    preflightProjectionHash: recordHash(input.preflight?.projection, "contentHash"),
+    preflightBindingHash: recordHash(input.preflight?.projection, "bindingHash"),
+    preflightEnvelopeHash: recordHash(input.preflight?.envelope, "contentHash"),
+    directReadbackHash: recordHash(input.directReadback, "contentHash"),
+    beforeIndexCaptureHash: recordHash(input.beforeIndexCapture, "hash"),
+    beforeIndexRevisionHash: nestedRecordHash(input.beforeIndexCapture, "revision", "hash"),
+    beforeIndexMerkleRoot: nestedRecordHash(input.beforeIndexCapture, "revision", "merkleRoot"),
+    afterIndexCaptureHash: recordHash(input.afterIndexCapture, "hash"),
+    afterIndexRevisionHash: nestedRecordHash(input.afterIndexCapture, "revision", "hash"),
+    afterIndexMerkleRoot: nestedRecordHash(input.afterIndexCapture, "revision", "merkleRoot"),
     failureFacts,
   };
-  return freeze({ ...base, hash: contentHash(stableJson(base)) });
+  return Object.freeze({ ...base, hash: contentHash(stableJson(base)) });
 }
 
-/**
- * Reconstruct an attempt solely from immutable artifacts and reproduce its
- * reconciliation.  A recorded mismatch is successful replay when reproduced.
- */
+/** Reproduce a stored verdict using only immutable artifacts. */
 export async function replayCreatorMutation(
   attempt: CreatorMutationAttempt,
   store: ImmutableJsonArtifactStore,
 ): Promise<CreatorMutationReplay> {
   const base = {
     kind: "CreatorMutationReplay" as const,
-    attemptId: attempt.id,
+    attemptId: isRecord(attempt) && isNonEmpty(attempt.id) ? attempt.id : "unknown",
     recordedStatus: "incomplete" as CreatorMutationReconciliationStatus,
     recordedFailureFactHashes: Object.freeze([] as string[]),
   };
   if (!isCreatorMutationAttempt(attempt))
     return replayMismatch(base, "Mutation attempt binding is invalid.");
+
   if (attempt.completion === "incomplete") {
     try {
       const manifest = await readManifest(store, attempt.manifest);
-      const attestationProjection = await readProjection(store, attempt.attestation.projection, manifest);
-      const attestationEnvelope = await readEnvelope(store, attempt.attestation.envelope, manifest);
-      validateCapabilityAttestation(
-        manifest,
-        attempt.manifest.hash,
-        attestationProjection,
-        attestationEnvelope,
-      );
-      const changeSet = await readChangeSet(store, attempt.changeSet);
-      const projection = await readProjection(store, attempt.projection, manifest);
-      const preflightProjection = await readProjection(store, attempt.preflightProjection, manifest);
-      const beforeProjection = await readProjection(store, attempt.beforeState.projection, manifest);
-      const beforeEnvelope = await readEnvelope(store, attempt.beforeState.envelope, manifest);
-      const beforeRevision = await readStateRevision(store, attempt.beforeState.revision);
-      assertStoredMutationProjection(
-        changeSet,
-        projection,
-        manifest,
-        attempt.manifest.hash,
-      );
-      assertPreflightProjection(
-        preflightProjection,
-        manifest,
-        attempt.manifest.hash,
-        changeSet,
-      );
-      assertProjectStateEvidence(
-        { projection: beforeProjection, envelope: beforeEnvelope, revision: beforeRevision },
-        manifest,
-        attempt.manifest.hash,
-        changeSet,
-      );
-      if (attempt.preflight) {
-        const preflightAttemptProjection = await readProjection(store, attempt.preflight.projection, manifest);
-        const preflightEnvelope = await readEnvelope(store, attempt.preflight.envelope, manifest);
-        if (preflightAttemptProjection.contentHash !== preflightProjection.contentHash)
-          throw new Error("Incomplete preflight attempt has conflicting projection bindings");
-        assertPreflightEvidence(
-          { projection: preflightAttemptProjection, envelope: preflightEnvelope },
-          manifest,
-          attempt.manifest.hash,
-          changeSet,
-        );
-      }
+      const before = await readIndexCapture(store, attempt.beforeIndexCapture, manifest);
       if (attempt.phase === "apply") {
-        const applyPreflightProjection = await readProjection(store, attempt.preflight.projection, manifest);
-        const applyPreflightEnvelope = await readEnvelope(store, attempt.preflight.envelope, manifest);
-        const finalProjection = await readProjection(store, attempt.finalState.projection, manifest);
-        const finalEnvelope = await readEnvelope(store, attempt.finalState.envelope, manifest);
-        const finalRevision = await readStateRevision(store, attempt.finalState.revision);
-        const finalization = await readFinalization(store, attempt.finalization);
-        assertCompletePreflightEvidence(
-          { projection: applyPreflightProjection, envelope: applyPreflightEnvelope },
-          manifest,
-          attempt.manifest.hash,
-          changeSet,
-        );
-        assertProjectStateEvidence(
-          { projection: finalProjection, envelope: finalEnvelope, revision: finalRevision },
-          manifest,
-          attempt.manifest.hash,
-          changeSet,
-        );
-        if (
-          finalization.attemptId !== attempt.id ||
-          !finalizationMatchesTransaction(
-            finalization,
-            attempt.sessionId,
-            changeSet,
-            projection,
-            attempt.manifest.hash,
-          ) ||
-          finalization.reconciliationHash !== undefined ||
-          finalization.afterRevisionHash !== finalRevision.stateHash ||
-          finalization.postFinalizeProjectionHash !== finalProjection.contentHash ||
-          finalization.postFinalizeEvidenceHash !== finalEnvelope.contentHash ||
-          finalization.action !== "cancel" ||
-          finalization.status !== "cancelled"
-        ) throw new Error("Incomplete apply finalization is not an exact proven cancellation");
+        const final = await readIndexCapture(store, attempt.finalIndexCapture, manifest);
+        if (before.revision.merkleRoot !== final.revision.merkleRoot)
+          throw new Error("Incomplete apply attempt did not retain an exact rollback capture");
       }
     } catch (error) {
-      return replayMissing(base, `Incomplete mutation evidence could not be verified: ${errorMessage(error)}`);
+      return replayMissing(
+        base,
+        `Incomplete mutation index evidence could not be verified: ${errorMessage(error)}`,
+      );
     }
     return {
       ...base,
       recordedFailureFactHashes: attempt.failureFacts.map((fact) => fact.hash),
       result: "missing_or_incomplete",
-      detail: attempt.phase === "apply"
-        ? "The provisionally applied mutation failed and was cancelled, so no matched mutation verdict exists."
-        : "The detached capability preflight did not produce passed evidence, so no mutation verdict exists.",
+      detail:
+        attempt.phase === "apply"
+          ? "The provisionally applied mutation was cancelled and has no matched verdict."
+          : attempt.phase === "durable_intent"
+            ? "Detached preflight passed, but Studio could not durably persist the recording intent before opening a recording."
+            : "The detached capability preflight did not produce a matched mutation verdict.",
     };
   }
 
   let manifest: StudioCapabilityManifest;
-  let attestationProjection: StudioEvidenceProjection;
-  let attestationEnvelope: StudioEvidenceEnvelope;
   let changeSet: CreatorMutationChangeSetLike;
   let projection: StudioEvidenceProjection;
   let preflightProjection: StudioEvidenceProjection;
   let preflightEnvelope: StudioEvidenceEnvelope;
   let directReadback: StudioEvidenceEnvelope;
-  let beforeProjection: StudioEvidenceProjection;
-  let beforeEnvelope: StudioEvidenceEnvelope;
-  let beforeRevision: StudioStateRevision;
-  let afterProjection: StudioEvidenceProjection;
-  let afterEnvelope: StudioEvidenceEnvelope;
-  let afterRevision: StudioStateRevision;
-  let finalProjection: StudioEvidenceProjection;
-  let finalEnvelope: StudioEvidenceEnvelope;
-  let finalRevision: StudioStateRevision;
+  let before: StudioProjectIndexCapture;
+  let after: StudioProjectIndexCapture;
+  let final: StudioProjectIndexCapture;
   let recorded: CreatorMutationReconciliation;
   let finalization: CreatorMutationFinalization;
   try {
     manifest = await readManifest(store, attempt.manifest);
-    attestationProjection = await readProjection(store, attempt.attestation.projection, manifest);
-    attestationEnvelope = await readEnvelope(store, attempt.attestation.envelope, manifest);
+    // Attestation stays append-only evidence for the transaction. Its policy
+    // grade is owned by its dedicated verifier, not this reconciler.
+    await readProjection(store, attempt.attestation.projection, manifest);
+    await readEnvelope(store, attempt.attestation.envelope, manifest);
     changeSet = await readChangeSet(store, attempt.changeSet);
     projection = await readProjection(store, attempt.projection, manifest);
     preflightProjection = await readProjection(store, attempt.preflight.projection, manifest);
     preflightEnvelope = await readEnvelope(store, attempt.preflight.envelope, manifest);
     directReadback = await readEnvelope(store, attempt.directReadback, manifest);
-    beforeProjection = await readProjection(store, attempt.beforeState.projection, manifest);
-    beforeEnvelope = await readEnvelope(store, attempt.beforeState.envelope, manifest);
-    beforeRevision = await readStateRevision(store, attempt.beforeState.revision);
-    afterProjection = await readProjection(store, attempt.afterState.projection, manifest);
-    afterEnvelope = await readEnvelope(store, attempt.afterState.envelope, manifest);
-    afterRevision = await readStateRevision(store, attempt.afterState.revision);
-    finalProjection = await readProjection(store, attempt.finalState.projection, manifest);
-    finalEnvelope = await readEnvelope(store, attempt.finalState.envelope, manifest);
-    finalRevision = await readStateRevision(store, attempt.finalState.revision);
+    before = await readIndexCapture(store, attempt.beforeIndexCapture, manifest);
+    after = await readIndexCapture(store, attempt.afterIndexCapture, manifest);
+    final = await readIndexCapture(store, attempt.finalIndexCapture, manifest);
     recorded = await readReconciliation(store, attempt.reconciliation);
     finalization = await readFinalization(store, attempt.finalization);
   } catch (error) {
-    return replayMissing(base, `Required mutation evidence could not be read: ${errorMessage(error)}`);
+    return replayMissing(
+      base,
+      `Required mutation evidence could not be read: ${errorMessage(error)}`,
+    );
   }
 
   const replayBase = {
@@ -784,66 +923,6 @@ export async function replayCreatorMutation(
     recordedStatus: recorded.status,
     recordedFailureFactHashes: Object.freeze(recorded.failureFacts.map((fact) => fact.hash)),
   };
-  try {
-    validateCapabilityAttestation(
-      manifest,
-      attempt.manifest.hash,
-      attestationProjection,
-      attestationEnvelope,
-    );
-  } catch (error) {
-    return replayMissing(
-      replayBase,
-      `Capability attestation is missing, incompatible, or incomplete: ${errorMessage(error)}`,
-    );
-  }
-  try {
-    assertStoredMutationProjection(
-      changeSet,
-      projection,
-      manifest,
-      attempt.manifest.hash,
-    );
-    assertCompletePreflightEvidence(
-      { projection: preflightProjection, envelope: preflightEnvelope },
-      manifest,
-      attempt.manifest.hash,
-      changeSet,
-    );
-    assertProjectStateEvidence(
-      { projection: finalProjection, envelope: finalEnvelope, revision: finalRevision },
-      manifest,
-      attempt.manifest.hash,
-      changeSet,
-    );
-  } catch (error) {
-    return replayMissing(
-      replayBase,
-      `Final mutation evidence is missing, malformed, or improperly bound: ${errorMessage(error)}`,
-    );
-  }
-  if (
-    recorded.attemptId !== attempt.id ||
-    recorded.sessionId !== attempt.sessionId ||
-    finalization.attemptId !== attempt.id ||
-    !finalizationMatchesTransaction(
-      finalization,
-      attempt.sessionId,
-      changeSet,
-      projection,
-      attempt.manifest.hash,
-    ) ||
-    finalization.reconciliationHash !== recorded.hash
-  )
-    return replayMismatch(replayBase, "Attempt, reconciliation, or finalization bindings changed.");
-  if (
-    finalization.afterRevisionHash !== finalRevision.stateHash ||
-    finalization.postFinalizeProjectionHash !== finalProjection.contentHash ||
-    finalization.postFinalizeEvidenceHash !== finalEnvelope.contentHash
-  ) return replayMismatch(replayBase, "Finalization state-evidence bindings changed.");
-  if (!finalizationMatchesReconciliation(finalization, recorded))
-    return replayMismatch(replayBase, "Finalization action is not legal for the recorded reconciliation.");
-
   const replayed = reconcileCreatorMutation({
     sessionId: attempt.sessionId,
     attemptId: attempt.id,
@@ -853,20 +932,36 @@ export async function replayCreatorMutation(
     projection,
     preflight: { projection: preflightProjection, envelope: preflightEnvelope },
     directReadback,
-    beforeState: { projection: beforeProjection, envelope: beforeEnvelope, revision: beforeRevision },
-    afterState: { projection: afterProjection, envelope: afterEnvelope, revision: afterRevision },
+    beforeIndexCapture: before,
+    afterIndexCapture: after,
   });
-  if (replayed.status === "incomplete")
+  if (replayed.status === "incomplete") {
     return {
       ...replayBase,
       result: "missing_or_incomplete",
       replayedStatus: replayed.status,
       replayedFailureFactHashes: Object.freeze(replayed.failureFacts.map((fact) => fact.hash)),
-      detail: "Stored mutation evidence is missing, unavailable, malformed, or incomplete.",
+      detail: "Stored direct-readback or project-index evidence is incomplete.",
     };
+  }
+  if (
+    !matchesFinalization(
+      finalization,
+      attempt,
+      changeSet,
+      projection,
+      recorded,
+      before,
+      after,
+      final,
+    )
+  )
+    return replayMismatch(
+      replayBase,
+      "Finalization does not bind the recorded index-capture transaction.",
+    );
   const exact =
-    sameReconciliation(recorded, replayed) &&
-    recorded.hash === attempt.reconciliation.hash;
+    sameReconciliation(recorded, replayed) && recorded.hash === attempt.reconciliation.hash;
   return {
     ...replayBase,
     result: exact ? "exact_match" : "mismatch",
@@ -879,100 +974,76 @@ export async function replayCreatorMutation(
 }
 
 function adaptStudioChangeOperation(
-  changeSet: CreatorChangeSet,
-  operation: StudioChangeOperation,
+  operation: CreatorMutationStudioOperation,
+  structuralParent: StudioInstanceEvidenceTarget | undefined,
+  postStateTargets: ReadonlyMap<string, StudioInstanceEvidenceTarget>,
 ): MutationEvidenceOperation {
   switch (operation.kind) {
     case "create": {
-      const target = instanceTarget(
-        creatorMutationCreateStableId(changeSet, operation.tempId),
-        joinStudioPath(operation.parentPath, operation.name),
-        operation.className,
-      );
+      const target = rewritePostStateTarget(operation.target, postStateTargets);
       return {
         id: operation.id,
         kind: "create",
         target,
-        properties: operation.properties,
+        properties: rewritePostStateProperties(operation.properties, postStateTargets),
         attributes: operation.attributes,
-        ...(operation.source === undefined
+        ...(operation.sourceBlob === undefined
           ? {}
-          : { sourceHash: contentHash(operation.source) }),
-        structure: {
-          stableId: target.stableId,
-          path: target.path,
-          className: target.className,
-          parentPath: operation.parentPath,
-        },
+          : { sourceHash: operation.sourceBlob.sourceHash }),
+        structure: structureFor(target, operation.parent, structuralParent, postStateTargets),
       };
     }
-    case "update":
+    case "update": {
+      const target = rewritePostStateTarget(operation.target, postStateTargets);
       return {
         id: operation.id,
         kind: "update",
-        target: instanceTarget(
-          operation.stableId,
-          operation.expectedPath,
-          operation.expectedClass,
-        ),
-        properties: operation.properties,
+        target,
+        ...(operation.enrollment === undefined ? {} : { beforeTarget: operation.target }),
+        properties: rewritePostStateProperties(operation.properties, postStateTargets),
         attributes: operation.attributes,
         removedAttributes: operation.removedAttributes,
       };
+    }
     case "move": {
-      const target = instanceTarget(
-        operation.stableId,
-        joinStudioPath(operation.parentPath, operation.name),
-        operation.expectedClass,
-      );
+      const target = rewritePostStateTarget(operation.target, postStateTargets);
       return {
         id: operation.id,
         kind: "move",
         target,
-        properties: operation.properties,
+        beforeTarget: operation.target,
+        properties: rewritePostStateProperties(operation.properties, postStateTargets),
         attributes: operation.attributes,
         removedAttributes: operation.removedAttributes,
-        structure: {
-          stableId: target.stableId,
-          path: target.path,
-          className: target.className,
-          parentPath: operation.parentPath,
-        },
+        structure: structureFor(target, operation.parent, structuralParent, postStateTargets),
       };
     }
     case "delete":
       return {
         id: operation.id,
         kind: "delete",
-        target: instanceTarget(
-          operation.stableId,
-          operation.expectedPath,
-          operation.expectedClass,
-        ),
+        target: rewritePostStateTarget(operation.target, postStateTargets),
+        ...(operation.enrollment === undefined ? {} : { beforeTarget: operation.target }),
         structureStatus: "absent",
       };
-    case "write_source":
+    case "edit_source":
       return {
         id: operation.id,
-        kind: "write_source",
-        target: instanceTarget(
-          operation.stableId,
-          operation.expectedPath,
-          operation.expectedClass,
-        ),
-        attributes: operation.attributes,
-        removedAttributes: operation.removedAttributes,
-        sourceHash: contentHash(operation.source),
+        kind: "edit_source",
+        target: rewritePostStateTarget(operation.target, postStateTargets),
+        ...(operation.enrollment === undefined ? {} : { beforeTarget: operation.target }),
+        sourceHash: operation.finalSourceHash,
       };
   }
 }
 
 function assertCreatorChangeSetProjectionContext(
-  changeSet: CreatorChangeSet,
+  changeSet: CreatorMutationSealedChangeSet,
   context: CreatorChangeSetProjectionContext,
 ): void {
   if (!isHash(changeSet.hash) || !isNonEmpty(changeSet.sessionId))
     throw new Error("Mutation projection requires a sealed creator change set");
+  assertCreatorMutationBinding(context.binding, "Mutation projection context");
   if (
     context.binding.changeSetHash !== changeSet.hash ||
     context.binding.sessionId !== changeSet.sessionId ||
@@ -980,54 +1051,101 @@ function assertCreatorChangeSetProjectionContext(
     context.binding.buildHash !== changeSet.buildContractHash
   )
     throw new Error("Mutation projection context is not bound to the sealed change set");
-  if (
-    !isNonEmpty(context.project.name) ||
-    !Number.isSafeInteger(context.project.placeId) ||
-    context.project.placeId < 0 ||
-    !Number.isSafeInteger(context.project.universeId) ||
-    context.project.universeId < 0 ||
-    !sortedUnique(context.allowedStateDelta)
-  )
-    throw new Error("Mutation projection context has invalid project identity or state delta");
+  if (!isProject(context.project))
+    throw new Error("Mutation projection context has invalid project identity");
   if (
     context.purpose !== undefined &&
-    ![
-      "mutation_preflight",
-      "mutation_direct_readback",
-      "mutation_post_state",
-    ].includes(context.purpose)
+    !["mutation_preflight", "mutation_direct_readback", "mutation_post_state"].includes(
+      context.purpose,
+    )
   )
     throw new Error("Mutation projection context has an invalid purpose");
-}
-
-function instanceTarget(
-  stableId: string,
-  path: string,
-  className: string,
-): StudioInstanceEvidenceTarget {
-  if (!isNonEmpty(stableId) || !isStudioPath(path) || !isNonEmpty(className))
-    throw new Error("Creator mutation operation has an invalid instance identity");
-  return { kind: "instance", stableId, path, className };
-}
-
-function joinStudioPath(parentPath: string, name: string): string {
-  if (!isStudioPath(parentPath) || !isNonEmpty(name) || name.includes("/"))
-    throw new Error("Creator mutation operation has an invalid parent path or name");
-  return `${parentPath}/${name}`;
-}
-
-function isStudioPath(value: string): boolean {
-  return (
-    isNonEmpty(value) &&
-    !value.startsWith("/") &&
-    !value.endsWith("/") &&
-    !value.includes("\\") &&
-    !value.split("/").some((part) => part === "" || part === "." || part === "..")
+  const engineParentOperationIds = changeSet.operations
+    .filter(
+      (operation) =>
+        (operation.kind === "create" || operation.kind === "move") &&
+        operation.parent.kind === "engine_container",
+    )
+    .map((operation) => operation.id);
+  if (engineParentOperationIds.length === 0) return;
+  const structuralParents = context.structuralParents;
+  if (!structuralParents)
+    throw new Error("Mutation projection requires exact captured engine-parent identities");
+  const parentByOperation = new Map(
+    structuralParents.map((parent) => [parent.operationId, parent.target] as const),
   );
+  if (
+    parentByOperation.size !== structuralParents.length ||
+    engineParentOperationIds.some((operationId) => parentByOperation.get(operationId) === undefined)
+  )
+    throw new Error("Mutation projection is missing an exact captured engine-parent identity");
 }
 
-function isDescendantPath(path: string, ancestor: string): boolean {
-  return isStudioPath(path) && isStudioPath(ancestor) && path.startsWith(`${ancestor}/`);
+function validateStoredMutationProjection(
+  changeSet: CreatorMutationChangeSetLike,
+  projection: StudioEvidenceProjection,
+  manifest: StudioCapabilityManifest,
+  manifestHash: string,
+  incomplete: (code: string, detail: string) => void,
+): void {
+  try {
+    assertStudioEvidenceProjection(projection, manifest);
+    if (!isChangeSet(changeSet)) throw new Error("sealed change set is invalid");
+    assertCreatorMutationBinding(projection.binding, "Mutation direct-readback projection");
+    if (
+      projection.manifestHash !== manifestHash ||
+      projection.purpose !== "mutation_direct_readback" ||
+      !matchesStudioCreatorMutationBinding(projection.binding, changeSet.binding) ||
+      projection.id !== changeSet.projectionId
+    )
+      throw new Error("projection binding differs from sealed change set");
+    const recompiled = compileMutationEvidenceProjectionForManifest(
+      {
+        id: changeSet.projectionId,
+        project: changeSet.project,
+        binding: changeSet.binding,
+        operations: changeSet.operations,
+        purpose: "mutation_direct_readback",
+      },
+      manifest,
+      manifestHash,
+    );
+    if (recompiled.contentHash !== projection.contentHash)
+      throw new Error("projection does not equal deterministic recompilation");
+  } catch (error) {
+    incomplete(
+      "mutation_projection_invalid",
+      `Mutation direct-readback projection is invalid: ${errorMessage(error)}`,
+    );
+  }
+}
+
+function validatePreflight(
+  preflight: CreatorMutationEvidence,
+  manifest: StudioCapabilityManifest,
+  manifestHash: string,
+  changeSet: CreatorMutationChangeSetLike,
+  incomplete: (code: string, detail: string) => void,
+): void {
+  try {
+    assertStudioEvidenceProjection(preflight.projection, manifest);
+    assertEvidenceAgainstProjection(preflight.envelope, preflight.projection, manifest);
+    if (preflight.envelope.completion !== "complete")
+      throw new Error("preflight envelope is incomplete");
+    if (!isChangeSet(changeSet)) throw new Error("sealed change set is invalid");
+    assertCreatorMutationBinding(preflight.projection.binding, "Mutation preflight projection");
+    if (
+      preflight.projection.manifestHash !== manifestHash ||
+      preflight.projection.purpose !== "mutation_preflight" ||
+      !matchesStudioCreatorMutationBinding(preflight.projection.binding, changeSet.binding)
+    )
+      throw new Error("preflight is not bound to sealed mutation");
+  } catch (error) {
+    incomplete(
+      "capability_preflight_incomplete",
+      `Preflight evidence is incomplete or invalid: ${errorMessage(error)}`,
+    );
+  }
 }
 
 function validateExactEvidence(
@@ -1045,212 +1163,531 @@ function validateExactEvidence(
     return;
   }
   if (!matchesProjectionBinding(envelope, projection)) {
-    incomplete(`${label}_binding_invalid`, `${label} envelope does not bind the exact mutation projection.`);
+    incomplete(
+      `${label}_binding_invalid`,
+      `${label} envelope does not bind the direct-readback projection.`,
+    );
     return;
   }
   if (envelope.completion !== "complete") {
     incomplete(`${label}_incomplete`, `${label} envelope is incomplete.`);
     return;
   }
-  const facts = indexFacts(envelope.facts);
+  const facts = new Map(envelope.facts.map((fact) => [fact.key, fact]));
   if (facts.size !== envelope.facts.length || facts.size !== projection.requirements.length) {
     incomplete(`${label}_coverage_invalid`, `${label} has missing, duplicate, or extra facts.`);
     return;
   }
   for (const requirement of projection.requirements) {
     const fact = facts.get(requirement.key);
-    if (fact === undefined || !factMatchesRequirement(fact, requirement)) {
-      incomplete(`${label}_coverage_invalid`, `${label} does not contain required fact: ${requirement.key}.`);
+    if (!fact || !factMatchesRequirement(fact, requirement)) {
+      incomplete(`${label}_coverage_invalid`, `${label} misses required fact: ${requirement.key}.`);
       continue;
     }
     if (fact.result.status === "unavailable" || fact.result.status === "read_error") {
-      incomplete(`${label}_fact_unavailable`, `${label} could not read required fact: ${requirement.key}.`);
+      incomplete(
+        `${label}_fact_unavailable`,
+        `${label} could not read required fact: ${requirement.key}.`,
+      );
       continue;
     }
     const expectedStatus = requirement.expectedStatus ?? "observed";
     if (expectedStatus === "absent") {
       if (fact.result.status !== "absent")
-        mismatched(`${label}_fact_mismatch`, `${label} fact expected absent but was observed: ${requirement.key}.`);
-    } else if (fact.result.status !== "observed") {
-      mismatched(`${label}_fact_mismatch`, `${label} fact differs from the approved projection: ${requirement.key}.`);
+        mismatched(`${label}_fact_mismatch`, `${label} expected absent fact: ${requirement.key}.`);
     } else if (
-      requirement.expected !== undefined &&
-      !sameRequirementValue(fact.result.value, requirement.expected)
+      fact.result.status !== "observed" ||
+      (requirement.expected !== undefined &&
+        !sameRequirementValue(fact.result.value, requirement.expected))
     ) {
-      mismatched(`${label}_fact_mismatch`, `${label} fact differs from the approved projection: ${requirement.key}.`);
+      mismatched(
+        `${label}_fact_mismatch`,
+        `${label} fact differs from approved postcondition: ${requirement.key}.`,
+      );
     }
   }
 }
 
-function validatePreflight(
-  preflight: CreatorMutationEvidence,
-  manifest: StudioCapabilityManifest,
-  manifestHash: string,
-  changeSet: CreatorMutationChangeSetLike,
-  incomplete: (code: string, detail: string) => void,
-): void {
-  try {
-    assertStudioEvidenceProjection(preflight.projection, manifest);
-    assertEvidenceAgainstProjection(preflight.envelope, preflight.projection, manifest);
-  } catch (error) {
-    incomplete("capability_preflight_failed", `Preflight evidence is incomplete or invalid: ${errorMessage(error)}`);
-    return;
-  }
-  try {
-    assertPreflightProjection(preflight.projection, manifest, manifestHash, changeSet);
-  } catch (error) {
-    incomplete("capability_preflight_binding_invalid", `Preflight evidence is not bound to the sealed mutation: ${errorMessage(error)}`);
-  }
-}
-
-function assertPreflightEvidence(
-  preflight: CreatorMutationEvidence,
-  manifest: StudioCapabilityManifest,
-  manifestHash: string,
-  changeSet: CreatorMutationChangeSetLike,
-): void {
-  assertStudioEvidenceProjection(preflight.projection, manifest);
-  assertEvidenceAgainstProjection(preflight.envelope, preflight.projection, manifest);
-  assertPreflightProjection(preflight.projection, manifest, manifestHash, changeSet);
-}
-
-function assertCompletePreflightEvidence(
-  preflight: CreatorMutationEvidence,
-  manifest: StudioCapabilityManifest,
-  manifestHash: string,
-  changeSet: CreatorMutationChangeSetLike,
-): void {
-  assertPreflightEvidence(preflight, manifest, manifestHash, changeSet);
-  if (preflight.envelope.completion !== "complete")
-    throw new Error("Preflight envelope did not contain complete passed evidence");
-}
-
-function assertPreflightProjection(
-  projection: StudioEvidenceProjection,
-  manifest: StudioCapabilityManifest,
-  manifestHash: string,
-  changeSet: CreatorMutationChangeSetLike,
-): void {
-  assertStudioEvidenceProjection(projection, manifest);
-  if (
-    projection.manifestHash !== manifestHash ||
-    projection.purpose !== "mutation_preflight" ||
-    !sameBinding(projection.binding, changeSet.binding)
-  )
-    throw new Error("Preflight projection is not bound to the sealed mutation");
-  const recompiled = compileMutationEvidenceProjectionForManifest(
-    {
-      id: projection.id,
-      project: changeSet.project,
-      binding: changeSet.binding,
-      operations: changeSet.operations,
-      purpose: "mutation_preflight",
-      allowedStateDelta: changeSet.allowedStateDelta,
-    },
-    manifest,
-    manifestHash,
-  );
-  if (recompiled.contentHash !== projection.contentHash)
-    throw new Error("Preflight projection does not equal deterministic recompilation");
-}
-
-function validateCapabilityAttestation(
-  manifest: StudioCapabilityManifest,
-  manifestHash: string,
-  projection: StudioEvidenceProjection,
-  envelope: StudioEvidenceEnvelope,
-): void {
-  assertStudioCapabilityAttestation(manifest, manifestHash, projection, envelope);
-}
-
-function validateProjectState(
-  state: CreatorMutationStateEvidence,
-  manifest: StudioCapabilityManifest,
-  manifestHash: string,
-  changeSet: CreatorMutationChangeSetLike,
+function validateIndexCapture(
+  capture: unknown,
   label: string,
+  manifest: StudioCapabilityManifest,
+  manifestHash: string,
+  project: StudioProjectIdentity,
   incomplete: (code: string, detail: string) => void,
-): void {
+): StudioProjectIndexCapture | undefined {
   try {
-    assertProjectStateEvidence(state, manifest, manifestHash, changeSet);
+    assertStudioProjectIndexCapture(capture, manifest);
+    if (
+      capture.revision.manifestHash !== manifestHash ||
+      !sameProject(capture.revision.project, project)
+    )
+      throw new Error("capture project or manifest binding differs from mutation");
+    return capture;
   } catch (error) {
-    incomplete(`${label}_incomplete`, `${label} project-state evidence is invalid or incomplete: ${errorMessage(error)}`);
+    incomplete(
+      `${label}_incomplete`,
+      `${label} capture evidence is missing, malformed, or unbound: ${errorMessage(error)}`,
+    );
+    return undefined;
   }
 }
 
-function assertProjectStateEvidence(
-  state: CreatorMutationStateEvidence,
-  manifest: StudioCapabilityManifest,
-  manifestHash: string,
-  changeSet: CreatorMutationChangeSetLike,
-): void {
-  assertStudioEvidenceProjection(state.projection, manifest);
-  assertEvidenceAgainstProjection(state.envelope, state.projection, manifest);
-  assertStudioStateRevision(state.revision);
-  const expected = createStudioStateRevision(
-    state.envelope,
-    state.projection,
-    state.revision.capturedAt,
-    manifest,
+type IndexDifference = {
+  readonly changes: readonly {
+    readonly key: string;
+    readonly detail: string;
+  }[];
+};
+
+type CapturedIndexEntry = {
+  readonly node: StudioProjectIndexNode;
+  readonly sourceHash?: string | undefined;
+};
+
+type MutationObjectTransition = {
+  readonly operationKind: MutationEvidenceOperation["kind"];
+  readonly beforeTarget: StudioInstanceEvidenceTarget;
+  readonly target: StudioInstanceEvidenceTarget;
+  readonly beforeObjectId: string;
+  readonly objectId: string;
+};
+
+function mutationObjectTransitions(
+  operations: readonly MutationEvidenceOperation[],
+): readonly MutationObjectTransition[] {
+  const transitions = new Map<string, MutationObjectTransition>();
+  for (const operation of operations) {
+    if (operation.beforeTarget?.kind !== "instance" || operation.target.kind !== "instance")
+      continue;
+    const transition: MutationObjectTransition = {
+      operationKind: operation.kind,
+      beforeTarget: operation.beforeTarget,
+      target: operation.target,
+      beforeObjectId: mutationTargetObjectId(operation.beforeTarget),
+      objectId: mutationTargetObjectId(operation.target),
+    };
+    const key = stableJson({
+      beforeTarget: transition.beforeTarget,
+      target: transition.target,
+    });
+    if (!transitions.has(key)) transitions.set(key, transition);
+  }
+  return [...transitions.values()].sort(
+    (left, right) =>
+      left.beforeObjectId.localeCompare(right.beforeObjectId) ||
+      left.objectId.localeCompare(right.objectId),
   );
-  if (
-    expected.manifestHash !== state.revision.manifestHash ||
-    expected.projectionHash !== state.revision.projectionHash ||
-    expected.stateDomainHash !== state.revision.stateDomainHash ||
-    expected.stateHash !== state.revision.stateHash
-  )
-    throw new Error("State revision hash differs from its projection and facts");
-  if (
-    state.projection.manifestHash !== manifestHash ||
-    state.projection.scope.mode !== "project_state" ||
-    !bindingContains(state.projection.binding, changeSet.binding)
-  )
-    throw new Error("State evidence is not bound to the sealed mutation");
 }
 
-function assertStoredMutationProjection(
-  changeSet: CreatorMutationChangeSetLike,
-  projection: StudioEvidenceProjection,
-  manifest: StudioCapabilityManifest,
-  manifestHash: string,
-): void {
-  assertStudioEvidenceProjection(projection, manifest);
-  if (
-    projection.manifestHash !== manifestHash ||
-    projection.purpose !== "mutation_direct_readback" ||
-    !sameBinding(projection.binding, changeSet.binding) ||
-    projection.id !== changeSet.projectionId ||
-    !sameStringArray(projection.allowedStateDelta ?? [], changeSet.allowedStateDelta)
-  ) throw new Error("Mutation projection binding differs from the sealed change set");
-  const recompiled = compileMutationEvidenceProjectionForManifest(
-    {
-      id: changeSet.projectionId,
-      project: changeSet.project,
-      binding: changeSet.binding,
-      operations: changeSet.operations,
-      purpose: "mutation_direct_readback",
-      allowedStateDelta: changeSet.allowedStateDelta,
-    },
-    manifest,
-    manifestHash,
-  );
-  if (recompiled.contentHash !== projection.contentHash)
-    throw new Error("Mutation projection does not equal deterministic recompilation");
+function validateObjectTransitionsInCaptures(
+  transitions: readonly MutationObjectTransition[],
+  before: StudioProjectIndexCapture,
+  after: StudioProjectIndexCapture,
+  mismatch: (code: string, detail: string) => void,
+): boolean {
+  const beforeNodes = captureNodes(before);
+  const afterNodes = captureNodes(after);
+  let valid = true;
+  for (const transition of transitions) {
+    const prior = beforeNodes.get(transition.beforeObjectId);
+    if (!prior || !capturedNodeMatchesTarget(prior.node, transition.beforeTarget)) {
+      mismatch(
+        "approved_before_target_missing",
+        `Approved mutation before-target is absent or changed: ${transition.beforeObjectId}.`,
+      );
+      valid = false;
+    }
+    if (transition.beforeObjectId !== transition.objectId && beforeNodes.has(transition.objectId)) {
+      mismatch(
+        "identity_enrollment_collision",
+        `Approved durable identity already exists before enrollment: ${transition.objectId}.`,
+      );
+      valid = false;
+    }
+    if (
+      transition.beforeObjectId !== transition.objectId &&
+      afterNodes.has(transition.beforeObjectId)
+    ) {
+      mismatch(
+        "identity_enrollment_source_retained",
+        `Ephemeral identity remains after enrollment: ${transition.beforeObjectId}.`,
+      );
+      valid = false;
+    }
+    const next = afterNodes.get(transition.objectId);
+    if (transition.operationKind === "delete") {
+      if (next) {
+        mismatch(
+          "approved_delete_still_present",
+          `Approved enrolled delete target remains in after capture: ${transition.objectId}.`,
+        );
+        valid = false;
+      }
+    } else if (!next || !capturedNodeMatchesTarget(next.node, transition.target)) {
+      mismatch(
+        "approved_after_target_missing",
+        `Approved mutation post-target is absent or changed: ${transition.objectId}.`,
+      );
+      valid = false;
+    }
+  }
+  return valid;
 }
 
-function matchesProjectionBinding(
-  envelope: StudioEvidenceEnvelope,
-  projection: StudioEvidenceProjection,
+function indexDifference(
+  before: StudioProjectIndexCapture,
+  after: StudioProjectIndexCapture,
+  transitions: readonly MutationObjectTransition[],
+): IndexDifference {
+  const left = comparisonCaptureNodes(before, transitions);
+  const right = captureNodes(after);
+  const changes: Array<{ key: string; detail: string }> = [];
+  const recordedIdentityChanges = new Set<string>();
+  for (const transition of transitions) {
+    const key = `node:${transition.objectId}:identity`;
+    if (
+      transition.operationKind !== "delete" &&
+      transition.beforeObjectId !== transition.objectId &&
+      !recordedIdentityChanges.has(key)
+    ) {
+      recordedIdentityChanges.add(key);
+      changes.push({
+        key,
+        detail: "approved ephemeral identity enrolled",
+      });
+    }
+  }
+  for (const objectId of new Set([...left.keys(), ...right.keys()])) {
+    const prior = left.get(objectId);
+    const next = right.get(objectId);
+    if (!prior || !next) {
+      changes.push({
+        key: `node:${objectId}:existence`,
+        detail: !prior ? "created" : "removed",
+      });
+      continue;
+    }
+    if (prior.node.displayPath !== next.node.displayPath)
+      changes.push({
+        key: `node:${objectId}:display_path`,
+        detail: "display path changed",
+      });
+    if (prior.node.className !== next.node.className)
+      changes.push({
+        key: `node:${objectId}:class_name`,
+        detail: "class changed",
+      });
+    if (!sameOptionalJson(prior.node.parentIdentity, next.node.parentIdentity))
+      changes.push({
+        key: `node:${objectId}:parent`,
+        detail: "parent changed",
+      });
+    recordRecordDifference(
+      changes,
+      objectId,
+      "attribute",
+      prior.node.attributes,
+      next.node.attributes,
+    );
+    recordRecordDifference(
+      changes,
+      objectId,
+      "property",
+      prior.node.coveredProperties,
+      next.node.coveredProperties,
+    );
+    if (stableJson(prior.node.tags) !== stableJson(next.node.tags))
+      changes.push({ key: `node:${objectId}:tags`, detail: "tags changed" });
+    if (prior.sourceHash !== next.sourceHash)
+      changes.push({
+        key: `source:${objectId}`,
+        detail: "source body changed",
+      });
+  }
+  return {
+    changes: changes.sort((leftChange, rightChange) =>
+      leftChange.key.localeCompare(rightChange.key),
+    ),
+  };
+}
+
+function captureNodes(capture: StudioProjectIndexCapture): Map<string, CapturedIndexEntry> {
+  const sourceHashByManifest = new Map(
+    capture.sourceManifests.map((manifest) => [manifest.hash, manifest.sourceHash]),
+  );
+  return new Map(
+    capture.shards
+      .flatMap((shard) => shard.nodes)
+      .map((node) => [
+        studioObjectIdentityKey(node.identity),
+        {
+          node,
+          ...(node.sourceManifestHash
+            ? { sourceHash: sourceHashByManifest.get(node.sourceManifestHash) }
+            : {}),
+        },
+      ]),
+  );
+}
+
+function comparisonCaptureNodes(
+  capture: StudioProjectIndexCapture,
+  transitions: readonly MutationObjectTransition[],
+): Map<string, CapturedIndexEntry> {
+  const raw = captureNodes(capture);
+  const identityTransitions = new Map(
+    transitions
+      .filter((transition) => transition.beforeObjectId !== transition.objectId)
+      .map((transition) => [transition.beforeObjectId, transition.target] as const),
+  );
+  const targetTransitions = new Map(
+    transitions.map((transition) => [transition.beforeObjectId, transition.target] as const),
+  );
+  const normalized = new Map<string, CapturedIndexEntry>();
+  for (const [objectId, entry] of raw) {
+    const target = identityTransitions.get(objectId);
+    const logicalObjectId = target ? mutationTargetObjectId(target) : objectId;
+    if (normalized.has(logicalObjectId))
+      throw new Error("Mutation identity transition collides with a captured object");
+    const parentIdentity = entry.node.parentIdentity
+      ? normalizedIdentity(entry.node.parentIdentity, identityTransitions)
+      : undefined;
+    normalized.set(logicalObjectId, {
+      ...entry,
+      node: {
+        ...entry.node,
+        identity: target?.identity ?? entry.node.identity,
+        ...(parentIdentity === undefined ? {} : { parentIdentity }),
+        coveredProperties: normalizeIndexValue(
+          entry.node.coveredProperties,
+          identityTransitions,
+          targetTransitions,
+        ) as Readonly<Record<string, unknown>>,
+      },
+    });
+  }
+  return normalized;
+}
+
+function normalizedIdentity(
+  identity: StudioProjectIndexNode["identity"],
+  transitions: ReadonlyMap<string, StudioInstanceEvidenceTarget>,
+): StudioProjectIndexNode["identity"] {
+  return transitions.get(studioObjectIdentityKey(identity))?.identity ?? identity;
+}
+
+function normalizeIndexValue(
+  value: unknown,
+  identityTransitions: ReadonlyMap<string, StudioInstanceEvidenceTarget>,
+  targetTransitions: ReadonlyMap<string, StudioInstanceEvidenceTarget>,
+): unknown {
+  if (Array.isArray(value))
+    return value.map((item) => normalizeIndexValue(item, identityTransitions, targetTransitions));
+  if (!isRecord(value)) return value;
+  if (
+    value.kind === "studio_ephemeral" &&
+    typeof value.connectorEpoch === "string" &&
+    typeof value.opaqueHash === "string"
+  ) {
+    const objectId = `studio_ephemeral:${value.connectorEpoch}:${value.opaqueHash}`;
+    return identityTransitions.get(objectId)?.identity ?? value;
+  }
+  const normalized = Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key,
+      normalizeIndexValue(item, identityTransitions, targetTransitions),
+    ]),
+  );
+  if (value.kind === "instance_ref" && value.state === "reference" && isRecord(value.identity)) {
+    const beforeIdentity = value.identity;
+    if (
+      beforeIdentity.kind === "studio_ephemeral" &&
+      typeof beforeIdentity.connectorEpoch === "string" &&
+      typeof beforeIdentity.opaqueHash === "string"
+    ) {
+      const objectId = `studio_ephemeral:${beforeIdentity.connectorEpoch}:${beforeIdentity.opaqueHash}`;
+      const target = targetTransitions.get(objectId);
+      if (target) {
+        normalized.identity = target.identity;
+        normalized.path = target.path;
+        normalized.className = target.className;
+      }
+    } else {
+      try {
+        const target = targetTransitions.get(
+          studioObjectIdentityKey(beforeIdentity as StudioProjectIndexNode["identity"]),
+        );
+        if (target) {
+          normalized.identity = target.identity;
+          normalized.path = target.path;
+          normalized.className = target.className;
+        }
+      } catch {
+        // Invalid property values are rejected by the project-index validator;
+        // this comparison helper never upgrades them into an identity claim.
+      }
+    }
+  }
+  return normalized;
+}
+
+function capturedNodeMatchesTarget(
+  node: StudioProjectIndexNode,
+  target: StudioInstanceEvidenceTarget,
 ): boolean {
   return (
-    envelope.manifestHash === projection.manifestHash &&
-    envelope.projectionId === projection.id &&
-    envelope.projectionHash === projection.contentHash &&
-    envelope.bindingHash === projection.bindingHash &&
-    envelope.project.name === projection.project.name &&
-    envelope.project.placeId === projection.project.placeId &&
-    envelope.project.universeId === projection.project.universeId
+    studioObjectIdentityKey(node.identity) === mutationTargetObjectId(target) &&
+    node.displayPath === target.path &&
+    node.className === target.className
   );
+}
+
+function recordRecordDifference(
+  changes: Array<{ key: string; detail: string }>,
+  objectId: string,
+  kind: "attribute" | "property",
+  before: Readonly<Record<string, unknown>>,
+  after: Readonly<Record<string, unknown>>,
+): void {
+  for (const name of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (!sameOptionalJson(before[name], after[name]))
+      changes.push({
+        key: `node:${objectId}:${kind}:${name}`,
+        detail: `${kind} changed`,
+      });
+  }
+}
+
+function approvedIndexDelta(
+  operations: readonly MutationEvidenceOperation[],
+  before: StudioProjectIndexCapture,
+  after: StudioProjectIndexCapture,
+  transitions: readonly MutationObjectTransition[],
+): ReadonlySet<string> {
+  const allowed = new Set<string>();
+  const beforeNodes = comparisonCaptureNodes(before, transitions);
+  const afterNodes = captureNodes(after);
+  for (const operation of operations) {
+    if (operation.target.kind !== "instance") continue;
+    const objectId = mutationTargetObjectId(operation.target);
+    if (operation.kind === "create" || operation.kind === "delete")
+      allowed.add(`node:${objectId}:existence`);
+    if (
+      operation.kind !== "delete" &&
+      operation.beforeTarget?.kind === "instance" &&
+      mutationTargetObjectId(operation.beforeTarget) !== objectId
+    )
+      allowed.add(`node:${objectId}:identity`);
+    if (operation.kind === "move") {
+      for (const descendant of moveSubtreeIds(objectId, beforeNodes, afterNodes)) {
+        allowed.add(`node:${descendant}:display_path`);
+        allowed.add(`node:${descendant}:parent`);
+      }
+    }
+    for (const name of Object.keys(operation.attributes ?? {}))
+      allowed.add(`node:${objectId}:attribute:${name}`);
+    for (const name of operation.removedAttributes ?? [])
+      allowed.add(`node:${objectId}:attribute:${name}`);
+    for (const name of Object.keys(operation.properties ?? {}))
+      allowed.add(`node:${objectId}:property:${name}`);
+    if (operation.sourceHash !== undefined) allowed.add(`source:${objectId}`);
+  }
+  return allowed;
+}
+
+function moveSubtreeIds(
+  rootId: string,
+  before: ReadonlyMap<string, { node: StudioProjectIndexNode }>,
+  after: ReadonlyMap<string, { node: StudioProjectIndexNode }>,
+): readonly string[] {
+  const values = new Set<string>([rootId]);
+  for (const nodes of [before, after]) {
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const [objectId, entry] of nodes) {
+        const parent = entry.node.parentIdentity
+          ? studioObjectIdentityKey(entry.node.parentIdentity)
+          : undefined;
+        if (parent && values.has(parent) && !values.has(objectId)) {
+          values.add(objectId);
+          changed = true;
+        }
+      }
+    }
+  }
+  return [...values];
+}
+
+function validateOperationsInAfterCapture(
+  operations: readonly MutationEvidenceOperation[],
+  after: StudioProjectIndexCapture,
+  mismatch: (code: string, detail: string) => void,
+): void {
+  const nodes = captureNodes(after);
+  for (const operation of operations) {
+    if (operation.target.kind !== "instance") continue;
+    const objectId = mutationTargetObjectId(operation.target);
+    const captured = nodes.get(objectId);
+    if (operation.kind === "delete") {
+      if (captured)
+        mismatch(
+          "approved_delete_still_present",
+          `Approved delete target remains in after capture: ${objectId}.`,
+        );
+      continue;
+    }
+    if (!captured) {
+      mismatch(
+        "approved_target_missing",
+        `Approved mutation target is missing from after capture: ${objectId}.`,
+      );
+      continue;
+    }
+    const expectedStructure = operation.structure ?? {
+      identity: operation.target.identity,
+      path: operation.target.path,
+      className: operation.target.className,
+    };
+    if (
+      (operation.kind === "create" ||
+        operation.kind === "move" ||
+        operation.structure !== undefined) &&
+      (captured.node.displayPath !== expectedStructure.path ||
+        captured.node.className !== expectedStructure.className)
+    )
+      mismatch(
+        "approved_structure_not_reflected",
+        `Approved structure is not reflected by after capture: ${objectId}.`,
+      );
+    for (const [name, value] of Object.entries(operation.attributes ?? {})) {
+      if (stableJson(captured.node.attributes[name]) !== stableJson(value))
+        mismatch(
+          "approved_attribute_not_reflected",
+          `Approved attribute is not reflected by after capture: ${objectId}.${name}.`,
+        );
+    }
+    for (const name of operation.removedAttributes ?? []) {
+      if (captured.node.attributes[name] !== undefined)
+        mismatch(
+          "approved_attribute_not_removed",
+          `Approved attribute remains in after capture: ${objectId}.${name}.`,
+        );
+    }
+    for (const [name, value] of Object.entries(operation.properties ?? {})) {
+      if (stableJson(captured.node.coveredProperties[name]) !== stableJson(value))
+        mismatch(
+          "approved_property_not_reflected",
+          `Approved property is not reflected by after capture: ${objectId}.${name}.`,
+        );
+    }
+    if (operation.sourceHash !== undefined && captured.sourceHash !== operation.sourceHash)
+      mismatch(
+        "approved_source_not_reflected",
+        `Approved source hash is not reflected by after capture: ${objectId}.`,
+      );
+  }
 }
 
 function factMatchesRequirement(
@@ -1264,61 +1701,26 @@ function factMatchesRequirement(
     (requirement.propertyName === undefined ||
       (fact.kind === "property" && fact.propertyName === requirement.propertyName)) &&
     (requirement.attributeName === undefined ||
-      (fact.kind === "attribute" && fact.attributeName === requirement.attributeName)) &&
-    (requirement.callId === undefined ||
-      ("callId" in fact && fact.callId === requirement.callId)) &&
-    (requirement.runtimeTargetId === undefined ||
-      ("runtimeTargetId" in fact && fact.runtimeTargetId === requirement.runtimeTargetId)) &&
-    (requirement.capability === undefined ||
-      ("capability" in fact && fact.capability === requirement.capability))
+      (fact.kind === "attribute" && fact.attributeName === requirement.attributeName))
   );
 }
 
-function sameRequirementValue(
-  observed: unknown,
-  expected: StudioRequirementValue,
+function sameRequirementValue(observed: unknown, expected: StudioRequirementValue): boolean {
+  return isStudioValue(observed) && isStudioValue(expected)
+    ? studioValuesEqual(observed, expected)
+    : stableJson(observed) === stableJson(expected);
+}
+
+function matchesProjectionBinding(
+  envelope: StudioEvidenceEnvelope,
+  projection: StudioEvidenceProjection,
 ): boolean {
-  if (isStudioValue(observed) && isStudioValue(expected))
-    return studioValuesEqual(observed, expected);
-  return stableJson(observed) === stableJson(expected);
-}
-
-function indexFacts(
-  facts: readonly StudioEvidenceFact[],
-): ReadonlyMap<string, StudioEvidenceFact> {
-  return new Map(facts.map((fact) => [fact.key, fact]));
-}
-
-function sameFact(
-  left: StudioEvidenceFact | undefined,
-  right: StudioEvidenceFact | undefined,
-): boolean {
-  if (left === undefined || right === undefined) return left === right;
-  return studioEvidenceFactMaterial(left) === studioEvidenceFactMaterial(right);
-}
-
-function sameBinding(
-  left: StudioEvidenceBinding,
-  right: StudioEvidenceBinding,
-): boolean {
-  return stableJson(definedBinding(left)) === stableJson(definedBinding(right));
-}
-
-/** State observations may add their own revision binding but cannot alter mutation bindings. */
-function bindingContains(
-  candidate: StudioEvidenceBinding,
-  required: StudioEvidenceBinding,
-): boolean {
-  return Object.entries(definedBinding(required)).every(
-    ([key, value]) => candidate[key] === value,
-  );
-}
-
-function definedBinding(binding: StudioEvidenceBinding): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(binding).filter(
-      (entry): entry is [string, string] => entry[1] !== undefined,
-    ),
+  return (
+    envelope.manifestHash === projection.manifestHash &&
+    envelope.projectionId === projection.id &&
+    envelope.projectionHash === projection.contentHash &&
+    envelope.bindingHash === projection.bindingHash &&
+    sameProject(envelope.project, projection.project)
   );
 }
 
@@ -1328,7 +1730,7 @@ async function readManifest(
 ): Promise<StudioCapabilityManifest> {
   const value = await store.read(binding.artifact);
   assertStudioCapabilityManifest(value);
-  if (binding.hash !== contentHash(stableJson(value)))
+  if (contentHash(stableJson(value)) !== binding.hash)
     throw new Error("Manifest artifact binding changed");
   return value;
 }
@@ -1350,8 +1752,7 @@ async function readProjection(
 ): Promise<StudioEvidenceProjection> {
   const value = await store.read<StudioEvidenceProjection>(binding.artifact);
   assertStudioEvidenceProjection(value, manifest);
-  if (value.contentHash !== binding.hash)
-    throw new Error("Projection artifact binding changed");
+  if (value.contentHash !== binding.hash) throw new Error("Projection artifact binding changed");
   return value;
 }
 
@@ -1367,15 +1768,12 @@ async function readEnvelope(
   return value;
 }
 
-async function readStateRevision(
+async function readIndexCapture(
   store: ImmutableJsonArtifactStore,
-  binding: CreatorMutationArtifactBinding,
-): Promise<StudioStateRevision> {
-  const value = await store.read<StudioStateRevision>(binding.artifact);
-  assertStudioStateRevision(value);
-  if (value.stateHash !== binding.hash)
-    throw new Error("State revision artifact binding changed");
-  return value;
+  binding: CreatorMutationArtifactIndexCapture,
+  manifest: StudioCapabilityManifest,
+): Promise<StudioProjectIndexCapture> {
+  return readCreatorProjectIndexArtifacts(store, binding, manifest);
 }
 
 async function readReconciliation(
@@ -1393,9 +1791,53 @@ async function readFinalization(
   binding: CreatorMutationArtifactBinding,
 ): Promise<CreatorMutationFinalization> {
   const value = await store.read<CreatorMutationFinalization>(binding.artifact);
-  if (!isFinalization(value) || value.hash !== binding.hash || !hasCanonicalHash(value))
-    throw new Error("Finalization artifact binding changed");
+  assertCreatorMutationFinalization(value);
+  if (value.hash !== binding.hash) throw new Error("Finalization artifact binding changed");
   return value;
+}
+
+function matchesFinalization(
+  finalization: CreatorMutationFinalization,
+  attempt: CreatorSettledMutationAttempt,
+  changeSet: CreatorMutationChangeSetLike,
+  projection: StudioEvidenceProjection,
+  reconciliation: CreatorMutationReconciliation,
+  before: StudioProjectIndexCapture,
+  after: StudioProjectIndexCapture,
+  final: StudioProjectIndexCapture,
+): boolean {
+  if (
+    finalization.attemptId !== attempt.id ||
+    finalization.sessionId !== attempt.sessionId ||
+    finalization.changeSetId !== changeSet.id ||
+    finalization.changeSetHash !== changeSet.hash ||
+    finalization.projectionId !== projection.id ||
+    finalization.projectionHash !== projection.contentHash ||
+    finalization.manifestHash !== attempt.manifest.hash ||
+    finalization.reconciliationHash !== reconciliation.hash ||
+    finalization.beforeIndexCaptureHash !== before.hash ||
+    finalization.beforeIndexRevisionHash !== before.revision.hash ||
+    finalization.afterIndexCaptureHash !== after.hash ||
+    finalization.afterIndexRevisionHash !== after.revision.hash ||
+    finalization.finalIndexCaptureHash !== final.hash ||
+    finalization.finalIndexRevisionHash !== final.revision.hash
+  )
+    return false;
+  if (finalization.action === "commit")
+    return (
+      finalization.status === "committed" &&
+      reconciliation.status === "matched" &&
+      final.revision.hash === after.revision.hash
+    );
+  if (finalization.action === "cancel")
+    return (
+      finalization.status === "cancelled" &&
+      final.revision.merkleRoot === before.revision.merkleRoot
+    );
+  return (
+    finalization.status === "recovery_cancelled" &&
+    final.revision.merkleRoot === before.revision.merkleRoot
+  );
 }
 
 function replayMissing(
@@ -1404,140 +1846,103 @@ function replayMissing(
 ): CreatorMutationReplay {
   return { ...base, result: "missing_or_incomplete", detail };
 }
-
 function replayMismatch(
   base: Omit<CreatorMutationReplay, "result" | "detail">,
   detail: string,
 ): CreatorMutationReplay {
   return { ...base, result: "mismatch", detail };
 }
-
 function sameReconciliation(
   left: CreatorMutationReconciliation,
   right: CreatorMutationReconciliation,
 ): boolean {
-  const { hash: _leftHash, ...leftContent } = left;
-  const { hash: _rightHash, ...rightContent } = right;
+  const { hash: leftHash, ...leftContent } = left;
+  const { hash: rightHash, ...rightContent } = right;
   return (
-    contentHash(stableJson(leftContent)) === left.hash &&
-    contentHash(stableJson(rightContent)) === right.hash &&
+    contentHash(stableJson(leftContent)) === leftHash &&
+    contentHash(stableJson(rightContent)) === rightHash &&
     stableJson(leftContent) === stableJson(rightContent)
   );
 }
 
-function finalizationMatchesReconciliation(
-  finalization: CreatorMutationFinalization,
-  reconciliation: CreatorMutationReconciliation,
-): boolean {
-  if (finalization.action === "commit")
-    return finalization.status === "committed" && reconciliation.status === "matched";
-  if (finalization.action === "cancel")
-    return finalization.status === "cancelled";
-  return finalization.status === "recovery_cancelled";
-}
-
-function finalizationMatchesTransaction(
-  finalization: CreatorMutationFinalization,
-  sessionId: string,
-  changeSet: CreatorMutationChangeSetLike,
-  projection: StudioEvidenceProjection,
-  manifestHash: string,
-): boolean {
-  return (
-    finalization.sessionId === sessionId &&
-    finalization.changeSetId === changeSet.id &&
-    finalization.changeSetHash === changeSet.hash &&
-    finalization.projectionId === projection.id &&
-    finalization.projectionHash === projection.contentHash &&
-    finalization.manifestHash === manifestHash &&
-    finalization.beforeRevisionHash === changeSet.binding.revisionHash &&
-    isNonEmpty(finalization.recordingId)
-  );
-}
-
-function isChangeSet(value: unknown): value is CreatorMutationChangeSetLike {
-  if (!isRecord(value)) return false;
-  return (
-    value.kind === "CreatorChangeSet" &&
-    isNonEmpty(value.id) &&
-    isHash(value.hash) &&
-    isNonEmpty(value.projectionId) &&
-    isRecord(value.project) &&
-    isRecord(value.binding) &&
-    Array.isArray(value.operations) &&
-    Array.isArray(value.allowedStateDelta) &&
-    value.allowedStateDelta.every(isNonEmpty)
-  );
-}
-
 export function isCreatorMutationAttempt(value: unknown): value is CreatorMutationAttempt {
-  if (!isRecord(value)) return false;
-  const commonBindings = [
+  if (
+    !isRecord(value) ||
+    value.kind !== "CreatorMutationAttempt" ||
+    !isNonEmpty(value.id) ||
+    !isHash(value.hash) ||
+    !isNonEmpty(value.sessionId) ||
+    !hasCanonicalHash(value)
+  )
+    return false;
+  const common = [
     value.manifest,
     isRecord(value.attestation) ? value.attestation.projection : undefined,
     isRecord(value.attestation) ? value.attestation.envelope : undefined,
     value.changeSet,
     value.projection,
-    isRecord(value.beforeState) ? value.beforeState.projection : undefined,
-    isRecord(value.beforeState) ? value.beforeState.envelope : undefined,
-    isRecord(value.beforeState) ? value.beforeState.revision : undefined,
-  ];
-  const common =
-    value.kind === "CreatorMutationAttempt" &&
-    isNonEmpty(value.id) &&
-    isHash(value.hash) &&
-    isNonEmpty(value.sessionId) &&
-    hasCanonicalHash(value) &&
-    commonBindings.every(isArtifactBinding);
-  if (!common) return false;
-  if (value.completion === "incomplete") {
-    const facts = value.failureFacts;
-    const base =
-      isArtifactBinding(value.preflightProjection) &&
-      Array.isArray(facts) &&
-      facts.length > 0 &&
-      hasCanonicalFailureFacts(facts);
-    if (!base) return false;
-    if (value.phase === "preflight")
-      return (
-        value.preflight === undefined ||
-        isRecord(value.preflight) &&
-        isArtifactBinding(value.preflight.projection) &&
-        isArtifactBinding(value.preflight.envelope)
-      );
+  ].every(isArtifactBinding);
+  if (!common || !isProjectIndexBinding(value.beforeIndexCapture)) return false;
+  if (value.completion === "settled")
     return (
-      value.phase === "apply" &&
+      [
+        isRecord(value.preflight) ? value.preflight.projection : undefined,
+        isRecord(value.preflight) ? value.preflight.envelope : undefined,
+        value.directReadback,
+        value.reconciliation,
+        value.finalization,
+      ].every(isArtifactBinding) &&
+      isProjectIndexBinding(value.afterIndexCapture) &&
+      isProjectIndexBinding(value.finalIndexCapture)
+    );
+  if (
+    value.completion !== "incomplete" ||
+    !isArtifactBinding(value.preflightProjection) ||
+    !hasCanonicalFailureFacts(value.failureFacts)
+  )
+    return false;
+  if (value.phase === "preflight")
+    return (
+      value.preflight === undefined ||
+      (isRecord(value.preflight) &&
+        isArtifactBinding(value.preflight.projection) &&
+        isArtifactBinding(value.preflight.envelope))
+    );
+  if (value.phase === "durable_intent")
+    return (
       isRecord(value.preflight) &&
       isArtifactBinding(value.preflight.projection) &&
-      isArtifactBinding(value.preflight.envelope) &&
-      isRecord(value.finalState) &&
-      isArtifactBinding(value.finalState.projection) &&
-      isArtifactBinding(value.finalState.envelope) &&
-      isArtifactBinding(value.finalState.revision) &&
-      isArtifactBinding(value.finalization)
+      isArtifactBinding(value.preflight.envelope)
     );
-  }
-  if (value.completion !== "settled") return false;
-  const settledBindings = [
-    isRecord(value.preflight) ? value.preflight.projection : undefined,
-    isRecord(value.preflight) ? value.preflight.envelope : undefined,
-    value.directReadback,
-    isRecord(value.afterState) ? value.afterState.projection : undefined,
-    isRecord(value.afterState) ? value.afterState.envelope : undefined,
-    isRecord(value.afterState) ? value.afterState.revision : undefined,
-    isRecord(value.finalState) ? value.finalState.projection : undefined,
-    isRecord(value.finalState) ? value.finalState.envelope : undefined,
-    isRecord(value.finalState) ? value.finalState.revision : undefined,
-    value.reconciliation,
-    value.finalization,
-  ];
-  return settledBindings.every(isArtifactBinding);
+  return (
+    value.phase === "apply" &&
+    isRecord(value.preflight) &&
+    isArtifactBinding(value.preflight.projection) &&
+    isArtifactBinding(value.preflight.envelope) &&
+    isProjectIndexBinding(value.finalIndexCapture) &&
+    isArtifactBinding(value.finalization)
+  );
 }
 
-export function assertCreatorMutationAttempt(value: unknown): asserts value is CreatorMutationAttempt {
+export function assertCreatorMutationAttempt(
+  value: unknown,
+): asserts value is CreatorMutationAttempt {
   if (!isCreatorMutationAttempt(value)) throw new Error("Invalid CreatorMutationAttempt");
 }
 
+function isChangeSet(value: unknown): value is CreatorMutationChangeSetLike {
+  return (
+    isRecord(value) &&
+    value.kind === "CreatorChangeSet" &&
+    isNonEmpty(value.id) &&
+    isHash(value.hash) &&
+    isNonEmpty(value.projectionId) &&
+    isProject(value.project) &&
+    isStudioCreatorMutationBinding(value.binding) &&
+    Array.isArray(value.operations) &&
+    value.operations.length > 0
+  );
+}
 function isArtifactBinding(value: unknown): value is CreatorMutationArtifactBinding {
   return (
     isRecord(value) &&
@@ -1548,31 +1953,14 @@ function isArtifactBinding(value: unknown): value is CreatorMutationArtifactBind
     typeof value.artifact.bytes === "number"
   );
 }
-
-function isMutationFailureFact(value: unknown): value is CreatorMutationFailureFact {
-  return isRecord(value) && isNonEmpty(value.code) && isNonEmpty(value.detail) && isHash(value.hash);
-}
-
-function hasCanonicalFailureFacts(value: unknown): value is readonly CreatorMutationFailureFact[] {
-  if (!Array.isArray(value) || value.length === 0 || !value.every(isMutationFailureFact))
-    return false;
+function isProjectIndexBinding(value: unknown): value is CreatorMutationArtifactIndexCapture {
   try {
-    const expected = createMutationFailureFacts(
-      value.map((fact) => ({ code: fact.code, detail: fact.detail })),
-    );
-    return (
-      expected.length === value.length &&
-      expected.every((fact, index) =>
-        fact.code === value[index]!.code &&
-        fact.detail === value[index]!.detail &&
-        fact.hash === value[index]!.hash,
-      )
-    );
+    creatorProjectIndexArtifactReferences(value as CreatorMutationArtifactIndexCapture);
+    return true;
   } catch {
     return false;
   }
 }
-
 function isReconciliation(value: unknown): value is CreatorMutationReconciliation {
   return (
     isRecord(value) &&
@@ -1580,18 +1968,14 @@ function isReconciliation(value: unknown): value is CreatorMutationReconciliatio
     isHash(value.hash) &&
     isNonEmpty(value.attemptId) &&
     isNonEmpty(value.sessionId) &&
-    (value.status === "matched" || value.status === "mismatched" || value.status === "incomplete") &&
+    (value.status === "matched" ||
+      value.status === "mismatched" ||
+      value.status === "incomplete") &&
     Array.isArray(value.failureFacts) &&
-    value.failureFacts.every(
-      (fact) =>
-        isRecord(fact) &&
-        isNonEmpty(fact.code) &&
-        isNonEmpty(fact.detail) &&
-        isHash(fact.hash),
-    )
+    value.failureFacts.every(isMutationFailureFact) &&
+    hasCanonicalHash(value)
   );
 }
-
 function isFinalization(value: unknown): value is CreatorMutationFinalization {
   return (
     isRecord(value) &&
@@ -1605,27 +1989,268 @@ function isFinalization(value: unknown): value is CreatorMutationFinalization {
     isNonEmpty(value.projectionId) &&
     isHash(value.projectionHash) &&
     isHash(value.manifestHash) &&
-    isHash(value.beforeRevisionHash) &&
+    isHash(value.beforeIndexCaptureHash) &&
+    isHash(value.beforeIndexRevisionHash) &&
+    isHash(value.afterIndexCaptureHash) &&
+    isHash(value.afterIndexRevisionHash) &&
+    isHash(value.finalIndexCaptureHash) &&
+    isHash(value.finalIndexRevisionHash) &&
     isNonEmpty(value.recordingId) &&
     (value.reconciliationHash === undefined || isHash(value.reconciliationHash)) &&
-    (value.action === "commit" || value.action === "cancel" || value.action === "recovery_cancel") &&
-    isHash(value.afterRevisionHash) &&
-    isHash(value.postFinalizeProjectionHash) &&
-    isHash(value.postFinalizeEvidenceHash) &&
+    (value.action === "commit" ||
+      value.action === "cancel" ||
+      value.action === "recovery_cancel") &&
     (value.status === "committed" ||
       value.status === "cancelled" ||
       value.status === "recovery_cancelled" ||
       value.status === "recovery_required")
   );
 }
-
+function isMutationFailureFact(value: unknown): value is CreatorMutationFailureFact {
+  return (
+    isRecord(value) && isNonEmpty(value.code) && isNonEmpty(value.detail) && isHash(value.hash)
+  );
+}
+function hasCanonicalFailureFacts(value: unknown): value is readonly CreatorMutationFailureFact[] {
+  if (!Array.isArray(value) || value.length === 0 || !value.every(isMutationFailureFact))
+    return false;
+  const rebuilt = createMutationFailureFacts(
+    value.map((fact) => ({ code: fact.code, detail: fact.detail })),
+  );
+  return stableJson(rebuilt) === stableJson(value);
+}
 function hasCanonicalHash(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  if (!isHash(value.hash)) return false;
-  const { hash: _hash, ...content } = value;
-  return contentHash(stableJson(content)) === value.hash;
+  if (!isRecord(value) || !isHash(value.hash)) return false;
+  const { hash, ...content } = value;
+  return contentHash(stableJson(content)) === hash;
+}
+function factMatchesTarget(left: StudioEvidenceTarget, right: StudioEvidenceTarget): boolean {
+  return (
+    left.kind === right.kind &&
+    (left.kind === "project" ||
+      right.kind === "project" ||
+      (studioObjectIdentityKey(left.identity) === studioObjectIdentityKey(right.identity) &&
+        left.path === right.path &&
+        left.className === right.className))
+  );
+}
+/** Mutations preserve the exact authority namespace selected by the project index. */
+function mutationTargetObjectId(target: StudioInstanceEvidenceTarget): string {
+  return studioObjectIdentityKey(target.identity);
+}
+function sameTarget(left: StudioEvidenceTarget, right: StudioEvidenceTarget): boolean {
+  return factMatchesTarget(left, right);
+}
+function sameProject(left: StudioProjectIdentity, right: StudioProjectIdentity): boolean {
+  return (
+    left.name === right.name &&
+    left.placeId === right.placeId &&
+    left.universeId === right.universeId
+  );
+}
+function assertCreatorMutationBinding(
+  binding: StudioEvidenceBinding,
+  label: string,
+): asserts binding is StudioCreatorMutationBinding {
+  if (!isStudioCreatorMutationBinding(binding))
+    throw new Error(`${label} must use the closed creator mutation binding schema`);
+}
+/**
+ * Derive the one post-state identity namespace for the whole recording.
+ *
+ * A Studio ephemeral identity may appear in a target, another operation's
+ * structural parent, and arbitrary `instance_ref` values. Treating enrollment
+ * as an operation-local rewrite lets those facts disagree about which object
+ * exists after Apply. This map is therefore constructed before any operation
+ * is materialized and rejects two source identities that claim the same
+ * durable Forge identity.
+ */
+function collectPostStateTargets(
+  operations: readonly CreatorMutationStudioOperation[],
+  initialTopology: readonly CreatorTransactionTopologyNode[],
+): ReadonlyMap<string, StudioInstanceEvidenceTarget> {
+  const topology = compileCreatorTransactionTopology({
+    initial: initialTopology,
+    operations,
+  });
+  const targetsByPreIdentity = new Map<string, StudioInstanceEvidenceTarget>();
+  for (const node of topology.finalNodes) {
+    const target: StudioInstanceEvidenceTarget = {
+      kind: "instance",
+      identity: node.identity,
+      path: node.path,
+      className: node.className,
+    };
+    if (targetsByPreIdentity.has(node.originalIdentityKey))
+      throw new Error(
+        `Creator mutation topology has duplicate final target for ${node.originalIdentityKey}`,
+      );
+    targetsByPreIdentity.set(node.originalIdentityKey, target);
+  }
+
+  for (const operation of operations) {
+    const preIdentity = studioObjectIdentityKey(operation.target.identity);
+    const enrolledTarget = postMutationTargetForOperation(operation);
+    const topologyTarget = targetsByPreIdentity.get(preIdentity);
+    if (topologyTarget === undefined && operation.kind !== "delete")
+      throw new Error(`Creator mutation topology lost post-state target ${preIdentity}`);
+    const postTarget =
+      topologyTarget === undefined
+        ? enrolledTarget
+        : {
+            ...topologyTarget,
+            identity: enrolledTarget.identity,
+          };
+    if (
+      topologyTarget !== undefined &&
+      (topologyTarget.className !== operation.target.className ||
+        (operation.kind !== "create" &&
+          studioObjectIdentityKey(topologyTarget.identity) !== preIdentity))
+    )
+      throw new Error(`Creator mutation topology contradicts approved target ${preIdentity}`);
+    targetsByPreIdentity.set(preIdentity, postTarget);
+  }
+
+  const preIdentityByPostIdentity = new Map<string, string>();
+  for (const [preIdentity, postTarget] of targetsByPreIdentity) {
+    const postIdentity = studioObjectIdentityKey(postTarget.identity);
+    const existingPreIdentity = preIdentityByPostIdentity.get(postIdentity);
+    if (existingPreIdentity !== undefined && existingPreIdentity !== preIdentity)
+      throw new Error(
+        `Creator mutation transaction has colliding post-state identity enrollment for ${postIdentity}`,
+      );
+    preIdentityByPostIdentity.set(postIdentity, preIdentity);
+  }
+  return targetsByPreIdentity;
 }
 
+function postMutationTargetForOperation(
+  operation: CreatorMutationStudioOperation,
+): StudioInstanceEvidenceTarget {
+  switch (operation.kind) {
+    case "create":
+      return postMutationTarget(operation.target, undefined);
+    case "move":
+      return postMutationTarget(
+        {
+          ...operation.target,
+          path: joinStudioPath(operation.parent.path, operation.name),
+        },
+        operation.enrollment,
+      );
+    case "update":
+    case "delete":
+    case "edit_source":
+      return postMutationTarget(operation.target, operation.enrollment);
+  }
+}
+
+function postMutationTarget(
+  target: StudioInstanceEvidenceTarget,
+  enrollment: StudioIdentityEnrollment | undefined,
+): StudioInstanceEvidenceTarget {
+  if (!isStudioPath(target.path) || !isNonEmpty(target.className))
+    throw new Error("Creator mutation operation has an invalid instance target");
+  if (!enrollment) return target;
+  if (
+    target.identity.kind !== "studio_ephemeral" ||
+    studioObjectIdentityKey(target.identity) !== studioObjectIdentityKey(enrollment.identity)
+  )
+    throw new Error("Creator mutation enrollment does not bind its exact ephemeral target");
+  return {
+    ...target,
+    identity: { kind: "forge_attribute", stableId: enrollment.stableId },
+  };
+}
+
+/** Rewrite a post-state target, never a pre-state/before target. */
+function rewritePostStateTarget(
+  target: StudioInstanceEvidenceTarget,
+  postStateTargets: ReadonlyMap<string, StudioInstanceEvidenceTarget>,
+): StudioInstanceEvidenceTarget {
+  return postStateTargets.get(studioObjectIdentityKey(target.identity)) ?? target;
+}
+
+/**
+ * Properties can point at an object enrolled elsewhere in the same approved
+ * transaction, including the target itself. Their path and class follow that
+ * target's exact post-state target as well as its durable identity.
+ */
+function rewritePostStateProperties(
+  properties: Readonly<Record<string, StudioValue>>,
+  postStateTargets: ReadonlyMap<string, StudioInstanceEvidenceTarget>,
+): Readonly<Record<string, StudioValue>> {
+  let changed = false;
+  const rewritten: Record<string, StudioValue> = {};
+  for (const [name, value] of Object.entries(properties)) {
+    const next = rewritePostStateStudioValue(value, postStateTargets);
+    changed ||= next !== value;
+    rewritten[name] = next;
+  }
+  return changed ? rewritten : properties;
+}
+
+function rewritePostStateStudioValue(
+  value: StudioValue,
+  postStateTargets: ReadonlyMap<string, StudioInstanceEvidenceTarget>,
+): StudioValue {
+  if (value.kind !== "instance_ref" || value.state !== "reference") return value;
+  const target = postStateTargets.get(studioObjectIdentityKey(value.identity));
+  if (target === undefined) return value;
+  if (
+    studioObjectIdentityKey(value.identity) === studioObjectIdentityKey(target.identity) &&
+    value.path === target.path &&
+    value.className === target.className
+  )
+    return value;
+  return {
+    ...value,
+    identity: target.identity,
+    path: target.path,
+    className: target.className,
+  };
+}
+
+function structureFor(
+  target: StudioInstanceEvidenceTarget,
+  parent: CreatorMutationParent,
+  structuralParent: StudioInstanceEvidenceTarget | undefined,
+  postStateTargets: ReadonlyMap<string, StudioInstanceEvidenceTarget>,
+): import("../../studio-evidence/src/index.js").StudioStructureValue {
+  if (
+    parent.kind === "engine_container" &&
+    structuralParent !== undefined &&
+    (structuralParent.path !== parent.path || structuralParent.className !== parent.className)
+  )
+    throw new Error("Captured engine-container parent does not match the approved parent");
+  const rawParent = parent.kind === "instance" ? parent : structuralParent;
+  const postStateParent =
+    rawParent === undefined ? undefined : rewritePostStateTarget(rawParent, postStateTargets);
+  return {
+    identity: target.identity,
+    path: target.path,
+    className: target.className,
+    ...(postStateParent === undefined ? {} : { parentIdentity: postStateParent.identity }),
+    parentPath: postStateParent?.path ?? parent.path,
+  };
+}
+function joinStudioPath(parentPath: string, name: string): string {
+  if (!isStudioPath(parentPath) || !isNonEmpty(name) || name.includes("/"))
+    throw new Error("Creator mutation operation has an invalid parent path or name");
+  return `${parentPath}/${name}`;
+}
+function isStudioPath(value: string): boolean {
+  return (
+    isNonEmpty(value) &&
+    !value.startsWith("/") &&
+    !value.endsWith("/") &&
+    !value.includes("\\") &&
+    !value.split("/").some((part) => part === "" || part === "." || part === "..")
+  );
+}
+function isDescendantPath(path: string, ancestor: string): boolean {
+  return isStudioPath(path) && isStudioPath(ancestor) && path.startsWith(`${ancestor}/`);
+}
 function isStudioValue(value: unknown): value is StudioValue {
   try {
     assertStudioValue(value);
@@ -1634,51 +2259,53 @@ function isStudioValue(value: unknown): value is StudioValue {
     return false;
   }
 }
-
-function sameTarget(
-  left: StudioEvidenceFact["target"],
-  right: StudioEvidenceFact["target"],
-): boolean {
+function isProject(value: unknown): value is StudioProjectIdentity {
   return (
-    left.kind === right.kind &&
-    (left.kind === "project" ||
-      right.kind === "project" ||
-      (left.stableId === right.stableId &&
-        left.path === right.path &&
-        left.className === right.className))
+    isRecord(value) &&
+    isNonEmpty(value.name) &&
+    typeof value.placeId === "number" &&
+    Number.isSafeInteger(value.placeId) &&
+    value.placeId >= 0 &&
+    typeof value.universeId === "number" &&
+    Number.isSafeInteger(value.universeId) &&
+    value.universeId >= 0
   );
 }
-
-function sameStringArray(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
+function sameOptionalJson(left: unknown, right: unknown): boolean {
+  return left === undefined || right === undefined
+    ? left === right
+    : stableJson(left) === stableJson(right);
 }
-
-function sortedUnique(values: readonly string[]): boolean {
+function compareFailureFacts(
+  left: CreatorMutationFailureFact,
+  right: CreatorMutationFailureFact,
+): number {
   return (
-    values.length > 0 &&
-    values.every(
-      (value, index) =>
-        isNonEmpty(value) && (index === 0 || values[index - 1]! < value),
-    )
+    left.hash.localeCompare(right.hash) ||
+    left.code.localeCompare(right.code) ||
+    left.detail.localeCompare(right.detail)
   );
 }
-
+function safeHash(value: unknown): string {
+  return isHash(value) ? value : contentHash(stableJson({ invalid: String(value) }));
+}
+function recordHash(value: unknown, field: string): string {
+  return isRecord(value) ? safeHash(value[field]) : safeHash(undefined);
+}
+function nestedRecordHash(value: unknown, parent: string, field: string): string {
+  return isRecord(value) && isRecord(value[parent])
+    ? safeHash(value[parent][field])
+    : safeHash(undefined);
+}
 function isHash(value: unknown): value is string {
-  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+  return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
 }
-
 function isNonEmpty(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function freeze<T>(value: T): T {
-  return Object.freeze(value);
 }

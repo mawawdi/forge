@@ -1,18 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import {
-  createServer,
-  type IncomingMessage,
-  type Server,
-  type ServerResponse,
-} from "node:http";
-import {
-  mkdir,
-  readFile,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
 import type { CreatorSessionCoordinator } from "../../creator-session/src/coordinator.js";
 import {
@@ -81,8 +69,7 @@ export interface StudioCatalogSummaryView {
   };
 }
 
-export interface StudioCapabilityExplorerEntryView
-  extends RobloxApiCatalogLookupEntry {
+export interface StudioCapabilityExplorerEntryView extends RobloxApiCatalogLookupEntry {
   /** The explicit manifest proof route, present only for authorable properties. */
   readonly proofObligations?: readonly string[];
 }
@@ -149,17 +136,18 @@ export class CreatorControlServer {
 
   constructor(private readonly options: CreatorControlServerOptions) {
     const host = options.host ?? "127.0.0.1";
-    if (host !== "127.0.0.1")
-      throw new Error("Creator control server supports loopback only");
+    if (host !== "127.0.0.1") throw new Error("Creator control server supports loopback only");
     this.host = host;
     this.port = options.port ?? 8788;
     this.now = options.now ?? (() => new Date());
     this.launchTtlMs = options.launchTtlMs ?? 5 * 60_000;
-    this.bearerToken =
-      options.bearerToken ?? randomBytes(32).toString("base64url");
+    this.bearerToken = options.bearerToken ?? randomBytes(32).toString("base64url");
     this.dashboardDirectory = resolve(options.dashboardDirectory);
     this.server = createServer((request, response) => {
-      void this.handle(request, response);
+      // A client can disconnect while a Studio-backed action is still settling.
+      // No request-path exception may escape this callback: doing so would turn a
+      // single dead socket into an unhandled rejection for the creator service.
+      void this.serveRequest(request, response).catch(() => safeEnd(response));
     });
     this.unsubscribe = options.coordinator.subscribe(() => this.invalidate());
   }
@@ -185,8 +173,7 @@ export class CreatorControlServer {
     const address = this.server.address();
     return {
       host: this.host,
-      port:
-        typeof address === "object" && address ? address.port : this.port,
+      port: typeof address === "object" && address ? address.port : this.port,
       bearerToken: this.bearerToken,
     };
   }
@@ -200,7 +187,7 @@ export class CreatorControlServer {
 
   async close(): Promise<void> {
     this.unsubscribe();
-    for (const response of this.subscribers) response.end();
+    for (const response of this.subscribers) safeEnd(response);
     this.subscribers.clear();
     if (!this.server.listening) return;
     await new Promise<void>((resolvePromise, reject) =>
@@ -208,16 +195,36 @@ export class CreatorControlServer {
     );
   }
 
-  private async handle(
-    request: IncomingMessage,
-    response: ServerResponse,
-  ): Promise<void> {
-    setSecurityHeaders(response);
+  private async serveRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    // Peer failures are output-only. An action that has already been admitted
+    // may continue to its durable boundary, but its abandoned request must not
+    // create an unhandled EventEmitter error or trigger an automatic retry.
+    request.once("error", () => undefined);
+    request.once("aborted", () => undefined);
+    response.on("error", () => undefined);
     try {
-      const url = new URL(
-        request.url ?? "/",
-        `http://${this.host}:${this.actualPort()}`,
-      );
+      await this.handle(request, response);
+    } catch {
+      this.writeTerminalFailure(response);
+    }
+  }
+
+  private writeTerminalFailure(response: ServerResponse): void {
+    if (!isWritable(response)) return;
+    if (response.headersSent) {
+      safeEnd(response);
+      return;
+    }
+    safeWriteJson(response, 500, {
+      kind: "CreatorControlError",
+      message: "The local control plane could not complete this request.",
+    });
+  }
+
+  private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    try {
+      setSecurityHeaders(response);
+      const url = new URL(request.url ?? "/", `http://${this.host}:${this.actualPort()}`);
       if (request.method === "GET" && url.pathname === "/" && url.searchParams.has("launch"))
         return this.exchangeLaunch(url, response);
       this.assertAuthenticated(request);
@@ -234,36 +241,251 @@ export class CreatorControlServer {
         return writeJson(response, 200, studioCatalogSummary());
       }
       if (request.method === "GET" && url.pathname === "/api/control/capabilities") {
-        return writeJson(response, 200, studioCapabilityExplorerPage({
-          ...(url.searchParams.has("class")
-            ? { className: readClassName(url.searchParams.get("class")) }
-            : {}),
-          ...(url.searchParams.has("query")
-            ? { query: readCapabilityQuery(url.searchParams.get("query")) }
-            : {}),
-          ...(url.searchParams.has("cursor")
-            ? { cursor: readBoundedInteger(url.searchParams.get("cursor"), "Capability cursor", 0, Number.MAX_SAFE_INTEGER) }
-            : {}),
-          ...(url.searchParams.has("limit")
-            ? { limit: readBoundedInteger(url.searchParams.get("limit"), "Capability page size", 1, MAX_CAPABILITY_PAGE_SIZE) }
-            : {}),
-        }));
+        return writeJson(
+          response,
+          200,
+          studioCapabilityExplorerPage({
+            ...(url.searchParams.has("class")
+              ? { className: readClassName(url.searchParams.get("class")) }
+              : {}),
+            ...(url.searchParams.has("query")
+              ? { query: readCapabilityQuery(url.searchParams.get("query")) }
+              : {}),
+            ...(url.searchParams.has("cursor")
+              ? {
+                  cursor: readBoundedInteger(
+                    url.searchParams.get("cursor"),
+                    "Capability cursor",
+                    0,
+                    Number.MAX_SAFE_INTEGER,
+                  ),
+                }
+              : {}),
+            ...(url.searchParams.has("limit")
+              ? {
+                  limit: readBoundedInteger(
+                    url.searchParams.get("limit"),
+                    "Capability page size",
+                    1,
+                    MAX_CAPABILITY_PAGE_SIZE,
+                  ),
+                }
+              : {}),
+          }),
+        );
+      }
+      if (request.method === "GET" && url.pathname === "/api/sources/documents") {
+        return writeJson(
+          response,
+          200,
+          await this.options.coordinator.sourceDocuments(requiredQuery(url, "sessionId"), {
+            ...(url.searchParams.has("limit")
+              ? {
+                  limit: readBoundedInteger(
+                    url.searchParams.get("limit"),
+                    "Source page size",
+                    1,
+                    200,
+                  ),
+                }
+              : {}),
+            ...(url.searchParams.has("cursor") ? { cursor: requiredQuery(url, "cursor") } : {}),
+          }),
+        );
+      }
+      if (request.method === "GET" && url.pathname === "/api/sources/search") {
+        return writeJson(
+          response,
+          200,
+          await this.options.coordinator.sourceSearch(requiredQuery(url, "sessionId"), {
+            query: requiredQuery(url, "query"),
+            ...(url.searchParams.has("pathPrefix")
+              ? { pathPrefix: requiredQuery(url, "pathPrefix") }
+              : {}),
+            ...(url.searchParams.has("contextBytes")
+              ? {
+                  contextUtf8Bytes: readBoundedInteger(
+                    url.searchParams.get("contextBytes"),
+                    "Source context bytes",
+                    1,
+                    512,
+                  ),
+                }
+              : {}),
+            ...(url.searchParams.has("limit")
+              ? {
+                  limit: readBoundedInteger(
+                    url.searchParams.get("limit"),
+                    "Source result limit",
+                    1,
+                    100,
+                  ),
+                }
+              : {}),
+            ...(url.searchParams.has("cursor") ? { cursor: requiredQuery(url, "cursor") } : {}),
+          }),
+        );
+      }
+      if (request.method === "GET" && url.pathname === "/api/sources/read") {
+        return writeJson(
+          response,
+          200,
+          await this.options.coordinator.sourceRead(requiredQuery(url, "sessionId"), {
+            documentId: requiredQuery(url, "documentId"),
+            ...(url.searchParams.has("limit")
+              ? {
+                  maximumUtf8Bytes: readBoundedInteger(
+                    url.searchParams.get("limit"),
+                    "Source read bytes",
+                    1,
+                    32 * 1024,
+                  ),
+                }
+              : {}),
+            ...(url.searchParams.has("cursor") ? { cursor: requiredQuery(url, "cursor") } : {}),
+          }),
+        );
+      }
+      if (request.method === "GET" && url.pathname === "/api/sources/symbols") {
+        return writeJson(
+          response,
+          200,
+          await this.options.coordinator.sourceSymbols(requiredQuery(url, "sessionId"), {
+            query: requiredQuery(url, "query"),
+            ...(url.searchParams.has("pathPrefix")
+              ? { pathPrefix: requiredQuery(url, "pathPrefix") }
+              : {}),
+            ...(url.searchParams.has("limit")
+              ? {
+                  limit: readBoundedInteger(
+                    url.searchParams.get("limit"),
+                    "Symbol result limit",
+                    1,
+                    200,
+                  ),
+                }
+              : {}),
+            ...(url.searchParams.has("cursor") ? { cursor: requiredQuery(url, "cursor") } : {}),
+          }),
+        );
+      }
+      if (request.method === "GET" && url.pathname === "/api/sources/references") {
+        return writeJson(
+          response,
+          200,
+          await this.options.coordinator.sourceReferences(requiredQuery(url, "sessionId"), {
+            symbol: requiredQuery(url, "symbol"),
+            ...(url.searchParams.has("pathPrefix")
+              ? { pathPrefix: requiredQuery(url, "pathPrefix") }
+              : {}),
+            ...(url.searchParams.has("limit")
+              ? {
+                  limit: readBoundedInteger(
+                    url.searchParams.get("limit"),
+                    "Reference result limit",
+                    1,
+                    200,
+                  ),
+                }
+              : {}),
+            ...(url.searchParams.has("cursor") ? { cursor: requiredQuery(url, "cursor") } : {}),
+          }),
+        );
+      }
+      if (request.method === "GET" && url.pathname === "/api/sources/dependencies") {
+        const direction = requiredQuery(url, "direction");
+        if (
+          !(["imports", "importers", "closure"] as const).includes(
+            direction as "imports" | "importers" | "closure",
+          )
+        )
+          throw new HttpError(400, "Invalid source dependency direction");
+        return writeJson(
+          response,
+          200,
+          await this.options.coordinator.sourceDependencies(requiredQuery(url, "sessionId"), {
+            documentId: requiredQuery(url, "documentId"),
+            direction: direction as "imports" | "importers" | "closure",
+            ...(url.searchParams.has("maxDepth")
+              ? {
+                  maxDepth: readBoundedInteger(
+                    url.searchParams.get("maxDepth"),
+                    "Dependency depth",
+                    1,
+                    16,
+                  ),
+                }
+              : {}),
+            ...(url.searchParams.has("limit")
+              ? {
+                  limit: readBoundedInteger(
+                    url.searchParams.get("limit"),
+                    "Dependency result limit",
+                    1,
+                    1_024,
+                  ),
+                }
+              : {}),
+            ...(url.searchParams.has("cursor") ? { cursor: requiredQuery(url, "cursor") } : {}),
+          }),
+        );
+      }
+      if (request.method === "GET" && url.pathname === "/api/sources/diff") {
+        return writeJson(
+          response,
+          200,
+          await this.options.coordinator.sourceDiff(requiredQuery(url, "sessionId"), {
+            operationId: requiredQuery(url, "operationId"),
+            ...(url.searchParams.has("changeSetId")
+              ? { changeSetId: requiredQuery(url, "changeSetId") }
+              : {}),
+            ...(url.searchParams.has("limit")
+              ? {
+                  maximumUtf8Bytes: readBoundedInteger(
+                    url.searchParams.get("limit"),
+                    "Exact source diff bytes",
+                    1,
+                    32 * 1024,
+                  ),
+                }
+              : {}),
+            ...(url.searchParams.has("cursor") ? { cursor: requiredQuery(url, "cursor") } : {}),
+          }),
+        );
       }
       if (request.method === "GET" && url.pathname === "/api/control/events")
         return this.openEvents(request, url, response);
       if (request.method === "POST" && url.pathname === "/api/control/action") {
         this.assertSameOrigin(request);
-        const action = JSON.parse(await readBody(request)) as unknown;
-        await this.options.coordinator.action(action);
+        let action: unknown;
+        try {
+          action = JSON.parse(await readBody(request)) as unknown;
+        } catch (error) {
+          if (error instanceof HttpError) throw error;
+          throw new HttpError(400, "Creator control action body must be valid JSON");
+        }
+        try {
+          await this.options.coordinator.action(action);
+        } catch (error) {
+          // Coordinator errors do not currently carry a proof that a
+          // state-changing action stopped before its durable boundary. Treat
+          // the result as ambiguous and let the client observe state; never
+          // invite it to replay the POST automatically.
+          throw new ActionOutcomeUnknownError(
+            `Forge could not prove whether the creator action reached its durable boundary: ${errorMessage(error)}`,
+          );
+        }
         const selected =
           action && typeof action === "object" && "sessionId" in action
             ? String((action as { sessionId: unknown }).sessionId)
             : undefined;
-        return writeJson(
-          response,
-          200,
-          await this.options.coordinator.dashboardState(selected),
-        );
+        try {
+          return writeJson(response, 200, await this.options.coordinator.dashboardState(selected));
+        } catch (error) {
+          throw new ActionOutcomeUnknownError(
+            `The creator action completed, but Forge could not materialize its resulting dashboard state: ${errorMessage(error)}`,
+          );
+        }
       }
       const artifact = /^\/api\/artifacts\/([a-f0-9]{64})$/.exec(url.pathname);
       if (request.method === "GET" && artifact?.[1])
@@ -272,9 +494,7 @@ export class CreatorControlServer {
           200,
           await this.options.coordinator.readAuthorizedArtifact(artifact[1]),
         );
-      const replay = /^\/api\/verifications\/([^/]+)\/replay$/.exec(
-        url.pathname,
-      );
+      const replay = /^\/api\/verifications\/([^/]+)\/replay$/.exec(url.pathname);
       if (request.method === "POST" && replay?.[1]) {
         this.assertSameOrigin(request);
         const result = await this.options.coordinator.replayVerification(
@@ -282,9 +502,7 @@ export class CreatorControlServer {
         );
         return writeJson(response, 200, result);
       }
-      const mutationReplay = /^\/api\/mutations\/([^/]+)\/replay$/.exec(
-        url.pathname,
-      );
+      const mutationReplay = /^\/api\/mutations\/([^/]+)\/replay$/.exec(url.pathname);
       if (request.method === "POST" && mutationReplay?.[1]) {
         this.assertSameOrigin(request);
         const result = await this.options.coordinator.replayMutation(
@@ -296,12 +514,20 @@ export class CreatorControlServer {
       throw new HttpError(404, "Not found");
     } catch (error) {
       if (response.headersSent) {
-        response.end();
+        safeEnd(response);
         return;
       }
-      const status = error instanceof HttpError ? error.status : 400;
-      writeJson(response, status, {
-        kind: "CreatorControlError",
+      const status =
+        error instanceof ActionOutcomeUnknownError
+          ? 503
+          : error instanceof HttpError
+            ? error.status
+            : 400;
+      safeWriteJson(response, status, {
+        kind:
+          error instanceof ActionOutcomeUnknownError
+            ? "CreatorControlActionOutcomeUnknown"
+            : "CreatorControlError",
         message: error instanceof Error ? error.message : String(error),
       });
     }
@@ -337,26 +563,32 @@ export class CreatorControlServer {
       throw new HttpError(403, "State-changing requests must be same-origin");
   }
 
-  private openEvents(
-    request: IncomingMessage,
-    url: URL,
-    response: ServerResponse,
-  ): void {
+  private openEvents(request: IncomingMessage, url: URL, response: ServerResponse): void {
     if (this.subscribers.size >= MAX_SUBSCRIBERS)
       throw new HttpError(429, "Creator event subscriber limit reached");
     const requested = Number(
       request.headers["last-event-id"] ?? url.searchParams.get("after") ?? "0",
     );
-    if (!Number.isInteger(requested) || requested < this.baseCursor)
-      throw new HttpError(409, "Creator event cursor expired");
+    if (!Number.isInteger(requested) || requested < 0)
+      throw new HttpError(400, "Creator event cursor is invalid");
+    const needsReset = requested < this.baseCursor || requested > this.cursor;
     response.statusCode = 200;
     response.setHeader("content-type", "text/event-stream; charset=utf-8");
     response.setHeader("connection", "keep-alive");
     response.flushHeaders();
-    for (const cursor of this.events.filter((candidate) => candidate > requested))
-      writeSse(response, cursor);
+    if (needsReset) {
+      if (!writeSseReset(response, this.cursor)) return;
+    } else {
+      for (const cursor of this.events.filter((candidate) => candidate > requested))
+        if (!writeSse(response, cursor)) return;
+    }
+    if (!isWritable(response)) return;
     this.subscribers.add(response);
-    request.once("close", () => this.subscribers.delete(response));
+    const remove = () => this.subscribers.delete(response);
+    request.once("aborted", remove);
+    request.once("error", remove);
+    response.once("close", remove);
+    response.once("error", remove);
   }
 
   private invalidate(): void {
@@ -366,7 +598,8 @@ export class CreatorControlServer {
       const removed = this.events.shift();
       if (removed !== undefined) this.baseCursor = removed;
     }
-    for (const response of this.subscribers) writeSse(response, this.cursor);
+    for (const response of this.subscribers)
+      if (!writeSse(response, this.cursor)) this.subscribers.delete(response);
   }
 
   private async serveAsset(pathname: string, response: ServerResponse): Promise<void> {
@@ -394,8 +627,7 @@ export class CreatorControlServer {
 
   private pruneLaunches(): void {
     const now = this.now().getTime();
-    for (const [grant, expiry] of this.launches)
-      if (expiry < now) this.launches.delete(grant);
+    for (const [grant, expiry] of this.launches) if (expiry < now) this.launches.delete(grant);
   }
 }
 
@@ -421,12 +653,9 @@ export function studioCatalogSummary(): StudioCatalogSummaryView {
       policyHash: coverage.policyHash,
       manifestHash: coverage.manifestHash,
       summary: coverage.summary,
-      catalogBinding:
-        coverage.catalogHash === ROBLOX_API_CATALOG_HASH ? "matched" : "mismatched",
+      catalogBinding: coverage.catalogHash === ROBLOX_API_CATALOG_HASH ? "matched" : "mismatched",
       manifestBinding:
-        coverage.manifestHash === STUDIO_CAPABILITY_MANIFEST_HASH
-          ? "matched"
-          : "mismatched",
+        coverage.manifestHash === STUDIO_CAPABILITY_MANIFEST_HASH ? "matched" : "mismatched",
     },
     manifest: {
       hash: STUDIO_CAPABILITY_MANIFEST_HASH,
@@ -498,14 +727,8 @@ function capabilityExplorerEntry(
 ): StudioCapabilityExplorerEntryView {
   const catalogEntry = getRobloxApiCatalogLookupEntry(entry.catalogEntryId);
   if (!catalogEntry)
-    throw new Error(
-      `Pinned Roblox API metadata is missing for ${entry.catalogEntryId}`,
-    );
-  const proofObligations = manifestProofObligations(
-    entry.owner,
-    entry.name,
-    entry.inheritedBy,
-  );
+    throw new Error(`Pinned Roblox API metadata is missing for ${entry.catalogEntryId}`);
+  const proofObligations = manifestProofObligations(entry.owner, entry.name, entry.inheritedBy);
   return {
     ...catalogEntry,
     ...(proofObligations !== undefined ? { proofObligations } : {}),
@@ -570,7 +793,8 @@ function assertCapabilityExplorerRequest(
     throw new HttpError(400, "Capability class name is invalid");
   if (
     request.query !== undefined &&
-    (request.query.length > MAX_CAPABILITY_QUERY_LENGTH || /[\u0000-\u001f\u007f]/.test(request.query))
+    (request.query.length > MAX_CAPABILITY_QUERY_LENGTH ||
+      /[\u0000-\u001f\u007f]/.test(request.query))
   )
     throw new HttpError(400, "Capability search query is invalid");
   if (!Number.isSafeInteger(request.cursor) || request.cursor < 0)
@@ -593,14 +817,25 @@ function readCapabilityQuery(value: string | null): string {
   return value;
 }
 
+function requiredQuery(url: URL, name: string): string {
+  const value = url.searchParams.get(name);
+  if (
+    value === null ||
+    value.length === 0 ||
+    value.length > 4_096 ||
+    /[\u0000-\u001f\u007f]/.test(value)
+  )
+    throw new HttpError(400, `${name} is missing or invalid`);
+  return value;
+}
+
 function readBoundedInteger(
   value: string | null,
   label: string,
   minimum: number,
   maximum: number,
 ): number {
-  if (value === null || !/^\d+$/.test(value))
-    throw new HttpError(400, `${label} is invalid`);
+  if (value === null || !/^\d+$/.test(value)) throw new HttpError(400, `${label} is invalid`);
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum)
     throw new HttpError(400, `${label} is invalid`);
@@ -611,9 +846,7 @@ function isClassName(value: string): boolean {
   return /^[A-Za-z][A-Za-z0-9_]*$/.test(value);
 }
 
-export function defaultCreatorControlDiscoveryPath(
-  cwd: string = process.cwd(),
-): string {
+export function defaultCreatorControlDiscoveryPath(cwd: string = process.cwd()): string {
   return resolve(cwd, ".forge", "creator-control.json");
 }
 
@@ -656,11 +889,8 @@ export async function removeCreatorControlDiscovery(
   }
 }
 
-function assertCreatorControlDiscovery(
-  value: unknown,
-): asserts value is CreatorControlDiscovery {
-  if (!value || typeof value !== "object")
-    throw new Error("Invalid creator control discovery");
+function assertCreatorControlDiscovery(value: unknown): asserts value is CreatorControlDiscovery {
+  if (!value || typeof value !== "object") throw new Error("Invalid creator control discovery");
   const item = value as Record<string, unknown>;
   if (
     item.kind !== "ForgeCreatorControlDiscovery" ||
@@ -704,13 +934,64 @@ function setSecurityHeaders(response: ServerResponse): void {
 }
 
 function writeJson(response: ServerResponse, status: number, value: unknown): void {
+  if (!isWritable(response)) return;
   response.statusCode = status;
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(JSON.stringify(value));
 }
 
-function writeSse(response: ServerResponse, cursor: number): void {
-  response.write(`id: ${cursor}\ndata: ${JSON.stringify({ cursor })}\n\n`);
+function safeWriteJson(response: ServerResponse, status: number, value: unknown): void {
+  try {
+    writeJson(response, status, value);
+  } catch {
+    safeEnd(response);
+  }
+}
+
+function safeEnd(response: ServerResponse): void {
+  if (!isWritable(response)) return;
+  try {
+    response.end();
+  } catch {
+    // A response that failed while closing has no remaining recovery action.
+  }
+}
+
+function isWritable(response: ServerResponse): boolean {
+  return !response.destroyed && !response.writableEnded;
+}
+
+function writeSse(response: ServerResponse, cursor: number): boolean {
+  if (!isWritable(response)) return false;
+  try {
+    const accepted = response.write(`id: ${cursor}\ndata: ${JSON.stringify({ cursor })}\n\n`);
+    if (!accepted) {
+      // SSE invalidations are resumable. Drop a backpressured peer instead of
+      // retaining an unbounded Node write buffer; EventSource reconnects with
+      // its last accepted cursor and receives the bounded retained history.
+      safeEnd(response);
+      return false;
+    }
+    return isWritable(response);
+  } catch {
+    return false;
+  }
+}
+
+function writeSseReset(response: ServerResponse, cursor: number): boolean {
+  if (!isWritable(response)) return false;
+  try {
+    const accepted = response.write(
+      `event: reset\nid: ${cursor}\ndata: ${JSON.stringify({ cursor })}\n\n`,
+    );
+    if (!accepted) {
+      safeEnd(response);
+      return false;
+    }
+    return isWritable(response);
+  } catch {
+    return false;
+  }
 }
 
 function parseCookies(value: string): Map<string, string> {
@@ -741,4 +1022,15 @@ class HttpError extends Error {
   ) {
     super(message);
   }
+}
+
+class ActionOutcomeUnknownError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ActionOutcomeUnknownError";
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

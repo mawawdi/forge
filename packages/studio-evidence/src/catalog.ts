@@ -1,3 +1,5 @@
+import type { StudioObjectIdentity } from "./project-index.js";
+
 /**
  * Exhaustive, normalized accountability contracts for the official Roblox
  * Engine API.  The catalog records what Roblox documents; the coverage report
@@ -59,7 +61,8 @@ export interface RobloxApiSerialization {
 }
 
 export type RobloxClassMemberKind = "property" | "method" | "event" | "callback";
-export type RobloxDatatypeMemberKind = "constant" | "constructor" | "function" | "math_operation" | "method" | "property";
+export type RobloxDatatypeMemberKind =
+  "constant" | "constructor" | "function" | "math_operation" | "method" | "property";
 
 export interface RobloxClassMember {
   readonly id: string;
@@ -191,11 +194,7 @@ export interface RobloxApiCatalog {
 }
 
 export type StudioCapabilityDisposition =
-  | "authorable"
-  | "observable_only"
-  | "source_only"
-  | "creator_reviewed"
-  | "unsupported";
+  "authorable" | "observable_only" | "source_only" | "creator_reviewed" | "unsupported";
 
 export type StudioCapabilityReason =
   | "proof_closed"
@@ -212,6 +211,7 @@ export type StudioCapabilityReason =
   | "reference_policy_missing"
   | "content_policy_missing"
   | "parent_policy_missing"
+  | "structure_managed"
   | "detached_preflight_required"
   | "runtime_observation_supported"
   | "runtime_observation_missing"
@@ -281,7 +281,8 @@ export type StudioInstanceReference =
   | {
       readonly kind: "instance_ref";
       readonly state: "reference";
-      readonly stableId: string;
+      /** Exact closed identity; path/class are display and preconditions only. */
+      readonly identity: StudioObjectIdentity;
       readonly path: string;
       /** Exact observed class; `expectedClass` may name an ancestor constraint. */
       readonly className: string;
@@ -301,9 +302,31 @@ export interface StudioCapabilityPolicy {
   readonly kind: "StudioCapabilityPolicy";
   readonly catalogCommit: string;
   readonly roots: readonly string[];
+  readonly authoringContainers: readonly {
+    readonly path: string;
+    readonly className: string;
+  }[];
   readonly operationKinds: readonly string[];
   readonly authoringGroups: readonly StudioAuthoringGroupPolicy[];
   readonly codecByApiType: Readonly<Record<string, string>>;
+  readonly propertyDefaults: Readonly<{
+    maximumUtf8Bytes: number;
+    maximumEntries: number;
+    maximumAbsoluteTranslation: number;
+  }>;
+  /** Catalog-derived structural or authority boundaries, never hidden fallbacks. */
+  readonly propertyExclusions: Readonly<
+    Record<
+      string,
+      Readonly<{
+        reason:
+          | "structure_managed"
+          | "parent_policy_missing"
+          | "engine_or_external_authority"
+          | "nondeterministic_behavior";
+      }>
+    >
+  >;
   readonly propertyOverrides: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
   readonly runtimeCapabilities: readonly Readonly<Record<string, unknown>>[];
   readonly limits: Readonly<Record<string, number>>;

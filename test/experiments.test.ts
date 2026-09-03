@@ -9,10 +9,21 @@ import {
 import { createStudioEvidenceEnvelope } from "../packages/studio-evidence/src/index.js";
 
 const project = { name: "ExperimentEvidence", placeId: 0, universeId: 0 };
-const target = { id: "door", path: "Workspace/Door", expectedClass: "BasePart" as const };
+const target = {
+  id: "door",
+  identity: { kind: "forge_attribute" as const, stableId: "experiment-door" },
+  path: "Workspace/Door",
+  expectedClass: "BasePart" as const,
+};
 const calls = [
   { id: "resolve-door", capability: "instance.resolve" as const, targetId: target.id },
-  { id: "series-door", capability: "base_part.position_series" as const, targetId: target.id, sampleCount: 2, intervalMs: 100 },
+  {
+    id: "series-door",
+    capability: "base_part.position_series" as const,
+    targetId: target.id,
+    sampleCount: 2,
+    intervalMs: 100,
+  },
 ];
 const budget = { maxExecutionMs: 1_000, maxResultBytes: 4_096 };
 
@@ -62,7 +73,7 @@ test("runtime experiments grade universal evidence rather than legacy runtime en
       sessionId: "studio-session",
       projectId: "studio-project",
       project,
-      projectStateRevisionHash: "b".repeat(64),
+      projectRevisionHash: "b".repeat(64),
       candidateHash: "c".repeat(64),
     },
     targets: [target],
@@ -90,7 +101,10 @@ test("runtime experiments grade universal evidence rather than legacy runtime en
               callId: requirement.callId!,
               runtimeTargetId: requirement.runtimeTargetId!,
               capability: "instance.resolve" as const,
-              result: { status: "observed" as const, value: { path: target.path, className: "Part" } },
+              result: {
+                status: "observed" as const,
+                value: { path: target.path, className: "Part" },
+              },
             }
           : {
               kind: "position_series" as const,
@@ -112,7 +126,9 @@ test("runtime experiments grade universal evidence rather than legacy runtime en
     executionPlan.evidenceProjection,
   );
   assert.deepEqual(
-    gradeRuntimeEvidence(definition, envelope, executionPlan.evidenceProjection).map((result) => result.status),
+    gradeRuntimeEvidence(definition, envelope, executionPlan.evidenceProjection).map(
+      (result) => result.status,
+    ),
     ["pass", "pass"],
   );
 });

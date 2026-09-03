@@ -1,0 +1,34 @@
+{
+  "kind": "ForgeSourceAnalysisToolchainLock",
+  "version": 1,
+  "tools": [
+    {
+      "name": "rojo",
+      "version": "7.7.0",
+      "repository": "rojo-rbx/rojo",
+      "releaseTag": "v7.7.0",
+      "githubApiRelease": "https://api.github.com/repos/rojo-rbx/rojo/releases/tags/v7.7.0",
+      "assets": [
+        { "platforms": ["linux-arm64"], "name": "rojo-7.7.0-linux-aarch64.zip", "url": "https://github.com/rojo-rbx/rojo/releases/download/v7.7.0/rojo-7.7.0-linux-aarch64.zip", "sha256": "7e60d864d4b735f4b1122cbe4e3db4c215fda97f596196df5c3e99f3f5387485", "bytes": 5895386, "binary": "rojo" },
+        { "platforms": ["linux-x64"], "name": "rojo-7.7.0-linux-x86_64.zip", "url": "https://github.com/rojo-rbx/rojo/releases/download/v7.7.0/rojo-7.7.0-linux-x86_64.zip", "sha256": "22503e5839864f9d7c2171c48b536fc229f2cc4d8774c9cc149f60941d864073", "bytes": 5902658, "binary": "rojo" },
+        { "platforms": ["darwin-arm64"], "name": "rojo-7.7.0-macos-aarch64.zip", "url": "https://github.com/rojo-rbx/rojo/releases/download/v7.7.0/rojo-7.7.0-macos-aarch64.zip", "sha256": "000f663eb406ec4670e1b675069a5e9fdb6e131505ff60f6a8e28bc8a97488cd", "bytes": 5198999, "binary": "rojo" },
+        { "platforms": ["darwin-x64"], "name": "rojo-7.7.0-macos-x86_64.zip", "url": "https://github.com/rojo-rbx/rojo/releases/download/v7.7.0/rojo-7.7.0-macos-x86_64.zip", "sha256": "9bd69697ca3a0abf0ec847c779013e7315501b2d997d63d5e1766e14d49d9c66", "bytes": 5585155, "binary": "rojo" },
+        { "platforms": ["win32-arm64"], "name": "rojo-7.7.0-windows-aarch64.zip", "url": "https://github.com/rojo-rbx/rojo/releases/download/v7.7.0/rojo-7.7.0-windows-aarch64.zip", "sha256": "f500d23ff2c3baa0cfc5a9a8c6456e49958b7123916f9e20df731c0e562b877f", "bytes": 4273426, "binary": "rojo.exe" },
+        { "platforms": ["win32-x64"], "name": "rojo-7.7.0-windows-x86_64.zip", "url": "https://github.com/rojo-rbx/rojo/releases/download/v7.7.0/rojo-7.7.0-windows-x86_64.zip", "sha256": "2179c44862a10ecbd725bdfeb4abc64e16dc4aad9b6c8f3e1a7c46a87280b949", "bytes": 4556842, "binary": "rojo.exe" }
+      ]
+    },
+    {
+      "name": "luau-lsp",
+      "version": "1.63.0",
+      "repository": "JohnnyMorganz/luau-lsp",
+      "releaseTag": "1.63.0",
+      "githubApiRelease": "https://api.github.com/repos/JohnnyMorganz/luau-lsp/releases/tags/1.63.0",
+      "assets": [
+        { "platforms": ["linux-arm64"], "name": "luau-lsp-linux-arm64.zip", "url": "https://github.com/JohnnyMorganz/luau-lsp/releases/download/1.63.0/luau-lsp-linux-arm64.zip", "sha256": "355be010f337a6772df6255c92e1fb28a59d194abe5c570453f4186472244355", "bytes": 3728718, "binary": "luau-lsp" },
+        { "platforms": ["linux-x64"], "name": "luau-lsp-linux-x86_64.zip", "url": "https://github.com/JohnnyMorganz/luau-lsp/releases/download/1.63.0/luau-lsp-linux-x86_64.zip", "sha256": "e4b633ad9a2c15437f60f9e721263f79aa0da606867d8458f0e159a325bf2db8", "bytes": 3984954, "binary": "luau-lsp" },
+        { "platforms": ["darwin-arm64", "darwin-x64"], "name": "luau-lsp-macos.zip", "url": "https://github.com/JohnnyMorganz/luau-lsp/releases/download/1.63.0/luau-lsp-macos.zip", "sha256": "01c1d6dd5fee27295b2968915dabb08c192192c46d9fe9c97bf31a130c96b8cb", "bytes": 6861112, "binary": "luau-lsp" },
+        { "platforms": ["win32-arm64", "win32-x64"], "name": "luau-lsp-win64.zip", "url": "https://github.com/JohnnyMorganz/luau-lsp/releases/download/1.63.0/luau-lsp-win64.zip", "sha256": "eea596d47dc1c94a61ba1b78e6472bb4445bc3309780751515e6ab0a0abba57d", "bytes": 3646384, "binary": "luau-lsp.exe" }
+      ]
+    }
+  ]
+}

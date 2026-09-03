@@ -1,35 +1,52 @@
 {
-	"name": "forge",
-	"private": true,
-	"type": "module",
-	"bin": {
-		"forge": "bin/forge.js"
-	},
-	"scripts": {
-		"roblox-api-catalog:refresh": "node scripts/generate-roblox-api-catalog.mjs --refresh --clone",
-		"roblox-api-catalog:check": "node scripts/generate-roblox-api-catalog.mjs --check",
-		"studio-evidence:generate": "node scripts/generate-studio-evidence.mjs",
-		"studio-evidence:check": "node scripts/generate-studio-evidence.mjs --check",
-		"build": "rm -rf dist && tsc -p tsconfig.json",
-		"test": "npm run roblox-api-catalog:check && npm run studio-evidence:check && npm run build && npm run dashboard:build && node --test dist/test/*.test.js && npm run dashboard:test && npm run plugin:test && npm run formal:check",
-		"dashboard:build": "npm --prefix dashboard run build",
-		"dashboard:dev": "npm --prefix dashboard run dev",
-		"dashboard:test": "npm --prefix dashboard test",
-		"plugin:test": "find plugin/src -name '*.luau' -print0 | xargs -0 luau-compile --only-parse && luau-lsp analyze --definitions packages/luau-toolchain/roblox/globalTypes.d.luau plugin/src/Forge/RuntimeCapabilityEncoding.luau plugin/src/Forge/Hash.luau && lune run scripts/test-plugin-modules.luau",
-		"plugin:build": "rojo build plugin/default.project.json -o plugin/ForgeStudioPlugin.rbxmx",
-		"formal:setup": "node scripts/setup-tla.mjs",
-		"formal:check": "node scripts/check-tla.mjs",
-		"verify": "npm run build --silent && node dist/packages/cli/src/index.js verify",
-		"build:all": "npm run build && npm run dashboard:build && npm run plugin:build"
-	},
-	"devDependencies": {
-		"@types/node": "^22.20.1",
-		"typescript": "^5.9.3",
-		"yaml": "2.9.0"
-	},
-	"dependencies": {
-		"@openrouter/ai-sdk-provider": "3.0.0",
-		"ai": "7.0.85",
-		"zod": "4.5.4"
-	}
+  "name": "forge",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "forge": "bin/forge.js"
+  },
+  "scripts": {
+    "roblox-api-catalog:refresh": "node scripts/generate-roblox-api-catalog.mjs --refresh --clone",
+    "roblox-api-catalog:check": "node scripts/generate-roblox-api-catalog.mjs --check",
+    "roblox-api-coverage:check": "node scripts/check-roblox-api-coverage.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "studio-evidence:generate": "node scripts/generate-studio-evidence.mjs",
+    "studio-evidence:check": "node scripts/generate-studio-evidence.mjs --check",
+    "runtime-build:check": "node scripts/runtime-build-manifest.mjs --check",
+    "source-analysis:setup": "npm run build --silent && node dist/scripts/setup-source-analysis-toolchain.js",
+    "source-analysis:verify": "node dist/scripts/check-source-analysis-toolchain.js",
+    "source-analysis:check": "npm run build --silent && npm run source-analysis:verify",
+    "docs:check": "node scripts/check-docs.mjs",
+    "rojo:check": "npm run source-analysis:check && node scripts/check-rojo-builds.mjs",
+    "build": "node scripts/generate-studio-evidence.mjs && rm -rf dist && tsc -p tsconfig.json && node scripts/runtime-build-manifest.mjs --write",
+    "test": "npm run format:check && npm run lint && npm run roblox-api-catalog:check && npm run studio-evidence:check && npm run roblox-api-coverage:check && npm run docs:check && npm run rojo:check && npm run runtime-build:check && npm run dashboard:build && node --test dist/test/*.test.js && npm run dashboard:test && npm run plugin:test && npm run formal:check",
+    "dashboard:build": "npm --prefix dashboard run build",
+    "dashboard:dev": "npm --prefix dashboard run dev",
+    "dashboard:test": "npm --prefix dashboard test",
+    "plugin:test": "find plugin/src -name '*.luau' -print0 | xargs -0 luau-compile --only-parse && luau-lsp analyze --no-strict-dm-types --definitions packages/luau-toolchain/roblox/globalTypes.d.luau plugin/src/Forge/DirectRuntimeObserver.luau plugin/src/Forge/Hash.luau && lune run scripts/test-plugin-modules.luau",
+    "plugin:replay-prepare": "lune run scripts/replay-creator-prepare.luau",
+    "plugin:build": "rojo build plugin/default.project.json -o \"$HOME/Documents/Roblox/Plugins/ForgeStudioPlugin.rbxmx\"",
+    "formal:setup": "node scripts/setup-tla.mjs",
+    "formal:check": "node scripts/check-tla.mjs",
+    "verify": "npm run build --silent && node dist/packages/cli/src/index.js verify",
+    "build:all": "npm run build && npm run dashboard:build && npm run plugin:build && npm run formal:setup && npm run source-analysis:setup"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@mermaid-js/mermaid-cli": "11.12.0",
+    "@types/node": "^22.20.1",
+    "eslint": "10.9.1",
+    "globals": "17.12.0",
+    "prettier": "3.9.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "8.69.0",
+    "yaml": "2.9.0"
+  },
+  "dependencies": {
+    "@openrouter/ai-sdk-provider": "3.0.0",
+    "ai": "7.0.85",
+    "zod": "4.5.4"
+  }
 }

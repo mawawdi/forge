@@ -35,7 +35,8 @@ describe("ArtifactWorkbench review evidence", () => {
               changes: [
                 {
                   id: "prompt",
-                  summary: "Create ProximityPrompt at Workspace/DoorAssembly/ControlPanel/ToggleDoor.",
+                  summary:
+                    "Create ProximityPrompt at Workspace/DoorAssembly/ControlPanel/ToggleDoor.",
                   initializationCommitments: ["Present exact properties before mutation."],
                 },
               ],
@@ -120,8 +121,16 @@ describe("ArtifactWorkbench review evidence", () => {
             failureFacts: [],
           },
           artifacts: {
-            mutationProjection: { artifactHash: "2".repeat(64), bytes: 120, locator: "artifacts/projection.json" },
-            mutationReadback: { artifactHash: "3".repeat(64), bytes: 240, locator: "artifacts/readback.json" },
+            mutationProjection: {
+              artifactHash: "2".repeat(64),
+              bytes: 120,
+              locator: "artifacts/projection.json",
+            },
+            mutationReadback: {
+              artifactHash: "3".repeat(64),
+              bytes: 240,
+              locator: "artifacts/readback.json",
+            },
           },
         }}
       />,
@@ -130,5 +139,117 @@ describe("ArtifactWorkbench review evidence", () => {
     expect(screen.getByText(/7 projected facts/)).toBeVisible();
     expect(screen.getByText("Mutation evidence projection")).toBeVisible();
     expect(screen.getByText("Direct Studio readback")).toBeVisible();
+  });
+
+  it("makes retained project-refresh evidence inspectable", () => {
+    render(
+      <ArtifactWorkbench
+        controlView={{
+          ...BASE,
+          artifacts: {
+            projectIndex: {
+              artifactHash: "5".repeat(64),
+              bytes: 128,
+              locator: "artifacts/index.json",
+            },
+            sourceConsultation: {
+              artifactHash: "6".repeat(64),
+              bytes: 256,
+              locator: "artifacts/consultation.json",
+            },
+            projectChangeNotice: {
+              artifactHash: "7".repeat(64),
+              bytes: 512,
+              locator: "artifacts/notice.json",
+            },
+            projectDelta: {
+              artifactHash: "8".repeat(64),
+              bytes: 512,
+              locator: "artifacts/delta.json",
+            },
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Project index metadata")).toBeVisible();
+    expect(screen.getByText("Source consultation")).toBeVisible();
+    expect(screen.getByText("Project change notice")).toBeVisible();
+    expect(screen.getByText("Project refresh delta")).toBeVisible();
+  });
+
+  it("labels a source-transfer failure without calling it detached preflight", () => {
+    render(
+      <ArtifactWorkbench
+        controlView={{
+          ...BASE,
+          status: "incomplete",
+          mutation: {
+            attemptId: "creator_mutation_attempt_test",
+            status: "source_transfer_failed",
+            projectionFactCount: 0,
+            replayable: false,
+            failureFacts: [
+              {
+                code: "creator_source_transfer_failed",
+                statement: "The approved source blob was not acknowledged.",
+                hash: "9".repeat(64),
+              },
+            ],
+          },
+        }}
+      />,
+    );
+    expect(screen.getByText("source transfer failed")).toBeVisible();
+    expect(screen.getByText("Source transfer:")).toBeVisible();
+    expect(screen.queryByText("detached preflight failed")).not.toBeInTheDocument();
+  });
+
+  it("shows a completed but technically incomplete Play interval without implying Play was missed", () => {
+    render(
+      <ArtifactWorkbench
+        controlView={{
+          ...BASE,
+          status: "awaiting_verification_retry",
+          title: "Play Evidence Incomplete",
+          detail: "The Play session ended and its evidence was sealed.",
+          verification: {
+            id: "creator_verification_incomplete",
+            status: "incomplete",
+            replayable: false,
+            failureFacts: [],
+            runtimeSummary: {
+              startedAt: "2026-09-01T14:28:04.000Z",
+              endedAt: "2026-09-01T14:28:17.000Z",
+              observedFacts: 2,
+              absentFacts: 1,
+              unavailableFacts: 1,
+              readErrorFacts: 2,
+              diagnosticCount: 0,
+              issues: [
+                {
+                  key: "runtime_resolution:door",
+                  status: "read_error",
+                  code: "engine_read_failed",
+                },
+              ],
+            },
+          },
+          artifacts: {
+            runtimeEvidence: {
+              artifactHash: "4".repeat(64),
+              bytes: 512,
+              locator: "artifacts/runtime.json",
+            },
+          },
+        }}
+      />,
+    );
+    expect(screen.getByText("Play Evidence Incomplete")).toBeVisible();
+    expect(screen.getByText(/Play interval 13\.0s/)).toBeVisible();
+    expect(screen.getByText(/2 observed · 1 absent · 1 unavailable · 2 read errors/)).toBeVisible();
+    expect(screen.getByText(/engine_read_failed/)).toBeVisible();
+    expect(screen.getByText("Runtime evidence")).toBeVisible();
+    expect(screen.queryByText("Waiting for Studio Play")).not.toBeInTheDocument();
   });
 });

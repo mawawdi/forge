@@ -12,7 +12,9 @@ export function EvidenceSpine({ stages }: EvidenceSpineProps): React.JSX.Element
         <h2 id="spine-title">Evidence spine</h2>
       </div>
       <ol className="evidence-spine__list">
-        {stages.map((stage) => <EvidenceStage key={stage.id} stage={stage} />)}
+        {stages.map((stage) => (
+          <EvidenceStage key={stage.id} stage={stage} />
+        ))}
       </ol>
     </section>
   );
@@ -24,7 +26,9 @@ interface EvidenceStageProps {
 
 function EvidenceStage({ stage }: EvidenceStageProps): React.JSX.Element {
   return (
-    <li className={`evidence-stage evidence-stage--${stage.status} evidence-stage--${stage.authority}`}>
+    <li
+      className={`evidence-stage evidence-stage--${stage.status} evidence-stage--${stage.authority}`}
+    >
       <span className="evidence-stage__joint" aria-hidden="true" />
       <span className="evidence-stage__content">
         <strong>{stage.label}</strong>

@@ -7,7 +7,10 @@ interface SessionHistoryProps {
   selectedSessionId: string | undefined;
 }
 
-export function SessionHistory({ sessions, selectedSessionId }: SessionHistoryProps): React.JSX.Element {
+export function SessionHistory({
+  sessions,
+  selectedSessionId,
+}: SessionHistoryProps): React.JSX.Element {
   const isEmpty = sessions.length === 0;
   return (
     <section className="panel session-history" aria-labelledby="history-title">
@@ -15,7 +18,11 @@ export function SessionHistory({ sessions, selectedSessionId }: SessionHistoryPr
         <h2 id="history-title">Sessions</h2>
         {!isEmpty ? <span className="panel-count">{sessions.length}</span> : null}
       </div>
-      {isEmpty ? <EmptyHistory /> : <SessionList sessions={sessions} selectedSessionId={selectedSessionId} />}
+      {isEmpty ? (
+        <EmptyHistory />
+      ) : (
+        <SessionList sessions={sessions} selectedSessionId={selectedSessionId} />
+      )}
     </section>
   );
 }
@@ -48,10 +55,10 @@ function SessionList({ sessions, selectedSessionId }: SessionListProps): React.J
             <span className={`status-pip status-pip--${session.status}`} aria-hidden="true" />
             <span className="session-row__body">
               <strong>{session.prompt}</strong>
-              <small>{session.projectName ?? session.projectId} · {formatTimestamp(session.updatedAt)}</small>
-              {session.failure ? (
-                <small>Reason: {formatStatus(session.failure.code)}</small>
-              ) : null}
+              <small>
+                {session.projectName ?? session.projectId} · {formatTimestamp(session.updatedAt)}
+              </small>
+              {session.failure ? <small>Reason: {formatStatus(session.failure.code)}</small> : null}
             </span>
             <span className="session-row__status">{formatStatus(session.status)}</span>
           </button>

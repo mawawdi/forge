@@ -11,7 +11,17 @@ const ACCEPT_ACTION: CreatorControlAction = {
 const STATE: CreatorDashboardState = {
   kind: "CreatorDashboardState",
   sessions: [],
-  pairedStudio: { status: "paired", message: "Connected" },
+  pairedStudio: {
+    status: "paired",
+    projectId: "studio_project_test",
+    projectName: "Test",
+    capabilities: [],
+    manifestHash: "a".repeat(64),
+    connectorBuildHash: "b".repeat(64),
+    attestationStatus: "verified",
+    transactionInventoryStatus: "clear",
+    message: "Connected",
+  },
   stages: [],
   serverTime: "2026-09-01T00:00:00.000Z",
   controlView: {
@@ -52,5 +62,27 @@ describe("dashboard derived state", () => {
       controlView: { ...STATE.controlView!, status: "recovery_required" },
     };
     expect(getDashboardSurface(state, undefined)).toBe("recovery-required");
+  });
+
+  it("binds an explicit Play retry to the exact incomplete control view", () => {
+    const state: CreatorDashboardState = {
+      ...STATE,
+      controlView: {
+        ...STATE.controlView!,
+        status: "awaiting_verification_retry",
+        primaryAction: {
+          id: "retry_play_verification",
+          label: "Retry Play Verification",
+          intent: "primary",
+        },
+      },
+    };
+    expect(makeActionRequest(state, "retry_play_verification", "")).toEqual({
+      action: "act",
+      sessionId: "session_1",
+      viewId: "view_1",
+      viewHash: "abc123",
+      actionId: "retry_play_verification",
+    });
   });
 });

@@ -1,6 +1,7 @@
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 import { ImmutableJsonArtifactStore } from "../../artifact-store/src/index.js";
 import {
+  canonicalizeStudioRuntimeTargets,
   canonicalizeStudioRuntimeCalls,
   assertStudioExecutionPlan,
   type StudioExecutionPlan,
@@ -9,18 +10,23 @@ import {
 } from "../../studio-capabilities/src/index.js";
 import {
   assertStudioEvidenceEnvelope,
+  isRobloxClassAssignableTo,
   runtimeResultsFromEvidence,
+  studioProjectIndexMetadataView,
   type StudioEvidenceEnvelope,
-  type StudioProjectState,
+  type StudioProjectIndexCapture,
+  type StudioProjectIndexMetadataView,
 } from "../../studio-evidence/src/index.js";
 import {
-  subtreeSnapshotHash,
+  subtreeProjectIndexHash,
+  type CreatorChangeSet,
   type CreatorSessionBundle,
   type CreatorVerificationRecord,
   type CreatorVerificationReplay,
   type VerificationCharterClause,
 } from "./index.js";
 import { replayCreatorMutation } from "./mutation-evidence.js";
+import { readCreatorProjectIndexArtifacts } from "./project-refresh.js";
 
 export interface CreatorVerificationFailureFact {
   statement: string;
@@ -38,6 +44,8 @@ export function createVerificationFailureFacts(
 
 export function createCharterExecution(
   clauses: readonly VerificationCharterClause[],
+  projectIndex: StudioProjectIndexMetadataView,
+  changeSet?: CreatorChangeSet,
 ): { targets: StudioRuntimeTarget[]; calls: StudioCapabilityCall[] } {
   const paths = charterRuntimePaths(clauses);
   if (paths.length === 0)
@@ -45,31 +53,54 @@ export function createCharterExecution(
 
   const targets = paths.map((path, index) => {
     const clausesForPath = clauses.filter(
-      (
-        clause,
-      ): clause is Extract<VerificationCharterClause, { kind: "studio_check" }> =>
-        clause.kind === "studio_check" &&
-        "path" in clause &&
-        clause.path === path,
+      (clause): clause is Extract<VerificationCharterClause, { kind: "studio_check" }> =>
+        clause.kind === "studio_check" && "path" in clause && clause.path === path,
     );
-    const position = clausesForPath.find(
-      (clause) => clause.check === "position_series",
-    );
-    const existence = clausesForPath.find(
-      (clause) => clause.check === "instance_exists",
-    );
+    const position = clausesForPath.find((clause) => clause.check === "position_series");
+    const existence = clausesForPath.find((clause) => clause.check === "instance_exists");
     const expectedClass = position?.expectedClass ?? existence?.expectedClass;
     if (
       !expectedClass ||
       clausesForPath.some(
-        (clause) =>
-          "expectedClass" in clause && clause.expectedClass !== expectedClass,
+        (clause) => "expectedClass" in clause && clause.expectedClass !== expectedClass,
       )
     )
-      throw new Error(
-        `Creator charter has conflicting expected classes for ${path}`,
-      );
-    return { id: `creator_target_${index + 1}`, path, expectedClass };
+      throw new Error(`Creator charter has conflicting expected classes for ${path}`);
+    const changedTargets = (changeSet?.operations ?? []).flatMap((operation) => {
+      if (operation.kind === "create" && operation.target.path === path) return [operation.target];
+      if (operation.kind === "move" && `${operation.parent.path}/${operation.name}` === path)
+        return [{ ...runtimeTargetAfterEnrollment(operation), path }];
+      if (
+        operation.kind !== "create" &&
+        operation.kind !== "move" &&
+        operation.target.path === path
+      )
+        return [runtimeTargetAfterEnrollment(operation)];
+      return [];
+    });
+    const indexedTargets = projectIndex.instances
+      .filter((instance) => instance.path === path)
+      .map((instance) => ({
+        kind: "instance" as const,
+        identity: instance.identity,
+        path: instance.path,
+        className: instance.className,
+      }));
+    const candidates = (changedTargets.length > 0 ? changedTargets : indexedTargets)
+      .filter(
+        (target, candidateIndex, all) =>
+          all.findIndex((entry) => stableJson(entry.identity) === stableJson(target.identity)) ===
+          candidateIndex,
+      )
+      .filter((target) => isRobloxClassAssignableTo(target.className, expectedClass));
+    if (candidates.length !== 1)
+      throw new Error(`Creator charter target ${path} is not exactly identifiable`);
+    return {
+      id: `creator_target_${index + 1}`,
+      identity: candidates[0]!.identity,
+      path,
+      expectedClass,
+    };
   });
 
   const calls: StudioCapabilityCall[] = [];
@@ -80,12 +111,7 @@ export function createCharterExecution(
       targetId: target.id,
     });
     const series = clauses.find(
-      (
-        clause,
-      ): clause is Extract<
-        VerificationCharterClause,
-        { check: "position_series" }
-      > =>
+      (clause): clause is Extract<VerificationCharterClause, { check: "position_series" }> =>
         clause.kind === "studio_check" &&
         clause.check === "position_series" &&
         clause.path === target.path,
@@ -99,17 +125,39 @@ export function createCharterExecution(
         intervalMs: series.intervalMs,
       });
   }
-  return { targets, calls: canonicalizeStudioRuntimeCalls(calls) };
+  return {
+    targets: canonicalizeStudioRuntimeTargets(targets),
+    calls: canonicalizeStudioRuntimeCalls(calls),
+  };
 }
 
-export function gradeSnapshotCharter(
+function runtimeTargetAfterEnrollment(
+  operation: Exclude<CreatorChangeSet["operations"][number], { readonly kind: "create" }>,
+) {
+  return operation.enrollment
+    ? {
+        ...operation.target,
+        identity: {
+          kind: "forge_attribute" as const,
+          stableId: operation.enrollment.stableId,
+        },
+      }
+    : operation.target;
+}
+
+/**
+ * Preservation clauses are replayed against the immutable project-index view
+ * that was actually bound to verification. Display paths scope the check;
+ * opaque identities and canonical covered facts keep duplicate names safe.
+ */
+export function gradeProjectIndexCharter(
   clauses: readonly VerificationCharterClause[],
-  observation: StudioProjectState,
+  index: StudioProjectIndexMetadataView,
 ): string[] {
   return clauses.flatMap((clause) => {
     if (clause.kind !== "snapshot_check") return [];
     try {
-      return subtreeSnapshotHash(observation, clause.path) === clause.baselineHash
+      return subtreeProjectIndexHash(index, clause.path) === clause.baselineHash
         ? []
         : [clause.statement];
     } catch {
@@ -129,8 +177,10 @@ export function gradeRuntimeCharter(
     if (clause.kind !== "studio_check") continue;
     if (clause.check === "playtest_diagnostics") {
       if (
-        (envelope.diagnostics ?? []).filter((entry) => entry.code === "error").length > clause.maximumErrors ||
-        (envelope.diagnostics ?? []).filter((entry) => entry.code === "warning").length > clause.maximumWarnings ||
+        (envelope.diagnostics ?? []).filter((entry) => entry.code === "error").length >
+          clause.maximumErrors ||
+        (envelope.diagnostics ?? []).filter((entry) => entry.code === "warning").length >
+          clause.maximumWarnings ||
         envelope.completion !== "complete"
       )
         failures.push(clause.statement);
@@ -138,20 +188,13 @@ export function gradeRuntimeCharter(
     }
     const targetId = `creator_target_${paths.indexOf(clause.path) + 1}`;
     if (clause.check === "instance_exists") {
-      const result = results.find(
-        (entry) => entry.id === `resolve_${targetId}`,
-      );
-      if (
-        result?.capability !== "instance.resolve" ||
-        result.status !== "resolved"
-      )
+      const result = results.find((entry) => entry.id === `resolve_${targetId}`);
+      if (result?.capability !== "instance.resolve" || result.status !== "resolved")
         failures.push(clause.statement);
       continue;
     }
 
-    const result = results.find(
-      (entry) => entry.id === `series_${targetId}`,
-    );
+    const result = results.find((entry) => entry.id === `series_${targetId}`);
     if (
       result?.capability !== "base_part.position_series" ||
       result.status !== "ok" ||
@@ -166,8 +209,7 @@ export function gradeRuntimeCharter(
           `${Math.round(sample.value.x / clause.quantizationStuds)},${Math.round(sample.value.y / clause.quantizationStuds)},${Math.round(sample.value.z / clause.quantizationStuds)}`,
       ),
     );
-    if (distinct.size < clause.minimumDistinctPositions)
-      failures.push(clause.statement);
+    if (distinct.size < clause.minimumDistinctPositions) failures.push(clause.statement);
   }
   return failures;
 }
@@ -181,9 +223,7 @@ export async function replayCreatorVerification(
   verification: CreatorVerificationRecord,
   store: ImmutableJsonArtifactStore,
 ): Promise<CreatorVerificationReplay> {
-  const recordedFailureFactHashes = verification.failureFacts.map(
-    (fact) => fact.hash,
-  );
+  const recordedFailureFactHashes = verification.failureFacts.map((fact) => fact.hash);
   const base = {
     kind: "CreatorVerificationReplay" as const,
     sessionId: bundle.session.id,
@@ -196,46 +236,71 @@ export async function replayCreatorVerification(
       ...base,
       result: "missing_or_incomplete",
       detail:
-        verification.nonReplayableReason ??
-        "The connector run did not produce complete evidence.",
+        verification.nonReplayableReason ?? "The connector run did not produce complete evidence.",
     };
 
   const mutationAttempt = bundle.mutationAttempts.find(
-    (entry) => entry.id === verification.mutationAttempt.id && entry.hash === verification.mutationAttempt.hash,
+    (entry) =>
+      entry.id === verification.mutationAttempt.id &&
+      entry.hash === verification.mutationAttempt.hash,
   );
   if (!mutationAttempt || mutationAttempt.completion !== "settled")
-    return { ...base, result: "missing_or_incomplete", detail: "The linked matched mutation attempt is missing." };
-  const mutationReplay = await replayCreatorMutation(mutationAttempt, store);
-  if (mutationReplay.result !== "exact_match" || mutationReplay.recordedStatus !== "matched")
-    return { ...base, result: mutationReplay.result === "mismatch" ? "mismatch" : "missing_or_incomplete", detail: "Verification requires an exactly replayable matched mutation attempt." };
-  if (mutationAttempt.reconciliation.hash !== verification.mutationAttempt.reconciliationHash)
-    return { ...base, result: "mismatch", detail: "The linked mutation reconciliation binding changed." };
-
-  const snapshot = bundle.observationHistory.find(
-    (entry) => entry.revisionHash === verification.stateRevisionHash,
-  );
-  if (!snapshot)
     return {
       ...base,
       result: "missing_or_incomplete",
-      detail: "The exact graded Studio snapshot revision is missing.",
+      detail: "The linked matched mutation attempt is missing.",
     };
+  const mutationReplay = await replayCreatorMutation(mutationAttempt, store);
+  if (mutationReplay.result !== "exact_match" || mutationReplay.recordedStatus !== "matched")
+    return {
+      ...base,
+      result: mutationReplay.result === "mismatch" ? "mismatch" : "missing_or_incomplete",
+      detail: "Verification requires an exactly replayable matched mutation attempt.",
+    };
+  if (mutationAttempt.reconciliation.hash !== verification.mutationAttempt.reconciliationHash)
+    return {
+      ...base,
+      result: "mismatch",
+      detail: "The linked mutation reconciliation binding changed.",
+    };
+
+  const projectIndex = bundle.projectIndices.find(
+    (entry) => entry.revision.hash === verification.stateRevisionHash,
+  );
+  if (!projectIndex)
+    return {
+      ...base,
+      result: "missing_or_incomplete",
+      detail: "The exact graded Studio project-index revision is missing.",
+    };
+  let capture: StudioProjectIndexCapture;
+  try {
+    capture = await readCreatorProjectIndexArtifacts(store, projectIndex);
+  } catch (error) {
+    return evidenceReadFailure(base, "graded Studio project index", error);
+  }
   if (
-    verificationEvidenceHash(snapshot.observation) !==
-    verification.stateEvidenceHash
+    capture.hash !== projectIndex.captureHash ||
+    capture.revision.hash !== verification.stateRevisionHash ||
+    capture.revision.id !== projectIndex.revision.id ||
+    capture.indexManifest.id !== projectIndex.manifest.id
   )
     return {
       ...base,
       result: "mismatch",
-      detail: "The graded Studio snapshot no longer matches its recorded hash.",
+      detail: "The graded Studio project-index artifact changed its bound identity.",
+    };
+  if (verificationEvidenceHash(capture) !== verification.stateEvidenceHash)
+    return {
+      ...base,
+      result: "mismatch",
+      detail: "The graded Studio project index no longer matches its recorded hash.",
     };
 
   let executionPlan: StudioExecutionPlan;
   try {
-    executionPlan = await store.read(
-      verification.executionPlan.artifact,
-      (value) =>
-        assertStudioExecutionPlan(value, mutationAttempt.manifest.hash),
+    executionPlan = await store.read(verification.executionPlan.artifact, (value) =>
+      assertStudioExecutionPlan(value, mutationAttempt.manifest.hash),
     );
   } catch (error) {
     return evidenceReadFailure(base, "execution plan", error);
@@ -249,7 +314,11 @@ export async function replayCreatorVerification(
       result: "mismatch",
       detail: "The execution-plan artifact identity changed.",
     };
-  const expectedExecution = createCharterExecution(bundle.plan?.charter.clauses ?? []);
+  const expectedExecution = createCharterExecution(
+    bundle.plan?.charter.clauses ?? [],
+    studioProjectIndexMetadataView(capture),
+    bundle.changeSets.at(-1),
+  );
   if (
     stableJson(executionPlan.targets) !== stableJson(expectedExecution.targets) ||
     stableJson(executionPlan.calls) !== stableJson(expectedExecution.calls)
@@ -261,8 +330,8 @@ export async function replayCreatorVerification(
     };
 
   const clauses = bundle.plan?.charter.clauses ?? [];
-  const snapshotFailures = gradeSnapshotCharter(clauses, snapshot.observation);
-  let failures = snapshotFailures;
+  const indexFailures = gradeProjectIndexCharter(clauses, studioProjectIndexMetadataView(capture));
+  let failures = indexFailures;
   if (failures.length === 0) {
     if (!verification.runtimeEvidence)
       return {
@@ -280,8 +349,7 @@ export async function replayCreatorVerification(
       return evidenceReadFailure(base, "runtime observation", error);
     }
     if (
-      verificationEvidenceHash(envelope) !==
-        verification.runtimeEvidence.evidenceHash ||
+      verificationEvidenceHash(envelope) !== verification.runtimeEvidence.evidenceHash ||
       verificationEvidenceHash(envelope.diagnostics ?? []) !==
         verification.runtimeEvidence.diagnosticsHash ||
       envelope.projectionHash !== executionPlan.evidenceProjection.contentHash ||
@@ -320,22 +388,17 @@ function evidenceReadFailure(
   const message = error instanceof Error ? error.message : String(error);
   return {
     ...base,
-    result: /missing|does not exist/i.test(message)
-      ? "missing_or_incomplete"
-      : "mismatch",
+    result: /missing|does not exist/i.test(message) ? "missing_or_incomplete" : "mismatch",
     detail: `The ${label} artifact could not be verified: ${message}`,
   };
 }
 
-function charterRuntimePaths(
-  clauses: readonly VerificationCharterClause[],
-): string[] {
+function charterRuntimePaths(clauses: readonly VerificationCharterClause[]): string[] {
   return [
     ...new Set(
       clauses.flatMap((clause) =>
         clause.kind === "studio_check" &&
-        (clause.check === "instance_exists" ||
-          clause.check === "position_series")
+        (clause.check === "instance_exists" || clause.check === "position_series")
           ? [clause.path]
           : [],
       ),

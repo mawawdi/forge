@@ -6,7 +6,10 @@ interface RawArtifactViewerProps {
   onClose: () => void;
 }
 
-export default function RawArtifactViewer({ artifact, onClose }: RawArtifactViewerProps): React.JSX.Element {
+export default function RawArtifactViewer({
+  artifact,
+  onClose,
+}: RawArtifactViewerProps): React.JSX.Element {
   const [content, setContent] = useState("Loading immutable evidence…");
 
   useEffect(() => {
@@ -22,7 +25,9 @@ export default function RawArtifactViewer({ artifact, onClose }: RawArtifactView
           <p className="eyebrow">Raw evidence</p>
           <h3 id="raw-evidence-title">{artifact.locator}</h3>
         </div>
-        <button type="button" className="quiet-button" onClick={onClose}>Close</button>
+        <button type="button" className="quiet-button" onClick={onClose}>
+          Close
+        </button>
       </div>
       <code className="raw-evidence__hash">sha256:{artifact.artifactHash}</code>
       <pre tabIndex={0}>{content}</pre>
@@ -30,7 +35,11 @@ export default function RawArtifactViewer({ artifact, onClose }: RawArtifactView
   );
 }
 
-async function loadArtifact(hash: string, signal: AbortSignal, setContent: (value: string) => void): Promise<void> {
+async function loadArtifact(
+  hash: string,
+  signal: AbortSignal,
+  setContent: (value: string) => void,
+): Promise<void> {
   try {
     const response = await fetch(`/api/artifacts/${encodeURIComponent(hash)}`, {
       credentials: "same-origin",

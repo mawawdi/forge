@@ -46,9 +46,9 @@ and [resource implementation](https://developer.hashicorp.com/terraform/plugin/f
 Kubernetes separates desired state from observed state and uses identity and
 revision metadata to reject stale updates. Forge adopts the separation while
 avoiding eventual-consistency semantics for creator mutations: the exact approved
-projection is desired state, and the direct Studio readback plus complete bounded
-project-state envelope is observed state. The recording stays provisional until
-those bodies reconcile. See the Kubernetes
+projection is desired state, and the direct Studio readback plus complete
+before/after project-index graphs are observed state. The recording stays
+provisional until those bodies reconcile. See the Kubernetes
 [API conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md)
 and [object management](https://kubernetes.io/docs/concepts/overview/working-with-objects/object-management/).
 
@@ -69,8 +69,8 @@ projection permits them. See the Protocol Buffers
 PostgreSQL `RETURNING` shows the value of obtaining the stored result from the
 same mutation boundary rather than issuing a semantically unrelated later read.
 Forge similarly performs direct readback from the exact mutated Studio objects
-before emitting the provisional result, while also requiring a separate complete
-project-state envelope to detect unapproved drift. See PostgreSQL
+before emitting the provisional result, while also requiring separate complete
+before/after project-index graphs to detect unapproved drift. See PostgreSQL
 [`RETURNING`](https://www.postgresql.org/docs/current/dml-returning.html).
 
 Property-based testing, popularized by QuickCheck, is a fit for the manifest's
@@ -114,7 +114,7 @@ restart. See the [TLA+ tools repository](https://github.com/tlaplus/tlaplus).
    read back Studio's returned opaque recording ID before the first place
    operation. Apply provisionally and directly read every projected postcondition
    from the mutated objects.
-6. Collect and persist a complete bounded post-apply project-state envelope.
+6. Collect and persist a complete bounded post-apply project-index graph.
 7. Reconcile the stored artifacts in a pure function. Complete contradictory
    evidence is `mismatched`; missing, unavailable, erroneous, misbound, duplicate,
    extra, or unordered evidence is `incomplete`.
@@ -156,8 +156,8 @@ Exact consumed ledger:
 
 ## Subsequent accepted Door Control proof
 
-The predecessor failure above is not the current result. A later run through the
-closed evidence transaction completed as session
+The predecessor failure above is not the later historical result. A later run
+through the closed evidence transaction completed as session
 `creator_session_fa375f4e-00ad-481e-af8c-ddd502d6d0a2`, final session hash
 `794b8e38d692acd44c26951afccd9bacf4a988398b2e054fe1cdc67d886e43c5`,
 with status `creator_accepted`. Mutation attempt
@@ -174,6 +174,8 @@ evidence and no diagnostics. Checkpoint
 Provider-free mutation and verification replay each returned exit `0` and
 `exact_match`, reproducing `matched` and `passed` respectively with no failure
 facts. This validates the evidence and transaction boundaries that the earlier
-observer failure motivated. It does not convert the free-form creator report
-into a machine claim or establish capabilities beyond the exact manifest,
-projection, and bounded runtime envelope used by that session.
+observer failure motivated. Its backing store was subsequently deliberately
+deleted, so it is documentary rather than live proof of the current project-index
+or source-authority routes. It does not convert the free-form creator report into
+a machine claim or establish capabilities beyond the exact manifest, projection,
+and bounded runtime envelope used by that session.

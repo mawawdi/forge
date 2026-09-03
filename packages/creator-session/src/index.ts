@@ -1,20 +1,6 @@
 import { randomUUID } from "node:crypto";
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
-import {
-  basename,
-  dirname,
-  join,
-  relative,
-  resolve,
-} from "node:path";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { z, type ZodRawShape } from "zod";
 import type {
   AgentRuntime,
@@ -27,45 +13,93 @@ import type {
   ToolBatchDecision,
   ToolResult,
 } from "../../agent-runtime/src/index.js";
-import {
-  DEFAULT_AGENT_BUDGETS,
-  assertCreatorPhaseOutcome,
-} from "../../agent-runtime/src/index.js";
+import { DEFAULT_AGENT_BUDGETS, assertCreatorPhaseOutcome } from "../../agent-runtime/src/index.js";
 import {
   ImmutableJsonArtifactStore,
   assertArtifactReference,
   type ArtifactReference,
 } from "../../artifact-store/src/index.js";
-import { contentHash, stableJson } from "../../contracts/src/index.js";
+import { contentHash, stableJson, type VerificationIssue } from "../../contracts/src/index.js";
 import {
   compileCreatorOrientation,
   type AgentOrientation,
 } from "../../context-compiler/src/index.js";
-import { analyzeWithRobloxLuau } from "../../luau-toolchain/src/index.js";
+import {
+  analyzeStudioSourcesWithRobloxLuau,
+  type StudioLuauAnalysisNode,
+  type StudioLuauAnalysisSource,
+} from "../../luau-toolchain/src/index.js";
 import type { ModelToolCall } from "../../model-client/src/contracts.js";
+import {
+  SourceConsultationRecorder,
+  assertProductionStudioSourceIndex,
+  assertCreatorSourceConsultation,
+  assertStudioSourceIndex,
+  readStudioSource,
+  type CreatorSourceConsultation,
+  type PinnedSourceAnalysisArtifact,
+  type StudioSourceIndex,
+  type VerifiedSourceResolver,
+} from "../../source-intelligence/src/index.js";
+import {
+  assertProjectAuthorityManifest,
+  assertProjectAuthorityMap,
+  assertRojoMutationAttempt,
+  assertRojoSourceChangeSet,
+  assertRojoSourceRevert,
+  assertRojoSourceRevertSyncProof,
+  assertRojoSyncProof,
+  type ProjectAuthorityManifest,
+} from "../../project-authority/src/index.js";
 import {
   CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS,
   STUDIO_RESOLVABLE_CLASSES,
   type StudioResolvableClass,
 } from "../../studio-capabilities/src/index.js";
-import { assertStudioProjectState } from "../../semantic-map/src/index.js";
 import {
+  STUDIO_AUTHORING_CONTAINERS,
   STUDIO_AUTHORING_ROOTS,
   STUDIO_CAPABILITY_MANIFEST,
   STUDIO_CODECS,
   STUDIO_SCRIPT_CLASSES,
   STUDIO_WRITABLE_CLASSES,
+  CREATOR_DEFAULT_RESOURCE_POLICY,
+  assertCreatorSourceWriteBlobCapture,
   assertStudioValue,
   assertStudioValueForProperty,
   canonicalStudioValue,
+  createCreatorSourceWriteBlobCapture,
   isRobloxClassAssignableTo,
   lookupRobloxApiCatalog,
+  studioObjectIdentityKey,
   type StudioCapabilityAttestationGrade,
-  type StudioProjectState,
+  type StudioCodec,
+  type CreatorSourceWriteBlobCapture as StudioSourceWriteBlobCapture,
+  type StudioEvidenceTarget,
+  type StudioIdentityEnrollment,
+  type StudioObjectIdentity,
+  type StudioProjectIndexMetadataView,
   type StudioValue,
 } from "../../studio-evidence/src/index.js";
+import {
+  assertCreatorProjectChangeNotice,
+  assertCreatorProjectDelta,
+  assertCreatorProjectRefresh,
+  assertCreatorTransactionProjectChangeConfirmation,
+  creatorProjectIndexArtifactReferences,
+  readCreatorProjectIndexArtifacts,
+} from "./project-refresh.js";
+import {
+  creatorSourceWriteArtifactReferences,
+  readCreatorSourceWriteArtifacts,
+  type CreatorSourceWriteArtifactBinding,
+} from "./source-write.js";
+import { compileCreatorTransactionTopology } from "./transaction-topology.js";
 
 export * from "./mutation-evidence.js";
+export * from "./project-refresh.js";
+export * from "./source-write.js";
+export * from "./transaction-topology.js";
 
 export const CREATOR_SESSION_POLICY = "prompt_first_studio_authoring" as const;
 export const CREATOR_MODEL = "openai/gpt-5.6-luna" as const;
@@ -82,9 +116,22 @@ export const STUDIO_NON_SCRIPT_WRITABLE_CLASSES = STUDIO_WRITABLE_CLASSES.filter
     !STUDIO_SCRIPT_CLASSES.includes(className as StudioScriptClass),
 );
 export type StudioNonScriptWritableClass = Exclude<StudioWritableClass, StudioScriptClass>;
-export type StudioOwner = "studio" | "external_rojo";
+/** The only in-memory Studio observation shape accepted by creator logic. */
+export type CreatorProjectIndexView = StudioProjectIndexMetadataView;
+export type StudioInstanceTarget = Extract<StudioEvidenceTarget, { readonly kind: "instance" }>;
+export type StudioMutationParent =
+  | StudioInstanceTarget
+  | {
+      readonly kind: "engine_container";
+      readonly path: string;
+      readonly className: string;
+    };
+/** Exactly one persistent writer domain is selected for each sealed change set. */
+export type ProjectWriteAuthority = "studio_document" | "rojo_source";
+export type StudioOwner = ProjectWriteAuthority;
 
 export type CreatorSessionStatus =
+  | "indexing"
   | "planning"
   | "awaiting_plan_approval"
   | "building"
@@ -93,9 +140,14 @@ export type CreatorSessionStatus =
   | "applying"
   | "awaiting_verification"
   | "verifying"
+  | "awaiting_verification_retry"
   | "cancelling"
   | "committing"
   | "repairing"
+  | "refresh_required"
+  | "refreshing"
+  | "superseded"
+  | "awaiting_source_sync"
   | "awaiting_review"
   | "creator_accepted"
   | "creator_rejected"
@@ -109,14 +161,17 @@ export interface StudioOwnershipMap {
   hash: string;
   projectId: string;
   revisionHash: string;
+  /** Writer domains that a later sealed change set may select. */
+  availableAuthorities: ProjectWriteAuthority[];
+  /** The private manifest is retained by the host; evidence binds only its hash. */
+  authorityManifestHash?: string;
   entries: Array<{
-    stableId: string;
+    objectId: string;
     path: string;
     className: string;
     owner: StudioOwner;
-    writable: boolean;
   }>;
-  policy: "studio_single_writer_external_rojo_read_only";
+  policy: "per_change_set_single_writer";
 }
 
 export type VerificationCharterClause =
@@ -201,6 +256,7 @@ export type CreatorPlanChange =
       id: string;
       kind: "create";
       path: string;
+      parent: StudioMutationParent;
       className: StudioScriptClass;
       initialization: "inline_source_required";
     }
@@ -208,32 +264,34 @@ export type CreatorPlanChange =
       id: string;
       kind: "create";
       path: string;
+      parent: StudioMutationParent;
       className: StudioNonScriptWritableClass;
       initialization: "initial_properties";
     }
   | {
       id: string;
       kind: "update";
-      path: string;
+      target: StudioInstanceTarget;
       expectedClass: StudioWritableClass;
     }
   | {
       id: string;
       kind: "move";
-      fromPath: string;
+      target: StudioInstanceTarget;
       toPath: string;
+      parent: StudioMutationParent;
       expectedClass: StudioWritableClass;
     }
   | {
       id: string;
       kind: "delete";
-      path: string;
+      target: StudioInstanceTarget;
       expectedClass: StudioWritableClass;
     }
   | {
       id: string;
-      kind: "write_source";
-      path: string;
+      kind: "edit_source";
+      target: StudioInstanceTarget;
       expectedClass: "Script" | "LocalScript" | "ModuleScript";
     };
 
@@ -253,9 +311,16 @@ export interface CreatorPlan {
   sessionId: string;
   promptHash: string;
   projectRevisionHash: string;
-  projectStateHash: string;
+  /** Exact complete project-index capture, including the detector epoch. */
+  projectCaptureHash: string;
   ownershipMapId: string;
   ownershipMapHash: string;
+  sourceIndexId: string;
+  sourceIndexHash: string;
+  sourceConsultationId: string;
+  sourceConsultationHash: string;
+  /** Derived from the complete typed plan and immutable ownership map. */
+  mutationAuthority: ProjectWriteAuthority;
   /** This is the exact trimmed creator request, never model-authored. */
   goal: string;
   /** Explicit initial-snapshot facts the approved builder may inspect. */
@@ -321,7 +386,7 @@ export type CreatorPropertyInput =
       direction: { x: number; y: number; z: number };
     }
   | {
-      stableId: string;
+      identity: StudioObjectIdentity;
       path: string;
       className: string;
     };
@@ -332,20 +397,20 @@ export type StudioChangeOperation =
       planChangeId: string;
       kind: "create";
       tempId: string;
-      parentPath: string;
+      target: StudioInstanceTarget;
+      parent: StudioMutationParent;
       className: StudioWritableClass;
       name: string;
       properties: Record<string, StudioValue>;
       attributes: Record<string, string | number | boolean>;
-      source?: string;
+      sourceBlob?: CreatorSourceWriteBlobBinding;
     }
   | {
       id: string;
       planChangeId: string;
       kind: "update";
-      stableId: string;
-      expectedPath: string;
-      expectedClass: StudioWritableClass;
+      target: StudioInstanceTarget;
+      enrollment?: StudioIdentityEnrollment;
       beforeHash: string;
       properties: Record<string, StudioValue>;
       attributes: Record<string, string | number | boolean>;
@@ -355,11 +420,10 @@ export type StudioChangeOperation =
       id: string;
       planChangeId: string;
       kind: "move";
-      stableId: string;
-      expectedPath: string;
-      expectedClass: StudioWritableClass;
+      target: StudioInstanceTarget;
+      enrollment?: StudioIdentityEnrollment;
       beforeHash: string;
-      parentPath: string;
+      parent: StudioMutationParent;
       name: string;
       properties: Record<string, StudioValue>;
       attributes: Record<string, string | number | boolean>;
@@ -369,23 +433,72 @@ export type StudioChangeOperation =
       id: string;
       planChangeId: string;
       kind: "delete";
-      stableId: string;
-      expectedPath: string;
-      expectedClass: StudioWritableClass;
+      target: StudioInstanceTarget;
+      enrollment?: StudioIdentityEnrollment;
       beforeHash: string;
     }
   | {
       id: string;
       planChangeId: string;
-      kind: "write_source";
-      stableId: string;
-      expectedPath: string;
-      expectedClass: "Script" | "LocalScript" | "ModuleScript";
+      kind: "edit_source";
+      target: StudioInstanceTarget & {
+        readonly className: "Script" | "LocalScript" | "ModuleScript";
+      };
+      enrollment?: StudioIdentityEnrollment;
       beforeSourceHash: string;
-      source: string;
-      attributes: Record<string, string | number | boolean>;
-      removedAttributes: string[];
+      edits: CreatorSourceEdit[];
+      finalSourceHash: string;
+      finalByteCount: number;
     };
+
+export interface CreatorSourceEdit {
+  startByte: number;
+  endByte: number;
+  replacementBlob: CreatorSourceWriteBlobBinding;
+}
+
+/**
+ * A sealed operation refers only to immutable source-write metadata. The
+ * body bytes live in separately persisted chunk artifacts and are streamed to
+ * Studio before Prepare; they never re-enter the change-set JSON transport.
+ */
+export interface CreatorSourceWriteBlobBinding {
+  readonly manifestId: string;
+  readonly manifestHash: string;
+  readonly sourceHash: string;
+  readonly utf8Bytes: number;
+}
+
+/** Host-only builder output that is persisted as immutable manifest/chunk leaves. */
+export type CreatorSourceWriteBlobCapture = StudioSourceWriteBlobCapture;
+
+export function creatorSourceWriteBlobBinding(
+  capture: CreatorSourceWriteBlobCapture,
+): CreatorSourceWriteBlobBinding {
+  assertCreatorSourceWriteBlobCapture(capture, CREATOR_DEFAULT_RESOURCE_POLICY);
+  const { manifest } = capture;
+  return {
+    manifestId: manifest.id,
+    manifestHash: manifest.hash,
+    sourceHash: manifest.sourceHash,
+    utf8Bytes: manifest.utf8Bytes,
+  };
+}
+
+export function assertCreatorSourceWriteBlobBinding(
+  value: unknown,
+): asserts value is CreatorSourceWriteBlobBinding {
+  if (
+    !isRecord(value) ||
+    !isId(value.manifestId) ||
+    !isHash(value.manifestHash) ||
+    !isHash(value.sourceHash) ||
+    !Number.isSafeInteger(value.utf8Bytes) ||
+    Number(value.utf8Bytes) < 0 ||
+    Number(value.utf8Bytes) > CREATOR_DEFAULT_RESOURCE_POLICY.maximumSourceBlobBytes
+  )
+    throw new Error("Invalid CreatorSourceWriteBlob binding");
+}
 
 /**
  * The immutable, content-addressed execution boundary between an approved plan
@@ -404,6 +517,11 @@ export interface CreatorBuildContract {
   planApprovalHash: string;
   ownershipMapId: string;
   ownershipMapHash: string;
+  sourceIndexId: string;
+  sourceIndexHash: string;
+  sourceConsultationId: string;
+  sourceConsultationHash: string;
+  mutationAuthority: ProjectWriteAuthority;
   initialRevisionHash: string;
   initialInspectionPaths: string[];
   propertyPolicies: Record<StudioWritableClass, CreatorPropertyPolicy>;
@@ -413,7 +531,9 @@ export interface CreatorBuildContract {
 export interface CreatorPropertyPolicy {
   allowedProperties: Array<{
     name: string;
-    valueKinds: StudioValue["kind"][];
+    valueKinds: StudioCodec[];
+    /** Mirrors the exact manifest row; sharing a codec never grants nil. */
+    nullable: boolean;
     constraints?: CreatorPropertyConstraints;
   }>;
   attributes: "primitive" | "none";
@@ -427,6 +547,7 @@ export interface CreatorPropertyConstraints {
   maximumAbsolute?: number;
   cframeTranslationMaximumAbsolute?: number;
   cframeRotationMaximumAbsolute?: number;
+  minimumUtf8Bytes?: number;
   maximumUtf8Bytes?: number;
   maximumEntries?: number;
   referenceClass?: string;
@@ -439,7 +560,8 @@ export type CreatorBuildContractChange =
       operationId: string;
       kind: "create";
       path: string;
-      parentPath: string;
+      target: StudioInstanceTarget;
+      parent: StudioMutationParent;
       name: string;
       className: StudioWritableClass;
       tempId: string;
@@ -449,9 +571,8 @@ export type CreatorBuildContractChange =
       planChangeId: string;
       operationId: string;
       kind: "update";
-      stableId: string;
-      expectedPath: string;
-      expectedClass: StudioWritableClass;
+      target: StudioInstanceTarget;
+      enrollment?: StudioIdentityEnrollment;
       beforeHash: string;
       propertyPolicy: CreatorPropertyPolicy;
     }
@@ -459,11 +580,10 @@ export type CreatorBuildContractChange =
       planChangeId: string;
       operationId: string;
       kind: "move";
-      stableId: string;
-      expectedPath: string;
-      expectedClass: StudioWritableClass;
+      target: StudioInstanceTarget;
+      enrollment?: StudioIdentityEnrollment;
       beforeHash: string;
-      parentPath: string;
+      parent: StudioMutationParent;
       name: string;
       propertyPolicy: CreatorPropertyPolicy;
     }
@@ -471,19 +591,17 @@ export type CreatorBuildContractChange =
       planChangeId: string;
       operationId: string;
       kind: "delete";
-      stableId: string;
-      expectedPath: string;
-      expectedClass: StudioWritableClass;
+      target: StudioInstanceTarget;
+      enrollment?: StudioIdentityEnrollment;
       beforeHash: string;
       propertyPolicy: CreatorPropertyPolicy;
     }
   | {
       planChangeId: string;
       operationId: string;
-      kind: "write_source";
-      stableId: string;
-      expectedPath: string;
-      expectedClass: StudioScriptClass;
+      kind: "edit_source";
+      target: StudioInstanceTarget & { readonly className: StudioScriptClass };
+      enrollment?: StudioIdentityEnrollment;
       beforeSourceHash: string;
       propertyPolicy: CreatorPropertyPolicy;
     };
@@ -494,6 +612,15 @@ export interface CreatorStagePayload {
   attributes?: Record<string, string | number | boolean>;
   removedAttributes?: string[];
   source?: string;
+  /** Raw model input. It is converted to immutable blob bindings before an
+   * operation can be sealed. */
+  sourceEdits?: CreatorStageSourceEdit[];
+}
+
+export interface CreatorStageSourceEdit {
+  startByte: number;
+  endByte: number;
+  replacement: string;
 }
 
 export interface CreatorChangeSet {
@@ -513,8 +640,11 @@ export interface CreatorChangeSet {
   buildContractHash: string;
   ownershipMapId: string;
   ownershipMapHash: string;
+  mutationAuthority: ProjectWriteAuthority;
   expectedRevisionHash: string;
   operations: StudioChangeOperation[];
+  /** Every source blob referenced by an operation, sorted by manifest hash. */
+  sourceWriteBlobs: CreatorSourceWriteBlobBinding[];
   localGate: {
     status: "eligible" | "rejected" | "incomplete";
     issueHashes: string[];
@@ -620,6 +750,10 @@ export interface CreatorSession {
   projectId: string;
   initialRevisionHash: string;
   currentRevisionHash: string;
+  /** Exact content-addressed project-index capture used to begin this session. */
+  initialProjectCaptureHash: string;
+  /** Exact content-addressed project-index capture currently authorizing work. */
+  currentProjectCaptureHash: string;
   ownershipMapId: string;
   ownershipMapHash: string;
   repairsUsed: number;
@@ -642,12 +776,77 @@ export interface CreatorRequestArtifact {
 export interface CreatorSessionBundle {
   session: CreatorSession;
   creatorRequest: ArtifactReference;
-  ownership: StudioOwnershipMap;
-  observation: StudioProjectState;
-  observationHistory: Array<{
-    revisionHash: string;
-    observation: StudioProjectState;
+  projectIndices: import("./project-refresh.js").CreatorProjectIndexArtifactBinding[];
+  projectChanges: Array<{
+    notice: import("./project-refresh.js").CreatorProjectChangeNotice;
+    artifact: ArtifactReference;
+    priorStatus: CreatorSessionStatus;
+    /** Present only after an open-recording dirty notice has been confirmed. */
+    confirmation?: {
+      record: import("./project-refresh.js").CreatorTransactionProjectChangeConfirmation;
+      artifact: ArtifactReference;
+    };
   }>;
+  projectRefreshes: Array<{
+    refresh: import("./project-refresh.js").CreatorProjectRefresh;
+    artifact: ArtifactReference;
+  }>;
+  predecessorSessionId?: string;
+  successorSessionId?: string;
+  ownership: StudioOwnershipMap;
+  /**
+   * Publicly bindable references only. The filesystem root stays in the host
+   * context and never enters a session bundle, artifact, or control view.
+   */
+  projectAuthority?: {
+    readonly authorityMap: {
+      readonly id: string;
+      readonly hash: string;
+      readonly artifact: ArtifactReference;
+    };
+  };
+  rojoSourceMutations: Array<{
+    readonly changeSet: {
+      readonly id: string;
+      readonly hash: string;
+      readonly artifact: ArtifactReference;
+    };
+    readonly attempt: {
+      readonly id: string;
+      readonly hash: string;
+      readonly artifact: ArtifactReference;
+    };
+    readonly syncProofs: readonly {
+      readonly id: string;
+      readonly hash: string;
+      readonly artifact: ArtifactReference;
+    }[];
+    readonly revert?: {
+      readonly id: string;
+      readonly hash: string;
+      readonly artifact: ArtifactReference;
+    };
+    readonly revertSyncProofs: readonly {
+      readonly id: string;
+      readonly hash: string;
+      readonly artifact: ArtifactReference;
+    }[];
+  }>;
+  sourceIndices: Array<{
+    id: string;
+    hash: string;
+    artifact: ArtifactReference;
+    analysis: { id: string; hash: string; artifact: ArtifactReference };
+  }>;
+  sourceConsultations: Array<{
+    id: string;
+    hash: string;
+    indexId: string;
+    indexHash: string;
+    artifact: ArtifactReference;
+  }>;
+  /** Immutable leaves for every source-write binding retained by a change set. */
+  sourceWriteBlobs: CreatorSourceWriteArtifactBinding[];
   plan?: CreatorPlan;
   buildContracts: CreatorBuildContract[];
   approvals: CreatorApproval[];
@@ -661,8 +860,8 @@ export interface CreatorSessionBundle {
    * Durable transaction cursor for a mutation that may still own a Studio
    * ChangeHistory recording.  It contains references only: the immutable
    * bodies stay in the creator artifact store.  This field is cleared only
-   * after an exact commit/cancel acknowledgement and its post-finalize state
-   * evidence have been persisted.
+   * after an exact commit/cancel acknowledgement and its final project-index
+   * capture have been persisted.
    */
   activeMutation?: CreatorActiveMutation;
   mutationAttempts: import("./mutation-evidence.js").CreatorMutationAttempt[];
@@ -682,31 +881,31 @@ export interface CreatorSessionBundle {
 
 export interface CreatorActiveMutation {
   attemptId: string;
-  stage:
-    | "preflighted"
-    | "recording_may_be_open"
-    | "provisional"
-    | "recovery_cancelled";
+  stage: "preflighted" | "recording_may_be_open" | "provisional" | "recovery_cancelled";
   changeSetId: string;
   changeSetHash: string;
   projectionId: string;
   projectionHash: string;
-  beforeRevisionHash: string;
+  beforeIndexRevisionHash: string;
+  /** Monitor epoch bound to the complete pre-recording project capture. */
+  beforeProjectDetectorEpoch: number;
   recordingId?: string;
   manifest: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
   attestation: import("./mutation-evidence.js").CreatorMutationArtifactEvidence;
   changeSet: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
   projection: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
   preflight: import("./mutation-evidence.js").CreatorMutationArtifactEvidence;
-  beforeState: import("./mutation-evidence.js").CreatorMutationArtifactStateEvidence;
+  beforeIndexCapture: import("./mutation-evidence.js").CreatorMutationArtifactIndexCapture;
   directReadback?: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
-  afterState?: import("./mutation-evidence.js").CreatorMutationArtifactStateEvidence;
+  afterIndexCapture?: import("./mutation-evidence.js").CreatorMutationArtifactIndexCapture;
+  /** Monitor epoch captured with the complete post-Apply project index. */
+  afterProjectDetectorEpoch?: number;
   reconciliation?: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
   executionFailure?: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
   verificationPlan?: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
   verificationDraft?: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
   recoveryFinalization?: import("./mutation-evidence.js").CreatorMutationArtifactBinding;
-  finalState?: import("./mutation-evidence.js").CreatorMutationArtifactStateEvidence;
+  finalIndexCapture?: import("./mutation-evidence.js").CreatorMutationArtifactIndexCapture;
 }
 
 export type CreatorControlActionId =
@@ -714,10 +913,13 @@ export type CreatorControlActionId =
   | "reject_plan"
   | "approve_and_apply_changes"
   | "reject_changes"
-  | "start_checks"
   | "accept_result"
   | "reject_and_rollback"
   | "cancel_changes"
+  | "retry_play_verification"
+  | "refresh_project"
+  | "check_source_sync"
+  | "revert_source_changes"
   | "cancel_interrupted_recording";
 export interface CreatorControlActionDescriptor {
   id: CreatorControlActionId;
@@ -760,7 +962,6 @@ export interface CreatorControlView {
     mutationProjection?: ArtifactReference;
     mutationPreflight?: ArtifactReference;
     mutationReadback?: ArtifactReference;
-    projectState?: ArtifactReference;
     mutationReconciliation?: ArtifactReference;
     mutationFinalization?: ArtifactReference;
     runtimeEvidence?: ArtifactReference;
@@ -768,17 +969,39 @@ export interface CreatorControlView {
     reviewReport?: ArtifactReference;
     agentRun?: ArtifactReference;
     trace?: ArtifactReference;
+    projectAuthorityMap?: ArtifactReference;
+    rojoSourceChangeSet?: ArtifactReference;
+    rojoMutationAttempt?: ArtifactReference;
+    sourceSync?: ArtifactReference;
+    sourceRevert?: ArtifactReference;
+    sourceRevertSync?: ArtifactReference;
   };
   verification?: {
     id: string;
     status: "passed" | "failed" | "incomplete" | "not_run";
     failureFacts: Array<{ statement: string; hash: string }>;
     replayable: boolean;
+    runtimeSummary?: {
+      startedAt: string;
+      endedAt: string;
+      observedFacts: number;
+      absentFacts: number;
+      unavailableFacts: number;
+      readErrorFacts: number;
+      diagnosticCount: number;
+      issues: Array<{
+        key: string;
+        status: "unavailable" | "read_error";
+        code: string;
+      }>;
+    };
   };
   mutation?: {
     attemptId: string;
     status:
       | "preflighting"
+      | "source_transfer_failed"
+      | "prepare_failed"
       | "preflight_failed"
       | "provisional"
       | "matched"
@@ -788,20 +1011,47 @@ export interface CreatorControlView {
       | "committed"
       | "rolled_back"
       | "recovery_required";
-    failureFacts: Array<{ statement: string; hash: string }>;
+    failureFacts: Array<{ code: string; statement: string; hash: string }>;
     replayable: boolean;
     projectionFactCount: number;
+  };
+  projectIndex?: {
+    status: "indexing" | "complete" | "incomplete" | "dirty";
+    authorityMode: "studio_document" | "rojo_source";
+    connectorEpoch: string;
+    manifestHash?: string;
+    rootHash?: string;
+    indexedInstances: number;
+    indexedBytes: number;
+    sourceBlobs: number;
+    dirty: boolean;
+    artifact?: ArtifactReference;
+  };
+  sourceConsultation?: {
+    artifact: ArtifactReference;
+    sourceIndexHash: string;
+    sourceCount: number;
+    rangeCount: number;
+    dependencyNodeCount: number;
+  };
+  projectChange?: {
+    detectedAt: string;
+    reasons: string[];
+    notice?: ArtifactReference;
+    delta?: ArtifactReference;
+    predecessorSessionId?: string;
+    successorSessionId?: string;
+  };
+  sourceSync?: {
+    status: "awaiting" | "matched" | "mismatched" | "reverted";
+    attemptId: string;
+    artifact?: ArtifactReference;
   };
   primaryAction?: CreatorControlActionDescriptor;
   secondaryAction?: CreatorControlActionDescriptor;
 }
 
-export type CreatorProgressStageId =
-  | "request"
-  | "plan"
-  | "change"
-  | "studio"
-  | "review";
+export type CreatorProgressStageId = "request" | "plan" | "change" | "studio" | "review";
 export interface CreatorProgressStage {
   id: CreatorProgressStageId;
   label: "Request" | "Plan" | "Change" | "Studio" | "Review";
@@ -839,6 +1089,8 @@ export interface CreatorDashboardState {
     attestationHash?: string;
     attestationArtifact?: ArtifactReference;
     attestation?: Omit<StudioCapabilityAttestationGrade, "status">;
+    /** Backend-derived recovery gate; the dashboard never infers this. */
+    transactionInventoryStatus: "clear" | "pending" | "blocked" | "unavailable";
     message: string;
   };
   serverTime: string;
@@ -865,6 +1117,7 @@ export type CreatorBuilderExecution = {
   systemPrompt: string;
   finalization: CreatorPhaseFinalization;
   changeSet?: CreatorChangeSet;
+  sourceWriteBlobs?: readonly CreatorSourceWriteBlobCapture[];
 };
 
 export function createCreatorControlView(
@@ -885,9 +1138,7 @@ export function createCreatorControlView(
   return view;
 }
 
-export function assertCreatorControlView(
-  value: unknown,
-): asserts value is CreatorControlView {
+export function assertCreatorControlView(value: unknown): asserts value is CreatorControlView {
   if (
     !isRecord(value) ||
     value.kind !== "CreatorControlView" ||
@@ -900,10 +1151,9 @@ export function assertCreatorControlView(
     typeof value.detail !== "string"
   )
     throw new Error("Invalid CreatorControlView");
-  const actions: unknown[] = [
-    value.primaryAction,
-    value.secondaryAction,
-  ].filter((action) => action !== undefined);
+  const actions: unknown[] = [value.primaryAction, value.secondaryAction].filter(
+    (action) => action !== undefined,
+  );
   if (actions.length > 2 || !actions.every(isControlActionDescriptor))
     throw new Error("Invalid CreatorControlView actions");
   if (new Set(actions.map((action) => action.id)).size !== actions.length)
@@ -915,8 +1165,7 @@ export function assertCreatorControlView(
     throw new Error("Invalid CreatorControlView primary action");
   if (
     value.secondaryAction !== undefined &&
-    (!isRecord(value.secondaryAction) ||
-      value.secondaryAction.intent !== "secondary")
+    (!isRecord(value.secondaryAction) || value.secondaryAction.intent !== "secondary")
   )
     throw new Error("Invalid CreatorControlView secondary action");
   if (value.artifact !== undefined) {
@@ -926,15 +1175,13 @@ export function assertCreatorControlView(
       !isId(value.artifact.id) ||
       !isHash(value.artifact.hash) ||
       !isHash(value.artifact.presentationHash) ||
-      contentHash(stableJson(value.artifact.presentation)) !==
-        value.artifact.presentationHash
+      contentHash(stableJson(value.artifact.presentation)) !== value.artifact.presentationHash
     )
       throw new Error("Invalid CreatorControlView artifact");
   }
   if (
     value.evidence !== undefined &&
-    (!Array.isArray(value.evidence) ||
-      !value.evidence.every(isCreatorEvidencePresentation))
+    (!Array.isArray(value.evidence) || !value.evidence.every(isCreatorEvidencePresentation))
   )
     throw new Error("Invalid CreatorControlView evidence");
   if (
@@ -942,36 +1189,53 @@ export function assertCreatorControlView(
     (!Array.isArray(value.creatorReviewPrompts) ||
       value.creatorReviewPrompts.length > CREATOR_MAX_CHARTER_CLAUSES ||
       !value.creatorReviewPrompts.every(
-        (prompt) =>
-          typeof prompt === "string" &&
-          prompt.trim().length > 0 &&
-          prompt.length <= 4096,
+        (prompt) => typeof prompt === "string" && prompt.trim().length > 0 && prompt.length <= 4096,
       ))
   )
     throw new Error("Invalid CreatorControlView review prompts");
   if (value.artifacts !== undefined) {
-    if (!isRecord(value.artifacts))
-      throw new Error("Invalid CreatorControlView artifacts");
-    for (const reference of Object.values(value.artifacts))
-      assertArtifactReference(reference);
+    if (!isRecord(value.artifacts)) throw new Error("Invalid CreatorControlView artifacts");
+    for (const reference of Object.values(value.artifacts)) assertArtifactReference(reference);
   }
   if (value.verification !== undefined) {
     if (
       !isRecord(value.verification) ||
       !isId(value.verification.id) ||
-      !["passed", "failed", "incomplete", "not_run"].includes(
-        String(value.verification.status),
-      ) ||
+      !["passed", "failed", "incomplete", "not_run"].includes(String(value.verification.status)) ||
       typeof value.verification.replayable !== "boolean" ||
       !Array.isArray(value.verification.failureFacts) ||
       !value.verification.failureFacts.every(
-        (fact) =>
-          isRecord(fact) &&
-          typeof fact.statement === "string" &&
-          isHash(fact.hash),
+        (fact) => isRecord(fact) && typeof fact.statement === "string" && isHash(fact.hash),
       )
     )
       throw new Error("Invalid CreatorControlView verification");
+    if (value.verification.runtimeSummary !== undefined) {
+      const summary = value.verification.runtimeSummary;
+      if (
+        !isRecord(summary) ||
+        !Number.isFinite(Date.parse(String(summary.startedAt))) ||
+        !Number.isFinite(Date.parse(String(summary.endedAt))) ||
+        ![
+          summary.observedFacts,
+          summary.absentFacts,
+          summary.unavailableFacts,
+          summary.readErrorFacts,
+          summary.diagnosticCount,
+        ].every((count) => Number.isSafeInteger(count) && Number(count) >= 0) ||
+        !Array.isArray(summary.issues) ||
+        summary.issues.length > STUDIO_CAPABILITY_MANIFEST.limits.maximumRuntimeCalls ||
+        !summary.issues.every(
+          (issue) =>
+            isRecord(issue) &&
+            typeof issue.key === "string" &&
+            issue.key.length > 0 &&
+            ["unavailable", "read_error"].includes(String(issue.status)) &&
+            typeof issue.code === "string" &&
+            issue.code.length > 0,
+        )
+      )
+        throw new Error("Invalid CreatorControlView runtime summary");
+    }
   }
   if (
     value.mutation !== undefined &&
@@ -979,6 +1243,8 @@ export function assertCreatorControlView(
       !isId(value.mutation.attemptId) ||
       ![
         "preflighting",
+        "source_transfer_failed",
+        "prepare_failed",
         "preflight_failed",
         "provisional",
         "matched",
@@ -996,16 +1262,27 @@ export function assertCreatorControlView(
       !value.mutation.failureFacts.every(
         (fact) =>
           isRecord(fact) &&
+          typeof fact.code === "string" &&
+          fact.code.length > 0 &&
           typeof fact.statement === "string" &&
           isHash(fact.hash),
       ))
-  ) throw new Error("Invalid CreatorControlView mutation evidence");
+  )
+    throw new Error("Invalid CreatorControlView mutation evidence");
+  if (
+    value.sourceSync !== undefined &&
+    (!isRecord(value.sourceSync) ||
+      !["awaiting", "matched", "mismatched", "reverted"].includes(
+        String(value.sourceSync.status),
+      ) ||
+      !isId(value.sourceSync.attemptId) ||
+      (value.sourceSync.artifact !== undefined &&
+        !validArtifactReference(value.sourceSync.artifact)))
+  )
+    throw new Error("Invalid CreatorControlView source sync evidence");
   const { kind: _kind, id: _id, hash: _hash, ...payload } = value;
   const expected = contentHash(stableJson(payload));
-  if (
-    value.hash !== expected ||
-    value.id !== `creator_control_view_${expected.slice(0, 24)}`
-  )
+  if (value.hash !== expected || value.id !== `creator_control_view_${expected.slice(0, 24)}`)
     throw new Error("Invalid CreatorControlView identity");
 }
 
@@ -1025,67 +1302,50 @@ export function assertCreatorControlActionBinding(
     action.viewId !== view.id ||
     action.viewHash !== view.hash
   )
-    throw new Error(
-      "Creator action is stale or bound to a different control view",
-    );
-  if (replayed)
-    throw new Error("Creator control view action was already consumed");
-  if (
-    ![view.primaryAction?.id, view.secondaryAction?.id].includes(
-      action.actionId,
-    )
-  )
-    throw new Error(
-      "Creator action is not available in the current control view",
-    );
+    throw new Error("Creator action is stale or bound to a different control view");
+  if (replayed) throw new Error("Creator control view action was already consumed");
+  if (![view.primaryAction?.id, view.secondaryAction?.id].includes(action.actionId))
+    throw new Error("Creator action is not available in the current control view");
 }
 
 export function createStudioOwnershipMap(input: {
   projectId: string;
   revisionHash: string;
-  observation: StudioProjectState;
-  externalRojoPaths?: readonly string[];
+  projectIndex: CreatorProjectIndexView;
+  projectAuthority?: ProjectAuthorityManifest;
+  /** Exact Studio paths from the host-verified Rojo sourcemap. These are
+   * Studio-visible paths only; private workspace paths never enter this map. */
+  rojoOwnedPaths?: readonly string[];
 }): StudioOwnershipMap {
-  assertStudioProjectState(input.observation);
+  assertCreatorProjectIndexView(input.projectIndex);
   assertHash(input.revisionHash, "Studio revision");
-  const external = [...(input.externalRojoPaths ?? [])]
-    .map(canonicalStudioPath)
-    .sort();
-  if (new Set(external).size !== external.length)
-    throw new Error("Rojo ownership paths must be unique");
-  const entries = input.observation.instances
+  const authority = resolveProjectAuthorityAvailability(input);
+  const entries = input.projectIndex.instances
     .map((instance) => {
-      const matching = external.filter(
-        (path) =>
-          instance.path === path || instance.path.startsWith(`${path}/`),
-      );
-      if (
-        matching.length > 1 &&
-        !matching.every((path) => path.startsWith(matching[0]!))
-      )
-        throw new Error(`Ambiguous external ownership for ${instance.path}`);
-      const owner: StudioOwner =
-        matching.length > 0 ? "external_rojo" : "studio";
+      const path = canonicalStudioPath(instance.path);
+      const owner = authority.rojoOwnedPaths.has(path)
+        ? ("rojo_source" as const)
+        : ("studio_document" as const);
       return {
-        stableId: instance.stableId,
-        path: canonicalStudioPath(instance.path),
+        objectId: instance.objectId,
+        path,
         className: instance.className,
         owner,
-        writable: owner === "studio",
       };
     })
     .sort(
       (left, right) =>
-        left.path.localeCompare(right.path) ||
-        left.stableId.localeCompare(right.stableId),
+        left.path.localeCompare(right.path) || left.objectId.localeCompare(right.objectId),
     );
-  if (new Set(entries.map((entry) => entry.stableId)).size !== entries.length)
-    throw new Error("Studio snapshot stable IDs must be unique");
+  if (new Set(entries.map((entry) => entry.objectId)).size !== entries.length)
+    throw new Error("Studio project-index object IDs must be unique");
   const payload = {
     projectId: input.projectId,
     revisionHash: input.revisionHash,
+    availableAuthorities: authority.availableAuthorities,
+    ...(authority.manifestHash ? { authorityManifestHash: authority.manifestHash } : {}),
     entries,
-    policy: "studio_single_writer_external_rojo_read_only" as const,
+    policy: "per_change_set_single_writer" as const,
   };
   const hash = contentHash(stableJson(payload));
   return {
@@ -1096,10 +1356,41 @@ export function createStudioOwnershipMap(input: {
   };
 }
 
+function resolveProjectAuthorityAvailability(input: {
+  projectIndex: CreatorProjectIndexView;
+  projectAuthority?: ProjectAuthorityManifest;
+  rojoOwnedPaths?: readonly string[];
+}): {
+  availableAuthorities: ProjectWriteAuthority[];
+  manifestHash?: string;
+  rojoOwnedPaths: ReadonlySet<string>;
+} {
+  if (input.projectAuthority !== undefined) assertProjectAuthorityManifest(input.projectAuthority);
+  const rojoEnabled = input.projectAuthority?.rojo !== undefined;
+  if (rojoEnabled !== (input.rojoOwnedPaths !== undefined))
+    throw new Error(
+      "Rojo authority availability requires exact host-verified Studio path mappings",
+    );
+  const rojoOwnedPaths = new Set((input.rojoOwnedPaths ?? []).map(canonicalStudioPath));
+  if (rojoOwnedPaths.size !== (input.rojoOwnedPaths?.length ?? 0))
+    throw new Error("Rojo authority Studio path mappings must be canonical and unique");
+  const indexedPaths = new Set(input.projectIndex.instances.map((entry) => entry.path));
+  if ([...rojoOwnedPaths].some((path) => !indexedPaths.has(path)))
+    throw new Error("Rojo authority Studio path mapping is absent from the current project index");
+  return {
+    availableAuthorities: rojoEnabled ? ["rojo_source", "studio_document"] : ["studio_document"],
+    ...(input.projectAuthority
+      ? { manifestHash: contentHash(stableJson(input.projectAuthority)) }
+      : {}),
+    rojoOwnedPaths,
+  };
+}
+
 export function createCreatorSession(input: {
   prompt: string;
   projectId: string;
   revisionHash: string;
+  projectCaptureHash: string;
   ownership: StudioOwnershipMap;
   model?: string;
   now?: Date;
@@ -1112,6 +1403,7 @@ export function createCreatorSession(input: {
     input.ownership.revisionHash !== input.revisionHash
   )
     throw new Error("Creator session ownership binding mismatch");
+  assertHash(input.projectCaptureHash, "Creator session project-index capture");
   const now = (input.now ?? new Date()).toISOString();
   const promptHash = contentHash(input.prompt);
   const id = `creator_session_${randomUUID()}`;
@@ -1121,13 +1413,15 @@ export function createCreatorSession(input: {
     hash: "",
     createdAt: now,
     updatedAt: now,
-    status: "planning",
+    status: "indexing",
     policy: CREATOR_SESSION_POLICY,
     model: input.model ?? CREATOR_MODEL,
     promptHash,
     projectId: input.projectId,
     initialRevisionHash: input.revisionHash,
     currentRevisionHash: input.revisionHash,
+    initialProjectCaptureHash: input.projectCaptureHash,
+    currentProjectCaptureHash: input.projectCaptureHash,
     ownershipMapId: input.ownership.id,
     ownershipMapHash: input.ownership.hash,
     repairsUsed: 0,
@@ -1137,28 +1431,57 @@ export function createCreatorSession(input: {
 export function createCreatorPlan(
   input: Omit<
     CreatorPlan,
-    "kind" | "id" | "hash" | "charter" | "goal" | "projectStateHash"
+    | "kind"
+    | "id"
+    | "hash"
+    | "charter"
+    | "goal"
+    | "sourceIndexId"
+    | "sourceIndexHash"
+    | "sourceConsultationId"
+    | "sourceConsultationHash"
+    | "mutationAuthority"
   > & {
     creatorPrompt: string;
+    /** The exact complete project-index capture backing this source index. */
+    projectCaptureHash: string;
     charter: { clauses: VerificationCharterProposalClause[] };
+    sourceIndex: StudioSourceIndex;
+    sourceConsultation: CreatorSourceConsultation;
   },
-  observation: StudioProjectState,
+  observation: CreatorProjectIndexView,
   ownership: StudioOwnershipMap,
 ): CreatorPlan {
-  assertStudioProjectState(observation);
+  assertCreatorProjectIndexView(observation);
   assertOwnershipMap(ownership);
   if (
     input.projectRevisionHash !== ownership.revisionHash ||
+    input.projectRevisionHash !== observation.revision.hash ||
     input.ownershipMapId !== ownership.id ||
     input.ownershipMapHash !== ownership.hash
   )
     throw new Error("Creator plan ownership or revision binding mismatch");
-  const goal = input.creatorPrompt;
+  const sourceIndex = input.sourceIndex;
+  assertStudioSourceIndex(sourceIndex);
+  if (sourceIndex.snapshotHash !== input.projectCaptureHash)
+    throw new Error("Creator plan source index does not bind the project-index capture");
+  const sourceConsultation = input.sourceConsultation;
+  assertCreatorSourceConsultation(sourceConsultation, sourceIndex);
+  const sourceEvidenceBinding = {
+    sourceIndexId: sourceIndex.id,
+    sourceIndexHash: sourceIndex.hash,
+    sourceConsultationId: sourceConsultation.id,
+    sourceConsultationHash: sourceConsultation.hash,
+  };
   if (
-    goal.length === 0 ||
-    goal !== goal.trim() ||
-    contentHash(goal) !== input.promptHash
+    sourceEvidenceBinding.sourceIndexId !== sourceIndex.id ||
+    sourceEvidenceBinding.sourceIndexHash !== sourceIndex.hash ||
+    !isId(sourceEvidenceBinding.sourceConsultationId) ||
+    !isHash(sourceEvidenceBinding.sourceConsultationHash)
   )
+    throw new Error("Creator plan source consultation binding mismatch");
+  const goal = input.creatorPrompt;
+  if (goal.length === 0 || goal !== goal.trim() || contentHash(goal) !== input.promptHash)
     throw new Error("Creator plan must bind the immutable creator prompt");
   if (
     input.steps.length === 0 ||
@@ -1175,9 +1498,7 @@ export function createCreatorPlan(
     throw new Error("Creator plan step IDs must be unique");
   if (input.changes.length === 0 || input.changes.length > CREATOR_MAX_CHANGES)
     throw new Error(`Creator plan requires 1-${CREATOR_MAX_CHANGES} typed changes`);
-  const inspectionPaths = [
-    ...new Set(input.inspectionPaths.map(canonicalStudioPath)),
-  ].sort();
+  const inspectionPaths = [...new Set(input.inspectionPaths.map(canonicalStudioPath))].sort();
   if (
     inspectionPaths.length !== input.inspectionPaths.length ||
     inspectionPaths.length > CREATOR_MAX_INSPECTION_PATHS
@@ -1185,15 +1506,14 @@ export function createCreatorPlan(
     throw new Error("Creator plan inspection paths must be unique and bounded");
   for (const path of inspectionPaths)
     if (!observation.instances.some((instance) => instance.path === path))
-      throw new Error(
-        `Creator plan inspection path is absent from the initial snapshot: ${path}`,
-      );
+      throw new Error(`Creator plan inspection path is absent from the initial snapshot: ${path}`);
   const changeIds = input.changes.map((change) => change.id);
   if (new Set(changeIds).size !== changeIds.length)
     throw new Error("Creator plan change IDs must be unique");
   assertStepChangeCoverage(input.steps, changeIds);
+  const mutationAuthority = derivePlanMutationAuthority(input.changes, observation, ownership);
   input.changes.forEach((change) =>
-    assertCreatorPlanChange(change, input.changes, observation, ownership),
+    assertCreatorPlanChange(change, input.changes, observation, ownership, mutationAuthority),
   );
   assertPlanChangeSet(input.changes, observation);
   const clauseIds = input.charter.clauses.map((clause) => clause.id);
@@ -1210,30 +1530,22 @@ export function createCreatorPlan(
     !input.charter.clauses.some(
       (clause) =>
         clause.kind === "studio_check" &&
-        (clause.check === "instance_exists" ||
-          clause.check === "position_series"),
+        (clause.check === "instance_exists" || clause.check === "position_series"),
     )
   )
-    throw new Error(
-      "Verification charter requires at least one bounded Workspace observation",
-    );
+    throw new Error("Verification charter requires at least one bounded Workspace observation");
   if (
     !input.charter.clauses.some(
-      (clause) =>
-        clause.kind === "studio_check" &&
-        clause.check === "playtest_diagnostics",
+      (clause) => clause.kind === "studio_check" && clause.check === "playtest_diagnostics",
     )
   )
-    throw new Error(
-      "Verification charter must expose its playtest diagnostic thresholds",
-    );
+    throw new Error("Verification charter must expose its playtest diagnostic thresholds");
   assertPlanOutputCoverage(input.changes, input.charter.clauses);
   assertCreatorRuntimeObservationWindow(input.charter.clauses);
   if (
     input.changes.some(sourceBearingPlanChange) &&
     !input.charter.clauses.some(
-      (clause) =>
-        clause.kind === "local_check" && clause.check === "luau_syntax",
+      (clause) => clause.kind === "local_check" && clause.check === "luau_syntax",
     )
   )
     throw new Error(
@@ -1258,9 +1570,11 @@ export function createCreatorPlan(
     sessionId: input.sessionId,
     promptHash: input.promptHash,
     projectRevisionHash: input.projectRevisionHash,
-    projectStateHash: studioProjectStateHash(observation),
+    projectCaptureHash: input.projectCaptureHash,
     ownershipMapId: input.ownershipMapId,
     ownershipMapHash: input.ownershipMapHash,
+    ...sourceEvidenceBinding,
+    mutationAuthority,
     goal,
     inspectionPaths,
     steps: input.steps.map((step) => ({
@@ -1295,9 +1609,7 @@ export function createCreatorApproval(
   return approval;
 }
 
-export function assertCreatorApproval(
-  value: unknown,
-): asserts value is CreatorApproval {
+export function assertCreatorApproval(value: unknown): asserts value is CreatorApproval {
   if (
     !isRecord(value) ||
     value.kind !== "CreatorApproval" ||
@@ -1315,10 +1627,7 @@ export function assertCreatorApproval(
     throw new Error("Invalid CreatorApproval");
   const { kind: _kind, id: _id, hash: _hash, ...payload } = value;
   const expected = contentHash(stableJson(payload));
-  if (
-    value.hash !== expected ||
-    value.id !== `creator_approval_${expected.slice(0, 24)}`
-  )
+  if (value.hash !== expected || value.id !== `creator_approval_${expected.slice(0, 24)}`)
     throw new Error("Invalid CreatorApproval identity");
 }
 
@@ -1327,7 +1636,7 @@ export function createCreatorBuildContract(input: {
   plan: CreatorPlan;
   planApproval: CreatorApproval;
   ownership: StudioOwnershipMap;
-  observation: StudioProjectState;
+  projectIndex: CreatorProjectIndexView;
 }): CreatorBuildContract {
   return materializeCreatorBuildContract(input, creatorPropertyPolicies());
 }
@@ -1344,42 +1653,31 @@ function materializeCreatorBuildContract(
     plan: CreatorPlan;
     planApproval: CreatorApproval;
     ownership: StudioOwnershipMap;
-    observation: StudioProjectState;
+    projectIndex: CreatorProjectIndexView;
   },
   propertyPolicies: Readonly<Record<string, CreatorPropertyPolicy>>,
 ): CreatorBuildContract {
   assertCreatorPlan(input.plan);
   assertOwnershipMap(input.ownership);
-  assertStudioProjectState(input.observation);
+  assertCreatorProjectIndexView(input.projectIndex);
   if (
     input.plan.sessionId !== input.session.id ||
     input.plan.promptHash !== input.session.promptHash ||
     input.plan.ownershipMapId !== input.ownership.id ||
     input.plan.ownershipMapHash !== input.ownership.hash ||
     input.plan.projectRevisionHash !== input.session.initialRevisionHash ||
-    input.plan.projectStateHash !==
-      studioProjectStateHash(input.observation) ||
+    input.projectIndex.revision.hash !== input.session.currentRevisionHash ||
     input.planApproval.decision !== "approved" ||
     input.planApproval.artifactKind !== "plan" ||
     input.planApproval.artifactId !== input.plan.id ||
     input.planApproval.artifactHash !== input.plan.hash
   )
-    throw new Error(
-      "Creator build contract plan or Studio-state binding mismatch",
-    );
+    throw new Error("Creator build contract plan or project-revision binding mismatch");
   const changes = input.plan.changes.map((change) =>
-    materializeBuildContractChange(
-      change,
-      input.plan,
-      input.observation,
-      propertyPolicies,
-    ),
+    materializeBuildContractChange(change, input.plan, input.projectIndex, propertyPolicies),
   );
   const initialInspectionPaths = [
-    ...new Set([
-      ...changes.flatMap(contractInspectionPaths),
-      ...input.plan.inspectionPaths,
-    ]),
+    ...new Set([...changes.flatMap(contractInspectionPaths), ...input.plan.inspectionPaths]),
   ].sort();
   const payload = {
     sessionId: input.session.id,
@@ -1390,10 +1688,14 @@ function materializeCreatorBuildContract(
     planApprovalHash: input.planApproval.hash,
     ownershipMapId: input.ownership.id,
     ownershipMapHash: input.ownership.hash,
+    sourceIndexId: input.plan.sourceIndexId,
+    sourceIndexHash: input.plan.sourceIndexHash,
+    sourceConsultationId: input.plan.sourceConsultationId,
+    sourceConsultationHash: input.plan.sourceConsultationHash,
+    mutationAuthority: input.plan.mutationAuthority,
     initialRevisionHash: input.session.currentRevisionHash,
     initialInspectionPaths,
-    propertyPolicies:
-      propertyPolicies as Record<StudioWritableClass, CreatorPropertyPolicy>,
+    propertyPolicies: propertyPolicies as Record<StudioWritableClass, CreatorPropertyPolicy>,
     changes,
   };
   const hash = contentHash(stableJson(payload));
@@ -1407,9 +1709,7 @@ function materializeCreatorBuildContract(
   return contract;
 }
 
-export function assertCreatorBuildContract(
-  value: unknown,
-): asserts value is CreatorBuildContract {
+export function assertCreatorBuildContract(value: unknown): asserts value is CreatorBuildContract {
   if (
     !isRecord(value) ||
     value.kind !== "CreatorBuildContract" ||
@@ -1423,6 +1723,11 @@ export function assertCreatorBuildContract(
     !isHash(value.planApprovalHash) ||
     !isId(value.ownershipMapId) ||
     !isHash(value.ownershipMapHash) ||
+    !isId(value.sourceIndexId) ||
+    !isHash(value.sourceIndexHash) ||
+    !isId(value.sourceConsultationId) ||
+    !isHash(value.sourceConsultationHash) ||
+    !isProjectWriteAuthority(value.mutationAuthority) ||
     !isHash(value.initialRevisionHash) ||
     !Array.isArray(value.initialInspectionPaths) ||
     value.initialInspectionPaths.length > CREATOR_MAX_INSPECTION_PATHS ||
@@ -1435,13 +1740,10 @@ export function assertCreatorBuildContract(
     throw new Error("Invalid CreatorBuildContract");
   const policyKeys = Object.keys(value.propertyPolicies).sort();
   if (
-    new Set(value.initialInspectionPaths).size !==
-      value.initialInspectionPaths.length ||
+    new Set(value.initialInspectionPaths).size !== value.initialInspectionPaths.length ||
     stableJson([...value.initialInspectionPaths].sort()) !==
       stableJson(value.initialInspectionPaths) ||
-    value.initialInspectionPaths.some(
-      (path) => canonicalStudioPath(path) !== path,
-    )
+    value.initialInspectionPaths.some((path) => canonicalStudioPath(path) !== path)
   )
     throw new Error("CreatorBuildContract inspection paths are non-canonical");
   if (
@@ -1462,9 +1764,7 @@ export function assertCreatorBuildContract(
       !isRecord(change) ||
       !isId(change.planChangeId) ||
       !isId(change.operationId) ||
-      !["create", "update", "move", "delete", "write_source"].includes(
-        String(change.kind),
-      ) ||
+      !["create", "update", "move", "delete", "edit_source"].includes(String(change.kind)) ||
       changeIds.has(change.planChangeId)
     )
       throw new Error("Invalid CreatorBuildContract change");
@@ -1472,45 +1772,37 @@ export function assertCreatorBuildContract(
     if (!isRecord(change.propertyPolicy))
       throw new Error("Invalid CreatorBuildContract change policy");
     assertCreatorPropertyPolicy(change.propertyPolicy);
-    const className = String(
-      change.kind === "create" ? change.className : change.expectedClass,
-    );
+    const className = String(change.kind === "create" ? change.className : change.expectedClass);
     const sealedPolicy = value.propertyPolicies[className];
     if (
       sealedPolicy === undefined ||
       stableJson(change.propertyPolicy) !== stableJson(sealedPolicy)
     )
-      throw new Error(
-        "CreatorBuildContract change policy is not bound to its sealed class policy",
-      );
+      throw new Error("CreatorBuildContract change policy is not bound to its sealed class policy");
   }
   const { kind: _kind, id: _id, hash: _hash, ...payload } = value;
   const expected = contentHash(stableJson(payload));
-  if (
-    value.hash !== expected ||
-    value.id !== `creator_build_contract_${expected.slice(0, 24)}`
-  )
+  if (value.hash !== expected || value.id !== `creator_build_contract_${expected.slice(0, 24)}`)
     throw new Error("Invalid CreatorBuildContract identity");
 }
 
 export function createCreatorChangeSet(
-  input: Omit<CreatorChangeSet, "kind" | "id" | "hash">,
-  observation: StudioProjectState,
+  input: Omit<CreatorChangeSet, "kind" | "id" | "hash" | "mutationAuthority">,
+  observation: CreatorProjectIndexView,
   ownership: StudioOwnershipMap,
   plan: CreatorPlan,
   contract: CreatorBuildContract,
 ): CreatorChangeSet {
-  assertStudioProjectState(observation);
+  assertCreatorProjectIndexView(observation);
   assertOwnershipMap(ownership);
   assertCreatorBuildContract(contract);
   if (
     input.ownershipMapId !== ownership.id ||
     input.ownershipMapHash !== ownership.hash ||
-    input.expectedRevisionHash !== contract.initialRevisionHash
+    input.expectedRevisionHash !== contract.initialRevisionHash ||
+    observation.revision.hash !== input.expectedRevisionHash
   )
-    throw new Error(
-      "Creator change set ownership or active-revision binding mismatch",
-    );
+    throw new Error("Creator change set ownership or active-revision binding mismatch");
   if (
     input.planId !== plan.id ||
     input.planHash !== plan.hash ||
@@ -1520,47 +1812,93 @@ export function createCreatorChangeSet(
     input.planApprovalId !== contract.planApprovalId ||
     input.planApprovalHash !== contract.planApprovalHash ||
     input.buildContractId !== contract.id ||
-    input.buildContractHash !== contract.hash
+    input.buildContractHash !== contract.hash ||
+    plan.mutationAuthority !== contract.mutationAuthority
   )
     throw new Error("Creator change set plan binding mismatch");
   input.operations.forEach((operation) =>
-    assertStudioChangeOperation(operation, observation, ownership),
+    assertStudioChangeOperation(
+      operation,
+      observation,
+      ownership,
+      contract.mutationAuthority,
+      input.operations,
+    ),
   );
+  const sourceWriteBlobs = [...input.sourceWriteBlobs];
+  if (
+    sourceWriteBlobs.some((binding) => {
+      try {
+        assertCreatorSourceWriteBlobBinding(binding);
+        return false;
+      } catch {
+        return true;
+      }
+    }) ||
+    new Set(sourceWriteBlobs.map((binding) => binding.manifestHash)).size !==
+      sourceWriteBlobs.length ||
+    stableJson(sourceWriteBlobs) !==
+      stableJson(
+        [...sourceWriteBlobs].sort((left, right) =>
+          left.manifestHash.localeCompare(right.manifestHash),
+        ),
+      )
+  )
+    throw new Error("Creator change set source-write bindings are invalid");
+  const declaredSourceWrites = new Map(
+    sourceWriteBlobs.map((binding) => [binding.manifestHash, binding]),
+  );
+  const referencedSourceWrites = input.operations.flatMap((operation) => {
+    if (operation.kind === "create")
+      return operation.sourceBlob === undefined ? [] : [operation.sourceBlob];
+    if (operation.kind === "edit_source")
+      return operation.edits.map((edit) => edit.replacementBlob);
+    return [];
+  });
+  if (
+    referencedSourceWrites.some(
+      (binding) =>
+        declaredSourceWrites.get(binding.manifestHash) === undefined ||
+        stableJson(declaredSourceWrites.get(binding.manifestHash)) !== stableJson(binding),
+    ) ||
+    new Set(referencedSourceWrites.map((binding) => binding.manifestHash)).size !==
+      sourceWriteBlobs.length
+  )
+    throw new Error("Creator change set source-write bindings must be exact and fully referenced");
   if (
     input.operations.length === 0 ||
     input.operations.length > CREATOR_MAX_CHANGES ||
-    new Set(input.operations.map((operation) => operation.id)).size !==
-      input.operations.length
+    new Set(input.operations.map((operation) => operation.id)).size !== input.operations.length
   )
     throw new Error(
       `Creator change set requires 1-${CREATOR_MAX_CHANGES} uniquely identified operations`,
     );
   const createdPaths = input.operations.flatMap((operation) =>
-    operation.kind === "create"
-      ? [`${operation.parentPath}/${operation.name}`]
-      : [],
+    operation.kind === "create" ? [operation.target.path] : [],
   );
   if (new Set(createdPaths).size !== createdPaths.length)
-    throw new Error(
-      "Creator change set cannot create the same Studio path twice",
-    );
+    throw new Error("Creator change set cannot create the same Studio path twice");
   const tempIds = input.operations.flatMap((operation) =>
     operation.kind === "create" ? [operation.tempId] : [],
   );
   if (new Set(tempIds).size !== tempIds.length)
     throw new Error("Creator change set create temp IDs must be unique");
   const existingTargets = input.operations.flatMap((operation) =>
-    operation.kind === "create" ? [] : [operation.stableId],
+    operation.kind === "create" ? [] : [studioObjectIdentityKey(operation.target.identity)],
   );
   if (new Set(existingTargets).size !== existingTargets.length)
-    throw new Error(
-      "Creator change set permits only one operation per existing Studio target",
-    );
+    throw new Error("Creator change set permits only one operation per existing Studio target");
   assertOperationsMatchPlan(input.operations, plan.changes);
   assertOperationsMatchContract(input.operations, contract);
+  const topology = compileCreatorTransactionTopology({
+    initial: observation.instances,
+    operations: input.operations,
+  });
   const payload = {
     ...input,
-    operations: input.operations.map(cloneOperation),
+    mutationAuthority: contract.mutationAuthority,
+    operations: topology.orderedOperations.map(cloneOperation),
+    sourceWriteBlobs,
     localGate: {
       ...input.localGate,
       issueHashes: [...input.localGate.issueHashes].sort(),
@@ -1575,9 +1913,7 @@ export function createCreatorChangeSet(
   };
 }
 
-export function assertCreatorChangeSet(
-  value: unknown,
-): asserts value is CreatorChangeSet {
+export function assertCreatorChangeSet(value: unknown): asserts value is CreatorChangeSet {
   if (
     !isRecord(value) ||
     value.kind !== "CreatorChangeSet" ||
@@ -1597,24 +1933,62 @@ export function assertCreatorChangeSet(
     !isHash(value.buildContractHash) ||
     !isId(value.ownershipMapId) ||
     !isHash(value.ownershipMapHash) ||
+    !isProjectWriteAuthority(value.mutationAuthority) ||
     !isHash(value.expectedRevisionHash) ||
     !Array.isArray(value.operations) ||
     value.operations.length < 1 ||
     value.operations.length > CREATOR_MAX_CHANGES ||
+    !Array.isArray(value.sourceWriteBlobs) ||
     !isRecord(value.localGate) ||
     value.localGate.status !== "eligible" ||
     !Array.isArray(value.localGate.issueHashes) ||
     !value.localGate.issueHashes.every(isHash)
   )
     throw new Error("Invalid CreatorChangeSet");
-  for (const operation of value.operations)
-    CHANGE_OPERATION_SCHEMA.parse(operation);
+  for (const operation of value.operations) CHANGE_OPERATION_SCHEMA.parse(operation);
+  const sourceWriteBlobs = value.sourceWriteBlobs as unknown[];
+  sourceWriteBlobs.forEach(assertCreatorSourceWriteBlobBinding);
+  if (
+    new Set(
+      sourceWriteBlobs.map((binding) => (binding as CreatorSourceWriteBlobBinding).manifestHash),
+    ).size !== sourceWriteBlobs.length ||
+    stableJson(sourceWriteBlobs) !==
+      stableJson(
+        [...sourceWriteBlobs].sort((left, right) =>
+          (left as CreatorSourceWriteBlobBinding).manifestHash.localeCompare(
+            (right as CreatorSourceWriteBlobBinding).manifestHash,
+          ),
+        ),
+      )
+  )
+    throw new Error("Invalid CreatorChangeSet source-write bindings");
+  const declared = new Map(
+    sourceWriteBlobs.map((binding) => [
+      (binding as CreatorSourceWriteBlobBinding).manifestHash,
+      binding as CreatorSourceWriteBlobBinding,
+    ]),
+  );
+  const referenced = (value.operations as StudioChangeOperation[]).flatMap((operation) =>
+    operation.kind === "create"
+      ? operation.sourceBlob === undefined
+        ? []
+        : [operation.sourceBlob]
+      : operation.kind === "edit_source"
+        ? operation.edits.map((edit) => edit.replacementBlob)
+        : [],
+  );
+  if (
+    referenced.some(
+      (binding) =>
+        declared.get(binding.manifestHash) === undefined ||
+        stableJson(declared.get(binding.manifestHash)) !== stableJson(binding),
+    ) ||
+    new Set(referenced.map((binding) => binding.manifestHash)).size !== sourceWriteBlobs.length
+  )
+    throw new Error("Invalid CreatorChangeSet source-write reference coverage");
   const { kind: _kind, id: _id, hash: _hash, ...payload } = value;
   const expected = contentHash(stableJson(payload));
-  if (
-    value.hash !== expected ||
-    value.id !== `creator_change_set_${expected.slice(0, 24)}`
-  )
+  if (value.hash !== expected || value.id !== `creator_change_set_${expected.slice(0, 24)}`)
     throw new Error("Invalid CreatorChangeSet identity");
 }
 
@@ -1672,22 +2046,13 @@ export function assertCreatorVerificationRecord(
     value.status !== "incomplete" &&
     (value.status === "passed") !== (value.failureFacts.length === 0)
   )
-    throw new Error(
-      "CreatorVerificationRecord status does not match its failure facts",
-    );
-  if (
-    (value.status === "incomplete") !==
-    (value.nonReplayableReason !== undefined)
-  )
-    throw new Error(
-      "Incomplete creator verification requires one non-replayable reason",
-    );
+    throw new Error("CreatorVerificationRecord status does not match its failure facts");
+  if ((value.status === "incomplete") !== (value.nonReplayableReason !== undefined))
+    throw new Error("Incomplete creator verification requires one non-replayable reason");
   assertArtifactIdentity(value, "creator_verification");
 }
 
-export function assertCreatorCheckpoint(
-  value: unknown,
-): asserts value is CreatorCheckpoint {
+export function assertCreatorCheckpoint(value: unknown): asserts value is CreatorCheckpoint {
   if (
     !isRecord(value) ||
     value.kind !== "CreatorCheckpoint" ||
@@ -1700,17 +2065,13 @@ export function assertCreatorCheckpoint(
     !isHash(value.afterRevisionHash) ||
     !isId(value.mutationAttemptId) ||
     !isHash(value.mutationAttemptHash) ||
-    !["committed", "rolled_back", "recovery_required"].includes(
-      String(value.status),
-    )
+    !["committed", "rolled_back", "recovery_required"].includes(String(value.status))
   )
     throw new Error("Invalid CreatorCheckpoint");
   assertArtifactIdentity(value, "creator_checkpoint");
 }
 
-export function assertCreatorReviewReport(
-  value: unknown,
-): asserts value is CreatorReviewReport {
+export function assertCreatorReviewReport(value: unknown): asserts value is CreatorReviewReport {
   if (
     !isRecord(value) ||
     value.kind !== "CreatorReviewReport" ||
@@ -1754,10 +2115,7 @@ export function createCreatorReviewReport(
   return value;
 }
 
-function assertArtifactIdentity(
-  value: Record<string, unknown>,
-  prefix: string,
-): void {
+function assertArtifactIdentity(value: Record<string, unknown>, prefix: string): void {
   const { kind: _kind, id, hash: _hash, ...payload } = value;
   const expected = contentHash(stableJson(payload));
   if (value.hash !== expected || id !== `${prefix}_${expected.slice(0, 24)}`)
@@ -1779,7 +2137,10 @@ export function advanceSession(
     changeSet?: CreatorChangeSet;
     checkpoint?: CreatorCheckpoint;
     review?: CreatorReviewReport;
-    revisionHash?: string;
+    projectCapture?: {
+      readonly captureHash: string;
+      readonly revisionHash: string;
+    };
     failure?: { code: string; detail: string };
   },
 ): CreatorSession {
@@ -1790,8 +2151,7 @@ export function advanceSession(
     updatedAt: (transition.now ?? new Date()).toISOString(),
     status: transition.status,
   };
-  if (transition.plan)
-    next.plan = { id: transition.plan.id, hash: transition.plan.hash };
+  if (transition.plan) next.plan = { id: transition.plan.id, hash: transition.plan.hash };
   if (transition.approval?.artifactKind === "plan")
     next.planApproval = {
       id: transition.approval.id,
@@ -1812,11 +2172,12 @@ export function advanceSession(
       id: transition.checkpoint.id,
       hash: transition.checkpoint.hash,
     };
-  if (transition.review)
-    next.review = { id: transition.review.id, hash: transition.review.hash };
-  if (transition.revisionHash) {
-    assertHash(transition.revisionHash, "Creator session revision");
-    next.currentRevisionHash = transition.revisionHash;
+  if (transition.review) next.review = { id: transition.review.id, hash: transition.review.hash };
+  if (transition.projectCapture) {
+    assertHash(transition.projectCapture.captureHash, "Creator session project-index capture");
+    assertHash(transition.projectCapture.revisionHash, "Creator session revision");
+    next.currentProjectCaptureHash = transition.projectCapture.captureHash;
+    next.currentRevisionHash = transition.projectCapture.revisionHash;
   }
   if (transition.status === "repairing") {
     if (session.repairsUsed >= CREATOR_MAX_REPAIRS)
@@ -1831,16 +2192,18 @@ export function advanceSession(
   return sealSession(next);
 }
 
-export function creatorOrientation(
-  bundle: Pick<CreatorSessionBundle, "session" | "ownership" | "observation">,
-): AgentOrientation {
+export function creatorOrientation(bundle: {
+  readonly session: CreatorSession;
+  readonly ownership: StudioOwnershipMap;
+  /** Ephemeral verified project-index view; it is never persisted as state. */
+  readonly projectIndex: CreatorProjectIndexView;
+}): AgentOrientation {
   return compileCreatorOrientation({
-    state: bundle.observation,
+    projectIndex: bundle.projectIndex,
     revisionHash: bundle.session.currentRevisionHash,
     projectId: bundle.session.projectId,
-    ownership: new Map(
-      bundle.ownership.entries.map((entry) => [entry.stableId, entry.owner]),
-    ),
+    availableAuthorities: bundle.ownership.availableAuthorities,
+    ownership: new Map(bundle.ownership.entries.map((entry) => [entry.objectId, entry.owner])),
     allowedClasses: STUDIO_WRITABLE_CLASSES,
     resolvableClasses: STUDIO_RESOLVABLE_CLASSES,
   });
@@ -1865,27 +2228,17 @@ abstract class BaseCreatorToolHost implements AgentToolHost {
   private executedWrites = 0;
   private executedVerifierCalls = 0;
   private totalResultBytes = 0;
-  protected constructor(
-    protected readonly budgets: BudgetPolicy = DEFAULT_AGENT_BUDGETS,
-  ) {}
+  protected constructor(protected readonly budgets: BudgetPolicy = DEFAULT_AGENT_BUDGETS) {}
   abstract definitions(): AgentToolDefinition[];
-  validateBatch(
-    calls: readonly ModelToolCall[],
-    seenIds: ReadonlySet<string>,
-  ): ToolBatchDecision {
-    const definitions = new Map(
-      this.definitions().map((entry) => [entry.name, entry]),
-    );
+  validateBatch(calls: readonly ModelToolCall[], seenIds: ReadonlySet<string>): ToolBatchDecision {
+    const definitions = new Map(this.definitions().map((entry) => [entry.name, entry]));
     const feedback: ToolBatchDecision["feedback"] = [];
     let valid = true;
     const projected = {
       toolCalls: this.executedCalls + calls.length,
-      writes:
-        this.executedWrites +
-        calls.filter((call) => call.name === "studio.stage").length,
+      writes: this.executedWrites + calls.filter((call) => call.name === "studio.stage").length,
       verifierCalls:
-        this.executedVerifierCalls +
-        calls.filter((call) => call.name === "forge.verify").length,
+        this.executedVerifierCalls + calls.filter((call) => call.name === "forge.verify").length,
     };
     if (
       projected.toolCalls > this.budgets.maxToolCalls ||
@@ -1914,23 +2267,14 @@ abstract class BaseCreatorToolHost implements AgentToolHost {
         seenIds.has(call.id) ||
         calls.filter((candidate) => candidate.id === call.id).length > 1
       )
-        result = failed(
-          "TOOL_CALL_ID_DUPLICATE",
-          `Duplicate tool-call ID ${call.id}`,
-        );
+        result = failed("TOOL_CALL_ID_DUPLICATE", `Duplicate tool-call ID ${call.id}`);
       else {
         const definitionValue = definitions.get(call.name);
-        if (!definitionValue)
-          result = failed("TOOL_UNKNOWN", `Unknown tool ${call.name}`);
+        if (!definitionValue) result = failed("TOOL_UNKNOWN", `Unknown tool ${call.name}`);
         else {
-          const parsed = z
-            .object(definitionValue.inputShape)
-            .safeParse(call.arguments);
+          const parsed = z.object(definitionValue.inputShape).safeParse(call.arguments);
           if (!parsed.success)
-            result = failed(
-              "TOOL_ARGUMENTS_INVALID",
-              formatZodIssues(parsed.error.issues),
-            );
+            result = failed("TOOL_ARGUMENTS_INVALID", formatZodIssues(parsed.error.issues));
         }
       }
       if (result) {
@@ -1954,10 +2298,8 @@ abstract class BaseCreatorToolHost implements AgentToolHost {
   async execute(name: string, input: unknown): Promise<ToolResult> {
     if (
       this.executedCalls >= this.budgets.maxToolCalls ||
-      (name === "studio.stage" &&
-        this.executedWrites >= this.budgets.maxWrites) ||
-      (name === "forge.verify" &&
-        this.executedVerifierCalls >= this.budgets.maxVerifierCalls) ||
+      (name === "studio.stage" && this.executedWrites >= this.budgets.maxWrites) ||
+      (name === "forge.verify" && this.executedVerifierCalls >= this.budgets.maxVerifierCalls) ||
       this.totalResultBytes >= this.budgets.maxToolResultBytes
     ) {
       const result = failed(
@@ -1967,19 +2309,13 @@ abstract class BaseCreatorToolHost implements AgentToolHost {
       this.record(name, result);
       return result;
     }
-    const definitionValue = this.definitions().find(
-      (entry) => entry.name === name,
-    );
+    const definitionValue = this.definitions().find((entry) => entry.name === name);
     let result: ToolResult;
-    if (!definitionValue)
-      result = failed("TOOL_UNKNOWN", `Unknown tool ${name}`);
+    if (!definitionValue) result = failed("TOOL_UNKNOWN", `Unknown tool ${name}`);
     else {
       const parsed = z.object(definitionValue.inputShape).safeParse(input);
       if (!parsed.success)
-        result = failed(
-          "TOOL_ARGUMENTS_INVALID",
-          formatZodIssues(parsed.error.issues),
-        );
+        result = failed("TOOL_ARGUMENTS_INVALID", formatZodIssues(parsed.error.issues));
       else {
         try {
           result = bounded(await this.dispatch(name, parsed.data));
@@ -1992,10 +2328,7 @@ abstract class BaseCreatorToolHost implements AgentToolHost {
       }
     }
     if (this.totalResultBytes + result.bytes > this.budgets.maxToolResultBytes)
-      result = failed(
-        "TOOL_OUTPUT_BUDGET_EXHAUSTED",
-        "Creator tool-result byte budget exhausted",
-      );
+      result = failed("TOOL_OUTPUT_BUDGET_EXHAUSTED", "Creator tool-result byte budget exhausted");
     this.record(name, result);
     return result;
   }
@@ -2009,7 +2342,7 @@ abstract class BaseCreatorToolHost implements AgentToolHost {
 }
 
 function inspectSnapshot(
-  observation: StudioProjectState,
+  observation: CreatorProjectIndexView,
   ownership: StudioOwnershipMap,
   paths: string[],
 ): unknown {
@@ -2029,29 +2362,26 @@ function inspectSnapshot(
       "Studio inspection accepts only exact paths present in the initial snapshot",
       { missingPaths: missing },
     );
-  const owner = (stableId: string): StudioOwner =>
-    ownership.entries.find((entry) => entry.stableId === stableId)?.owner ??
-    "studio";
+  const owner = (objectId: string): StudioOwner =>
+    ownership.entries.find((entry) => entry.objectId === objectId)?.owner ?? "studio_document";
   const instances = observation.instances
     .filter((instance) => unique.includes(instance.path))
     .map((instance) => ({
-      stableId: instance.stableId,
+      objectId: instance.objectId,
+      identity: instance.identity,
       path: instance.path,
       className: instance.className,
       instanceHash: contentHash(stableJson(instance)),
-      owner: owner(instance.stableId),
-      writable:
-        ownership.entries.find((entry) => entry.stableId === instance.stableId)
-          ?.writable === true,
+      owner: owner(instance.objectId),
       ...(instance.position ? { position: instance.position } : {}),
       properties: instance.properties,
       attributes: instance.attributes,
     }));
   const scripts = observation.scripts
     .filter((script) => unique.includes(script.path))
-    .map(({ source: _source, ...script }) => ({
+    .map((script) => ({
       ...script,
-      owner: owner(script.stableId),
+      owner: owner(script.documentId),
     }));
   return { paths: unique, instances, scripts };
 }
@@ -2075,17 +2405,27 @@ function creatorRobloxApiLookup(
 
 export class CreatorPlannerToolHost extends BaseCreatorToolHost {
   private proposal?: CreatorPlan;
+  private lastProposalFailure: ToolFailure | undefined;
   private readonly inspectedPaths = new Set<string>();
+  private readonly sourceIndex: StudioSourceIndex;
+  private readonly sourceRecorder: SourceConsultationRecorder;
   constructor(
     private readonly input: {
       session: CreatorSession;
       ownership: StudioOwnershipMap;
-      observation: StudioProjectState;
+      projectIndex: CreatorProjectIndexView;
+      sourceIndex: StudioSourceIndex;
+      sourceResolver: VerifiedSourceResolver;
       prompt: string;
       budgets?: BudgetPolicy;
     },
   ) {
     super(input.budgets);
+    assertProductionStudioSourceIndex(input.sourceIndex);
+    if (input.sourceIndex.snapshotHash !== input.session.currentProjectCaptureHash)
+      throw new Error("Planner source index does not bind the current project-index capture");
+    this.sourceIndex = structuredClone(input.sourceIndex);
+    this.sourceRecorder = new SourceConsultationRecorder(this.sourceIndex, input.sourceResolver);
   }
   override definitions(): AgentToolDefinition[] {
     return [
@@ -2097,17 +2437,81 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
       definition(
         "studio.inspect",
         "Inspect bounded properties, attributes, positions, ownership, and script hashes for exact paths in the initial Studio snapshot. Source bodies are never returned. Any path declared as a builder inspection dependency must first be inspected here.",
-        { paths: z.array(z.string().min(1)).min(1).max(CREATOR_MAX_INSPECTION_PATHS) },
+        {
+          paths: z.array(z.string().min(1)).min(1).max(CREATOR_MAX_INSPECTION_PATHS),
+        },
+      ),
+      definition(
+        "source.search",
+        "Search current hash-verified Luau source without executing it. Results and cursors are bound to this exact project source index and become host-authored consultation evidence.",
+        {
+          query: z.string().min(1).max(512),
+          pathPrefix: z.string().min(1).optional(),
+          contextUtf8Bytes: z.number().int().min(1).max(512).optional(),
+          limit: z.number().int().min(1).max(100).optional(),
+          cursor: z.string().min(1).optional(),
+        },
+      ),
+      definition(
+        "source.read",
+        "Read one UTF-8-safe page from current hash-verified Luau source. The page, source hash, byte range, and cursor are consultation evidence.",
+        {
+          documentId: z.string().min(1).max(256),
+          maximumUtf8Bytes: z
+            .number()
+            .int()
+            .min(1)
+            .max(32 * 1024)
+            .optional(),
+          cursor: z.string().min(1).optional(),
+        },
+      ),
+      definition(
+        "source.symbols",
+        "Find static Luau document/workspace symbols in the current source index. This is static-analysis context, not Studio or runtime proof.",
+        {
+          query: z.string().min(1).max(256),
+          pathPrefix: z.string().min(1).optional(),
+          limit: z.number().int().min(1).max(200).optional(),
+          cursor: z.string().min(1).optional(),
+        },
+      ),
+      definition(
+        "source.references",
+        "Find lexical references for one Luau symbol in the current source index, with cursor-bound static-analysis results.",
+        {
+          symbol: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+          pathPrefix: z.string().min(1).optional(),
+          limit: z.number().int().min(1).max(200).optional(),
+          cursor: z.string().min(1).optional(),
+        },
+      ),
+      definition(
+        "source.dependencies",
+        "Inspect static require edges, reverse dependencies, or a bounded dependency closure. Dynamic and unresolved edges remain explicit with source locations.",
+        {
+          documentId: z.string().min(1).max(256),
+          direction: z.enum(["imports", "importers", "closure"]),
+          maxDepth: z.number().int().min(1).max(16).optional(),
+          limit: z.number().int().min(1).max(1024).optional(),
+          cursor: z.string().min(1).optional(),
+        },
       ),
       definition(
         "creator.propose_plan",
-        "Propose typed changes and a creator-visible verification charter for the immutable creator request. Explicitly list every already-inspected initial-snapshot path whose facts the builder may inspect; this list is creator-reviewed and contract-bound. Forge, not the model, derives the plan goal from that request. Each step must bind exact changeIds, covering every change once. Every create or move parent must already exist in the initial snapshot; planned instances cannot parent other planned instances. A Script, LocalScript, or ModuleScript create must declare initialization inline_source_required: its one create operation will carry complete initial source. write_source is only for a Script, LocalScript, or ModuleScript present in the initial snapshot; it cannot author a newly planned script. Non-script creation uses initial_properties. Machine-check language is generated by Forge.",
+        `Propose typed changes and a creator-visible verification charter for the immutable creator request. Explore relevant source with source.search, source.read, source.symbols, source.references, and source.dependencies before selecting an existing source target; Forge records the exact consulted closure. Explicitly list every already-inspected initial-index path whose facts the builder may inspect; this list is creator-reviewed and contract-bound. Forge, not the model, derives the plan goal from that request. Each step must bind exact changeIds, covering every change once. Every create or move parent must be either a manifest-declared engine-owned authoring container or an exact Studio-document-owned structural anchor in the initial index; parent authority never grants mutation authority over the parent. Planned instances cannot parent other planned instances. A Script, LocalScript, or ModuleScript create must declare initialization inline_source_required: its one create operation will carry complete initial source. edit_source is only for a Script, LocalScript, or ModuleScript present in the initial index; it cannot author a newly planned script. Non-script creation uses initial_properties. Machine-check language is generated by Forge. Every position_series clause must satisfy (sampleCount - 1) * intervalMs >= ${CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS}; the manifest bounds each field and the concurrent runtime window.`,
         PLAN_SHAPE,
       ),
     ];
   }
   getPlan(): CreatorPlan | undefined {
     return this.proposal;
+  }
+  getSourceIndex(): StudioSourceIndex {
+    return structuredClone(this.sourceIndex);
+  }
+  getSourceConsultation(): CreatorSourceConsultation {
+    return this.sourceRecorder.seal();
   }
   progressToken(): string {
     return this.proposal?.hash ?? "creator-plan-unpublished";
@@ -2118,33 +2522,42 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
       : {
           ready: false,
           code: "PLAN_NOT_PUBLISHED",
-          message: "Creator planner ended without publishing a valid plan",
+          message: this.lastProposalFailure
+            ? `Creator planner ended without publishing a valid plan. Last proposal failure: ${this.lastProposalFailure.message}`
+            : "Creator planner ended without publishing a valid plan",
         };
   }
-  protected override async dispatch(
-    name: string,
-    input: unknown,
-  ): Promise<unknown> {
+  protected override async dispatch(name: string, input: unknown): Promise<unknown> {
     if (name === "studio.api_lookup")
-      return creatorRobloxApiLookup(
-        input as z.infer<z.ZodObject<typeof ROBLOX_API_LOOKUP_SHAPE>>,
-      );
+      return creatorRobloxApiLookup(input as z.infer<z.ZodObject<typeof ROBLOX_API_LOOKUP_SHAPE>>);
     if (name === "studio.inspect") {
       const paths = (input as { paths: string[] }).paths;
-      const inspected = inspectSnapshot(
-        this.input.observation,
-        this.input.ownership,
-        paths,
-      );
+      const inspected = inspectSnapshot(this.input.projectIndex, this.input.ownership, paths);
       for (const path of paths) this.inspectedPaths.add(path);
       return inspected;
     }
+    if (name === "source.search")
+      return this.sourceRecorder.search(
+        input as Parameters<SourceConsultationRecorder["search"]>[0],
+      );
+    if (name === "source.read")
+      return this.sourceRecorder.read(input as Parameters<SourceConsultationRecorder["read"]>[0]);
+    if (name === "source.symbols")
+      return this.sourceRecorder.symbols(
+        input as Parameters<SourceConsultationRecorder["symbols"]>[0],
+      );
+    if (name === "source.references")
+      return this.sourceRecorder.references(
+        input as Parameters<SourceConsultationRecorder["references"]>[0],
+      );
+    if (name === "source.dependencies")
+      return this.sourceRecorder.dependenciesPage(
+        input as Parameters<SourceConsultationRecorder["dependenciesPage"]>[0],
+      );
     if (name !== "creator.propose_plan")
       throw new ToolFailure("TOOL_UNKNOWN", `Unknown planner tool ${name}`);
     const value = input as z.infer<z.ZodObject<typeof PLAN_SHAPE>>;
-    const uninspected = value.inspectionPaths.filter(
-      (path) => !this.inspectedPaths.has(path),
-    );
+    const uninspected = value.inspectionPaths.filter((path) => !this.inspectedPaths.has(path));
     if (uninspected.length > 0)
       throw correctiveFailure(
         "PLAN_INSPECTION_NOT_OBSERVED",
@@ -2155,11 +2568,67 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
         },
       );
     try {
+      const sourceConsultation = this.sourceRecorder.seal();
+      const sourceChanges = (value.changes as CreatorPlanChange[]).filter(sourceBearingPlanChange);
+      const existingSourceTargets = sourceChanges.flatMap((change) =>
+        change.kind === "edit_source"
+          ? [
+              {
+                documentId: studioObjectIdentityKey(change.target.identity),
+                path: change.target.path,
+              },
+            ]
+          : [],
+      );
+      const unconsultedTargets = existingSourceTargets.filter(
+        (target) =>
+          !sourceConsultation.operations.some(
+            (operation) =>
+              operation.kind === "read" &&
+              operation.sources.some(
+                (source) =>
+                  source.document.documentId === target.documentId && source.ranges.length > 0,
+              ),
+          ),
+      );
+      const targetsWithoutDependencyClosure = existingSourceTargets.filter(
+        (target) =>
+          !sourceConsultation.operations.some(
+            (operation) =>
+              operation.kind === "dependencies" &&
+              operation.dependencyRequest?.direction === "closure" &&
+              operation.dependencyRequest.root.documentId === target.documentId,
+          ),
+      );
+      const dependencyConsulted = sourceConsultation.operations.some(
+        (operation) => operation.kind === "dependencies",
+      );
+      if (
+        unconsultedTargets.length > 0 ||
+        targetsWithoutDependencyClosure.length > 0 ||
+        (sourceChanges.length > 0 &&
+          this.sourceIndex.documents.length > 0 &&
+          (!dependencyConsulted || sourceConsultation.sources.length === 0))
+      )
+        throw correctiveFailure(
+          "SOURCE_CONSULTATION_INCOMPLETE",
+          "Every source-bearing plan must be grounded in the current target source and a static dependency consultation before review",
+          {
+            unconsultedTargetDocumentIds: unconsultedTargets.map((target) => target.documentId),
+            targetsWithoutDependencyClosure: targetsWithoutDependencyClosure.map(
+              (target) => target.documentId,
+            ),
+            dependencyConsulted,
+            consultedPaths: sourceConsultation.sources.map((source) => source.document.path),
+            sourceIndexHash: this.sourceIndex.hash,
+          },
+        );
       this.proposal = createCreatorPlan(
         {
           sessionId: this.input.session.id,
           promptHash: this.input.session.promptHash,
           projectRevisionHash: this.input.session.currentRevisionHash,
+          projectCaptureHash: this.input.session.currentProjectCaptureHash,
           ownershipMapId: this.input.ownership.id,
           ownershipMapHash: this.input.ownership.hash,
           creatorPrompt: this.input.prompt,
@@ -2169,16 +2638,20 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
           charter: {
             clauses: value.clauses as VerificationCharterProposalClause[],
           },
+          sourceIndex: this.sourceIndex,
+          sourceConsultation,
         },
-        this.input.observation,
+        this.input.projectIndex,
         this.input.ownership,
       );
     } catch (error) {
-      throw new ToolFailure(
-        "PLAN_INVALID",
-        error instanceof Error ? error.message : String(error),
-      );
+      this.lastProposalFailure =
+        error instanceof CreatorValidationFailure
+          ? correctiveFailure(error.code, error.message, error.details)
+          : new ToolFailure("PLAN_INVALID", error instanceof Error ? error.message : String(error));
+      throw this.lastProposalFailure;
     }
+    this.lastProposalFailure = undefined;
     return {
       planId: this.proposal.id,
       planHash: this.proposal.hash,
@@ -2190,6 +2663,10 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
 
 export class CreatorBuilderToolHost extends BaseCreatorToolHost {
   private readonly operations: StudioChangeOperation[] = [];
+  /** Raw source exists only while the bounded builder is running. Sealed
+   * operations retain metadata bindings; callers persist these leaves before
+   * the change set may be approved or transported. */
+  private readonly sourceWriteBlobs = new Map<string, CreatorSourceWriteBlobCapture>();
   private localGate: CreatorChangeSet["localGate"] = {
     status: "incomplete",
     issueHashes: [],
@@ -2199,13 +2676,25 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
     private readonly input: {
       session: CreatorSession;
       ownership: StudioOwnershipMap;
-      observation: StudioProjectState;
+      projectIndex: CreatorProjectIndexView;
       plan: CreatorPlan;
       planApproval: CreatorApproval;
+      sourceIndex: StudioSourceIndex;
+      sourceResolver: VerifiedSourceResolver;
+      sourceConsultation: CreatorSourceConsultation;
       budgets?: BudgetPolicy;
     },
   ) {
     super(input.budgets);
+    assertProductionStudioSourceIndex(input.sourceIndex);
+    assertCreatorSourceConsultation(input.sourceConsultation, input.sourceIndex);
+    if (
+      input.sourceIndex.id !== input.plan.sourceIndexId ||
+      input.sourceIndex.hash !== input.plan.sourceIndexHash ||
+      input.sourceConsultation.id !== input.plan.sourceConsultationId ||
+      input.sourceConsultation.hash !== input.plan.sourceConsultationHash
+    )
+      throw new Error("Builder source consultation does not match the approved plan");
     this.contract = createCreatorBuildContract(input);
   }
   override definitions(): AgentToolDefinition[] {
@@ -2214,15 +2703,47 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
   stagedOperations(): StudioChangeOperation[] {
     return this.operations.map(cloneOperation);
   }
+  stagedSourceWriteBlobs(): readonly CreatorSourceWriteBlobCapture[] {
+    const bindings = this.operations.flatMap((operation) =>
+      operation.kind === "create"
+        ? operation.sourceBlob === undefined
+          ? []
+          : [operation.sourceBlob]
+        : operation.kind === "edit_source"
+          ? operation.edits.map((edit) => edit.replacementBlob)
+          : [],
+    );
+    return [...new Set(bindings.map((binding) => binding.manifestHash))]
+      .sort()
+      .map((manifestHash) => {
+        const capture = this.sourceWriteBlobs.get(manifestHash);
+        if (capture === undefined) throw new Error("Staged source-write blob body is missing");
+        assertCreatorSourceWriteBlobCapture(capture, CREATOR_DEFAULT_RESOURCE_POLICY);
+        return capture;
+      });
+  }
+  private sourceWriteBlob(source: string): CreatorSourceWriteBlobBinding {
+    const capture = createCreatorSourceWriteBlobCapture({
+      source,
+      maximumSourceBlobBytes: CREATOR_DEFAULT_RESOURCE_POLICY.maximumSourceBlobBytes,
+      transportChunkBytes: CREATOR_DEFAULT_RESOURCE_POLICY.transportChunkBytes,
+    });
+    const binding = creatorSourceWriteBlobBinding(capture);
+    this.sourceWriteBlobs.set(binding.manifestHash, capture);
+    return binding;
+  }
+  private sourceWriteText(binding: CreatorSourceWriteBlobBinding): string {
+    const capture = this.sourceWriteBlobs.get(binding.manifestHash);
+    if (capture === undefined) throw new Error("Staged source-write blob body is missing");
+    return materializeCreatorSourceWriteBlob(capture, binding);
+  }
   gate(): CreatorChangeSet["localGate"] {
     return { ...this.localGate, issueHashes: [...this.localGate.issueHashes] };
   }
   progressToken(): string {
     return contentHash(
       stableJson({
-        operations: this.operations.map((operation) =>
-          contentHash(stableJson(operation)),
-        ),
+        operations: this.operations.map((operation) => contentHash(stableJson(operation))),
         localGate: this.localGate,
       }),
     );
@@ -2271,9 +2792,10 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
         ownershipMapHash: this.input.ownership.hash,
         expectedRevisionHash: this.input.session.currentRevisionHash,
         operations: this.stagedOperations(),
+        sourceWriteBlobs: this.stagedSourceWriteBlobs().map(creatorSourceWriteBlobBinding),
         localGate: this.gate(),
       },
-      this.input.observation,
+      this.input.projectIndex,
       this.input.ownership,
       this.input.plan,
       this.contract,
@@ -2281,18 +2803,18 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
     assertCreatorChangeSet(changeSet);
     return changeSet;
   }
-  protected override async dispatch(
-    name: string,
-    input: unknown,
-  ): Promise<unknown> {
+  protected override async dispatch(name: string, input: unknown): Promise<unknown> {
     if (name === "studio.api_lookup")
-      return creatorRobloxApiLookup(
-        input as z.infer<z.ZodObject<typeof ROBLOX_API_LOOKUP_SHAPE>>,
+      return creatorRobloxApiLookup(input as z.infer<z.ZodObject<typeof ROBLOX_API_LOOKUP_SHAPE>>);
+    if (name === "studio.inspect") return this.inspect((input as { paths: string[] }).paths);
+    if (name === "source.read")
+      return this.readApprovedSource(
+        input as {
+          documentId: string;
+          maximumUtf8Bytes?: number;
+          cursor?: string;
+        },
       );
-    if (name === "studio.inspect")
-      return this.inspect((input as { paths: string[] }).paths);
-    if (name === "studio.read_source")
-      return this.readSource((input as { path: string }).path);
     if (name === "studio.stage") {
       const payload = (input as { change: CreatorStagePayload }).change;
       const contractChange = this.contract.changes.find(
@@ -2304,40 +2826,39 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
           "The staged planChangeId is not in the approved build contract",
           {
             receivedPlanChangeId: payload.planChangeId,
-            expectedPlanChangeIds: this.contract.changes.map(
-              (change) => change.planChangeId,
-            ),
+            expectedPlanChangeIds: this.contract.changes.map((change) => change.planChangeId),
             contractHash: this.contract.hash,
           },
         );
-      if (
-        this.operations.some(
-          (entry) => entry.planChangeId === payload.planChangeId,
-        )
-      )
-        throw correctiveFailure(
-          "PLAN_CHANGE_DUPLICATE",
-          "Each approved planChangeId may be staged exactly once",
-          {
-            receivedPlanChangeId: payload.planChangeId,
-            expectedContract: contractChange,
-          },
-        );
-      if (payload.source !== undefined) {
-        const bytes = Buffer.byteLength(payload.source, "utf8");
+      const existingIndex = this.operations.findIndex(
+        (entry) => entry.planChangeId === payload.planChangeId,
+      );
+      const existingOperation = existingIndex >= 0 ? this.operations[existingIndex] : undefined;
+      if (payload.source !== undefined || payload.sourceEdits !== undefined) {
+        const bytes =
+          payload.source !== undefined
+            ? Buffer.byteLength(payload.source, "utf8")
+            : payload.sourceEdits!.reduce(
+                (sum, edit) => sum + Buffer.byteLength(edit.replacement, "utf8"),
+                0,
+              );
         const totalBytes =
           this.operations.reduce(
             (sum, operation) =>
               sum +
-              ("source" in operation && operation.source
-                ? Buffer.byteLength(operation.source, "utf8")
+              (operation.planChangeId !== payload.planChangeId
+                ? operation.kind === "create" && operation.sourceBlob
+                  ? operation.sourceBlob.utf8Bytes
+                  : operation.kind === "edit_source"
+                    ? operation.edits.reduce(
+                        (total, edit) => total + edit.replacementBlob.utf8Bytes,
+                        0,
+                      )
+                    : 0
                 : 0),
             0,
           ) + bytes;
-        if (
-          bytes > this.budgets.maxBytesPerFile ||
-          totalBytes > this.budgets.maxChangedSourceBytes
-        )
+        if (bytes > this.budgets.maxBytesPerFile || totalBytes > this.budgets.maxChangedSourceBytes)
           throw correctiveFailure(
             "SOURCE_BUDGET_EXHAUSTED",
             "Staged source exceeds the active per-source or total changed-source byte budget",
@@ -2349,32 +2870,64 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
             },
           );
       }
-      const operation = deriveStudioOperation(contractChange, payload);
+      const operation = deriveStudioOperation(
+        contractChange,
+        payload,
+        this.input.sourceIndex,
+        this.input.sourceResolver,
+        (source) => this.sourceWriteBlob(source),
+        (binding) => this.sourceWriteText(binding),
+      );
+      const stagedOperations =
+        existingIndex < 0
+          ? [...this.operations, operation]
+          : this.operations.map((existing, index) =>
+              index === existingIndex ? operation : existing,
+            );
       assertStudioChangeOperation(
         operation,
-        this.input.observation,
+        this.input.projectIndex,
         this.input.ownership,
+        this.contract.mutationAuthority,
+        stagedOperations,
       );
-      if (this.operations.length >= 32)
-        throw new ToolFailure(
-          "OPERATION_BUDGET_EXHAUSTED",
-          "Studio operation budget exhausted",
-        );
-      this.operations.push(cloneOperation(operation));
+      if (existingIndex < 0 && this.operations.length >= CREATOR_MAX_CHANGES)
+        throw new ToolFailure("OPERATION_BUDGET_EXHAUSTED", "Studio operation budget exhausted");
+      if (existingIndex >= 0) this.operations[existingIndex] = cloneOperation(operation);
+      else this.operations.push(cloneOperation(operation));
       this.localGate = { status: "incomplete", issueHashes: [] };
       return {
         staged: true,
+        replaced: existingIndex >= 0,
         operationId: operation.id,
         operationHash: contentHash(stableJson(operation)),
+        ...(existingOperation
+          ? {
+              previousOperationHash: contentHash(stableJson(existingOperation)),
+            }
+          : {}),
       };
     }
     if (name === "studio.diff")
       return {
         operations: this.operations.map((operation) => ({
           id: operation.id,
+          planChangeId: operation.planChangeId,
           kind: operation.kind,
           hash: contentHash(stableJson(operation)),
           summary: operationSummary(operation),
+          ...(operation.kind === "edit_source"
+            ? {
+                sourceHash: operation.finalSourceHash,
+                sourceBytes: operation.finalByteCount,
+                editCount: operation.edits.length,
+              }
+            : operation.kind === "create" && operation.sourceBlob
+              ? {
+                  sourceHash: operation.sourceBlob.sourceHash,
+                  sourceBytes: operation.sourceBlob.utf8Bytes,
+                }
+              : {}),
         })),
       };
     if (name === "forge.verify") return this.verify();
@@ -2382,17 +2935,14 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
   }
   private owner(stableId: string): StudioOwner {
     return (
-      this.input.ownership.entries.find((entry) => entry.stableId === stableId)
-        ?.owner ?? "studio"
+      this.input.ownership.entries.find((entry) => entry.objectId === stableId)?.owner ??
+      "studio_document"
     );
   }
   private inspect(paths: string[]): unknown {
     const allowed = new Set(this.contract.initialInspectionPaths);
     const unique = [...new Set(paths)];
-    if (
-      unique.length !== paths.length ||
-      paths.some((path) => !allowed.has(path))
-    )
+    if (unique.length !== paths.length || paths.some((path) => !allowed.has(path)))
       throw correctiveFailure(
         "INSPECTION_PATH_INVALID",
         "studio.inspect accepts only explicit initial paths declared by the build contract",
@@ -2402,23 +2952,24 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
           contractHash: this.contract.hash,
         },
       );
-    const instances = this.input.observation.instances
+    const instances = this.input.projectIndex.instances
       .filter((instance) => unique.includes(instance.path))
       .map((instance) => ({
-        stableId: instance.stableId,
+        objectId: instance.objectId,
+        identity: instance.identity,
         path: instance.path,
         className: instance.className,
         instanceHash: contentHash(stableJson(instance)),
-        owner: this.owner(instance.stableId),
+        owner: this.owner(instance.objectId),
         ...(instance.position ? { position: instance.position } : {}),
         properties: instance.properties,
         attributes: instance.attributes,
       }));
-    const scripts = this.input.observation.scripts
+    const scripts = this.input.projectIndex.scripts
       .filter((script) => unique.includes(script.path))
-      .map(({ source: _source, ...script }) => ({
+      .map((script) => ({
         ...script,
-        owner: this.owner(script.stableId),
+        owner: this.owner(script.documentId),
       }));
     return {
       revisionHash: this.input.session.currentRevisionHash,
@@ -2427,47 +2978,40 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
       scripts,
     };
   }
-  private readSource(path: string): unknown {
-    const approvedSources = this.contract.changes.filter(
-      (
-        change,
-      ): change is Extract<
-        CreatorBuildContractChange,
-        { kind: "write_source" }
-      > => change.kind === "write_source",
-    );
-    const contractChange = approvedSources.find(
-      (change) => change.expectedPath === path,
-    );
-    if (!contractChange)
+  private readApprovedSource(input: {
+    documentId: string;
+    maximumUtf8Bytes?: number;
+    cursor?: string;
+  }): unknown {
+    const permitted =
+      this.input.sourceConsultation.sources.some(
+        (source) => source.document.documentId === input.documentId && source.ranges.length > 0,
+      ) ||
+      this.input.sourceConsultation.operations.some(
+        (operation) =>
+          operation.kind === "dependencies" &&
+          operation.dependencyRequest?.direction === "closure" &&
+          operation.sources.some((source) => source.document.documentId === input.documentId),
+      );
+    if (!permitted)
       throw correctiveFailure(
-        "SOURCE_PATH_NOT_APPROVED",
-        "studio.read_source accepts only an existing script bound to an approved write_source change",
+        "SOURCE_CONTEXT_OUTSIDE_APPROVED_CLOSURE",
+        "source_context_outside_approved_closure: replan before reading source outside the creator-approved consultation graph",
         {
-          receivedPath: path,
-          approvedPaths: approvedSources.map((change) => change.expectedPath),
+          receivedDocumentId: input.documentId,
+          approvedDocumentIds: [
+            ...new Set([
+              ...this.input.sourceConsultation.sources.map((source) => source.document.documentId),
+              ...this.input.sourceConsultation.dependencies.flatMap((dependency) => [
+                dependency.source.documentId,
+                ...(dependency.target ? [dependency.target.documentId] : []),
+              ]),
+            ]),
+          ].sort(),
+          consultationHash: this.input.sourceConsultation.hash,
         },
       );
-    const script = this.input.observation.scripts.find(
-      (entry) =>
-        entry.stableId === contractChange.stableId &&
-        entry.path === path &&
-        entry.sourceHash === contractChange.beforeSourceHash &&
-        typeof entry.source === "string",
-    );
-    if (!script || typeof script.source !== "string")
-      throw new ToolFailure(
-        "SOURCE_PRECONDITION_MISMATCH",
-        `Approved source target is absent, unreadable, or changed: ${path}`,
-      );
-    return {
-      path,
-      stableId: script.stableId,
-      className: contractChange.expectedClass,
-      sourceHash: script.sourceHash,
-      utf8Bytes: Buffer.byteLength(script.source, "utf8"),
-      source: script.source,
-    };
+    return readStudioSource(this.input.sourceIndex, this.input.sourceResolver, input);
   }
   private async verify(): Promise<unknown> {
     if (this.operations.length === 0) {
@@ -2482,9 +3026,7 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
     } catch (error) {
       this.localGate = {
         status: "rejected",
-        issueHashes: [
-          contentHash(error instanceof Error ? error.message : String(error)),
-        ],
+        issueHashes: [contentHash(error instanceof Error ? error.message : String(error))],
       };
       return {
         ...this.localGate,
@@ -2497,47 +3039,59 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
         ],
       };
     }
-    const sources = this.operations.flatMap((operation) =>
-      operation.kind === "write_source"
-        ? [
-            {
-              id: operation.id,
-              source: operation.source,
-              className: operation.expectedClass,
-            },
-          ]
-        : operation.kind === "create" && operation.source !== undefined
+    const sources: Array<StudioLuauAnalysisSource & { planChangeId: string; operationId: string }> =
+      this.operations.flatMap((operation) =>
+        operation.kind === "edit_source"
           ? [
               {
                 id: operation.id,
-                source: operation.source,
-                className: operation.className,
+                operationId: operation.id,
+                planChangeId: operation.planChangeId,
+                studioPath: operation.target.path,
+                source: materializeEditedSource(
+                  operation,
+                  this.input.sourceIndex,
+                  this.input.sourceResolver,
+                  (binding) => this.sourceWriteText(binding),
+                ),
+                className: operation.target.className,
               },
             ]
-          : [],
-    );
+          : operation.kind === "create" &&
+              operation.sourceBlob !== undefined &&
+              isScriptClass(operation.className)
+            ? [
+                {
+                  id: operation.id,
+                  operationId: operation.id,
+                  planChangeId: operation.planChangeId,
+                  studioPath: operation.target.path,
+                  source: this.sourceWriteText(operation.sourceBlob),
+                  className: operation.className,
+                },
+              ]
+            : [],
+      );
     if (sources.length === 0) {
       this.localGate = { status: "eligible", issueHashes: [] };
       return this.localGate;
     }
-    const root = await mkdtemp(join(tmpdir(), "forge-creator-verify-"));
     try {
-      const paths: string[] = [];
-      for (const source of sources) {
-        const suffix =
-          source.className === "Script"
-            ? ".server.luau"
-            : source.className === "LocalScript"
-              ? ".client.luau"
-              : ".luau";
-        const path = `${source.id.replace(/[^A-Za-z0-9_-]/g, "_")}${suffix}`;
-        await writeFile(join(root, path), source.source, "utf8");
-        paths.push(path);
-      }
-      const analysis = analyzeWithRobloxLuau(root, paths);
-      const issueHashes = analysis.issues
-        .map((issue) => contentHash(stableJson(issue)))
-        .sort();
+      const analysis = analyzeStudioSourcesWithRobloxLuau({
+        nodes: creatorLuauAnalysisTopology(this.input.projectIndex, this.operations),
+        sources,
+        dependencySources: creatorLuauAnalysisDependencies(
+          this.input.projectIndex,
+          this.input.sourceIndex,
+          this.input.sourceResolver,
+          this.operations,
+          sources,
+        ),
+      });
+      const issues = analysis.issues
+        .map((issue) => creatorVerificationDiagnostic(issue, sources))
+        .sort((left, right) => stableJson(left).localeCompare(stableJson(right)));
+      const issueHashes = issues.map((issue) => contentHash(stableJson(issue))).sort();
       const statuses = analysis.tiers.map((tier) => tier.status);
       this.localGate = {
         status: statuses.includes("unavailable")
@@ -2549,14 +3103,20 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
       };
       return {
         ...this.localGate,
-        issues: analysis.issues.slice(0, 30).map((issue) => ({
-          ruleId: issue.ruleId,
-          severity: issue.severity,
-          path: issue.path,
-        })),
+        issues: issues.slice(0, 30),
       };
-    } finally {
-      await rm(root, { recursive: true, force: true });
+    } catch (error) {
+      const issue = {
+        ruleId: "CREATOR_LUAU_PROJECT_UNAVAILABLE",
+        severity: "error" as const,
+        category: "tooling" as const,
+        message: boundedDiagnosticMessage(error instanceof Error ? error.message : String(error)),
+      };
+      this.localGate = {
+        status: "incomplete",
+        issueHashes: [contentHash(stableJson(issue))],
+      };
+      return { ...this.localGate, issues: [issue] };
     }
   }
 }
@@ -2564,7 +3124,9 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
 export async function runCreatorPlanner(input: {
   session: CreatorSession;
   ownership: StudioOwnershipMap;
-  observation: StudioProjectState;
+  projectIndex: CreatorProjectIndexView;
+  sourceIndex: StudioSourceIndex;
+  sourceResolver: VerifiedSourceResolver;
   prompt: string;
   runtime: AgentRuntime;
   budgets?: BudgetPolicy;
@@ -2574,7 +3136,9 @@ export async function runCreatorPlanner(input: {
   const host = new CreatorPlannerToolHost({
     session: input.session,
     ownership: input.ownership,
-    observation: input.observation,
+    projectIndex: input.projectIndex,
+    sourceIndex: input.sourceIndex,
+    sourceResolver: input.sourceResolver,
     prompt: input.prompt,
     budgets: input.budgets ?? DEFAULT_AGENT_BUDGETS,
   });
@@ -2584,7 +3148,7 @@ export async function runCreatorPlanner(input: {
     orientation: creatorOrientation({
       session: input.session,
       ownership: input.ownership,
-      observation: input.observation,
+      projectIndex: input.projectIndex,
     }),
     tools: host,
     budgets: input.budgets ?? DEFAULT_AGENT_BUDGETS,
@@ -2627,10 +3191,13 @@ export async function runCreatorPlanner(input: {
 export async function runCreatorBuilder(input: {
   session: CreatorSession;
   ownership: StudioOwnershipMap;
-  observation: StudioProjectState;
+  projectIndex: CreatorProjectIndexView;
   prompt: string;
   plan: CreatorPlan;
   planApproval: CreatorApproval;
+  sourceIndex: StudioSourceIndex;
+  sourceResolver: VerifiedSourceResolver;
+  sourceConsultation: CreatorSourceConsultation;
   verificationFeedback?: readonly string[];
   runtime: AgentRuntime;
   budgets?: BudgetPolicy;
@@ -2655,7 +3222,7 @@ export async function runCreatorBuilder(input: {
     orientation: creatorOrientation({
       session: input.session,
       ownership: input.ownership,
-      observation: input.observation,
+      projectIndex: input.projectIndex,
     }),
     tools: host,
     budgets: input.budgets ?? DEFAULT_AGENT_BUDGETS,
@@ -2687,6 +3254,7 @@ export async function runCreatorBuilder(input: {
     const changeSet = host.seal();
     return {
       changeSet,
+      sourceWriteBlobs: host.stagedSourceWriteBlobs(),
       runtimeResult: result,
       toolHost: host,
       systemPrompt,
@@ -2724,10 +3292,7 @@ export async function persistCreatorBundle(
   const destination = join(resolve(directory), `${bundle.session.id}.json`);
   await mkdir(dirname(destination), { recursive: true });
   const serialized = `${stableJson(bundle)}\n`;
-  const temporary = join(
-    dirname(destination),
-    `.${basename(destination)}.${randomUUID()}.tmp`,
-  );
+  const temporary = join(dirname(destination), `.${basename(destination)}.${randomUUID()}.tmp`);
   await writeFile(temporary, serialized, { encoding: "utf8", mode: 0o600 });
   await rename(temporary, destination);
   return {
@@ -2737,29 +3302,185 @@ export async function persistCreatorBundle(
   };
 }
 
-export async function loadCreatorBundle(
-  path: string,
-): Promise<CreatorSessionBundle> {
-  const value = JSON.parse(
-    await readFile(resolve(path), "utf8"),
-  ) as CreatorSessionBundle;
+export async function loadCreatorBundle(path: string): Promise<CreatorSessionBundle> {
+  const value = JSON.parse(await readFile(resolve(path), "utf8")) as CreatorSessionBundle;
   assertCreatorSessionBundle(value);
   const store = new ImmutableJsonArtifactStore(dirname(resolve(path)));
-  const creatorRequest = await store.read(
-    value.creatorRequest,
-    assertCreatorRequestArtifact,
-  );
+  const creatorRequest = await store.read(value.creatorRequest, assertCreatorRequestArtifact);
   if (
     creatorRequest.sessionId !== value.session.id ||
     creatorRequest.promptHash !== value.session.promptHash
   )
     throw new Error("Creator request artifact does not bind its session");
   for (const reference of value.agentRuns) {
-    await Promise.all([
-      store.verify(reference.agentRun),
-      store.verify(reference.trace),
-    ]);
+    await Promise.all([store.verify(reference.agentRun), store.verify(reference.trace)]);
   }
+  for (const binding of value.projectIndices) {
+    const capture = await readCreatorProjectIndexArtifacts(store, binding);
+    if (
+      capture.hash !== binding.captureHash ||
+      capture.projection.id !== binding.projection.id ||
+      capture.projection.hash !== binding.projection.hash ||
+      capture.indexManifest.id !== binding.manifest.id ||
+      capture.indexManifest.hash !== binding.manifest.hash ||
+      capture.revision.id !== binding.revision.id ||
+      capture.revision.hash !== binding.revision.hash
+    )
+      throw new Error("Creator project-index artifact graph mismatch");
+  }
+  if (value.projectAuthority) {
+    const authorityMap = await store.read(
+      value.projectAuthority.authorityMap.artifact,
+      assertProjectAuthorityMap,
+    );
+    if (
+      authorityMap.id !== value.projectAuthority.authorityMap.id ||
+      authorityMap.hash !== value.projectAuthority.authorityMap.hash
+    )
+      throw new Error("Creator project-authority map artifact binding mismatch");
+  }
+  for (const mutation of value.rojoSourceMutations) {
+    const [changeSet, attempt] = await Promise.all([
+      store.read(mutation.changeSet.artifact, assertRojoSourceChangeSet),
+      store.read(mutation.attempt.artifact, assertRojoMutationAttempt),
+    ]);
+    if (
+      changeSet.id !== mutation.changeSet.id ||
+      changeSet.hash !== mutation.changeSet.hash ||
+      attempt.id !== mutation.attempt.id ||
+      attempt.hash !== mutation.attempt.hash ||
+      attempt.changeSetId !== changeSet.id ||
+      attempt.changeSetHash !== changeSet.hash
+    )
+      throw new Error("Creator Rojo source mutation artifact graph mismatch");
+    for (const proof of mutation.syncProofs) {
+      const value = await store.read(proof.artifact, assertRojoSyncProof);
+      if (
+        value.id !== proof.id ||
+        value.hash !== proof.hash ||
+        value.attemptId !== attempt.id ||
+        value.attemptHash !== attempt.hash
+      )
+        throw new Error("Creator Rojo source sync proof binding mismatch");
+    }
+    if (mutation.revert) {
+      const revert = await store.read(mutation.revert.artifact, assertRojoSourceRevert);
+      if (
+        revert.id !== mutation.revert.id ||
+        revert.hash !== mutation.revert.hash ||
+        revert.attemptId !== attempt.id ||
+        revert.attemptHash !== attempt.hash
+      )
+        throw new Error("Creator Rojo source revert binding mismatch");
+      for (const proof of mutation.revertSyncProofs) {
+        const value = await store.read(proof.artifact, assertRojoSourceRevertSyncProof);
+        if (
+          value.id !== proof.id ||
+          value.hash !== proof.hash ||
+          value.revertId !== revert.id ||
+          value.revertHash !== revert.hash
+        )
+          throw new Error("Creator Rojo source revert sync proof binding mismatch");
+      }
+    } else if (mutation.revertSyncProofs.length > 0)
+      throw new Error("Creator Rojo source revert proof has no revert");
+  }
+  for (const entry of value.projectChanges) {
+    const notice = await store.read(entry.artifact, assertCreatorProjectChangeNotice);
+    if (stableJson(notice) !== stableJson(entry.notice))
+      throw new Error("Creator project-change notice artifact binding mismatch");
+    if (entry.confirmation) {
+      const confirmation = await store.read(
+        entry.confirmation.artifact,
+        assertCreatorTransactionProjectChangeConfirmation,
+      );
+      if (
+        stableJson(confirmation) !== stableJson(entry.confirmation.record) ||
+        stableJson(confirmation.notice) !== stableJson(entry.artifact) ||
+        confirmation.sessionId !== value.session.id
+      )
+        throw new Error("Creator transaction project-change confirmation binding mismatch");
+      const expected = value.projectIndices.find(
+        (binding) => binding.captureHash === confirmation.expectedCaptureHash,
+      );
+      if (!expected || expected.revision.hash !== confirmation.expectedRevisionHash)
+        throw new Error("Creator transaction project-change expected index binding mismatch");
+      if (confirmation.outcome === "incomplete") continue;
+      const observed = value.projectIndices.find(
+        (binding) => binding.captureHash === confirmation.observedCaptureHash,
+      );
+      if (
+        !observed ||
+        observed.revision.hash !== confirmation.observedRevisionHash ||
+        !confirmation.delta
+      )
+        throw new Error("Creator transaction project-change observed index binding mismatch");
+      const delta = await store.read(confirmation.delta, assertCreatorProjectDelta);
+      if (
+        delta.beforeCaptureHash !== confirmation.expectedCaptureHash ||
+        delta.afterCaptureHash !== confirmation.observedCaptureHash ||
+        delta.beforeRevisionHash !== confirmation.expectedRevisionHash ||
+        delta.afterRevisionHash !== confirmation.observedRevisionHash
+      )
+        throw new Error("Creator transaction project-change delta binding mismatch");
+    }
+  }
+  for (const entry of value.projectRefreshes) {
+    const [refresh, delta] = await Promise.all([
+      store.read(entry.artifact, assertCreatorProjectRefresh),
+      store.read(entry.refresh.delta, assertCreatorProjectDelta),
+    ]);
+    if (stableJson(refresh) !== stableJson(entry.refresh))
+      throw new Error("Creator project-refresh artifact binding mismatch");
+    if (
+      delta.beforeCaptureHash !== refresh.beforeCaptureHash ||
+      delta.afterCaptureHash !== refresh.afterCaptureHash ||
+      delta.beforeRevisionHash !== refresh.beforeRevisionHash ||
+      delta.afterRevisionHash !== refresh.afterRevisionHash
+    )
+      throw new Error("Creator project-refresh delta revision binding mismatch");
+  }
+  const loadedSourceIndices = new Map<string, StudioSourceIndex>();
+  const retainedCaptureHashes = new Set(value.projectIndices.map((binding) => binding.captureHash));
+  for (const binding of value.sourceIndices) {
+    const index = await store.read(binding.artifact, assertStudioSourceIndex);
+    assertProductionStudioSourceIndex(index);
+    const analysis = await store.read<PinnedSourceAnalysisArtifact>(binding.analysis.artifact);
+    if (
+      index.id !== binding.id ||
+      index.hash !== binding.hash ||
+      analysis.kind !== "PinnedSourceAnalysisArtifact" ||
+      analysis.id !== binding.analysis.id ||
+      analysis.hash !== binding.analysis.hash ||
+      analysis.sourceIndexId !== index.id ||
+      analysis.sourceIndexHash !== index.hash ||
+      analysis.sourceSnapshotHash !== index.snapshotHash
+    )
+      throw new Error("Creator source-index artifact binding mismatch");
+    if (!retainedCaptureHashes.has(index.snapshotHash))
+      throw new Error("Creator source index is not bound to a retained project-index capture");
+    const key = `${index.id}:${index.hash}`;
+    if (loadedSourceIndices.has(key))
+      throw new Error("Creator source-index artifact binding is duplicated");
+    loadedSourceIndices.set(key, index);
+  }
+  for (const binding of value.sourceConsultations) {
+    const consultation = (await store.read(binding.artifact)) as CreatorSourceConsultation;
+    const index = loadedSourceIndices.get(`${binding.indexId}:${binding.indexHash}`);
+    if (!index) throw new Error("Creator source consultation lost its source index");
+    assertCreatorSourceConsultation(consultation, index);
+    if (consultation.id !== binding.id || consultation.hash !== binding.hash)
+      throw new Error("Creator source-consultation artifact binding mismatch");
+  }
+  if (value.plan) {
+    const sourceIndex = loadedSourceIndices.get(
+      `${value.plan.sourceIndexId}:${value.plan.sourceIndexHash}`,
+    );
+    if (!sourceIndex || sourceIndex.snapshotHash !== value.plan.projectCaptureHash)
+      throw new Error("Creator plan source index does not bind its project-index capture");
+  }
+  for (const binding of value.sourceWriteBlobs)
+    await readCreatorSourceWriteArtifacts(store, binding);
   await Promise.all(
     value.verifications.flatMap((verification) => [
       store.verify(verification.executionPlan.artifact),
@@ -2769,7 +3490,8 @@ export async function loadCreatorBundle(
     ]),
   );
   await Promise.all(
-    value.mutationAttempts.flatMap(mutationAttemptArtifactReferences)
+    value.mutationAttempts
+      .flatMap(mutationAttemptArtifactReferences)
       .map((reference) => store.verify(reference)),
   );
   if (value.activeMutation) {
@@ -2787,36 +3509,139 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
   assertCreatorSession(value.session);
   assertArtifactReference(value.creatorRequest);
   assertOwnershipMap(value.ownership);
-  assertStudioProjectState(value.observation);
   if (
-    !Array.isArray(value.observationHistory) ||
-    value.observationHistory.length < 1 ||
-    value.observationHistory.length > 32
+    !Array.isArray(value.projectIndices) ||
+    value.projectIndices.length < 1 ||
+    !Array.isArray(value.projectChanges) ||
+    !Array.isArray(value.projectRefreshes)
   )
-    throw new Error(
-      "Creator session bundle requires bounded Studio observation history",
-    );
-  for (const entry of value.observationHistory) {
-    if (!isRecord(entry) || !isHash(entry.revisionHash))
-      throw new Error("Invalid creator Studio observation history entry");
-    assertStudioProjectState(entry.observation);
+    throw new Error("Creator session bundle requires project-index and refresh evidence history");
+  for (const binding of value.projectIndices) {
+    if (!isRecord(binding) || !isId(binding.captureId) || !isHash(binding.captureHash))
+      throw new Error("Invalid creator project-index binding");
+    for (const reference of creatorProjectIndexArtifactReferences(binding))
+      assertArtifactReference(reference);
   }
+  for (const entry of value.projectChanges) {
+    if (!isRecord(entry)) throw new Error("Invalid creator project-change evidence");
+    assertCreatorProjectChangeNotice(entry.notice);
+    assertArtifactReference(entry.artifact);
+    if (!isStatus(entry.priorStatus))
+      throw new Error("Invalid creator project-change prior status");
+    if (entry.confirmation !== undefined) {
+      if (!isRecord(entry.confirmation))
+        throw new Error("Invalid creator transaction project-change confirmation");
+      assertCreatorTransactionProjectChangeConfirmation(entry.confirmation.record);
+      assertArtifactReference(entry.confirmation.artifact);
+      if (stableJson(entry.confirmation.record.notice) !== stableJson(entry.artifact))
+        throw new Error("Creator transaction project-change confirmation notice mismatch");
+    }
+  }
+  for (const entry of value.projectRefreshes) {
+    if (!isRecord(entry)) throw new Error("Invalid creator project-refresh evidence");
+    assertCreatorProjectRefresh(entry.refresh);
+    assertArtifactReference(entry.artifact);
+    if (
+      entry.refresh.predecessorSessionId !== value.session.id ||
+      !value.projectChanges.some(
+        (change) => stableJson(change.artifact) === stableJson(entry.refresh.notice),
+      )
+    )
+      throw new Error("Creator project refresh has no bound project-change notice");
+  }
+  if (value.projectAuthority !== undefined) {
+    const binding = value.projectAuthority.authorityMap;
+    if (!isRecord(binding) || !isId(binding.id) || !isHash(binding.hash))
+      throw new Error("Invalid creator project-authority map binding");
+    assertArtifactReference(binding.artifact);
+  }
+  if (!Array.isArray(value.rojoSourceMutations))
+    throw new Error("Creator session bundle requires Rojo source mutation history");
+  for (const mutation of value.rojoSourceMutations) {
+    if (!isRecord(mutation)) throw new Error("Invalid creator Rojo source mutation binding");
+    for (const member of [mutation.changeSet, mutation.attempt]) {
+      if (!isRecord(member) || !isId(member.id) || !isHash(member.hash))
+        throw new Error("Invalid creator Rojo source mutation member binding");
+      assertArtifactReference(member.artifact);
+    }
+    for (const proofs of [mutation.syncProofs, mutation.revertSyncProofs]) {
+      if (!Array.isArray(proofs)) throw new Error("Invalid creator Rojo source sync-proof history");
+      for (const proof of proofs) {
+        if (!isRecord(proof) || !isId(proof.id) || !isHash(proof.hash))
+          throw new Error("Invalid creator Rojo source sync-proof binding");
+        assertArtifactReference(proof.artifact);
+      }
+    }
+    if (mutation.revert !== undefined) {
+      if (!isRecord(mutation.revert) || !isId(mutation.revert.id) || !isHash(mutation.revert.hash))
+        throw new Error("Invalid creator Rojo source revert binding");
+      assertArtifactReference(mutation.revert.artifact);
+    }
+  }
+  if (value.rojoSourceMutations.length > 0 && value.projectAuthority === undefined)
+    throw new Error("Rojo source mutation evidence requires an authority-map artifact");
   if (
-    new Set(
-      value.observationHistory.map((entry) => contentHash(stableJson(entry))),
-    ).size !== value.observationHistory.length
+    value.projectAuthority !== undefined &&
+    !value.ownership.availableAuthorities.includes("rojo_source")
   )
-    throw new Error(
-      "Creator Studio observation history contains duplicate evidence",
-    );
-  const initialObservation = value.observationHistory[0]!;
-  const currentObservation = value.observationHistory.at(-1)!;
+    throw new Error("Creator authority-map evidence requires Rojo authority availability");
+  const projectIndexByCapture = new Map(
+    value.projectIndices.map((binding) => [binding.captureHash, binding]),
+  );
   if (
-    initialObservation.revisionHash !== value.session.initialRevisionHash ||
-    currentObservation.revisionHash !== value.session.currentRevisionHash ||
-    stableJson(currentObservation.observation) !== stableJson(value.observation)
+    !projectIndexByCapture.has(value.session.initialProjectCaptureHash) ||
+    !projectIndexByCapture.has(value.session.currentProjectCaptureHash)
   )
-    throw new Error("Creator session observation history graph mismatch");
+    throw new Error("Creator session project-index captures must bind persisted evidence");
+  const initialProjectIndex = projectIndexByCapture.get(value.session.initialProjectCaptureHash);
+  const currentProjectIndex = projectIndexByCapture.get(value.session.currentProjectCaptureHash);
+  if (
+    initialProjectIndex?.revision.hash !== value.session.initialRevisionHash ||
+    currentProjectIndex?.revision.hash !== value.session.currentRevisionHash
+  )
+    throw new Error("Creator session project-index capture and revision binding mismatch");
+  if (!Array.isArray(value.sourceIndices) || !Array.isArray(value.sourceConsultations))
+    throw new Error("Creator session bundle requires source evidence history");
+  if (!Array.isArray(value.sourceWriteBlobs))
+    throw new Error("Creator session bundle requires source-write evidence history");
+  const sourceWriteByManifest = new Map<string, CreatorSourceWriteArtifactBinding>();
+  for (const binding of value.sourceWriteBlobs) {
+    if (sourceWriteByManifest.has(binding.manifest.hash))
+      throw new Error("Creator session source-write evidence is duplicated");
+    sourceWriteByManifest.set(binding.manifest.hash, binding);
+    for (const reference of creatorSourceWriteArtifactReferences(binding))
+      assertArtifactReference(reference);
+  }
+  for (const binding of value.sourceIndices) {
+    if (
+      !isRecord(binding) ||
+      !isId(binding.id) ||
+      !isHash(binding.hash) ||
+      !isRecord(binding.analysis) ||
+      !isId(binding.analysis.id) ||
+      !isHash(binding.analysis.hash)
+    )
+      throw new Error("Invalid creator source-index binding");
+    assertArtifactReference(binding.artifact);
+    assertArtifactReference(binding.analysis.artifact);
+  }
+  for (const binding of value.sourceConsultations) {
+    if (
+      !isRecord(binding) ||
+      !isId(binding.id) ||
+      !isHash(binding.hash) ||
+      !isId(binding.indexId) ||
+      !isHash(binding.indexHash)
+    )
+      throw new Error("Invalid creator source-consultation binding");
+    assertArtifactReference(binding.artifact);
+    if (
+      !value.sourceIndices.some(
+        (index) => index.id === binding.indexId && index.hash === binding.indexHash,
+      )
+    )
+      throw new Error("Creator source consultation has no bound source index");
+  }
   if (
     value.ownership.id !== value.session.ownershipMapId ||
     value.ownership.hash !== value.session.ownershipMapHash ||
@@ -2826,39 +3651,30 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
     throw new Error("Creator session bundle ownership graph mismatch");
   if (value.plan) {
     assertCreatorPlan(value.plan);
+    const sourceIndex = value.sourceIndices.find(
+      (binding) =>
+        binding.id === value.plan!.sourceIndexId && binding.hash === value.plan!.sourceIndexHash,
+    );
+    const sourceConsultation = value.sourceConsultations.find(
+      (binding) =>
+        binding.id === value.plan!.sourceConsultationId &&
+        binding.hash === value.plan!.sourceConsultationHash &&
+        binding.indexId === value.plan!.sourceIndexId &&
+        binding.indexHash === value.plan!.sourceIndexHash,
+    );
+    if (!sourceIndex || !sourceConsultation)
+      throw new Error("Creator plan lost its source-index consultation graph");
     if (
       value.plan.sessionId !== value.session.id ||
       value.plan.promptHash !== value.session.promptHash ||
       value.plan.ownershipMapId !== value.ownership.id ||
       value.plan.ownershipMapHash !== value.ownership.hash ||
-      value.plan.projectRevisionHash !== value.session.initialRevisionHash
+      value.plan.projectRevisionHash !== value.session.initialRevisionHash ||
+      value.plan.projectCaptureHash !== value.session.initialProjectCaptureHash ||
+      !value.ownership.availableAuthorities.includes(value.plan.mutationAuthority) ||
+      !projectIndexByCapture.has(value.session.initialProjectCaptureHash)
     )
       throw new Error("Creator session bundle plan graph mismatch");
-    const rematerialized = createCreatorPlan(
-      {
-        sessionId: value.plan.sessionId,
-        promptHash: value.plan.promptHash,
-        projectRevisionHash: value.plan.projectRevisionHash,
-        ownershipMapId: value.plan.ownershipMapId,
-        ownershipMapHash: value.plan.ownershipMapHash,
-        creatorPrompt: value.plan.goal,
-        inspectionPaths: [...value.plan.inspectionPaths],
-        steps: structuredClone(value.plan.steps),
-        changes: structuredClone(value.plan.changes),
-        charter: {
-          clauses: value.plan.charter.clauses.map(charterProposalFromFinal),
-        },
-      },
-      initialObservation.observation,
-      value.ownership,
-    );
-    if (
-      rematerialized.id !== value.plan.id ||
-      rematerialized.hash !== value.plan.hash
-    )
-      throw new Error(
-        "Creator plan is not reproducible from its initial Studio observation",
-      );
   }
   if (
     value.session.plan &&
@@ -2874,19 +3690,15 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
     new Set(value.buildContracts.map((contract) => contract.id)).size !==
     value.buildContracts.length
   )
-    throw new Error(
-      "Creator build-contract history contains duplicate identities",
-    );
-  if (!Array.isArray(value.approvals))
-    throw new Error("Creator session bundle requires approvals");
+    throw new Error("Creator build-contract history contains duplicate identities");
+  if (!Array.isArray(value.approvals)) throw new Error("Creator session bundle requires approvals");
   value.approvals.forEach((approval) => {
     assertCreatorApproval(approval);
     if (approval.sessionId !== value.session.id)
       throw new Error("Creator approval session mismatch");
   });
   for (const contract of value.buildContracts) {
-    if (!value.plan)
-      throw new Error("Creator build contract requires its persisted plan");
+    if (!value.plan) throw new Error("Creator build contract requires its persisted plan");
     const approval = value.approvals.find(
       (candidate) =>
         candidate.id === contract.planApprovalId &&
@@ -2896,43 +3708,18 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
         candidate.artifactHash === value.plan!.hash &&
         candidate.decision === "approved",
     );
-    const observed = value.observationHistory.find(
-      (entry) =>
-        entry.revisionHash === contract.initialRevisionHash &&
-        studioProjectStateHash(entry.observation) ===
-          value.plan!.projectStateHash,
-    );
-    if (!approval || !observed)
-      throw new Error(
-        "Creator build contract is not bound to approved plan and reproducible Studio facts",
-      );
-    const rematerialized = materializeCreatorBuildContract(
-      {
-        session: {
-          ...value.session,
-          currentRevisionHash: contract.initialRevisionHash,
-        },
-        plan: value.plan,
-        planApproval: approval,
-        ownership: value.ownership,
-        observation: observed.observation,
-      },
-      contract.propertyPolicies,
-    );
     if (
-      rematerialized.id !== contract.id ||
-      rematerialized.hash !== contract.hash
+      !approval ||
+      contract.mutationAuthority !== value.plan.mutationAuthority ||
+      !value.ownership.availableAuthorities.includes(contract.mutationAuthority) ||
+      contract.initialRevisionHash !== value.plan.projectRevisionHash ||
+      !projectIndexByCapture.has(value.session.initialProjectCaptureHash)
     )
-      throw new Error(
-        "Creator build contract is not reproducible from approved inputs",
-      );
+      throw new Error("Creator build contract is not bound to its approved project-index revision");
   }
   if (!Array.isArray(value.changeSets))
     throw new Error("Creator session bundle requires change-set history");
-  if (
-    new Set(value.changeSets.map((changeSet) => changeSet.id)).size !==
-    value.changeSets.length
-  )
+  if (new Set(value.changeSets.map((changeSet) => changeSet.id)).size !== value.changeSets.length)
     throw new Error("Creator change-set history contains duplicate identities");
   value.changeSets.forEach((changeSet) => {
     assertCreatorChangeSet(changeSet);
@@ -2953,9 +3740,7 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
         candidate.decision === "approved",
     );
     if (!approval)
-      throw new Error(
-        "Creator change set requires its authentic approved-plan decision",
-      );
+      throw new Error("Creator change set requires its authentic approved-plan decision");
     const contract = value.buildContracts.find(
       (candidate) =>
         candidate.id === changeSet.buildContractId &&
@@ -2964,38 +3749,18 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
     if (
       !contract ||
       contract.planApprovalId !== approval.id ||
-      contract.planApprovalHash !== approval.hash
+      contract.planApprovalHash !== approval.hash ||
+      changeSet.mutationAuthority !== value.plan.mutationAuthority ||
+      changeSet.mutationAuthority !== contract.mutationAuthority
     )
-      throw new Error(
-        "Creator change set requires its persisted build contract",
-      );
+      throw new Error("Creator change set requires its persisted build contract");
     assertOperationsMatchPlan(changeSet.operations, value.plan.changes);
     assertOperationsMatchContract(changeSet.operations, contract);
-    const observed = value.observationHistory.find(
-      (entry) =>
-        entry.revisionHash === changeSet.expectedRevisionHash &&
-        studioProjectStateHash(entry.observation) ===
-          value.plan!.projectStateHash,
-    );
-    if (!observed)
-      throw new Error(
-        "Creator change set lost its exact pre-apply Studio observation",
-      );
-    const { kind: _kind, id: _id, hash: _hash, ...payload } = changeSet;
-    const rematerialized = createCreatorChangeSet(
-      structuredClone(payload),
-      observed.observation,
-      value.ownership,
-      value.plan,
-      contract,
-    );
     if (
-      rematerialized.id !== changeSet.id ||
-      rematerialized.hash !== changeSet.hash
+      changeSet.expectedRevisionHash !== contract.initialRevisionHash ||
+      !projectIndexByCapture.has(value.session.initialProjectCaptureHash)
     )
-      throw new Error(
-        "Creator change set is not reproducible from its approved contract and Studio facts",
-      );
+      throw new Error("Creator change set lost its exact pre-apply project-index capture");
   });
   const artifact = (approval: CreatorApproval) =>
     approval.artifactKind === "plan"
@@ -3004,8 +3769,7 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
         approval.artifactHash === value.plan.hash
       : value.changeSets.some(
           (changeSet) =>
-            changeSet.id === approval.artifactId &&
-            changeSet.hash === approval.artifactHash,
+            changeSet.id === approval.artifactId && changeSet.hash === approval.artifactHash,
         );
   if (value.approvals.some((approval) => !artifact(approval)))
     throw new Error("Creator approval references an unpersisted artifact");
@@ -3045,28 +3809,47 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
       !isId(attempt.id) ||
       !isHash(attempt.hash) ||
       attempt.sessionId !== value.session.id
-    ) throw new Error("Invalid creator mutation-attempt evidence");
+    )
+      throw new Error("Invalid creator mutation-attempt evidence");
+    const captureHashes =
+      attempt.completion === "settled"
+        ? [
+            attempt.beforeIndexCapture.captureHash,
+            attempt.afterIndexCapture.captureHash,
+            attempt.finalIndexCapture.captureHash,
+          ]
+        : [
+            attempt.beforeIndexCapture.captureHash,
+            ...(attempt.phase === "apply" ? [attempt.finalIndexCapture.captureHash] : []),
+          ];
+    if (
+      captureHashes.some(
+        (captureHash) =>
+          !value.projectIndices.some((binding) => binding.captureHash === captureHash),
+      )
+    )
+      throw new Error("Creator mutation attempt lost a bound project-index capture");
   }
-  if (value.activeMutation !== undefined)
-    assertCreatorActiveMutation(value.activeMutation, value);
+  if (value.activeMutation !== undefined) assertCreatorActiveMutation(value.activeMutation, value);
   value.verifications.forEach((record) => {
     assertCreatorVerificationRecord(record);
     if (
       record.sessionId !== value.session.id ||
       !value.changeSets.some(
         (changeSet) =>
-          changeSet.id === record.changeSetId &&
-          changeSet.hash === record.changeSetHash,
+          changeSet.id === record.changeSetId && changeSet.hash === record.changeSetHash,
       ) ||
       !value.plan ||
       record.charterId !== value.plan.charter.id ||
       record.charterHash !== value.plan.charter.hash ||
-      !value.mutationAttempts.some((attempt) =>
-        attempt.id === record.mutationAttempt.id &&
-        attempt.hash === record.mutationAttempt.hash &&
-        attempt.completion === "settled" &&
-        isRecord(attempt.reconciliation) &&
-        attempt.reconciliation.hash === record.mutationAttempt.reconciliationHash)
+      !value.mutationAttempts.some(
+        (attempt) =>
+          attempt.id === record.mutationAttempt.id &&
+          attempt.hash === record.mutationAttempt.hash &&
+          attempt.completion === "settled" &&
+          isRecord(attempt.reconciliation) &&
+          attempt.reconciliation.hash === record.mutationAttempt.reconciliationHash,
+      )
     )
       throw new Error("Creator verification graph mismatch");
   });
@@ -3081,10 +3864,12 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
       ) ||
       value.session.checkpoint?.id !== value.checkpoint.id ||
       value.session.checkpoint.hash !== value.checkpoint.hash ||
-      !value.mutationAttempts.some((attempt) =>
-        attempt.id === value.checkpoint!.mutationAttemptId &&
-        attempt.hash === value.checkpoint!.mutationAttemptHash &&
-        attempt.completion === "settled")
+      !value.mutationAttempts.some(
+        (attempt) =>
+          attempt.id === value.checkpoint!.mutationAttemptId &&
+          attempt.hash === value.checkpoint!.mutationAttemptHash &&
+          attempt.completion === "settled",
+      )
     )
       throw new Error("Creator checkpoint graph mismatch");
   } else if (value.session.checkpoint)
@@ -3114,9 +3899,7 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
   for (const reference of value.agentRuns) {
     if (
       !isRecord(reference) ||
-      !["creator_planner", "creator_builder"].includes(
-        String(reference.phase),
-      ) ||
+      !["creator_planner", "creator_builder"].includes(String(reference.phase)) ||
       !isId(reference.agentRunId) ||
       !isId(reference.traceId) ||
       !isId(reference.traceBuildKey) ||
@@ -3126,16 +3909,13 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
     assertArtifactReference(reference.agentRun);
     assertArtifactReference(reference.trace);
     assertCreatorPhaseOutcome(reference.outcome);
-    const intended =
-      reference.phase === "creator_planner" ? "plan" : "change_set";
+    const intended = reference.phase === "creator_planner" ? "plan" : "change_set";
     if (
       (reference.outcome.status === "sealed"
         ? reference.outcome.artifact.kind
         : reference.outcome.intendedArtifactKind) !== intended
     )
-      throw new Error(
-        "Creator AgentRun outcome does not match its referenced phase",
-      );
+      throw new Error("Creator AgentRun outcome does not match its referenced phase");
     if (
       reference.phase === "creator_planner" &&
       reference.outcome.status === "sealed" &&
@@ -3143,9 +3923,7 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
         reference.outcome.artifact.id !== value.plan.id ||
         reference.outcome.artifact.hash !== value.plan.hash)
     )
-      throw new Error(
-        "Sealed creator planner AgentRun is not linked to its plan",
-      );
+      throw new Error("Sealed creator planner AgentRun is not linked to its plan");
     if (reference.phase === "creator_builder") {
       if (
         !isRecord(reference.buildContract) ||
@@ -3157,9 +3935,7 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
             contract.hash === reference.buildContract!.hash,
         )
       )
-        throw new Error(
-          "Creator builder AgentRun reference lost its build contract",
-        );
+        throw new Error("Creator builder AgentRun reference lost its build contract");
       if (reference.outcome.status === "sealed") {
         const sealedArtifact = reference.outcome.artifact;
         if (
@@ -3187,9 +3963,7 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
           reference.buildContract.hash === contract.hash,
       )
     )
-      throw new Error(
-        "Persisted CreatorBuildContract has no AgentRun evidence link",
-      );
+      throw new Error("Persisted CreatorBuildContract has no AgentRun evidence link");
   for (const changeSet of value.changeSets)
     if (
       !value.agentRuns.some(
@@ -3200,9 +3974,19 @@ export function assertCreatorSessionBundle(value: CreatorSessionBundle): void {
           reference.outcome.artifact.hash === changeSet.hash,
       )
     )
-      throw new Error(
-        "Persisted CreatorChangeSet has no sealed AgentRun evidence link",
-      );
+      throw new Error("Persisted CreatorChangeSet has no sealed AgentRun evidence link");
+  for (const changeSet of value.changeSets) {
+    assertCreatorChangeSet(changeSet);
+    for (const sourceWrite of changeSet.sourceWriteBlobs) {
+      const artifact = sourceWriteByManifest.get(sourceWrite.manifestHash);
+      if (
+        artifact === undefined ||
+        artifact.manifest.id !== sourceWrite.manifestId ||
+        artifact.manifest.hash !== sourceWrite.manifestHash
+      )
+        throw new Error("Creator change set lost immutable source-write evidence");
+    }
+  }
 }
 
 export function assertCreatorRequestArtifact(
@@ -3231,12 +4015,8 @@ function mutationAttemptArtifactReferences(
     attempt.attestation.envelope.artifact,
     attempt.changeSet.artifact,
     attempt.projection.artifact,
-    attempt.beforeState.projection.artifact,
-    attempt.beforeState.envelope.artifact,
-    attempt.beforeState.revision.artifact,
-    ...(attempt.completion === "incomplete"
-      ? [attempt.preflightProjection.artifact]
-      : []),
+    ...creatorProjectIndexArtifactReferences(attempt.beforeIndexCapture),
+    ...(attempt.completion === "incomplete" ? [attempt.preflightProjection.artifact] : []),
     ...(attempt.preflight
       ? [attempt.preflight.projection.artifact, attempt.preflight.envelope.artifact]
       : []),
@@ -3245,29 +4025,21 @@ function mutationAttemptArtifactReferences(
     return attempt.phase === "apply"
       ? [
           ...common,
-          attempt.finalState.projection.artifact,
-          attempt.finalState.envelope.artifact,
-          attempt.finalState.revision.artifact,
+          ...creatorProjectIndexArtifactReferences(attempt.finalIndexCapture),
           attempt.finalization.artifact,
         ]
       : common;
   return [
     ...common,
     attempt.directReadback.artifact,
-    attempt.afterState.projection.artifact,
-    attempt.afterState.envelope.artifact,
-    attempt.afterState.revision.artifact,
-    attempt.finalState.projection.artifact,
-    attempt.finalState.envelope.artifact,
-    attempt.finalState.revision.artifact,
+    ...creatorProjectIndexArtifactReferences(attempt.afterIndexCapture),
+    ...creatorProjectIndexArtifactReferences(attempt.finalIndexCapture),
     attempt.reconciliation.artifact,
     attempt.finalization.artifact,
   ];
 }
 
-function creatorActiveMutationReferences(
-  active: CreatorActiveMutation,
-): ArtifactReference[] {
+function creatorActiveMutationReferences(active: CreatorActiveMutation): ArtifactReference[] {
   return [
     active.manifest.artifact,
     active.attestation.projection.artifact,
@@ -3276,30 +4048,18 @@ function creatorActiveMutationReferences(
     active.projection.artifact,
     active.preflight.projection.artifact,
     active.preflight.envelope.artifact,
-    active.beforeState.projection.artifact,
-    active.beforeState.envelope.artifact,
-    active.beforeState.revision.artifact,
+    ...creatorProjectIndexArtifactReferences(active.beforeIndexCapture),
     ...(active.directReadback ? [active.directReadback.artifact] : []),
-    ...(active.afterState
-      ? [
-          active.afterState.projection.artifact,
-          active.afterState.envelope.artifact,
-          active.afterState.revision.artifact,
-        ]
+    ...(active.afterIndexCapture
+      ? creatorProjectIndexArtifactReferences(active.afterIndexCapture)
       : []),
     ...(active.reconciliation ? [active.reconciliation.artifact] : []),
     ...(active.executionFailure ? [active.executionFailure.artifact] : []),
     ...(active.verificationPlan ? [active.verificationPlan.artifact] : []),
     ...(active.verificationDraft ? [active.verificationDraft.artifact] : []),
-    ...(active.recoveryFinalization
-      ? [active.recoveryFinalization.artifact]
-      : []),
-    ...(active.finalState
-      ? [
-          active.finalState.projection.artifact,
-          active.finalState.envelope.artifact,
-          active.finalState.revision.artifact,
-        ]
+    ...(active.recoveryFinalization ? [active.recoveryFinalization.artifact] : []),
+    ...(active.finalIndexCapture
+      ? creatorProjectIndexArtifactReferences(active.finalIndexCapture)
       : []),
   ];
 }
@@ -3311,31 +4071,31 @@ function assertCreatorActiveMutation(
   if (
     !isRecord(active) ||
     !isId(active.attemptId) ||
-    ![
-      "preflighted",
-      "recording_may_be_open",
-      "provisional",
-      "recovery_cancelled",
-    ].includes(
+    !["preflighted", "recording_may_be_open", "provisional", "recovery_cancelled"].includes(
       String(active.stage),
     ) ||
     !isId(active.changeSetId) ||
     !isHash(active.changeSetHash) ||
     !isId(active.projectionId) ||
     !isHash(active.projectionHash) ||
-    !isHash(active.beforeRevisionHash) ||
+    !isHash(active.beforeIndexRevisionHash) ||
+    !Number.isSafeInteger(active.beforeProjectDetectorEpoch) ||
+    Number(active.beforeProjectDetectorEpoch) < 0 ||
     (active.recordingId !== undefined && !isId(active.recordingId))
   )
     throw new Error("Invalid active creator mutation cursor");
   if (
     !bundle.changeSets.some(
-      (changeSet) =>
-        changeSet.id === active.changeSetId &&
-        changeSet.hash === active.changeSetHash,
+      (changeSet) => changeSet.id === active.changeSetId && changeSet.hash === active.changeSetHash,
     ) ||
-    active.projection.hash !== active.projectionHash
+    active.projection.hash !== active.projectionHash ||
+    !bundle.projectIndices.some(
+      (binding) =>
+        binding.captureHash === active.beforeIndexCapture.captureHash &&
+        binding.revision.hash === active.beforeIndexRevisionHash,
+    )
   )
-    throw new Error("Active creator mutation graph mismatch");
+    throw new Error("Active creator mutation must bind its before project-index capture");
   for (const reference of creatorActiveMutationReferences(active))
     assertArtifactReference(reference);
   for (const binding of [
@@ -3346,46 +4106,41 @@ function assertCreatorActiveMutation(
     active.projection,
     active.preflight.projection,
     active.preflight.envelope,
-    active.beforeState.projection,
-    active.beforeState.envelope,
-    active.beforeState.revision,
     active.directReadback,
-    active.afterState?.projection,
-    active.afterState?.envelope,
-    active.afterState?.revision,
     active.reconciliation,
     active.executionFailure,
     active.verificationPlan,
     active.verificationDraft,
     active.recoveryFinalization,
-    active.finalState?.projection,
-    active.finalState?.envelope,
-    active.finalState?.revision,
   ]) {
-    if (
-      binding !== undefined &&
-      (!isRecord(binding) || !isHash(binding.hash))
-    )
+    if (binding !== undefined && (!isRecord(binding) || !isHash(binding.hash)))
       throw new Error("Invalid active creator mutation artifact binding");
   }
   if (
     active.stage === "provisional" &&
     (!active.recordingId ||
       !active.directReadback ||
-      !active.afterState ||
+      !active.afterIndexCapture ||
+      !Number.isSafeInteger(active.afterProjectDetectorEpoch) ||
+      Number(active.afterProjectDetectorEpoch) < 0 ||
       !active.reconciliation)
   )
     throw new Error("Provisional creator mutation cursor is incomplete");
+  for (const capture of [active.afterIndexCapture, active.finalIndexCapture]) {
+    if (
+      capture !== undefined &&
+      !bundle.projectIndices.some((binding) => binding.captureHash === capture.captureHash)
+    )
+      throw new Error("Active creator mutation capture is absent from project-index history");
+  }
   if (
     active.stage === "recovery_cancelled" &&
-    (!active.recordingId || !active.recoveryFinalization || !active.finalState)
+    (!active.recordingId || !active.recoveryFinalization || !active.finalIndexCapture)
   )
     throw new Error("Recovery-cancelled creator mutation cursor is incomplete");
 }
 
-export function assertCreatorSession(
-  value: unknown,
-): asserts value is CreatorSession {
+export function assertCreatorSession(value: unknown): asserts value is CreatorSession {
   if (
     !isRecord(value) ||
     value.kind !== "CreatorSession" ||
@@ -3397,6 +4152,8 @@ export function assertCreatorSession(
     !isId(value.projectId) ||
     !isHash(value.initialRevisionHash) ||
     !isHash(value.currentRevisionHash) ||
+    !isHash(value.initialProjectCaptureHash) ||
+    !isHash(value.currentProjectCaptureHash) ||
     !isId(value.ownershipMapId) ||
     !isHash(value.ownershipMapHash) ||
     !Number.isInteger(value.repairsUsed) ||
@@ -3409,37 +4166,84 @@ export function assertCreatorSession(
     throw new Error("Invalid CreatorSession identity");
 }
 
-export function assertOwnershipMap(
-  value: unknown,
-): asserts value is StudioOwnershipMap {
+export function assertOwnershipMap(value: unknown): asserts value is StudioOwnershipMap {
   if (
     !isRecord(value) ||
     value.kind !== "StudioOwnershipMap" ||
     !isId(value.id) ||
     !isHash(value.hash) ||
     !isId(value.projectId) ||
-    !isHash(value.revisionHash) ||
-    value.policy !== "studio_single_writer_external_rojo_read_only" ||
-    !Array.isArray(value.entries)
+    !isHash(value.revisionHash)
   )
     throw new Error("Invalid StudioOwnershipMap");
+  const availableAuthorities = value.availableAuthorities;
+  if (
+    !Array.isArray(availableAuthorities) ||
+    !(
+      (availableAuthorities.length === 1 && availableAuthorities[0] === "studio_document") ||
+      (availableAuthorities.length === 2 &&
+        availableAuthorities[0] === "rojo_source" &&
+        availableAuthorities[1] === "studio_document")
+    ) ||
+    (value.authorityManifestHash !== undefined && !isHash(value.authorityManifestHash)) ||
+    (availableAuthorities.includes("rojo_source") && value.authorityManifestHash === undefined) ||
+    (!availableAuthorities.includes("rojo_source") && value.authorityManifestHash !== undefined) ||
+    value.policy !== "per_change_set_single_writer" ||
+    !Array.isArray(value.entries) ||
+    !value.entries.every((entry) => isOwnershipEntry(entry, availableAuthorities))
+  )
+    throw new Error("Invalid StudioOwnershipMap");
+  const entries = value.entries as StudioOwnershipMap["entries"];
+  if (
+    new Set(entries.map((entry) => entry.objectId)).size !== entries.length ||
+    entries.some((entry, index) => {
+      if (index === 0) return false;
+      const previous = entries[index - 1]!;
+      return (
+        previous.path.localeCompare(entry.path) > 0 ||
+        (previous.path === entry.path && previous.objectId.localeCompare(entry.objectId) >= 0)
+      );
+    })
+  )
+    throw new Error("Invalid StudioOwnershipMap canonical entries");
   const payload = {
     projectId: value.projectId,
     revisionHash: value.revisionHash,
-    entries: value.entries,
+    availableAuthorities,
+    ...(value.authorityManifestHash ? { authorityManifestHash: value.authorityManifestHash } : {}),
+    entries,
     policy: value.policy,
   };
   const hash = contentHash(stableJson(payload));
-  if (
-    value.hash !== hash ||
-    value.id !== `studio_ownership_map_${hash.slice(0, 24)}`
-  )
+  if (value.hash !== hash || value.id !== `studio_ownership_map_${hash.slice(0, 24)}`)
     throw new Error("Invalid StudioOwnershipMap identity");
 }
 
-export function assertCreatorPlan(
+function isProjectWriteAuthority(value: unknown): value is ProjectWriteAuthority {
+  return value === "studio_document" || value === "rojo_source";
+}
+
+function isOwnershipEntry(
   value: unknown,
-): asserts value is CreatorPlan {
+  availableAuthorities: readonly ProjectWriteAuthority[],
+): boolean {
+  if (
+    !isRecord(value) ||
+    stableJson(Object.keys(value).sort()) !==
+      stableJson(["className", "objectId", "owner", "path"]) ||
+    !isId(value.objectId) ||
+    typeof value.path !== "string" ||
+    canonicalStudioPath(value.path) !== value.path ||
+    typeof value.className !== "string" ||
+    value.className.trim().length === 0 ||
+    !isProjectWriteAuthority(value.owner) ||
+    !availableAuthorities.includes(value.owner)
+  )
+    return false;
+  return true;
+}
+
+export function assertCreatorPlan(value: unknown): asserts value is CreatorPlan {
   if (
     !isRecord(value) ||
     value.kind !== "CreatorPlan" ||
@@ -3448,9 +4252,14 @@ export function assertCreatorPlan(
     !isId(value.sessionId) ||
     !isHash(value.promptHash) ||
     !isHash(value.projectRevisionHash) ||
-    !isHash(value.projectStateHash) ||
+    !isHash(value.projectCaptureHash) ||
     !isId(value.ownershipMapId) ||
     !isHash(value.ownershipMapHash) ||
+    !isId(value.sourceIndexId) ||
+    !isHash(value.sourceIndexHash) ||
+    !isId(value.sourceConsultationId) ||
+    !isHash(value.sourceConsultationHash) ||
+    !isProjectWriteAuthority(value.mutationAuthority) ||
     typeof value.goal !== "string" ||
     value.goal.trim().length === 0 ||
     value.goal !== value.goal.trim() ||
@@ -3461,8 +4270,7 @@ export function assertCreatorPlan(
       (path) => typeof path === "string" && canonicalStudioPath(path) === path,
     ) ||
     new Set(value.inspectionPaths).size !== value.inspectionPaths.length ||
-    stableJson([...value.inspectionPaths].sort()) !==
-      stableJson(value.inspectionPaths) ||
+    stableJson([...value.inspectionPaths].sort()) !== stableJson(value.inspectionPaths) ||
     !Array.isArray(value.steps) ||
     value.steps.length > CREATOR_MAX_PLAN_STEPS ||
     !Array.isArray(value.changes) ||
@@ -3471,10 +4279,7 @@ export function assertCreatorPlan(
   )
     throw new Error("Invalid CreatorPlan");
   for (const change of value.changes) PLAN_CHANGE_SCHEMA.parse(change);
-  if (
-    new Set(value.changes.map((change) => change.id)).size !==
-    value.changes.length
-  )
+  if (new Set(value.changes.map((change) => change.id)).size !== value.changes.length)
     throw new Error("CreatorPlan change IDs must be unique");
   const steps = value.steps as unknown[];
   if (
@@ -3489,8 +4294,7 @@ export function assertCreatorPlan(
         step.changeIds.length === 0 ||
         !step.changeIds.every(isId),
     ) ||
-    new Set(steps.map((step) => String((step as Record<string, unknown>).id)))
-      .size !== steps.length
+    new Set(steps.map((step) => String((step as Record<string, unknown>).id))).size !== steps.length
   )
     throw new Error("CreatorPlan steps are invalid");
   assertStepChangeCoverage(
@@ -3512,11 +4316,8 @@ export function assertCreatorPlan(
     assertFinalCharterClause(clause as VerificationCharterClause);
   }
   if (
-    new Set(
-      (value.charter.clauses as VerificationCharterClause[]).map(
-        (clause) => clause.id,
-      ),
-    ).size !== value.charter.clauses.length
+    new Set((value.charter.clauses as VerificationCharterClause[]).map((clause) => clause.id))
+      .size !== value.charter.clauses.length
   )
     throw new Error("VerificationCharter clause IDs must be unique");
   assertPlanOutputCoverage(
@@ -3526,13 +4327,10 @@ export function assertCreatorPlan(
   if (
     (value.changes as CreatorPlanChange[]).some(sourceBearingPlanChange) &&
     !(value.charter.clauses as VerificationCharterClause[]).some(
-      (clause) =>
-        clause.kind === "local_check" && clause.check === "luau_syntax",
+      (clause) => clause.kind === "local_check" && clause.check === "luau_syntax",
     )
   )
-    throw new Error(
-      "Verification charter requires luau_syntax for source-bearing plan changes",
-    );
+    throw new Error("Verification charter requires luau_syntax for source-bearing plan changes");
   const {
     kind: _charterKind,
     id: _charterId,
@@ -3542,16 +4340,12 @@ export function assertCreatorPlan(
   const expectedCharterHash = contentHash(stableJson(charterPayload));
   if (
     value.charter.hash !== expectedCharterHash ||
-    value.charter.id !==
-      `verification_charter_${expectedCharterHash.slice(0, 24)}`
+    value.charter.id !== `verification_charter_${expectedCharterHash.slice(0, 24)}`
   )
     throw new Error("Invalid VerificationCharter identity");
   const { kind: _kind, id: _id, hash: _hash, ...payload } = value;
   const expected = contentHash(stableJson(payload));
-  if (
-    value.hash !== expected ||
-    value.id !== `creator_plan_${expected.slice(0, 24)}`
-  )
+  if (value.hash !== expected || value.id !== `creator_plan_${expected.slice(0, 24)}`)
     throw new Error("Invalid CreatorPlan identity");
 }
 
@@ -3589,7 +4383,11 @@ const PROPOSED_CLAUSE_SCHEMA = z.union([
     path: z.string().min(1),
     expectedClass: z.literal("BasePart"),
     sampleCount: z.number().int().min(2).max(CREATOR_SERIES_MAX_SAMPLES),
-    intervalMs: z.number().int().min(CREATOR_SERIES_MIN_INTERVAL_MS).max(CREATOR_SERIES_MAX_INTERVAL_MS),
+    intervalMs: z
+      .number()
+      .int()
+      .min(CREATOR_SERIES_MIN_INTERVAL_MS)
+      .max(CREATOR_SERIES_MAX_INTERVAL_MS),
     quantizationStuds: z.number().positive().max(10),
     minimumDistinctPositions: z.number().int().min(2).max(CREATOR_SERIES_MAX_SAMPLES),
   }),
@@ -3636,7 +4434,11 @@ const FINAL_CLAUSE_SCHEMA = z.union([
     path: z.string().min(1),
     expectedClass: z.literal("BasePart"),
     sampleCount: z.number().int().min(2).max(CREATOR_SERIES_MAX_SAMPLES),
-    intervalMs: z.number().int().min(CREATOR_SERIES_MIN_INTERVAL_MS).max(CREATOR_SERIES_MAX_INTERVAL_MS),
+    intervalMs: z
+      .number()
+      .int()
+      .min(CREATOR_SERIES_MIN_INTERVAL_MS)
+      .max(CREATOR_SERIES_MAX_INTERVAL_MS),
     quantizationStuds: z.number().positive().max(10),
     minimumDistinctPositions: z.number().int().min(2).max(CREATOR_SERIES_MAX_SAMPLES),
   }),
@@ -3663,11 +4465,89 @@ const FINAL_CLAUSE_SCHEMA = z.union([
     statement: z.string().min(1),
   }),
 ]);
+const STUDIO_OBJECT_IDENTITY_SCHEMA = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("forge_attribute"),
+      stableId: z.string().min(1).max(512),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("studio_ephemeral"),
+      connectorEpoch: z.string().min(1).max(512),
+      opaqueHash: z.string().regex(/^[0-9a-f]{64}$/),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("rojo_sourcemap"),
+      authorityMapHash: z.string().regex(/^[0-9a-f]{64}$/),
+      sourcemapHash: z.string().regex(/^[0-9a-f]{64}$/),
+      mappingId: z.string().min(1).max(512),
+    })
+    .strict(),
+]);
+const STUDIO_INSTANCE_TARGET_SCHEMA = z
+  .object({
+    kind: z.literal("instance"),
+    identity: STUDIO_OBJECT_IDENTITY_SCHEMA,
+    path: z.string().min(1),
+    className: z.string().min(1),
+  })
+  .strict();
+/** Keep the host's name acceptance exactly aligned with StudioAuthoring.validName. */
+function isStudioInstanceName(value: string): boolean {
+  return (
+    value.length > 0 &&
+    Buffer.byteLength(value, "utf8") <= 100 &&
+    !value.includes("/") &&
+    value !== "." &&
+    value !== ".."
+  );
+}
+const STUDIO_INSTANCE_NAME_SCHEMA = z
+  .string()
+  .refine(
+    isStudioInstanceName,
+    "Studio instance names must be non-empty UTF-8 strings of at most 100 bytes without slash or dot segments",
+  );
+/**
+ * A direct operation target is a writable capability, unlike an instance
+ * parent which is only a structural anchor. Keep those surfaces distinct even
+ * when a persisted change set is read without its plan/contract context.
+ */
+const STUDIO_WRITABLE_INSTANCE_TARGET_SCHEMA = STUDIO_INSTANCE_TARGET_SCHEMA.extend({
+  className: z.enum(STUDIO_WRITABLE_CLASSES),
+});
+const STUDIO_MUTATION_PARENT_SCHEMA = z.union([
+  STUDIO_INSTANCE_TARGET_SCHEMA,
+  z
+    .object({
+      kind: z.literal("engine_container"),
+      path: z.string().min(1),
+      className: z.string().min(1),
+    })
+    .strict(),
+]);
+const STUDIO_IDENTITY_ENROLLMENT_SCHEMA = z
+  .object({
+    identity: z
+      .object({
+        kind: z.literal("studio_ephemeral"),
+        connectorEpoch: z.string().min(1).max(512),
+        opaqueHash: z.string().regex(/^[0-9a-f]{64}$/),
+      })
+      .strict(),
+    stableId: z.string().min(1).max(512),
+  })
+  .strict();
 const PLAN_CHANGE_SCHEMA = z.union([
   z.object({
     id: z.string().min(1),
     kind: z.literal("create"),
     path: z.string().min(1),
+    parent: STUDIO_MUTATION_PARENT_SCHEMA,
     className: z.enum(STUDIO_SCRIPT_CLASSES),
     initialization: z.literal("inline_source_required"),
   }),
@@ -3675,32 +4555,34 @@ const PLAN_CHANGE_SCHEMA = z.union([
     id: z.string().min(1),
     kind: z.literal("create"),
     path: z.string().min(1),
+    parent: STUDIO_MUTATION_PARENT_SCHEMA,
     className: z.enum(STUDIO_NON_SCRIPT_WRITABLE_CLASSES),
     initialization: z.literal("initial_properties"),
   }),
   z.object({
     id: z.string().min(1),
     kind: z.literal("update"),
-    path: z.string().min(1),
+    target: STUDIO_WRITABLE_INSTANCE_TARGET_SCHEMA,
     expectedClass: z.enum(STUDIO_WRITABLE_CLASSES),
   }),
   z.object({
     id: z.string().min(1),
     kind: z.literal("move"),
-    fromPath: z.string().min(1),
+    target: STUDIO_WRITABLE_INSTANCE_TARGET_SCHEMA,
     toPath: z.string().min(1),
+    parent: STUDIO_MUTATION_PARENT_SCHEMA,
     expectedClass: z.enum(STUDIO_WRITABLE_CLASSES),
   }),
   z.object({
     id: z.string().min(1),
     kind: z.literal("delete"),
-    path: z.string().min(1),
+    target: STUDIO_WRITABLE_INSTANCE_TARGET_SCHEMA,
     expectedClass: z.enum(STUDIO_WRITABLE_CLASSES),
   }),
   z.object({
     id: z.string().min(1),
-    kind: z.literal("write_source"),
-    path: z.string().min(1),
+    kind: z.literal("edit_source"),
+    target: STUDIO_WRITABLE_INSTANCE_TARGET_SCHEMA,
     expectedClass: z.enum(["Script", "LocalScript", "ModuleScript"]),
   }),
 ]);
@@ -3724,27 +4606,35 @@ function boundedSourceSchema() {
   return z
     .string()
     .refine(
-      (source) => Buffer.byteLength(source, "utf8") <= 48_000,
-      "source exceeds the 48000-byte UTF-8 bound",
+      (source) =>
+        Buffer.byteLength(source, "utf8") <= STUDIO_CAPABILITY_MANIFEST.source.maximumUtf8Bytes,
+      "source text exceeds the declared source-blob resource bound",
     );
 }
+
+/**
+ * Exact host analogue of Generated.validateSource(source, true). Replacement
+ * leaves may be whitespace, but every complete script candidate must satisfy
+ * this rule before local eligibility or Prepare.
+ */
+function assertRequiredStudioSourceText(source: unknown): asserts source is string {
+  if (
+    typeof source !== "string" ||
+    Buffer.byteLength(source, "utf8") > STUDIO_CAPABILITY_MANIFEST.source.maximumUtf8Bytes ||
+    !/\S/u.test(source)
+  )
+    throw new Error("Required Studio source is outside the generated source contract");
+}
 const FINITE_NUMBER_SCHEMA = z.number().finite();
-const STUDIO_VALUE_SCHEMA: z.ZodType<StudioValue> = z.custom<StudioValue>(
-  (value) => {
-    try {
-      assertStudioValue(value);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-  "invalid canonical Studio value",
-);
-const PRIMITIVE_SCHEMA = z.union([
-  z.string().max(4096),
-  z.number().finite(),
-  z.boolean(),
-]);
+const STUDIO_VALUE_SCHEMA: z.ZodType<StudioValue> = z.custom<StudioValue>((value) => {
+  try {
+    assertStudioValue(value);
+    return true;
+  } catch {
+    return false;
+  }
+}, "invalid canonical Studio value");
+const PRIMITIVE_SCHEMA = z.union([z.string().max(4096), z.number().finite(), z.boolean()]);
 const NATURAL_VECTOR3_SCHEMA = z
   .object({
     x: FINITE_NUMBER_SCHEMA,
@@ -3773,9 +4663,7 @@ const NATURAL_CFRAME_SCHEMA = z
 const NATURAL_UDIM_SCHEMA = z
   .object({ scale: FINITE_NUMBER_SCHEMA, offset: z.number().int() })
   .strict();
-const NATURAL_UDIM2_SCHEMA = z
-  .object({ x: NATURAL_UDIM_SCHEMA, y: NATURAL_UDIM_SCHEMA })
-  .strict();
+const NATURAL_UDIM2_SCHEMA = z.object({ x: NATURAL_UDIM_SCHEMA, y: NATURAL_UDIM_SCHEMA }).strict();
 const NATURAL_RECT_SCHEMA = z
   .object({ min: NATURAL_VECTOR2_SCHEMA, max: NATURAL_VECTOR2_SCHEMA })
   .strict();
@@ -3801,11 +4689,7 @@ const NATURAL_NUMBER_SEQUENCE_SCHEMA = z
 const NATURAL_COLOR_SEQUENCE_SCHEMA = z
   .object({
     keypoints: z
-      .array(
-        z
-          .object({ time: FINITE_NUMBER_SCHEMA, color: NATURAL_COLOR3_SCHEMA })
-          .strict(),
-      )
+      .array(z.object({ time: FINITE_NUMBER_SCHEMA, color: NATURAL_COLOR3_SCHEMA }).strict())
       .min(2)
       .max(64),
   })
@@ -3827,9 +4711,7 @@ const NATURAL_PHYSICAL_PROPERTIES_SCHEMA = z
     elasticityWeight: FINITE_NUMBER_SCHEMA,
   })
   .strict();
-const NATURAL_AXES_SCHEMA = z
-  .object({ x: z.boolean(), y: z.boolean(), z: z.boolean() })
-  .strict();
+const NATURAL_AXES_SCHEMA = z.object({ x: z.boolean(), y: z.boolean(), z: z.boolean() }).strict();
 const NATURAL_FACES_SCHEMA = z
   .object({
     top: z.boolean(),
@@ -3845,7 +4727,7 @@ const NATURAL_RAY_SCHEMA = z
   .strict();
 const NATURAL_INSTANCE_REFERENCE_SCHEMA = z
   .object({
-    stableId: z.string().min(1),
+    identity: STUDIO_OBJECT_IDENTITY_SCHEMA,
     path: z.string().min(1),
     className: z.string().min(1),
   })
@@ -3873,26 +4755,38 @@ const CREATOR_PROPERTY_INPUT_SCHEMA: z.ZodType<CreatorPropertyInput> = z.union([
   NATURAL_RAY_SCHEMA,
   NATURAL_INSTANCE_REFERENCE_SCHEMA,
 ]);
+const CREATOR_SOURCE_WRITE_BLOB_BINDING_SCHEMA: z.ZodType<CreatorSourceWriteBlobBinding> = z
+  .object({
+    manifestId: z.string().min(1),
+    manifestHash: z.string().regex(/^[0-9a-f]{64}$/),
+    sourceHash: z.string().regex(/^[0-9a-f]{64}$/),
+    utf8Bytes: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(CREATOR_DEFAULT_RESOURCE_POLICY.maximumSourceBlobBytes),
+  })
+  .strict();
 const CHANGE_OPERATION_SCHEMA = z.discriminatedUnion("kind", [
   z.object({
     id: z.string().min(1),
     planChangeId: z.string().min(1),
     kind: z.literal("create"),
     tempId: z.string().min(1),
-    parentPath: z.string().min(1),
+    target: STUDIO_WRITABLE_INSTANCE_TARGET_SCHEMA,
+    parent: STUDIO_MUTATION_PARENT_SCHEMA,
     className: z.enum(STUDIO_WRITABLE_CLASSES),
-    name: z.string().min(1).max(100),
+    name: STUDIO_INSTANCE_NAME_SCHEMA,
     properties: z.record(z.string(), STUDIO_VALUE_SCHEMA),
     attributes: z.record(z.string(), PRIMITIVE_SCHEMA),
-    source: boundedSourceSchema().optional(),
+    sourceBlob: CREATOR_SOURCE_WRITE_BLOB_BINDING_SCHEMA.optional(),
   }),
   z.object({
     id: z.string().min(1),
     planChangeId: z.string().min(1),
     kind: z.literal("update"),
-    stableId: z.string().min(1),
-    expectedPath: z.string().min(1),
-    expectedClass: z.enum(STUDIO_WRITABLE_CLASSES),
+    target: STUDIO_WRITABLE_INSTANCE_TARGET_SCHEMA,
+    enrollment: STUDIO_IDENTITY_ENROLLMENT_SCHEMA.optional(),
     beforeHash: z.string().regex(/^[0-9a-f]{64}$/),
     properties: z.record(z.string(), STUDIO_VALUE_SCHEMA),
     attributes: z.record(z.string(), PRIMITIVE_SCHEMA),
@@ -3902,12 +4796,11 @@ const CHANGE_OPERATION_SCHEMA = z.discriminatedUnion("kind", [
     id: z.string().min(1),
     planChangeId: z.string().min(1),
     kind: z.literal("move"),
-    stableId: z.string().min(1),
-    expectedPath: z.string().min(1),
-    expectedClass: z.enum(STUDIO_WRITABLE_CLASSES),
+    target: STUDIO_WRITABLE_INSTANCE_TARGET_SCHEMA,
+    enrollment: STUDIO_IDENTITY_ENROLLMENT_SCHEMA.optional(),
     beforeHash: z.string().regex(/^[0-9a-f]{64}$/),
-    parentPath: z.string().min(1),
-    name: z.string().min(1).max(100),
+    parent: STUDIO_MUTATION_PARENT_SCHEMA,
+    name: STUDIO_INSTANCE_NAME_SCHEMA,
     properties: z.record(z.string(), STUDIO_VALUE_SCHEMA),
     attributes: z.record(z.string(), PRIMITIVE_SCHEMA),
     removedAttributes: z.array(z.string().min(1)).max(64),
@@ -3916,22 +4809,29 @@ const CHANGE_OPERATION_SCHEMA = z.discriminatedUnion("kind", [
     id: z.string().min(1),
     planChangeId: z.string().min(1),
     kind: z.literal("delete"),
-    stableId: z.string().min(1),
-    expectedPath: z.string().min(1),
-    expectedClass: z.enum(STUDIO_WRITABLE_CLASSES),
+    target: STUDIO_WRITABLE_INSTANCE_TARGET_SCHEMA,
+    enrollment: STUDIO_IDENTITY_ENROLLMENT_SCHEMA.optional(),
     beforeHash: z.string().regex(/^[0-9a-f]{64}$/),
   }),
   z.object({
     id: z.string().min(1),
     planChangeId: z.string().min(1),
-    kind: z.literal("write_source"),
-    stableId: z.string().min(1),
-    expectedPath: z.string().min(1),
-    expectedClass: z.enum(["Script", "LocalScript", "ModuleScript"]),
+    kind: z.literal("edit_source"),
+    target: STUDIO_WRITABLE_INSTANCE_TARGET_SCHEMA,
+    enrollment: STUDIO_IDENTITY_ENROLLMENT_SCHEMA.optional(),
     beforeSourceHash: z.string().regex(/^[0-9a-f]{64}$/),
-    source: boundedSourceSchema(),
-    attributes: z.record(z.string(), PRIMITIVE_SCHEMA),
-    removedAttributes: z.array(z.string().min(1)).max(64),
+    edits: z
+      .array(
+        z.object({
+          startByte: z.number().int().nonnegative(),
+          endByte: z.number().int().nonnegative(),
+          replacementBlob: CREATOR_SOURCE_WRITE_BLOB_BINDING_SCHEMA,
+        }),
+      )
+      .min(1)
+      .max(1_024),
+    finalSourceHash: z.string().regex(/^[0-9a-f]{64}$/),
+    finalByteCount: z.number().int().nonnegative(),
   }),
 ]);
 const STAGE_PAYLOAD_SCHEMA = z
@@ -3941,6 +4841,17 @@ const STAGE_PAYLOAD_SCHEMA = z
     attributes: z.record(z.string(), PRIMITIVE_SCHEMA).optional(),
     removedAttributes: z.array(z.string().min(1)).max(64).optional(),
     source: boundedSourceSchema().optional(),
+    sourceEdits: z
+      .array(
+        z.object({
+          startByte: z.number().int().nonnegative(),
+          endByte: z.number().int().nonnegative(),
+          replacement: boundedSourceSchema(),
+        }),
+      )
+      .min(1)
+      .max(1_024)
+      .optional(),
   })
   .strict();
 const ROBLOX_API_LOOKUP_SHAPE = {
@@ -3957,26 +4868,37 @@ const BUILDER_DEFINITIONS: AgentToolDefinition[] = [
   definition(
     "studio.inspect",
     "Inspect only explicit initial-snapshot paths listed in the immutable CreatorBuildContract. Source bodies are not returned.",
-    { paths: z.array(z.string().min(1)).min(1).max(CREATOR_MAX_INSPECTION_PATHS) },
+    {
+      paths: z.array(z.string().min(1)).min(1).max(CREATOR_MAX_INSPECTION_PATHS),
+    },
   ),
   definition(
-    "studio.read_source",
-    "Read the bounded current source body only for an existing script whose approved build-contract change is write_source. The exact source hash and UTF-8 byte count are returned with the body.",
-    { path: z.string().min(1) },
+    "source.read",
+    "Read a UTF-8-safe page from any source document in the exact creator-approved consultation/dependency closure. Reading outside that closure fails and requires a new plan.",
+    {
+      documentId: z.string().min(1).max(256),
+      maximumUtf8Bytes: z
+        .number()
+        .int()
+        .min(1)
+        .max(32 * 1024)
+        .optional(),
+      cursor: z.string().min(1).optional(),
+    },
   ),
   definition(
     "studio.stage",
-    "Stage exactly one approved change. Supply only planChangeId and its creative payload. Property JSON is natural and untagged; the sealed property policy names the required codec. Scalars use booleans, finite numbers, or strings. Compound shapes are Vector2 {x,y}, Vector3 {x,y,z}, Color3 {r,g,b} in 0..1, CFrame {position:{x,y,z},rotation:{x,y,z}} in Euler degrees, UDim {scale,offset}, UDim2 {x:{scale,offset},y:{scale,offset}}, Rect {min:{x,y},max:{x,y}}, NumberRange {min,max}, sequences {keypoints:[...]}, BrickColor {name}, Font {family,weight,style}, PhysicalProperties, Axes, Faces, Ray {origin,direction}, or stable instance reference {stableId,path,className}. Never send type/value wrappers. Attributes are primitive where permitted; source is required only where the contract says so. Forge derives structural fields and converts properties to the trusted Studio representation. This never mutates the live place.",
+    "Stage the current proposal for one approved change. Supply only planChangeId and its creative payload. A later valid call for the same planChangeId atomically replaces the earlier staged proposal so verifier feedback can be repaired; a rejected replacement leaves the earlier proposal intact. Property JSON is natural and untagged; the sealed property policy names the required codec. Scalars use booleans, finite numbers, or strings. Compound shapes are Vector2 {x,y}, Vector3 {x,y,z}, Color3 {r,g,b} in 0..1, CFrame {position:{x,y,z},rotation:{x,y,z}} in Euler degrees, UDim {scale,offset}, UDim2 {x:{scale,offset},y:{scale,offset}}, Rect {min:{x,y},max:{x,y}}, NumberRange {min,max}, sequences {keypoints:[...]}, BrickColor {name}, Font {family,weight,style}, PhysicalProperties, Axes, Faces, Ray {origin,direction}, or stable instance reference {stableId,path,className}. Never send type/value wrappers. Attributes are primitive where permitted; source is required only where the contract says so. Forge derives structural fields and converts properties to the trusted Studio representation. This never mutates the live place.",
     { change: STAGE_PAYLOAD_SCHEMA },
   ),
   definition(
     "studio.diff",
-    "Inspect hashes and summaries of the complete staged Studio change set.",
+    "Inspect plan-change bindings, hashes, source hashes and byte counts, and summaries of the complete current staged Studio change set.",
     {},
   ),
   definition(
     "forge.verify",
-    "Run bounded local validation of every staged Luau source. The live place is not mutated.",
+    "Run bounded local validation of every staged Luau source in the exact approved Studio hierarchy. Diagnostics identify the plan change, logical Studio path, range, and bounded message needed for repair. The live place is not mutated.",
     {},
   ),
 ];
@@ -4027,9 +4949,7 @@ function runtimeFinalization(
     failureStage: "runtime",
     failureCode:
       result.failureCode ??
-      (result.status === "budget_exhausted"
-        ? "RUNTIME_BUDGET_EXHAUSTED"
-        : "RUNTIME_FAILED"),
+      (result.status === "budget_exhausted" ? "RUNTIME_BUDGET_EXHAUSTED" : "RUNTIME_FAILED"),
     detail:
       result.error ??
       `Creator ${intendedArtifactKind === "plan" ? "planner" : "builder"} did not complete`,
@@ -4042,10 +4962,7 @@ function bounded(value: unknown): ToolResult {
   const bytes = Buffer.byteLength(serialized, "utf8");
   return {
     ok: true,
-    value:
-      bytes > limit
-        ? { truncated: true, preview: serialized.slice(0, limit) }
-        : value,
+    value: bytes > limit ? { truncated: true, preview: serialized.slice(0, limit) } : value,
     truncated: bytes > limit,
     resultHash: contentHash(serialized),
     bytes: Math.min(bytes, limit),
@@ -4074,63 +4991,241 @@ function cloneOperation<T extends StudioChangeOperation>(operation: T): T {
   return structuredClone(operation);
 }
 function operationSummary(operation: StudioChangeOperation): string {
-  if (operation.kind === "create")
-    return `Create ${operation.className} ${operation.parentPath}/${operation.name}`;
-  if (operation.kind === "write_source")
-    return `Replace source for ${operation.expectedPath}`;
+  if (operation.kind === "create") return `Create ${operation.className} ${operation.target.path}`;
+  if (operation.kind === "edit_source") return `Edit source for ${operation.target.path}`;
   if (operation.kind === "move")
-    return `Move ${operation.expectedPath} to ${operation.parentPath}/${operation.name}`;
-  return `${operation.kind === "delete" ? "Delete" : "Update"} ${operation.expectedPath}`;
+    return `Move ${operation.target.path} to ${operation.parent.path}/${operation.name}`;
+  return `${operation.kind === "delete" ? "Delete" : "Update"} ${operation.target.path}`;
 }
+
+function creatorLuauAnalysisTopology(
+  observation: CreatorProjectIndexView,
+  operations: readonly StudioChangeOperation[],
+): StudioLuauAnalysisNode[] {
+  const classes = new Map<string, string>(
+    STUDIO_AUTHORING_CONTAINERS.map((entry) => [entry.path, entry.className]),
+  );
+  for (const instance of observation.instances) classes.set(instance.path, instance.className);
+  for (const script of observation.scripts)
+    if (!classes.has(script.path))
+      classes.set(
+        script.path,
+        script.executionContext === "server"
+          ? "Script"
+          : script.executionContext === "client"
+            ? "LocalScript"
+            : "ModuleScript",
+      );
+
+  for (const operation of operations) {
+    if (operation.kind === "delete") {
+      removeStudioTopologySubtree(classes, operation.target.path);
+      continue;
+    }
+    if (operation.kind === "move") {
+      const destination = `${operation.parent.path}/${operation.name}`;
+      const moved = [...classes]
+        .filter(
+          ([path]) =>
+            path === operation.target.path || path.startsWith(`${operation.target.path}/`),
+        )
+        .sort(([left], [right]) => pathDepth(left) - pathDepth(right));
+      removeStudioTopologySubtree(classes, operation.target.path);
+      if (moved.length === 0) classes.set(destination, operation.target.className);
+      else
+        for (const [path, className] of moved)
+          classes.set(`${destination}${path.slice(operation.target.path.length)}`, className);
+      continue;
+    }
+    if (operation.kind === "create") {
+      classes.set(operation.target.path, operation.className);
+      continue;
+    }
+    classes.set(operation.target.path, operation.target.className);
+  }
+  return [...classes]
+    .map(([studioPath, className]) => ({ studioPath, className }))
+    .sort(
+      (left, right) =>
+        pathDepth(left.studioPath) - pathDepth(right.studioPath) ||
+        left.studioPath.localeCompare(right.studioPath),
+    );
+}
+
+/**
+ * Materialize unchanged, evidence-bound scripts only inside the host's
+ * temporary analyzer project. They are never returned by model-facing tools,
+ * but their exact source lets luau-lsp resolve requires in staged candidates.
+ */
+function creatorLuauAnalysisDependencies(
+  observation: CreatorProjectIndexView,
+  sourceIndex: StudioSourceIndex,
+  sourceResolver: VerifiedSourceResolver,
+  operations: readonly StudioChangeOperation[],
+  stagedSources: readonly StudioLuauAnalysisSource[],
+): StudioLuauAnalysisSource[] {
+  const scripts = new Map<
+    string,
+    {
+      id: string;
+      studioPath: string;
+      className: "Script" | "LocalScript" | "ModuleScript";
+      source: string;
+    }
+  >();
+  for (const script of observation.scripts) {
+    const sourceDocument = sourceIndex.documents.find(
+      (document) => document.documentId === script.documentId,
+    );
+    if (!sourceDocument || sourceDocument.sourceHash !== script.sourceHash)
+      throw new Error(`Complete Studio analysis source is unavailable at ${script.path}`);
+    const source = sourceResolver.read(sourceDocument);
+    if (contentHash(source) !== script.sourceHash)
+      throw new Error(`Studio analysis source hash does not match at ${script.path}`);
+    scripts.set(script.path, {
+      id: `studio_dependency_${script.documentId}`,
+      studioPath: script.path,
+      className:
+        script.executionContext === "server"
+          ? "Script"
+          : script.executionContext === "client"
+            ? "LocalScript"
+            : "ModuleScript",
+      source,
+    });
+  }
+
+  for (const operation of operations) {
+    if (operation.kind === "delete") {
+      for (const path of scripts.keys())
+        if (path === operation.target.path || path.startsWith(`${operation.target.path}/`))
+          scripts.delete(path);
+      continue;
+    }
+    if (operation.kind === "move") {
+      const destination = `${operation.parent.path}/${operation.name}`;
+      const moved = [...scripts.entries()].filter(
+        ([path]) => path === operation.target.path || path.startsWith(`${operation.target.path}/`),
+      );
+      for (const [path] of moved) scripts.delete(path);
+      for (const [path, source] of moved) {
+        const studioPath = `${destination}${path.slice(operation.target.path.length)}`;
+        scripts.set(studioPath, { ...source, studioPath });
+      }
+      continue;
+    }
+    if (operation.kind === "edit_source") scripts.delete(operation.target.path);
+  }
+
+  for (const staged of stagedSources) scripts.delete(staged.studioPath);
+  return [...scripts.values()].sort(
+    (left, right) =>
+      left.studioPath.localeCompare(right.studioPath) || left.id.localeCompare(right.id),
+  );
+}
+
+function removeStudioTopologySubtree(classes: Map<string, string>, root: string): void {
+  for (const path of classes.keys())
+    if (path === root || path.startsWith(`${root}/`)) classes.delete(path);
+}
+
+function creatorVerificationDiagnostic(
+  issue: VerificationIssue,
+  sources: readonly (StudioLuauAnalysisSource & {
+    planChangeId: string;
+    operationId: string;
+  })[],
+): unknown {
+  const source = issue.path ? sources.find((entry) => entry.studioPath === issue.path) : undefined;
+  return {
+    id: issue.id,
+    ruleId: issue.ruleId,
+    severity: issue.severity,
+    category: issue.category,
+    message: boundedDiagnosticMessage(issue.message),
+    ...(issue.path ? { path: issue.path } : {}),
+    ...(source
+      ? {
+          planChangeId: source.planChangeId,
+          operationId: source.operationId,
+        }
+      : {}),
+    ...(issue.location
+      ? {
+          location: {
+            line: issue.location.line,
+            column: issue.location.column,
+            ...(issue.location.endLine !== undefined ? { endLine: issue.location.endLine } : {}),
+            ...(issue.location.endColumn !== undefined
+              ? { endColumn: issue.location.endColumn }
+              : {}),
+          },
+        }
+      : {}),
+    ...(issue.remediation
+      ? {
+          remediation: {
+            kind: issue.remediation.kind,
+            steps: issue.remediation.steps.slice(0, 3).map(boundedDiagnosticMessage),
+          },
+        }
+      : {}),
+  };
+}
+
+function boundedDiagnosticMessage(value: string): string {
+  const maximumCharacters = 1_024;
+  return value.length <= maximumCharacters ? value : `${value.slice(0, maximumCharacters - 1)}…`;
+}
+
+function pathDepth(value: string): number {
+  return value.split("/").length;
+}
+
 function canonicalStudioPath(value: string): string {
   if (
     value.length === 0 ||
     value.includes("\\") ||
     value.startsWith("/") ||
     value.endsWith("/") ||
-    value
-      .split("/")
-      .some(
-        (segment) =>
-          segment.length === 0 || segment === "." || segment === "..",
-      )
+    value.split("/").some((segment) => segment.length === 0 || segment === "." || segment === "..")
   )
     throw new Error(`Invalid Studio path ${value}`);
   return value;
 }
 function pathParent(path: string): string {
   const index = path.lastIndexOf("/");
-  if (index < 1)
-    throw new Error(`Studio change path requires a parent: ${path}`);
+  if (index < 1) throw new Error(`Studio change path requires a parent: ${path}`);
   return path.slice(0, index);
+}
+function pathName(path: string): string {
+  const index = path.lastIndexOf("/");
+  if (index < 0 || index === path.length - 1)
+    throw new Error(`Studio change path requires a child name: ${path}`);
+  return path.slice(index + 1);
 }
 function changeInputPath(change: CreatorPlanChange): string | undefined {
   return change.kind === "move"
-    ? change.fromPath
+    ? change.target.path
     : change.kind === "create"
       ? undefined
-      : change.path;
+      : change.target.path;
 }
 function changeOutputPath(change: CreatorPlanChange): string | undefined {
   return change.kind === "move"
     ? change.toPath
     : change.kind === "delete"
       ? undefined
-      : change.path;
+      : change.kind === "create"
+        ? change.path
+        : change.target.path;
 }
-function planChangeTouchesPath(
-  change: CreatorPlanChange,
-  root: string,
-): boolean {
+function planChangeTouchesPath(change: CreatorPlanChange, root: string): boolean {
   return [changeInputPath(change), changeOutputPath(change)].some(
-    (path) =>
-      path !== undefined && (path === root || path.startsWith(`${root}/`)),
+    (path) => path !== undefined && (path === root || path.startsWith(`${root}/`)),
   );
 }
-function classMatches(
-  actual: string,
-  expected: StudioResolvableClass,
-): boolean {
+function classMatches(actual: string, expected: StudioResolvableClass): boolean {
   return (
     actual === expected ||
     (expected === "BasePart" &&
@@ -4150,90 +5245,210 @@ function classMatches(
 function resultingClassAt(
   path: string,
   changes: CreatorPlanChange[],
-  observation: StudioProjectState,
+  observation: CreatorProjectIndexView,
 ): string | undefined {
   for (const change of changes) {
-    if (change.kind === "create" && change.path === path)
-      return change.className;
-    if (change.kind === "move" && change.toPath === path)
-      return change.expectedClass;
+    if (change.kind === "create" && change.path === path) return change.className;
+    if (change.kind === "move" && change.toPath === path) return change.expectedClass;
     if (
-      (change.kind === "delete" && change.path === path) ||
-      (change.kind === "move" && change.fromPath === path)
+      (change.kind === "delete" && change.target.path === path) ||
+      (change.kind === "move" && change.target.path === path)
     )
       return undefined;
   }
   return observation.instances.find((entry) => entry.path === path)?.className;
 }
+function derivePlanMutationAuthority(
+  changes: readonly CreatorPlanChange[],
+  observation: CreatorProjectIndexView,
+  ownership: StudioOwnershipMap,
+): ProjectWriteAuthority {
+  const authorities = changes.map((change) => planChangeAuthority(change, observation, ownership));
+  const selected = [...new Set(authorities)];
+  if (selected.length !== 1)
+    throw new Error("Mixed creator-plan authority is rejected before approval");
+  const authority = selected[0];
+  if (!authority || !ownership.availableAuthorities.includes(authority))
+    throw new Error("Creator plan selected an unavailable writer authority");
+  return authority;
+}
+
+function planChangeAuthority(
+  change: CreatorPlanChange,
+  observation: CreatorProjectIndexView,
+  ownership: StudioOwnershipMap,
+): ProjectWriteAuthority {
+  if (change.kind === "create") {
+    const requestedParent = change.parent;
+    const parent =
+      requestedParent.kind === "instance"
+        ? observation.instances.find(
+            (entry) =>
+              entry.objectId === studioObjectIdentityKey(requestedParent.identity) &&
+              entry.path === requestedParent.path &&
+              entry.className === requestedParent.className,
+          )
+        : undefined;
+    const parentOwnership =
+      parent && ownership.entries.find((entry) => entry.objectId === parent.objectId);
+    return isScriptClass(change.className) && parentOwnership?.owner === "rojo_source"
+      ? "rojo_source"
+      : "studio_document";
+  }
+  const target = observation.instances.find(
+    (entry) =>
+      entry.objectId === studioObjectIdentityKey(change.target.identity) &&
+      entry.path === change.target.path &&
+      entry.className === change.target.className,
+  );
+  const targetOwnership =
+    target && ownership.entries.find((entry) => entry.objectId === target.objectId);
+  if (!target || !targetOwnership)
+    throw new Error("Creator plan target is absent from the exact ownership map");
+  return targetOwnership.owner;
+}
+
 function assertCreatorPlanChange(
   change: CreatorPlanChange,
   changes: CreatorPlanChange[],
-  observation: StudioProjectState,
+  observation: CreatorProjectIndexView,
   ownership: StudioOwnershipMap,
+  mutationAuthority: ProjectWriteAuthority,
 ): void {
   PLAN_CHANGE_SCHEMA.parse(change);
+  if (mutationAuthority === "rojo_source") {
+    assertRojoSourcePlanChange(change, changes, observation, ownership);
+    return;
+  }
   if (change.kind === "create") {
     const path = canonicalStudioPath(change.path);
-    assertWritableParent(pathParent(path), observation, ownership);
-    if (observation.instances.some((entry) => entry.path === path))
+    const parentPath = pathParent(path);
+    const parent = assertExactPlanParent(change.parent, parentPath, observation);
+    assertStudioStructuralParent(change.parent, parent, ownership, {
+      operationId: change.id,
+      operationKind: change.kind,
+      targetPath: path,
+    });
+    if (hasIndexedChildNameCollision(observation, parent, pathName(path)))
       throw new Error(`Planned create target already exists: ${path}`);
     return;
   }
-  const sourcePath = canonicalStudioPath(
-    change.kind === "move" ? change.fromPath : change.path,
-  );
+  const sourcePath = canonicalStudioPath(change.target.path);
   if (
-    change.kind === "write_source" &&
+    change.kind === "edit_source" &&
     changes.some(
       (candidate) =>
-        candidate.kind === "create" &&
-        canonicalStudioPath(candidate.path) === sourcePath,
+        candidate.kind === "create" && canonicalStudioPath(candidate.path) === sourcePath,
     )
   )
     throw new Error(
-      `Planned source target is a newly created script: ${sourcePath}. New scripts must be authored by their corresponding create operation with initialization inline_source_required; write_source is only for scripts from the initial snapshot.`,
+      `Planned source target is a newly created script: ${sourcePath}. New scripts must be authored by their corresponding create operation with initialization inline_source_required; edit_source is only for scripts from the initial project index.`,
     );
   const observed = observation.instances.find(
-    (entry) => entry.path === sourcePath,
+    (entry) =>
+      entry.objectId === studioObjectIdentityKey(change.target.identity) &&
+      entry.path === sourcePath &&
+      entry.className === change.target.className,
   );
   const authority =
-    observed &&
-    ownership.entries.find((entry) => entry.stableId === observed.stableId);
+    observed && ownership.entries.find((entry) => entry.objectId === observed.objectId);
   if (
     !observed ||
     observed.className !== change.expectedClass ||
-    authority?.owner !== "studio" ||
-    !authority.writable
+    authority?.owner !== "studio_document"
   )
     throw new Error(
-      `Planned ${change.kind} target is absent, class-mismatched, or not Studio-writable: ${sourcePath}`,
+      `Planned ${change.kind} target is absent, class-mismatched, or not Studio-document-owned: ${sourcePath}`,
     );
   if (change.kind === "move") {
     const destination = canonicalStudioPath(change.toPath);
-    if (
-      destination === sourcePath ||
-      observation.instances.some((entry) => entry.path === destination)
-    )
-      throw new Error(
-        `Planned move destination is invalid or occupied: ${destination}`,
-      );
-    assertWritableParent(pathParent(destination), observation, ownership);
+    if (destination === sourcePath)
+      throw new Error(`Planned move destination is invalid or occupied: ${destination}`);
+    const parent = assertExactPlanParent(change.parent, pathParent(destination), observation);
+    if (hasIndexedChildNameCollision(observation, parent, pathName(destination), observed.objectId))
+      throw new Error(`Planned move destination is invalid or occupied: ${destination}`);
+    assertStudioStructuralParent(change.parent, parent, ownership, {
+      operationId: change.id,
+      operationKind: change.kind,
+      targetPath: destination,
+    });
   }
   if (
-    change.kind === "write_source" &&
+    change.kind === "edit_source" &&
     !observation.scripts.some(
-      (script) =>
-        script.stableId === observed.stableId && script.path === sourcePath,
+      (script) => script.documentId === observed.objectId && script.path === sourcePath,
+    )
+  )
+    throw new Error(`Planned source target has no observed script source: ${sourcePath}`);
+}
+
+/**
+ * A Rojo project has one filesystem writer. Its Creator plan remains typed,
+ * but only an existing source replacement or a new standalone Luau source
+ * file can cross this boundary. Properties, topology edits, and deletes have
+ * no implicit Studio fallback.
+ */
+function assertRojoSourcePlanChange(
+  change: CreatorPlanChange,
+  changes: CreatorPlanChange[],
+  observation: CreatorProjectIndexView,
+  ownership: StudioOwnershipMap,
+): void {
+  if (change.kind === "create") {
+    if (!isScriptClass(change.className) || change.initialization !== "inline_source_required")
+      throw new Error("Rojo source authority permits only new scripts with inline source");
+    const path = canonicalStudioPath(change.path);
+    const parent = pathParent(path);
+    const parentInstance = assertExactPlanParent(change.parent, parent, observation);
+    if (hasIndexedChildNameCollision(observation, parentInstance, pathName(path)))
+      throw new Error(`Planned Rojo source creation target already exists: ${path}`);
+    const parentAuthority =
+      parentInstance &&
+      ownership.entries.find((entry) => entry.objectId === parentInstance.objectId);
+    if (!parentInstance || parentAuthority?.owner !== "rojo_source")
+      throw new Error(
+        `Planned Rojo source creation parent is absent or outside source authority: ${parent}`,
+      );
+    return;
+  }
+  if (change.kind !== "edit_source")
+    throw new Error(
+      "Rojo source authority permits only edit_source and source-script create changes",
+    );
+  const sourcePath = canonicalStudioPath(change.target.path);
+  if (
+    changes.some(
+      (candidate) =>
+        candidate.kind === "create" && canonicalStudioPath(candidate.path) === sourcePath,
     )
   )
     throw new Error(
-      `Planned source target has no observed script source: ${sourcePath}`,
+      "Planned Rojo source edit cannot target a script created in the same change set",
     );
+  const observed = observation.instances.find(
+    (entry) =>
+      entry.objectId === studioObjectIdentityKey(change.target.identity) &&
+      entry.path === sourcePath &&
+      entry.className === change.target.className,
+  );
+  const authority =
+    observed && ownership.entries.find((entry) => entry.objectId === observed.objectId);
+  if (
+    !observed ||
+    observed.className !== change.expectedClass ||
+    authority?.owner !== "rojo_source"
+  )
+    throw new Error(
+      `Planned Rojo source target is absent, class-mismatched, or outside source authority: ${sourcePath}`,
+    );
+  if (
+    !observation.scripts.some(
+      (script) => script.documentId === observed.objectId && script.path === sourcePath,
+    )
+  )
+    throw new Error(`Planned Rojo source target has no observed script source: ${sourcePath}`);
 }
-function assertStepChangeCoverage(
-  steps: CreatorPlan["steps"],
-  changeIds: string[],
-): void {
+function assertStepChangeCoverage(steps: CreatorPlan["steps"], changeIds: string[]): void {
   const bound = steps.flatMap((step) => step.changeIds);
   if (
     new Set(bound).size !== bound.length ||
@@ -4243,8 +5458,7 @@ function assertStepChangeCoverage(
 }
 function sourceBearingPlanChange(change: CreatorPlanChange): boolean {
   return (
-    change.kind === "write_source" ||
-    (change.kind === "create" && isScriptClass(change.className))
+    change.kind === "edit_source" || (change.kind === "create" && isScriptClass(change.className))
   );
 }
 function assertPlanOutputCoverage(
@@ -4254,8 +5468,7 @@ function assertPlanOutputCoverage(
   for (const change of changes) {
     if (change.kind !== "create" && change.kind !== "move") continue;
     const path = change.kind === "create" ? change.path : change.toPath;
-    const expectedClass =
-      change.kind === "create" ? change.className : change.expectedClass;
+    const expectedClass = change.kind === "create" ? change.className : change.expectedClass;
     if (
       !clauses.some(
         (clause) =>
@@ -4274,36 +5487,21 @@ function assertCreatorRuntimeObservationWindow(
   clauses: readonly VerificationCharterProposalClause[],
 ): void {
   const series = clauses.filter(
-    (
-      clause,
-    ): clause is Extract<
-      VerificationCharterProposalClause,
-      { check: "position_series" }
-    > => clause.kind === "studio_check" && clause.check === "position_series",
+    (clause): clause is Extract<VerificationCharterProposalClause, { check: "position_series" }> =>
+      clause.kind === "studio_check" && clause.check === "position_series",
   );
   if (series.length === 0) return;
-  const durations = series.map(
-    (clause) => (clause.sampleCount - 1) * clause.intervalMs,
-  );
-  if (
-    durations.some(
-      (duration) => duration < CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS,
-    )
-  )
+  const durations = series.map((clause) => (clause.sampleCount - 1) * clause.intervalMs);
+  if (durations.some((duration) => duration < CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS))
     throw new Error(
-      `Each creator position-series check must span at least ${CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS} ms so creator-triggered behavior can occur during the authoritative Play Solo observation window`,
+      `Each creator position-series check must have capacity for at least ${CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS} ms so creator-triggered behavior can occur before the creator-defined Stop boundary`,
     );
-  if (
-    durations.reduce((total, duration) => total + duration, 0) >
-    STUDIO_CAPABILITY_MANIFEST.limits.maximumRuntimeMs
-  )
-    throw new Error(
-      "Creator position-series checks exceed the manifest runtime budget; use one bounded machine observation and leave unsupported behavior to creator review",
-    );
+  if (Math.max(0, ...durations) > STUDIO_CAPABILITY_MANIFEST.limits.maximumRuntimeMs)
+    throw new Error("Creator position-series checks exceed the manifest runtime budget");
 }
 function assertPlanChangeSet(
   changes: CreatorPlanChange[],
-  observation: StudioProjectState,
+  observation: CreatorProjectIndexView,
 ): void {
   const outputs = changes.flatMap((change) =>
     changeOutputPath(change) ? [changeOutputPath(change)!] : [],
@@ -4314,14 +5512,10 @@ function assertPlanChangeSet(
     changeInputPath(change) ? [changeInputPath(change)!] : [],
   );
   if (new Set(existingTargets).size !== existingTargets.length)
-    throw new Error(
-      "Creator plan permits only one change per existing Studio target",
-    );
+    throw new Error("Creator plan permits only one change per existing Studio target");
   const plannedInstances = new Set(
     changes.flatMap((change) =>
-      change.kind === "create" || change.kind === "move"
-        ? [changeOutputPath(change)!]
-        : [],
+      change.kind === "create" || change.kind === "move" ? [changeOutputPath(change)!] : [],
     ),
   );
   for (const change of changes)
@@ -4329,9 +5523,7 @@ function assertPlanChangeSet(
       (change.kind === "create" || change.kind === "move") &&
       plannedInstances.has(pathParent(changeOutputPath(change)!))
     )
-      throw new Error(
-        "Planned instances cannot parent other planned instances in one change set",
-      );
+      throw new Error("Planned instances cannot parent other planned instances in one change set");
   for (const output of outputs)
     if (
       !observation.instances.some((entry) => entry.path === output) &&
@@ -4342,7 +5534,7 @@ function assertPlanChangeSet(
 function assertProposedCharterClause(
   clause: VerificationCharterProposalClause,
   changes: CreatorPlanChange[],
-  observation: StudioProjectState,
+  observation: CreatorProjectIndexView,
 ): void {
   PROPOSED_CLAUSE_SCHEMA.parse(clause);
   if (!("path" in clause)) return;
@@ -4351,13 +5543,9 @@ function assertProposedCharterClause(
   if (clause.kind === "snapshot_check") {
     const observed = observation.instances.find((entry) => entry.path === path);
     if (!observed || !classMatches(observed.className, clause.expectedClass))
-      throw new Error(
-        `Subtree preservation target is absent or class-mismatched: ${path}`,
-      );
+      throw new Error(`Subtree preservation target is absent or class-mismatched: ${path}`);
     if (changes.some((change) => planChangeTouchesPath(change, path)))
-      throw new Error(
-        `A subtree cannot be declared unchanged while the plan changes it: ${path}`,
-      );
+      throw new Error(`A subtree cannot be declared unchanged while the plan changes it: ${path}`);
     return;
   }
   const resultingClass = resultingClassAt(path, changes, observation);
@@ -4365,73 +5553,25 @@ function assertProposedCharterClause(
     throw new Error(
       `Machine-check target is absent, deleted, moved away, or class-mismatched: ${path}`,
     );
-  if (
-    clause.check === "position_series" &&
-    clause.minimumDistinctPositions > clause.sampleCount
-  )
-    throw new Error(
-      "Position-series minimum distinct positions cannot exceed its sample count",
-    );
+  if (clause.check === "position_series" && clause.minimumDistinctPositions > clause.sampleCount)
+    throw new Error("Position-series minimum distinct positions cannot exceed its sample count");
 }
 function materializeCharterClause(
   clause: VerificationCharterProposalClause,
-  observation: StudioProjectState,
+  observation: CreatorProjectIndexView,
 ): VerificationCharterClause {
   if (clause.kind === "creator_review") return { ...clause };
-  if (clause.kind === "local_check")
-    return { ...clause, statement: machineStatement(clause) };
+  if (clause.kind === "local_check") return { ...clause, statement: machineStatement(clause) };
   if (clause.kind === "snapshot_check")
     return {
       ...clause,
       statement: machineStatement(clause),
-      baselineHash: subtreeSnapshotHash(observation, clause.path),
+      baselineHash: subtreeProjectIndexHash(observation, clause.path),
     };
   return {
     ...clause,
     statement: machineStatement(clause),
   } as VerificationCharterClause;
-}
-function charterProposalFromFinal(
-  clause: VerificationCharterClause,
-): VerificationCharterProposalClause {
-  if (clause.kind === "creator_review") return { ...clause };
-  if (clause.kind === "local_check")
-    return { id: clause.id, kind: clause.kind, check: clause.check };
-  if (clause.kind === "snapshot_check")
-    return {
-      id: clause.id,
-      kind: clause.kind,
-      check: clause.check,
-      path: clause.path,
-      expectedClass: clause.expectedClass,
-    };
-  if (clause.check === "instance_exists")
-    return {
-      id: clause.id,
-      kind: clause.kind,
-      check: clause.check,
-      path: clause.path,
-      expectedClass: clause.expectedClass,
-    };
-  if (clause.check === "position_series")
-    return {
-      id: clause.id,
-      kind: clause.kind,
-      check: clause.check,
-      path: clause.path,
-      expectedClass: clause.expectedClass,
-      sampleCount: clause.sampleCount,
-      intervalMs: clause.intervalMs,
-      quantizationStuds: clause.quantizationStuds,
-      minimumDistinctPositions: clause.minimumDistinctPositions,
-    };
-  return {
-    id: clause.id,
-    kind: clause.kind,
-    check: clause.check,
-    maximumErrors: clause.maximumErrors,
-    maximumWarnings: clause.maximumWarnings,
-  };
 }
 function machineStatement(
   clause: Exclude<
@@ -4446,13 +5586,12 @@ function machineStatement(
   if (clause.check === "instance_exists")
     return `${clause.path} resolves as ${clause.expectedClass} during the approved playtest.`;
   if (clause.check === "position_series")
-    return `${clause.path} produces at least ${clause.minimumDistinctPositions} distinct ${clause.quantizationStuds}-stud-quantized positions across ${clause.sampleCount} samples taken every ${clause.intervalMs} ms.`;
-  return `The complete approved playtest emits at most ${clause.maximumErrors} errors and ${clause.maximumWarnings} warnings; diagnostic capture must not truncate.`;
+    return `${clause.path} produces at least ${clause.minimumDistinctPositions} distinct ${clause.quantizationStuds}-stud-quantized positions while sampled every ${clause.intervalMs} ms until the creator presses Stop, bounded to at most ${clause.sampleCount} samples.`;
+  return `The approved Play Server observation emits at most ${clause.maximumErrors} errors and ${clause.maximumWarnings} warnings before creator Stop; server diagnostic capture must not truncate.`;
 }
 function assertFinalCharterClause(clause: VerificationCharterClause): void {
   FINAL_CLAUSE_SCHEMA.parse(clause);
-  if ("path" in clause)
-    assertCheckPathScope(clause, canonicalStudioPath(clause.path));
+  if ("path" in clause) assertCheckPathScope(clause, canonicalStudioPath(clause.path));
   if (clause.kind !== "creator_review") {
     const {
       statement: _statement,
@@ -4462,40 +5601,30 @@ function assertFinalCharterClause(clause: VerificationCharterClause): void {
     if (
       clause.statement !==
       machineStatement(
-        proposal as Exclude<
-          VerificationCharterProposalClause,
-          { kind: "creator_review" }
-        >,
+        proposal as Exclude<VerificationCharterProposalClause, { kind: "creator_review" }>,
       )
     )
       throw new Error("VerificationCharter machine statement is not canonical");
   }
 }
 function assertCheckPathScope(
-  clause: Extract<
-    VerificationCharterProposalClause | VerificationCharterClause,
-    { path: string }
-  >,
+  clause: Extract<VerificationCharterProposalClause | VerificationCharterClause, { path: string }>,
   path: string,
 ): void {
   if (!isAllowedStudioPath(path))
-    throw new Error(
-      `Creator check path is outside allowlisted Studio roots: ${path}`,
-    );
+    throw new Error(`Creator check path is outside allowlisted Studio roots: ${path}`);
   if (
     clause.kind === "studio_check" &&
     clause.check === "position_series" &&
     !path.startsWith("Workspace/")
   )
-    throw new Error(
-      "Creator position-series checks are bounded to Workspace BaseParts",
-    );
+    throw new Error("Creator position-series checks are bounded to Workspace BaseParts");
 }
-export function subtreeSnapshotHash(
-  observation: StudioProjectState,
+export function subtreeProjectIndexHash(
+  observation: CreatorProjectIndexView,
   rootPath: string,
 ): string {
-  assertStudioProjectState(observation);
+  assertCreatorProjectIndexView(observation);
   const root = canonicalStudioPath(rootPath);
   const under = (path: string) => path === root || path.startsWith(`${root}/`);
   const payload = {
@@ -4504,47 +5633,21 @@ export function subtreeSnapshotHash(
       .map((entry) => structuredClone(entry))
       .sort(
         (left, right) =>
-          left.path.localeCompare(right.path) ||
-          left.stableId.localeCompare(right.stableId),
+          left.path.localeCompare(right.path) || left.objectId.localeCompare(right.objectId),
       ),
     scripts: observation.scripts
       .filter((entry) => under(entry.path))
-      .map(({ source: _source, ...entry }) => ({ ...entry }))
+      .map((entry) => ({ ...entry }))
       .sort(
         (left, right) =>
-          left.path.localeCompare(right.path) ||
-          left.stableId.localeCompare(right.stableId),
+          left.path.localeCompare(right.path) || left.documentId.localeCompare(right.documentId),
       ),
-    remotes: observation.remotes
-      .filter((entry) => under(entry.path))
-      .map((entry) => ({ ...entry }))
-      .sort((left, right) => left.path.localeCompare(right.path)),
   };
-  if (payload.instances.length === 0)
-    throw new Error(`Subtree snapshot target is absent: ${root}`);
+  if (payload.instances.length === 0) throw new Error(`Subtree snapshot target is absent: ${root}`);
   return contentHash(stableJson(payload));
 }
 
-/** Stable factual Studio state, excluding capture time and transport revision. */
-export function studioProjectStateHash(
-  observation: StudioProjectState,
-): string {
-  assertStudioProjectState(observation);
-  return contentHash(
-    stableJson({
-      project: observation.project,
-      instances: observation.instances,
-      scripts: observation.scripts.map(
-        ({ source: _source, ...script }) => script,
-      ),
-      remotes: observation.remotes,
-    }),
-  );
-}
-function creatorPropertyPolicies(): Record<
-  StudioWritableClass,
-  CreatorPropertyPolicy
-> {
+function creatorPropertyPolicies(): Record<StudioWritableClass, CreatorPropertyPolicy> {
   return Object.fromEntries(
     STUDIO_CAPABILITY_MANIFEST.classes.map((classDefinition) => [
       classDefinition.name,
@@ -4552,26 +5655,43 @@ function creatorPropertyPolicies(): Record<
         allowedProperties: classDefinition.properties.map((property) => ({
           name: property.name,
           valueKinds: [property.codec],
+          nullable: property.nullable,
           constraints: {
             ...(property.minimum === undefined ? {} : { minimum: property.minimum }),
-            ...(property.minimumExclusive === undefined ? {} : { minimumExclusive: property.minimumExclusive }),
+            ...(property.minimumExclusive === undefined
+              ? {}
+              : { minimumExclusive: property.minimumExclusive }),
             ...(property.maximum === undefined ? {} : { maximum: property.maximum }),
-            ...(property.maximumAbsoluteTranslation === undefined ? {} : { cframeTranslationMaximumAbsolute: property.maximumAbsoluteTranslation }),
-            ...(property.maximumUtf8Bytes === undefined ? {} : { maximumUtf8Bytes: property.maximumUtf8Bytes }),
-            ...(property.maximumEntries === undefined ? {} : { maximumEntries: property.maximumEntries }),
-            ...(property.referenceClass === undefined ? {} : { referenceClass: property.referenceClass }),
+            ...(property.maximumAbsoluteTranslation === undefined
+              ? {}
+              : {
+                  cframeTranslationMaximumAbsolute: property.maximumAbsoluteTranslation,
+                }),
+            ...(property.minimumUtf8Bytes === undefined
+              ? {}
+              : { minimumUtf8Bytes: property.minimumUtf8Bytes }),
+            ...(property.maximumUtf8Bytes === undefined
+              ? {}
+              : { maximumUtf8Bytes: property.maximumUtf8Bytes }),
+            ...(property.maximumEntries === undefined
+              ? {}
+              : { maximumEntries: property.maximumEntries }),
+            ...(property.referenceClass === undefined
+              ? {}
+              : { referenceClass: property.referenceClass }),
             ...(property.allowed === undefined ? {} : { allowedStrings: [...property.allowed] }),
           },
         })),
         attributes: "primitive" as const,
-        source: classDefinition.source === "required_on_create_and_writeable" ? "required" as const : "forbidden" as const,
+        source:
+          classDefinition.source === "required_on_create_and_writeable"
+            ? ("required" as const)
+            : ("forbidden" as const),
       },
     ]),
   ) as Record<StudioWritableClass, CreatorPropertyPolicy>;
 }
-function assertCreatorPropertyPolicy(
-  value: unknown,
-): asserts value is CreatorPropertyPolicy {
+function assertCreatorPropertyPolicy(value: unknown): asserts value is CreatorPropertyPolicy {
   if (
     !isRecord(value) ||
     !Array.isArray(value.allowedProperties) ||
@@ -4584,8 +5704,8 @@ function assertCreatorPropertyPolicy(
         entry.valueKinds.every((type) =>
           STUDIO_CODECS.includes(type as (typeof STUDIO_CODECS)[number]),
         ) &&
-        (entry.constraints === undefined ||
-          validPropertyConstraints(entry.constraints)),
+        typeof entry.nullable === "boolean" &&
+        (entry.constraints === undefined || validPropertyConstraints(entry.constraints)),
     ) ||
     value.attributes !== "primitive" ||
     (value.source !== "required" && value.source !== "forbidden")
@@ -4607,16 +5727,36 @@ function validPropertyConstraints(value: unknown): boolean {
     "maximumAbsolute",
     "cframeTranslationMaximumAbsolute",
     "cframeRotationMaximumAbsolute",
+    "minimumUtf8Bytes",
     "maximumUtf8Bytes",
     "maximumEntries",
   ];
   if (
     Object.keys(value).some(
-      (key) =>
-        !numericKeys.includes(key) &&
-        key !== "allowedStrings" &&
-        key !== "referenceClass",
+      (key) => !numericKeys.includes(key) && key !== "allowedStrings" && key !== "referenceClass",
     )
+  )
+    return false;
+  const minimumUtf8Bytes = value.minimumUtf8Bytes;
+  const maximumUtf8Bytes = value.maximumUtf8Bytes;
+  if (
+    minimumUtf8Bytes !== undefined &&
+    (typeof minimumUtf8Bytes !== "number" ||
+      !Number.isSafeInteger(minimumUtf8Bytes) ||
+      minimumUtf8Bytes < 0)
+  )
+    return false;
+  if (
+    maximumUtf8Bytes !== undefined &&
+    (typeof maximumUtf8Bytes !== "number" ||
+      !Number.isSafeInteger(maximumUtf8Bytes) ||
+      maximumUtf8Bytes < 0)
+  )
+    return false;
+  if (
+    minimumUtf8Bytes !== undefined &&
+    maximumUtf8Bytes !== undefined &&
+    minimumUtf8Bytes > maximumUtf8Bytes
   )
     return false;
   const maximumEntries = value.maximumEntries;
@@ -4637,8 +5777,7 @@ function validPropertyConstraints(value: unknown): boolean {
     numericKeys.some(
       (key) =>
         value[key] !== undefined &&
-        (typeof value[key] !== "number" ||
-          !Number.isFinite(value[key] as number)),
+        (typeof value[key] !== "number" || !Number.isFinite(value[key] as number)),
     )
   )
     return false;
@@ -4653,7 +5792,7 @@ function validPropertyConstraints(value: unknown): boolean {
 function materializeBuildContractChange(
   change: CreatorPlanChange,
   plan: CreatorPlan,
-  observation: StudioProjectState,
+  observation: CreatorProjectIndexView,
   policies: Readonly<Record<string, CreatorPropertyPolicy>>,
 ): CreatorBuildContractChange {
   const identity = (suffix: string) =>
@@ -4662,42 +5801,47 @@ function materializeBuildContractChange(
   const policyFor = (className: StudioWritableClass): CreatorPropertyPolicy => {
     const policy = policies[className];
     if (policy === undefined)
-      throw new Error(
-        `Creator build contract has no sealed policy for ${className}`,
-      );
+      throw new Error(`Creator build contract has no sealed policy for ${className}`);
     return policy;
   };
   if (change.kind === "create") {
     const parentPath = pathParent(change.path);
     const name = change.path.slice(parentPath.length + 1);
+    const stableId = identity("creator_created");
     return {
       planChangeId: change.id,
       operationId,
       kind: "create",
       path: change.path,
-      parentPath,
+      target: {
+        kind: "instance",
+        identity: { kind: "forge_attribute", stableId },
+        path: change.path,
+        className: change.className,
+      },
+      parent: change.parent,
       name,
       className: change.className,
       tempId: identity("creator_temp"),
       propertyPolicy: policyFor(change.className),
     };
   }
-  const sourcePath = change.kind === "move" ? change.fromPath : change.path;
+  const sourcePath = change.target.path;
   const instance = observation.instances.find(
-    (entry) => entry.path === sourcePath,
+    (entry) =>
+      entry.objectId === studioObjectIdentityKey(change.target.identity) &&
+      entry.path === sourcePath &&
+      entry.className === change.target.className,
   );
   if (!instance)
-    throw new Error(
-      `Approved plan target is absent from the initial snapshot: ${sourcePath}`,
-    );
+    throw new Error(`Approved plan target is absent from the initial snapshot: ${sourcePath}`);
   if (change.kind === "update")
     return {
       planChangeId: change.id,
       operationId,
       kind: "update",
-      stableId: instance.stableId,
-      expectedPath: change.path,
-      expectedClass: change.expectedClass,
+      target: change.target,
+      ...identityEnrollment(change.target, identity("creator_enrollment")),
       beforeHash: contentHash(stableJson(instance)),
       propertyPolicy: policyFor(change.expectedClass),
     };
@@ -4707,11 +5851,10 @@ function materializeBuildContractChange(
       planChangeId: change.id,
       operationId,
       kind: "move",
-      stableId: instance.stableId,
-      expectedPath: change.fromPath,
-      expectedClass: change.expectedClass,
+      target: change.target,
+      ...identityEnrollment(change.target, identity("creator_enrollment")),
       beforeHash: contentHash(stableJson(instance)),
-      parentPath,
+      parent: change.parent,
       name: change.toPath.slice(parentPath.length + 1),
       propertyPolicy: policyFor(change.expectedClass),
     };
@@ -4721,39 +5864,57 @@ function materializeBuildContractChange(
       planChangeId: change.id,
       operationId,
       kind: "delete",
-      stableId: instance.stableId,
-      expectedPath: change.path,
-      expectedClass: change.expectedClass,
+      target: change.target,
+      ...identityEnrollment(change.target, identity("creator_enrollment")),
       beforeHash: contentHash(stableJson(instance)),
       propertyPolicy: policyFor(change.expectedClass),
     };
   const script = observation.scripts.find(
-    (entry) =>
-      entry.stableId === instance.stableId && entry.path === change.path,
+    (entry) => entry.documentId === instance.objectId && entry.path === change.target.path,
   );
   if (!script)
     throw new Error(
-      `Approved source target is absent from the initial snapshot: ${change.path}`,
+      `Approved source target is absent from the initial snapshot: ${change.target.path}`,
     );
   return {
     planChangeId: change.id,
     operationId,
-    kind: "write_source",
-    stableId: instance.stableId,
-    expectedPath: change.path,
-    expectedClass: change.expectedClass,
+    kind: "edit_source",
+    target: {
+      ...change.target,
+      className: change.expectedClass,
+    },
+    ...identityEnrollment(change.target, identity("creator_enrollment")),
     beforeSourceHash: script.sourceHash,
     propertyPolicy: policyFor(change.expectedClass),
   };
 }
+function identityEnrollment(
+  target: StudioInstanceTarget,
+  stableId: string,
+): { readonly enrollment?: StudioIdentityEnrollment } {
+  return target.identity.kind === "studio_ephemeral"
+    ? { enrollment: { identity: target.identity, stableId } }
+    : {};
+}
 function contractInspectionPaths(change: CreatorBuildContractChange): string[] {
-  if (change.kind === "create") return [change.parentPath];
-  if (change.kind === "move") return [change.expectedPath, change.parentPath];
-  return [change.expectedPath];
+  if (change.kind === "create")
+    return STUDIO_AUTHORING_CONTAINERS.some((entry) => entry.path === change.parent.path)
+      ? []
+      : [change.parent.path];
+  if (change.kind === "move")
+    return STUDIO_AUTHORING_CONTAINERS.some((entry) => entry.path === change.parent.path)
+      ? [change.target.path]
+      : [change.target.path, change.parent.path];
+  return [change.target.path];
 }
 function deriveStudioOperation(
   contractChange: CreatorBuildContractChange,
   payload: CreatorStagePayload,
+  sourceIndex: StudioSourceIndex,
+  sourceResolver: VerifiedSourceResolver,
+  sourceWriteBlob: (source: string) => CreatorSourceWriteBlobBinding,
+  sourceWriteText: (binding: CreatorSourceWriteBlobBinding) => string,
 ): StudioChangeOperation {
   const propertyInputs = payload.properties ?? {};
   let properties: Record<string, StudioValue> = {};
@@ -4776,49 +5937,48 @@ function deriveStudioOperation(
     (Object.keys(propertyInputs).length > 0 ||
       Object.keys(attributes).length > 0 ||
       removedAttributes.length > 0 ||
-      payload.source !== undefined)
+      payload.source !== undefined ||
+      payload.sourceEdits !== undefined)
   )
     rejectCreativePayload("delete has no creative payload");
-  if (contractChange.kind === "move" && payload.source !== undefined)
+  if (
+    contractChange.kind === "move" &&
+    (payload.source !== undefined || payload.sourceEdits !== undefined)
+  )
     rejectCreativePayload("move cannot carry source");
   if (
-    contractChange.kind === "write_source" &&
-    Object.keys(propertyInputs).length > 0
+    contractChange.kind === "edit_source" &&
+    (Object.keys(propertyInputs).length > 0 ||
+      Object.keys(attributes).length > 0 ||
+      removedAttributes.length > 0 ||
+      payload.source !== undefined)
   )
-    rejectCreativePayload("write_source cannot carry instance properties");
-  if (
-    !["update", "move", "write_source"].includes(contractChange.kind) &&
-    removedAttributes.length > 0
-  )
-    rejectCreativePayload(
-      "Only an existing-target change may remove attributes",
-    );
+    rejectCreativePayload("edit_source accepts only sourceEdits");
+  if (!["update", "move"].includes(contractChange.kind) && removedAttributes.length > 0)
+    rejectCreativePayload("Only an existing-target change may remove attributes");
   if (
     new Set(removedAttributes).size !== removedAttributes.length ||
     removedAttributes.some((name) => Object.hasOwn(attributes, name))
   )
-    rejectCreativePayload(
-      "Attribute removals must be unique and disjoint from attribute sets",
-    );
-  if (
-    contractChange.propertyPolicy.source === "required" &&
-    (payload.source === undefined || payload.source.trim().length === 0)
-  )
-    throw correctiveFailure(
-      "SOURCE_REQUIRED",
-      "This approved change requires complete non-empty inline source",
-      { received: payload, expected },
-    );
+    rejectCreativePayload("Attribute removals must be unique and disjoint from attribute sets");
+  if (contractChange.kind === "create" && contractChange.propertyPolicy.source === "required") {
+    try {
+      assertRequiredStudioSourceText(payload.source);
+    } catch {
+      throw correctiveFailure(
+        "SOURCE_REQUIRED",
+        "This approved change requires complete source within the generated source contract",
+        { received: payload, expected },
+      );
+    }
+  }
   if (
     contractChange.propertyPolicy.source === "forbidden" &&
-    payload.source !== undefined
+    (payload.source !== undefined || payload.sourceEdits !== undefined)
   )
     rejectCreativePayload("This approved change cannot carry source");
   try {
-    properties = normalizeCreatorPropertyInputs(
-      contractChange.propertyPolicy,
-      propertyInputs,
-    );
+    properties = normalizeCreatorPropertyInputs(contractChange.propertyPolicy, propertyInputs);
     assertPropertiesWithPolicy(contractChange.propertyPolicy, properties);
     assertAttributes(attributes);
   } catch (error) {
@@ -4834,21 +5994,21 @@ function deriveStudioOperation(
       planChangeId: contractChange.planChangeId,
       kind: "create",
       tempId: contractChange.tempId,
-      parentPath: contractChange.parentPath,
+      target: contractChange.target,
+      parent: contractChange.parent,
       className: contractChange.className,
       name: contractChange.name,
       properties,
       attributes: attributes as Record<string, string | number | boolean>,
-      ...(payload.source === undefined ? {} : { source: payload.source }),
+      ...(payload.source === undefined ? {} : { sourceBlob: sourceWriteBlob(payload.source) }),
     };
   if (contractChange.kind === "update")
     return {
       id: contractChange.operationId,
       planChangeId: contractChange.planChangeId,
       kind: "update",
-      stableId: contractChange.stableId,
-      expectedPath: contractChange.expectedPath,
-      expectedClass: contractChange.expectedClass,
+      target: contractChange.target,
+      ...(contractChange.enrollment ? { enrollment: contractChange.enrollment } : {}),
       beforeHash: contractChange.beforeHash,
       properties,
       attributes,
@@ -4859,11 +6019,10 @@ function deriveStudioOperation(
       id: contractChange.operationId,
       planChangeId: contractChange.planChangeId,
       kind: "move",
-      stableId: contractChange.stableId,
-      expectedPath: contractChange.expectedPath,
-      expectedClass: contractChange.expectedClass,
+      target: contractChange.target,
+      ...(contractChange.enrollment ? { enrollment: contractChange.enrollment } : {}),
       beforeHash: contractChange.beforeHash,
-      parentPath: contractChange.parentPath,
+      parent: contractChange.parent,
       name: contractChange.name,
       properties,
       attributes,
@@ -4874,32 +6033,144 @@ function deriveStudioOperation(
       id: contractChange.operationId,
       planChangeId: contractChange.planChangeId,
       kind: "delete",
-      stableId: contractChange.stableId,
-      expectedPath: contractChange.expectedPath,
-      expectedClass: contractChange.expectedClass,
+      target: contractChange.target,
+      ...(contractChange.enrollment ? { enrollment: contractChange.enrollment } : {}),
       beforeHash: contractChange.beforeHash,
     };
+  if (contractChange.kind !== "edit_source")
+    throw new Error("Unsupported creator build-contract change");
+  const document = sourceIndex.documents.find(
+    (entry) => entry.documentId === studioObjectIdentityKey(contractChange.target.identity),
+  );
+  if (!document || document.sourceHash !== contractChange.beforeSourceHash)
+    throw correctiveFailure(
+      "SOURCE_PRECONDITION_MISMATCH",
+      "The approved source body is absent or no longer matches the build contract",
+      {
+        expectedPath: contractChange.target.path,
+        beforeSourceHash: contractChange.beforeSourceHash,
+      },
+    );
+  if (!payload.sourceEdits)
+    throw correctiveFailure(
+      "SOURCE_EDITS_REQUIRED",
+      "edit_source requires one or more sorted UTF-8-safe byte edits",
+      { expectedPath: contractChange.target.path },
+    );
+  const source = sourceResolver.read(document);
+  if (contentHash(source) !== document.sourceHash)
+    throw new Error("Verified source resolver returned a changed source body");
+  const edits = payload.sourceEdits.map((edit) => ({
+    startByte: edit.startByte,
+    endByte: edit.endByte,
+    replacementBlob: sourceWriteBlob(edit.replacement),
+  }));
+  const patched = applyCreatorSourceEdits(source, edits, sourceWriteText);
   return {
     id: contractChange.operationId,
     planChangeId: contractChange.planChangeId,
-    kind: "write_source",
-    stableId: contractChange.stableId,
-    expectedPath: contractChange.expectedPath,
-    expectedClass: contractChange.expectedClass,
+    kind: "edit_source",
+    target: contractChange.target,
+    ...(contractChange.enrollment ? { enrollment: contractChange.enrollment } : {}),
     beforeSourceHash: contractChange.beforeSourceHash,
-    source: payload.source!,
-    attributes,
-    removedAttributes,
+    edits,
+    finalSourceHash: patched.hash,
+    finalByteCount: patched.byteCount,
   };
+}
+
+export function applyCreatorSourceEdits(
+  source: string,
+  edits: readonly CreatorSourceEdit[],
+  resolveReplacement: (binding: CreatorSourceWriteBlobBinding) => string,
+): { source: string; hash: string; byteCount: number } {
+  if (edits.length === 0 || edits.length > 1_024)
+    throw new Error("Source edits must contain 1-1024 entries");
+  const original = Buffer.from(source, "utf8");
+  let previousEnd = 0;
+  const chunks: Buffer[] = [];
+  for (const edit of edits) {
+    if (
+      !Number.isSafeInteger(edit.startByte) ||
+      !Number.isSafeInteger(edit.endByte) ||
+      edit.startByte < previousEnd ||
+      edit.endByte < edit.startByte ||
+      edit.endByte > original.length ||
+      !isUtf8Boundary(original, edit.startByte) ||
+      !isUtf8Boundary(original, edit.endByte)
+    )
+      throw new Error("Source edits must be sorted, non-overlapping, in bounds, and UTF-8 aligned");
+    chunks.push(original.subarray(previousEnd, edit.startByte));
+    const replacement = resolveReplacement(edit.replacementBlob);
+    if (
+      typeof replacement !== "string" ||
+      Buffer.byteLength(replacement, "utf8") !== edit.replacementBlob.utf8Bytes ||
+      contentHash(replacement) !== edit.replacementBlob.sourceHash
+    )
+      throw new Error("Source edit replacement blob does not match its binding");
+    chunks.push(Buffer.from(replacement, "utf8"));
+    previousEnd = edit.endByte;
+  }
+  chunks.push(original.subarray(previousEnd));
+  const materialized = Buffer.concat(chunks);
+  const patchedSource = materialized.toString("utf8");
+  assertRequiredStudioSourceText(patchedSource);
+  return {
+    source: patchedSource,
+    hash: contentHash(patchedSource),
+    byteCount: materialized.length,
+  };
+}
+
+/** Reconstruct one verified proposed source body from its immutable leaves. */
+export function materializeCreatorSourceWriteBlob(
+  capture: CreatorSourceWriteBlobCapture,
+  binding: CreatorSourceWriteBlobBinding,
+): string {
+  assertCreatorSourceWriteBlobBinding(binding);
+  assertCreatorSourceWriteBlobCapture(capture, CREATOR_DEFAULT_RESOURCE_POLICY);
+  if (
+    capture.manifest.id !== binding.manifestId ||
+    capture.manifest.hash !== binding.manifestHash ||
+    capture.manifest.sourceHash !== binding.sourceHash ||
+    capture.manifest.utf8Bytes !== binding.utf8Bytes
+  )
+    throw new Error("Source-write blob capture does not match its binding");
+  return capture.chunks.map((chunk) => chunk.utf8).join("");
+}
+
+function isUtf8Boundary(bytes: Buffer, offset: number): boolean {
+  return offset === 0 || offset === bytes.length || (bytes[offset]! & 0xc0) !== 0x80;
+}
+
+function materializeEditedSource(
+  operation: Extract<StudioChangeOperation, { kind: "edit_source" }>,
+  index: StudioSourceIndex,
+  sourceResolver: VerifiedSourceResolver,
+  sourceWriteResolver: (binding: CreatorSourceWriteBlobBinding) => string,
+): string {
+  const document = index.documents.find(
+    (entry) => entry.documentId === studioObjectIdentityKey(operation.target.identity),
+  );
+  if (!document || document.sourceHash !== operation.beforeSourceHash)
+    throw new Error("Edited source lost its immutable before-source binding");
+  const source = sourceResolver.read(document);
+  if (contentHash(source) !== document.sourceHash)
+    throw new Error("Verified source resolver returned a changed source body");
+  const materialized = applyCreatorSourceEdits(source, operation.edits, sourceWriteResolver);
+  if (
+    materialized.hash !== operation.finalSourceHash ||
+    materialized.byteCount !== operation.finalByteCount
+  )
+    throw new Error("Edited source final hash or byte count is not reproducible");
+  return materialized.source;
 }
 
 function normalizeCreatorPropertyInputs(
   policy: CreatorPropertyPolicy,
   properties: Record<string, CreatorPropertyInput>,
 ): Record<string, StudioValue> {
-  const allowed = new Map(
-    policy.allowedProperties.map((property) => [property.name, property]),
-  );
+  const allowed = new Map(policy.allowedProperties.map((property) => [property.name, property]));
   return Object.fromEntries(
     Object.entries(properties).map(([name, input]) => {
       const rule = allowed.get(name);
@@ -4908,7 +6179,11 @@ function normalizeCreatorPropertyInputs(
           `Property ${name} is not allowlisted; allowed properties: ${[...allowed.keys()].join(", ") || "none"}`,
         );
       const value = normalizeCreatorPropertyInput(name, input, rule);
-      if (!rule.valueKinds.includes(value.kind))
+      if (
+        value.kind === "nil"
+          ? rule.nullable !== true || value.expectedCodec !== rule.valueKinds[0]
+          : !rule.valueKinds.includes(value.kind)
+      )
         throw new Error(
           `Property ${name} requires ${rule.valueKinds.join(" or ")}, but its natural JSON shape resolved to ${value.kind}`,
         );
@@ -4928,9 +6203,7 @@ export function canonicalizeCreatorPropertyInput(input: {
   value: CreatorPropertyInput;
 }): StudioValue {
   const policy = creatorPropertyPolicies()[input.className];
-  const rule = policy.allowedProperties.find(
-    (candidate) => candidate.name === input.propertyName,
-  );
+  const rule = policy.allowedProperties.find((candidate) => candidate.name === input.propertyName);
   const manifestClass = STUDIO_CAPABILITY_MANIFEST.classes.find(
     (candidate) => candidate.name === input.className,
   );
@@ -4941,11 +6214,7 @@ export function canonicalizeCreatorPropertyInput(input: {
     throw new Error(
       `Property ${input.className}.${input.propertyName} is outside the current proof-closed authoring manifest`,
     );
-  const value = normalizeCreatorPropertyInput(
-    input.propertyName,
-    input.value,
-    rule,
-  );
+  const value = normalizeCreatorPropertyInput(input.propertyName, input.value, rule);
   assertStudioValueConstraints(input.propertyName, value, rule.constraints);
   assertStudioValueForProperty(value, property);
   return value;
@@ -4957,31 +6226,43 @@ function normalizeCreatorPropertyInput(
   rule: CreatorPropertyPolicy["allowedProperties"][number],
 ): StudioValue {
   const expectedKind = rule.valueKinds[0]!;
-  if (input === null && expectedKind === "instance_ref") {
-    const expectedClass = rule.constraints?.referenceClass;
-    if (expectedClass === undefined)
-      throw new Error(`Property ${name} has no manifest Instance reference constraint`);
-    return canonicalStudioValue({ kind: expectedKind, state: "nil", expectedClass });
+  if (input === null) {
+    if (expectedKind === "instance_ref") {
+      const expectedClass = rule.constraints?.referenceClass;
+      if (expectedClass === undefined)
+        throw new Error(`Property ${name} has no manifest Instance reference constraint`);
+      return canonicalStudioValue({
+        kind: expectedKind,
+        state: "nil",
+        expectedClass,
+      });
+    }
+    if (rule.nullable !== true)
+      throw new Error(`Property ${name} does not declare a nullable value domain`);
+    return canonicalStudioValue({ kind: "nil", expectedCodec: expectedKind });
   }
-  if (typeof input === "boolean" && expectedKind === "boolean") return { kind: "boolean", value: input };
+  if (typeof input === "boolean" && expectedKind === "boolean")
+    return { kind: "boolean", value: input };
   if (typeof input === "number") {
     if (expectedKind === "number_f32")
       return canonicalStudioValue({ kind: expectedKind, value: input });
     if (expectedKind === "number_f64")
       return canonicalStudioValue({ kind: expectedKind, value: input });
-    if (expectedKind === "int32")
-      return canonicalStudioValue({ kind: expectedKind, value: input });
+    if (expectedKind === "int32") return canonicalStudioValue({ kind: expectedKind, value: input });
   }
   if (typeof input === "string") {
     if (expectedKind === "enum_name") return { kind: expectedKind, value: input };
     if (expectedKind === "string_utf8" || expectedKind === "content")
       return { kind: expectedKind, value: input };
-    if (expectedKind === "int64_decimal")
-      return { kind: expectedKind, value: input };
-    if (expectedKind === "brick_color")
-      return { kind: expectedKind, name: input };
+    if (expectedKind === "int64_decimal") return { kind: expectedKind, value: input };
+    if (expectedKind === "brick_color") return { kind: expectedKind, name: input };
   }
-  if (typeof input === "object" && input !== null && "position" in input && expectedKind === "cframe_f32x12") {
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "position" in input &&
+    expectedKind === "cframe_f32x12"
+  ) {
     const degrees = input.rotation;
     const x = (degrees.x * Math.PI) / 180;
     const y = (degrees.y * Math.PI) / 180;
@@ -4992,8 +6273,7 @@ function normalizeCreatorPropertyInput(
     const sy = Math.sin(y);
     const cz = Math.cos(z);
     const sz = Math.sin(z);
-    const clean = (value: number): number =>
-      studioFloat(Math.abs(value) < 1e-12 ? 0 : value);
+    const clean = (value: number): number => studioFloat(Math.abs(value) < 1e-12 ? 0 : value);
     return {
       kind: "cframe_f32x12",
       components: [
@@ -5050,12 +6330,7 @@ function normalizeCreatorPropertyInput(
       y: studioFloat(input.y),
       z: studioFloat(input.z),
     };
-  if (
-    typeof input === "object" &&
-    input !== null &&
-    "scale" in input &&
-    expectedKind === "udim"
-  )
+  if (typeof input === "object" && input !== null && "scale" in input && expectedKind === "udim")
     return canonicalStudioValue({
       kind: expectedKind,
       scale: input.scale,
@@ -5126,10 +6401,12 @@ function normalizeCreatorPropertyInput(
   )
     return canonicalStudioValue({
       kind: expectedKind,
-      keypoints: (input.keypoints as readonly {
-        time: number;
-        color: { r: number; g: number; b: number };
-      }[]).map((keypoint) => ({
+      keypoints: (
+        input.keypoints as readonly {
+          time: number;
+          color: { r: number; g: number; b: number };
+        }[]
+      ).map((keypoint) => ({
         time: keypoint.time,
         color: {
           r: studioColorChannel(keypoint.color.r),
@@ -5145,12 +6422,7 @@ function normalizeCreatorPropertyInput(
     expectedKind === "brick_color"
   )
     return { kind: expectedKind, name: input.name };
-  if (
-    typeof input === "object" &&
-    input !== null &&
-    "family" in input &&
-    expectedKind === "font"
-  )
+  if (typeof input === "object" && input !== null && "family" in input && expectedKind === "font")
     return canonicalStudioValue({ kind: expectedKind, ...input });
   if (
     typeof input === "object" &&
@@ -5167,38 +6439,25 @@ function normalizeCreatorPropertyInput(
     expectedKind === "axes"
   )
     return { kind: expectedKind, x: input.x, y: input.y, z: input.z };
-  if (
-    typeof input === "object" &&
-    input !== null &&
-    "top" in input &&
-    expectedKind === "faces"
-  )
+  if (typeof input === "object" && input !== null && "top" in input && expectedKind === "faces")
     return { kind: expectedKind, ...input };
-  if (
-    typeof input === "object" &&
-    input !== null &&
-    "origin" in input &&
-    expectedKind === "ray"
-  )
+  if (typeof input === "object" && input !== null && "origin" in input && expectedKind === "ray")
     return canonicalStudioValue({ kind: expectedKind, ...input });
   if (
     typeof input === "object" &&
     input !== null &&
-    "stableId" in input &&
+    "identity" in input &&
     expectedKind === "instance_ref"
   ) {
     const expectedClass = rule.constraints?.referenceClass;
-    if (
-      expectedClass === undefined ||
-      !isRobloxClassAssignableTo(input.className, expectedClass)
-    )
+    if (expectedClass === undefined || !isRobloxClassAssignableTo(input.className, expectedClass))
       throw new Error(
         `Property ${name} requires a stable reference assignable to ${expectedClass ?? "its manifest class"}`,
       );
     return canonicalStudioValue({
       kind: expectedKind,
       state: "reference",
-      stableId: input.stableId,
+      identity: input.identity,
       path: input.path,
       className: input.className,
       expectedClass,
@@ -5227,24 +6486,21 @@ function assertOperationMatchesPlan(
   if (operation.kind === "create") {
     if (
       change.kind !== "create" ||
-      change.path !== `${operation.parentPath}/${operation.name}` ||
+      change.path !== operation.target.path ||
+      stableJson(change.parent) !== stableJson(operation.parent) ||
       change.className !== operation.className
     )
-      throw new Error(
-        "Create operation does not match its approved path and class",
-      );
+      throw new Error("Create operation does not match its approved path and class");
     if (
       isScriptClass(operation.className) &&
-      (change.initialization !== "inline_source_required" ||
-        operation.source === undefined)
+      (change.initialization !== "inline_source_required" || operation.sourceBlob === undefined)
     )
       throw new Error(
         "Approved script creation requires complete inline source in its one create operation",
       );
     if (
       !isScriptClass(operation.className) &&
-      (change.initialization !== "initial_properties" ||
-        operation.source !== undefined)
+      (change.initialization !== "initial_properties" || operation.sourceBlob !== undefined)
     )
       throw new Error(
         "Approved non-script creation requires initial properties and cannot carry source",
@@ -5253,32 +6509,31 @@ function assertOperationMatchesPlan(
   if (
     operation.kind === "update" &&
     (change.kind !== "update" ||
-      change.path !== operation.expectedPath ||
-      change.expectedClass !== operation.expectedClass)
+      stableJson(change.target) !== stableJson(operation.target) ||
+      change.expectedClass !== operation.target.className)
   )
     throw new Error("Update operation does not match its approved target");
   if (
     operation.kind === "move" &&
     (change.kind !== "move" ||
-      change.fromPath !== operation.expectedPath ||
-      change.toPath !== `${operation.parentPath}/${operation.name}` ||
-      change.expectedClass !== operation.expectedClass)
+      stableJson(change.target) !== stableJson(operation.target) ||
+      change.toPath !== `${operation.parent.path}/${operation.name}` ||
+      stableJson(change.parent) !== stableJson(operation.parent) ||
+      change.expectedClass !== operation.target.className)
   )
-    throw new Error(
-      "Move operation does not match its approved source, destination, and class",
-    );
+    throw new Error("Move operation does not match its approved source, destination, and class");
   if (
     operation.kind === "delete" &&
     (change.kind !== "delete" ||
-      change.path !== operation.expectedPath ||
-      change.expectedClass !== operation.expectedClass)
+      stableJson(change.target) !== stableJson(operation.target) ||
+      change.expectedClass !== operation.target.className)
   )
     throw new Error("Delete operation does not match its approved target");
   if (
-    operation.kind === "write_source" &&
-    (change.kind !== "write_source" ||
-      change.path !== operation.expectedPath ||
-      change.expectedClass !== operation.expectedClass)
+    operation.kind === "edit_source" &&
+    (change.kind !== "edit_source" ||
+      stableJson(change.target) !== stableJson(operation.target) ||
+      change.expectedClass !== operation.target.className)
   )
     throw new Error("Source operation does not match its approved target");
 }
@@ -5287,99 +6542,69 @@ function assertOperationsMatchPlan(
   changes: CreatorPlanChange[],
 ): void {
   if (operations.length !== changes.length)
-    throw new Error(
-      "Creator change set must implement every approved plan change exactly once",
-    );
+    throw new Error("Creator change set must implement every approved plan change exactly once");
   const bindings = operations.map((operation) => operation.planChangeId);
   if (
     new Set(bindings).size !== bindings.length ||
-    stableJson([...bindings].sort()) !==
-      stableJson(changes.map((change) => change.id).sort())
+    stableJson([...bindings].sort()) !== stableJson(changes.map((change) => change.id).sort())
   )
-    throw new Error(
-      "Creator change set plan-change coverage is incomplete or duplicated",
-    );
-  operations.forEach((operation) =>
-    assertOperationMatchesPlan(operation, changes),
-  );
+    throw new Error("Creator change set plan-change coverage is incomplete or duplicated");
+  operations.forEach((operation) => assertOperationMatchesPlan(operation, changes));
 }
 function assertOperationsMatchContract(
   operations: StudioChangeOperation[],
   contract: CreatorBuildContract,
 ): void {
   if (operations.length !== contract.changes.length)
-    throw new Error(
-      "Creator change set must implement every build-contract change exactly once",
-    );
+    throw new Error("Creator change set must implement every build-contract change exactly once");
   for (const operation of operations) {
-    const change = contract.changes.find(
-      (entry) => entry.planChangeId === operation.planChangeId,
-    );
-    if (
-      !change ||
-      change.operationId !== operation.id ||
-      change.kind !== operation.kind
-    )
-      throw new Error(
-        "Creator change set operation is not derived from its build contract",
-      );
+    const change = contract.changes.find((entry) => entry.planChangeId === operation.planChangeId);
+    if (!change || change.operationId !== operation.id || change.kind !== operation.kind)
+      throw new Error("Creator change set operation is not derived from its build contract");
     if (
       operation.kind === "create" &&
       (change.kind !== "create" ||
         operation.tempId !== change.tempId ||
-        operation.parentPath !== change.parentPath ||
+        stableJson(operation.target) !== stableJson(change.target) ||
+        stableJson(operation.parent) !== stableJson(change.parent) ||
         operation.name !== change.name ||
         operation.className !== change.className)
     )
-      throw new Error(
-        "Creator create operation does not match its build contract",
-      );
+      throw new Error("Creator create operation does not match its build contract");
     if (
       operation.kind === "update" &&
       (change.kind !== "update" ||
-        operation.stableId !== change.stableId ||
-        operation.expectedPath !== change.expectedPath ||
-        operation.expectedClass !== change.expectedClass ||
+        stableJson(operation.target) !== stableJson(change.target) ||
+        stableJson(operation.enrollment) !== stableJson(change.enrollment) ||
         operation.beforeHash !== change.beforeHash)
     )
-      throw new Error(
-        "Creator update operation does not match its build contract",
-      );
+      throw new Error("Creator update operation does not match its build contract");
     if (
       operation.kind === "move" &&
       (change.kind !== "move" ||
-        operation.stableId !== change.stableId ||
-        operation.expectedPath !== change.expectedPath ||
-        operation.expectedClass !== change.expectedClass ||
+        stableJson(operation.target) !== stableJson(change.target) ||
+        stableJson(operation.enrollment) !== stableJson(change.enrollment) ||
         operation.beforeHash !== change.beforeHash ||
-        operation.parentPath !== change.parentPath ||
+        stableJson(operation.parent) !== stableJson(change.parent) ||
         operation.name !== change.name)
     )
-      throw new Error(
-        "Creator move operation does not match its build contract",
-      );
+      throw new Error("Creator move operation does not match its build contract");
     if (
       operation.kind === "delete" &&
       (change.kind !== "delete" ||
-        operation.stableId !== change.stableId ||
-        operation.expectedPath !== change.expectedPath ||
-        operation.expectedClass !== change.expectedClass ||
+        stableJson(operation.target) !== stableJson(change.target) ||
+        stableJson(operation.enrollment) !== stableJson(change.enrollment) ||
         operation.beforeHash !== change.beforeHash)
     )
-      throw new Error(
-        "Creator delete operation does not match its build contract",
-      );
+      throw new Error("Creator delete operation does not match its build contract");
     if (
-      operation.kind === "write_source" &&
-      (change.kind !== "write_source" ||
-        operation.stableId !== change.stableId ||
-        operation.expectedPath !== change.expectedPath ||
-        operation.expectedClass !== change.expectedClass ||
+      operation.kind === "edit_source" &&
+      (change.kind !== "edit_source" ||
+        stableJson(operation.target) !== stableJson(change.target) ||
+        stableJson(operation.enrollment) !== stableJson(change.enrollment) ||
         operation.beforeSourceHash !== change.beforeSourceHash)
     )
-      throw new Error(
-        "Creator source operation does not match its build contract",
-      );
+      throw new Error("Creator source operation does not match its build contract");
     assertOperationCreativePayload(operation, change.propertyPolicy);
   }
 }
@@ -5388,159 +6613,201 @@ function assertOperationCreativePayload(
   policy: CreatorPropertyPolicy,
 ): void {
   const properties =
-    operation.kind === "create" ||
-    operation.kind === "update" ||
-    operation.kind === "move"
+    operation.kind === "create" || operation.kind === "update" || operation.kind === "move"
       ? operation.properties
       : {};
   const attributes =
-    operation.kind === "create" ||
-    operation.kind === "update" ||
-    operation.kind === "move" ||
-    operation.kind === "write_source"
+    operation.kind === "create" || operation.kind === "update" || operation.kind === "move"
       ? operation.attributes
       : {};
   const removedAttributes =
-    operation.kind === "update" ||
-    operation.kind === "move" ||
-    operation.kind === "write_source"
-      ? operation.removedAttributes
-      : [];
+    operation.kind === "update" || operation.kind === "move" ? operation.removedAttributes : [];
   assertPropertiesWithPolicy(policy, properties);
   assertAttributes(attributes);
   assertRemovedAttributes(removedAttributes);
   if (removedAttributes.some((name) => Object.hasOwn(attributes, name)))
     throw new Error("Operation attributes cannot be both set and removed");
-  const source =
-    operation.kind === "create" || operation.kind === "write_source"
-      ? operation.source
-      : undefined;
-  if (policy.source === "required") assertRequiredSource(source);
+  const source = operation.kind === "create" ? operation.sourceBlob : undefined;
+  if (operation.kind === "edit_source") {
+    if (policy.source !== "required")
+      throw new Error("Source edits are forbidden by their build contract");
+    assertCreatorSourceEditsMetadata(operation.edits);
+  } else if (policy.source === "required") assertRequiredSource(source);
   else if (source !== undefined)
     throw new Error("Operation source is forbidden by its build contract");
 }
 function assertStudioChangeOperation(
   operation: StudioChangeOperation,
-  observation: StudioProjectState,
+  observation: CreatorProjectIndexView,
   ownership: StudioOwnershipMap,
+  mutationAuthority: ProjectWriteAuthority,
+  transactionOperations: readonly StudioChangeOperation[],
 ): void {
   CHANGE_OPERATION_SCHEMA.parse(operation);
+  if (mutationAuthority === "rojo_source") {
+    assertRojoSourceChangeOperation(operation, observation, ownership);
+    return;
+  }
   if (operation.kind === "create") {
-    assertWritableParent(operation.parentPath, observation, ownership);
+    const parent = assertExactPlanParent(operation.parent, operation.parent.path, observation);
+    assertStudioStructuralParent(operation.parent, parent, ownership, {
+      operationId: operation.id,
+      operationKind: operation.kind,
+      targetPath: operation.target.path,
+    });
     if (
-      observation.instances.some(
-        (entry) => entry.path === `${operation.parentPath}/${operation.name}`,
-      )
+      operation.target.identity.kind !== "forge_attribute" ||
+      pathName(canonicalStudioPath(operation.target.path)) !== operation.name ||
+      operation.target.className !== operation.className
     )
-      throw new Error("Creator create target already exists");
-    if (isScriptClass(operation.className) !== (operation.source !== undefined))
-      throw new Error(
-        "Created scripts require source and non-scripts cannot carry source",
-      );
-    if (isScriptClass(operation.className))
-      assertRequiredSource(operation.source);
+      throw new Error("Creator create target identity or structure is invalid");
+    if (isScriptClass(operation.className) !== (operation.sourceBlob !== undefined))
+      throw new Error("Created scripts require source and non-scripts cannot carry source");
+    if (isScriptClass(operation.className)) assertRequiredSource(operation.sourceBlob);
     assertProperties(operation.className, operation.properties);
     assertInstanceReferenceProperties(
       operation.properties,
       observation,
       ownership,
+      transactionOperations,
     );
     assertAttributes(operation.attributes);
     return;
   }
-  const observed = observation.instances.find(
-    (entry) => entry.stableId === operation.stableId,
-  );
-  const owner = ownership.entries.find(
-    (entry) => entry.stableId === operation.stableId,
-  );
-  if (!observed || !owner || owner.owner !== "studio" || !owner.writable)
-    throw new Error("Studio operation target is absent or externally owned");
-  if (
-    observed.path !== operation.expectedPath ||
-    observed.className !== operation.expectedClass
-  )
+  const targetObjectId = studioObjectIdentityKey(operation.target.identity);
+  const observed = observation.instances.find((entry) => entry.objectId === targetObjectId);
+  const owner = ownership.entries.find((entry) => entry.objectId === targetObjectId);
+  if (!observed || !owner || owner.owner !== "studio_document")
+    throw new Error("Studio operation target is absent or not Studio-document-owned");
+  if (observed.path !== operation.target.path || observed.className !== operation.target.className)
     throw new Error("Studio operation target precondition mismatch");
-  if (operation.kind === "write_source") {
-    const script = observation.scripts.find(
-      (entry) => entry.stableId === operation.stableId,
-    );
+  assertOperationEnrollment(operation.target, operation.enrollment);
+  if (operation.kind === "edit_source") {
+    const script = observation.scripts.find((entry) => entry.documentId === targetObjectId);
     if (!script || script.sourceHash !== operation.beforeSourceHash)
       throw new Error("Studio script source precondition mismatch");
-    assertRequiredSource(operation.source);
-    assertAttributes(operation.attributes);
-    assertRemovedAttributes(operation.removedAttributes);
+    assertCreatorSourceEditsMetadata(operation.edits);
     if (
-      operation.removedAttributes.some((name) =>
-        Object.hasOwn(operation.attributes, name),
-      )
+      !isHash(operation.finalSourceHash) ||
+      !Number.isSafeInteger(operation.finalByteCount) ||
+      operation.finalByteCount < 1
     )
-      throw new Error("Updated attributes cannot be both set and removed");
+      throw new Error("Studio source edit final binding metadata is invalid");
     return;
   }
   if (contentHash(stableJson(observed)) !== operation.beforeHash)
     throw new Error("Studio instance precondition hash mismatch");
   if (operation.kind === "update") {
-    assertProperties(operation.expectedClass, operation.properties);
+    assertProperties(operation.target.className as StudioWritableClass, operation.properties);
     assertInstanceReferenceProperties(
       operation.properties,
       observation,
       ownership,
+      transactionOperations,
     );
     assertAttributes(operation.attributes);
     assertRemovedAttributes(operation.removedAttributes);
-    if (
-      operation.removedAttributes.some((name) =>
-        Object.hasOwn(operation.attributes, name),
-      )
-    )
+    if (operation.removedAttributes.some((name) => Object.hasOwn(operation.attributes, name)))
       throw new Error("Updated attributes cannot be both set and removed");
   }
   if (operation.kind === "move") {
-    assertWritableParent(operation.parentPath, observation, ownership);
-    if (
-      observation.instances.some(
-        (entry) =>
-          entry.stableId !== operation.stableId &&
-          entry.path === `${operation.parentPath}/${operation.name}`,
-      )
-    )
-      throw new Error("Creator move destination already exists");
-    assertProperties(operation.expectedClass, operation.properties);
+    const parent = assertExactPlanParent(operation.parent, operation.parent.path, observation);
+    assertStudioStructuralParent(operation.parent, parent, ownership, {
+      operationId: operation.id,
+      operationKind: operation.kind,
+      targetPath: `${operation.parent.path}/${operation.name}`,
+    });
+    assertProperties(operation.target.className as StudioWritableClass, operation.properties);
     assertInstanceReferenceProperties(
       operation.properties,
       observation,
       ownership,
+      transactionOperations,
     );
     assertAttributes(operation.attributes);
     assertRemovedAttributes(operation.removedAttributes);
-    if (
-      operation.removedAttributes.some((name) =>
-        Object.hasOwn(operation.attributes, name),
-      )
-    )
+    if (operation.removedAttributes.some((name) => Object.hasOwn(operation.attributes, name)))
       throw new Error("Updated attributes cannot be both set and removed");
   }
 }
+
+function assertRojoSourceChangeOperation(
+  operation: StudioChangeOperation,
+  observation: CreatorProjectIndexView,
+  ownership: StudioOwnershipMap,
+): void {
+  if (operation.kind === "create") {
+    if (
+      !isScriptClass(operation.className) ||
+      operation.sourceBlob === undefined ||
+      Object.keys(operation.properties).length !== 0 ||
+      Object.keys(operation.attributes).length !== 0
+    )
+      throw new Error("Rojo source authority permits a create only for a source-only script");
+    assertRequiredSource(operation.sourceBlob);
+    const parent = assertExactPlanParent(operation.parent, operation.parent.path, observation);
+    if (hasIndexedChildNameCollision(observation, parent, operation.name))
+      throw new Error("Rojo source create target already exists");
+    const owner = parent && ownership.entries.find((entry) => entry.objectId === parent.objectId);
+    if (!parent || owner?.owner !== "rojo_source")
+      throw new Error("Rojo source create parent is absent or outside source authority");
+    return;
+  }
+  if (operation.kind !== "edit_source")
+    throw new Error(
+      "Rojo source authority permits only edit_source and source-script create operations",
+    );
+  const targetObjectId = studioObjectIdentityKey(operation.target.identity);
+  const observed = observation.instances.find((entry) => entry.objectId === targetObjectId);
+  const owner = ownership.entries.find((entry) => entry.objectId === targetObjectId);
+  if (
+    !observed ||
+    !owner ||
+    owner.owner !== "rojo_source" ||
+    observed.path !== operation.target.path ||
+    observed.className !== operation.target.className
+  )
+    throw new Error("Rojo source operation target precondition mismatch");
+  const script = observation.scripts.find((entry) => entry.documentId === targetObjectId);
+  if (!script || script.sourceHash !== operation.beforeSourceHash)
+    throw new Error("Rojo source script precondition mismatch");
+  assertCreatorSourceEditsMetadata(operation.edits);
+  if (
+    !isHash(operation.finalSourceHash) ||
+    !Number.isSafeInteger(operation.finalByteCount) ||
+    operation.finalByteCount < 1
+  )
+    throw new Error("Rojo source edit final binding metadata is invalid");
+}
 function assertInstanceReferenceProperties(
   properties: Record<string, StudioValue>,
-  observation: StudioProjectState,
+  observation: CreatorProjectIndexView,
   ownership: StudioOwnershipMap,
+  transactionOperations: readonly StudioChangeOperation[],
 ): void {
   for (const [propertyName, value] of Object.entries(properties)) {
     if (value.kind !== "instance_ref") continue;
     if (value.state === "nil") continue;
     const observed = observation.instances.find(
-      (entry) => entry.stableId === value.stableId,
+      (entry) => entry.objectId === studioObjectIdentityKey(value.identity),
     );
     const owner = ownership.entries.find(
-      (entry) => entry.stableId === value.stableId,
+      (entry) => entry.objectId === studioObjectIdentityKey(value.identity),
+    );
+    const created = transactionOperations.find(
+      (operation) =>
+        operation.kind === "create" &&
+        studioObjectIdentityKey(operation.target.identity) ===
+          studioObjectIdentityKey(value.identity) &&
+        operation.target.path === value.path &&
+        operation.target.className === value.className,
     );
     if (
-      observed === undefined ||
-      owner?.owner !== "studio" ||
-      observed.path !== value.path ||
-      observed.className !== value.className ||
+      (created === undefined &&
+        (observed === undefined ||
+          owner?.owner !== "studio_document" ||
+          observed.path !== value.path ||
+          observed.className !== value.className)) ||
       !isRobloxClassAssignableTo(value.className, value.expectedClass)
     )
       throw new Error(
@@ -5548,16 +6815,35 @@ function assertInstanceReferenceProperties(
       );
   }
 }
+function assertOperationEnrollment(
+  target: StudioInstanceTarget,
+  enrollment: StudioIdentityEnrollment | undefined,
+): void {
+  if (target.identity.kind === "studio_ephemeral") {
+    if (
+      !enrollment ||
+      studioObjectIdentityKey(enrollment.identity) !== studioObjectIdentityKey(target.identity)
+    )
+      throw new Error("An ephemeral Studio target requires exact approved identity enrollment");
+    return;
+  }
+  if (enrollment !== undefined)
+    throw new Error("Only an ephemeral Studio target may carry identity enrollment");
+}
 function assertProperties(
   className: StudioWritableClass,
   properties: Record<string, StudioValue>,
 ): void {
   assertPropertiesWithPolicy(creatorPropertyPolicies()[className], properties);
-  const manifestClass = STUDIO_CAPABILITY_MANIFEST.classes.find((entry) => entry.name === className);
-  if (!manifestClass) throw new Error(`Class ${className} is outside the Studio capability manifest`);
+  const manifestClass = STUDIO_CAPABILITY_MANIFEST.classes.find(
+    (entry) => entry.name === className,
+  );
+  if (!manifestClass)
+    throw new Error(`Class ${className} is outside the Studio capability manifest`);
   for (const [name, value] of Object.entries(properties)) {
     const property = manifestClass.properties.find((entry) => entry.name === name);
-    if (!property) throw new Error(`Property ${className}.${name} is outside the Studio capability manifest`);
+    if (!property)
+      throw new Error(`Property ${className}.${name} is outside the Studio capability manifest`);
     assertStudioValueForProperty(value, property);
   }
 }
@@ -5565,19 +6851,19 @@ function assertPropertiesWithPolicy(
   policy: CreatorPropertyPolicy,
   properties: Record<string, StudioValue>,
 ): void {
-  const allowed = new Map(
-    policy.allowedProperties.map((property) => [property.name, property]),
-  );
+  const allowed = new Map(policy.allowedProperties.map((property) => [property.name, property]));
   for (const [name, value] of Object.entries(properties)) {
     const rule = allowed.get(name);
     if (!rule)
       throw new Error(
         `Property ${name} is not allowlisted; allowed properties: ${[...allowed.keys()].join(", ") || "none"}`,
       );
-    if (!rule.valueKinds.includes(value.kind))
-      throw new Error(
-        `Property ${name} requires a typed ${rule.valueKinds.join(" or ")} value`,
-      );
+    if (
+      value.kind === "nil"
+        ? rule.nullable !== true || value.expectedCodec !== rule.valueKinds[0]
+        : !rule.valueKinds.includes(value.kind)
+    )
+      throw new Error(`Property ${name} requires a typed ${rule.valueKinds.join(" or ")} value`);
     assertStudioValueConstraints(name, value, rule.constraints);
   }
 }
@@ -5590,9 +6876,7 @@ function assertStudioValueConstraints(
   if (value.kind === "color3_rgb8")
     for (const channel of [value.r, value.g, value.b])
       if (!Number.isInteger(channel) || channel < 0 || channel > 255)
-        throw new Error(
-          `Property ${name} requires canonical 8-bit Studio color channels`,
-        );
+        throw new Error(`Property ${name} requires canonical 8-bit Studio color channels`);
   if (!constraints) return;
   const scalars =
     value.kind === "number_f32"
@@ -5604,27 +6888,13 @@ function assertStudioValueConstraints(
     if (!Number.isFinite(scalar))
       throw new Error(`Property ${name} requires finite numeric values`);
     if (constraints.minimum !== undefined && scalar < constraints.minimum)
-      throw new Error(
-        `Property ${name} is below its minimum ${constraints.minimum}`,
-      );
+      throw new Error(`Property ${name} is below its minimum ${constraints.minimum}`);
     if (constraints.maximum !== undefined && scalar > constraints.maximum)
-      throw new Error(
-        `Property ${name} exceeds its maximum ${constraints.maximum}`,
-      );
-    if (
-      constraints.minimumExclusive !== undefined &&
-      scalar <= constraints.minimumExclusive
-    )
-      throw new Error(
-        `Property ${name} must be greater than ${constraints.minimumExclusive}`,
-      );
-    if (
-      constraints.maximumAbsolute !== undefined &&
-      Math.abs(scalar) > constraints.maximumAbsolute
-    )
-      throw new Error(
-        `Property ${name} exceeds its absolute bound ${constraints.maximumAbsolute}`,
-      );
+      throw new Error(`Property ${name} exceeds its maximum ${constraints.maximum}`);
+    if (constraints.minimumExclusive !== undefined && scalar <= constraints.minimumExclusive)
+      throw new Error(`Property ${name} must be greater than ${constraints.minimumExclusive}`);
+    if (constraints.maximumAbsolute !== undefined && Math.abs(scalar) > constraints.maximumAbsolute)
+      throw new Error(`Property ${name} exceeds its absolute bound ${constraints.maximumAbsolute}`);
   }
   if (value.kind === "string_utf8" || value.kind === "enum_name") {
     if (
@@ -5633,12 +6903,12 @@ function assertStudioValueConstraints(
     )
       throw new Error(`Property ${name} exceeds its UTF-8 byte bound`);
     if (
-      constraints.allowedStrings &&
-      !constraints.allowedStrings.includes(value.value)
+      constraints.minimumUtf8Bytes !== undefined &&
+      Buffer.byteLength(value.value, "utf8") < constraints.minimumUtf8Bytes
     )
-      throw new Error(
-        `Property ${name} must be one of: ${constraints.allowedStrings.join(", ")}`,
-      );
+      throw new Error(`Property ${name} is below its UTF-8 byte minimum`);
+    if (constraints.allowedStrings && !constraints.allowedStrings.includes(value.value))
+      throw new Error(`Property ${name} must be one of: ${constraints.allowedStrings.join(", ")}`);
   }
   if (value.kind === "cframe_f32x12") {
     value.components.forEach((component, index) => {
@@ -5653,9 +6923,7 @@ function assertStudioValueConstraints(
     });
   }
 }
-function assertAttributes(
-  attributes: Record<string, string | number | boolean>,
-): void {
+function assertAttributes(attributes: Record<string, string | number | boolean>): void {
   if (Object.keys(attributes).length > 64)
     throw new Error("Attribute update exceeds the 64-entry bound");
   for (const [name, value] of Object.entries(attributes)) {
@@ -5674,21 +6942,35 @@ function assertRemovedAttributes(attributes: string[]): void {
     throw new Error("Removed attributes must be unique and bounded");
   assertAttributes(Object.fromEntries(attributes.map((name) => [name, false])));
 }
-function assertRequiredSource(source: unknown): asserts source is string {
-  if (
-    typeof source !== "string" ||
-    source.trim().length === 0 ||
-    Buffer.byteLength(source, "utf8") > 48_000 ||
-    Buffer.from(source, "utf8").toString("utf8") !== source
-  )
-    throw new Error(
-      "Required script source must be non-empty valid UTF-8 within the 48000-byte bound",
-    );
+function assertRequiredSource(source: unknown): asserts source is CreatorSourceWriteBlobBinding {
+  try {
+    assertCreatorSourceWriteBlobBinding(source);
+  } catch {
+    throw new Error("Required script source must bind one valid immutable source-write blob");
+  }
+  if (source.utf8Bytes === 0)
+    throw new Error("Required script source cannot bind an empty source-write blob");
+}
+
+function assertCreatorSourceEditsMetadata(edits: readonly CreatorSourceEdit[]): void {
+  if (edits.length === 0 || edits.length > 1_024)
+    throw new Error("Source edits must contain 1-1024 entries");
+  let previousEnd = 0;
+  for (const edit of edits) {
+    if (
+      !isRecord(edit) ||
+      !Number.isSafeInteger(edit.startByte) ||
+      !Number.isSafeInteger(edit.endByte) ||
+      edit.startByte < previousEnd ||
+      edit.endByte < edit.startByte
+    )
+      throw new Error("Source edits must be sorted, non-overlapping byte ranges");
+    assertCreatorSourceWriteBlobBinding(edit.replacementBlob);
+    previousEnd = edit.endByte;
+  }
 }
 function isAllowedStudioPath(path: string): boolean {
-  return STUDIO_AUTHORING_ROOTS.some(
-    (root) => path === root || path.startsWith(`${root}/`),
-  );
+  return STUDIO_AUTHORING_ROOTS.some((root) => path === root || path.startsWith(`${root}/`));
 }
 function canonicalParentPath(value: string): string {
   const path = canonicalStudioPath(value);
@@ -5696,29 +6978,78 @@ function canonicalParentPath(value: string): string {
     throw new Error(`Studio parent root is not allowlisted: ${value}`);
   return path;
 }
-function assertWritableParent(
-  value: string,
-  observation: StudioProjectState,
+function assertExactPlanParent(
+  parent: StudioMutationParent,
+  expectedPath: string,
+  observation: CreatorProjectIndexView,
+): CreatorProjectIndexView["instances"][number] {
+  const path = canonicalParentPath(expectedPath);
+  if (parent.path !== path)
+    throw new Error("Planned parent display path does not match its destination");
+  if (parent.kind === "engine_container") {
+    const candidates = observation.instances.filter(
+      (entry) =>
+        entry.engineContainer?.path === path &&
+        entry.engineContainer.className === parent.className,
+    );
+    if (candidates.length !== 1)
+      throw new Error("Planned engine parent is not a manifest-declared authoring container");
+    return candidates[0]!;
+  }
+  const observed = observation.instances.find(
+    (entry) =>
+      entry.objectId === studioObjectIdentityKey(parent.identity) &&
+      entry.path === parent.path &&
+      entry.className === parent.className,
+  );
+  if (!observed) throw new Error("Planned parent identity is absent or stale in the project index");
+  return observed;
+}
+function assertStudioStructuralParent(
+  parent: StudioMutationParent,
+  indexedParent: CreatorProjectIndexView["instances"][number],
   ownership: StudioOwnershipMap,
+  context: {
+    operationId: string;
+    operationKind: "create" | "move";
+    targetPath: string;
+  },
 ): void {
-  const path = canonicalParentPath(value);
-  const parent = observation.instances.find((entry) => entry.path === path);
-  const authority =
-    parent &&
-    ownership.entries.find((entry) => entry.stableId === parent.stableId);
-  if (!parent || !authority?.writable || authority.owner !== "studio")
-    throw new Error(
-      "Studio operation parent is absent from the initial snapshot or externally owned",
+  if (parent.kind === "engine_container") return;
+  const authority = ownership.entries.find((entry) => entry.objectId === indexedParent.objectId);
+  if (authority?.owner !== "studio_document")
+    throw new CreatorValidationFailure(
+      "PLAN_PARENT_UNAVAILABLE",
+      `Studio operation parent ${parent.path} for ${context.targetPath} is neither a manifest-declared engine-owned authoring container nor an exact Studio-document-owned initial-index structural anchor`,
+      {
+        ...context,
+        parentPath: parent.path,
+        observedParent: {
+          objectIdentity: indexedParent.identity,
+          className: indexedParent.className,
+          owner: authority?.owner ?? null,
+        },
+      },
     );
 }
-function isScriptClass(value: StudioWritableClass): boolean {
-  return (
-    value === "Script" || value === "LocalScript" || value === "ModuleScript"
+function hasIndexedChildNameCollision(
+  observation: CreatorProjectIndexView,
+  parent: CreatorProjectIndexView["instances"][number],
+  name: string,
+  exceptObjectId?: string,
+): boolean {
+  return observation.instances.some(
+    (entry) =>
+      entry.objectId !== exceptObjectId &&
+      entry.name === name &&
+      entry.parentIdentity !== undefined &&
+      studioObjectIdentityKey(entry.parentIdentity) === parent.objectId,
   );
 }
-function isControlActionDescriptor(
-  value: unknown,
-): value is CreatorControlActionDescriptor {
+function isScriptClass(value: StudioWritableClass): value is StudioScriptClass {
+  return value === "Script" || value === "LocalScript" || value === "ModuleScript";
+}
+function isControlActionDescriptor(value: unknown): value is CreatorControlActionDescriptor {
   return (
     isRecord(value) &&
     [
@@ -5726,10 +7057,14 @@ function isControlActionDescriptor(
       "reject_plan",
       "approve_and_apply_changes",
       "reject_changes",
-      "start_checks",
       "accept_result",
       "reject_and_rollback",
       "cancel_changes",
+      "retry_play_verification",
+      "refresh_project",
+      "check_source_sync",
+      "revert_source_changes",
+      "cancel_interrupted_recording",
     ].includes(String(value.id)) &&
     typeof value.label === "string" &&
     value.label.length > 0 &&
@@ -5756,33 +7091,68 @@ function validArtifactReference(value: unknown): value is ArtifactReference {
     return false;
   }
 }
-function assertTransition(
-  from: CreatorSessionStatus,
-  to: CreatorSessionStatus,
-): void {
+function assertTransition(from: CreatorSessionStatus, to: CreatorSessionStatus): void {
   const allowed: Record<CreatorSessionStatus, CreatorSessionStatus[]> = {
-    planning: ["awaiting_plan_approval", "incomplete"],
-    awaiting_plan_approval: ["building", "creator_rejected", "incomplete"],
-    building: ["awaiting_change_approval", "incomplete"],
-    awaiting_change_approval: ["preflighting", "creator_rejected", "incomplete"],
-    preflighting: ["applying", "incomplete"],
-    applying: ["awaiting_verification", "cancelling", "incomplete", "recovery_required"],
+    indexing: ["planning", "refresh_required", "incomplete"],
+    planning: ["awaiting_plan_approval", "refresh_required", "incomplete"],
+    awaiting_plan_approval: ["building", "refresh_required", "creator_rejected", "incomplete"],
+    building: ["awaiting_change_approval", "refresh_required", "incomplete"],
+    awaiting_change_approval: [
+      "preflighting",
+      "refresh_required",
+      "creator_rejected",
+      "incomplete",
+    ],
+    preflighting: ["applying", "refresh_required", "incomplete"],
+    applying: [
+      "awaiting_verification",
+      "awaiting_source_sync",
+      "cancelling",
+      "incomplete",
+      "recovery_required",
+    ],
     awaiting_verification: [
       "verifying",
-      "creator_rejected", "cancelling",
+      "creator_rejected",
+      "cancelling",
       "incomplete",
       "recovery_required",
     ],
     verifying: [
-      "committing", "cancelling",
+      "awaiting_verification_retry",
+      "committing",
+      "cancelling",
       "repairing",
       "incomplete",
       "recovery_required",
     ],
+    awaiting_verification_retry: ["awaiting_verification", "cancelling", "recovery_required"],
     cancelling: ["repairing", "creator_rejected", "incomplete", "recovery_required"],
     committing: ["awaiting_review", "recovery_required"],
-    repairing: ["awaiting_change_approval", "incomplete"],
+    repairing: ["awaiting_change_approval", "refresh_required", "incomplete"],
+    refresh_required: ["refreshing", "incomplete", "recovery_required"],
+    refreshing: [
+      "planning",
+      "awaiting_plan_approval",
+      "building",
+      "awaiting_change_approval",
+      "repairing",
+      "awaiting_review",
+      "superseded",
+      "refresh_required",
+      "incomplete",
+    ],
+    superseded: [],
+    awaiting_source_sync: [
+      "awaiting_source_sync",
+      "awaiting_review",
+      "incomplete",
+      "recovery_required",
+    ],
     awaiting_review: [
+      "refresh_required",
+      "awaiting_source_sync",
+      "recovery_required",
       "creator_accepted",
       "creator_rejected",
       "rolled_back",
@@ -5792,7 +7162,7 @@ function assertTransition(
     creator_rejected: ["rolled_back"],
     rolled_back: [],
     incomplete: [],
-    recovery_required: ["cancelling"],
+    recovery_required: ["cancelling", "awaiting_source_sync"],
   };
   if (!allowed[from].includes(to))
     throw new Error(`Invalid CreatorSession transition ${from} -> ${to}`);
@@ -5801,6 +7171,7 @@ function isStatus(value: unknown): value is CreatorSessionStatus {
   return (
     typeof value === "string" &&
     [
+      "indexing",
       "planning",
       "awaiting_plan_approval",
       "building",
@@ -5809,9 +7180,14 @@ function isStatus(value: unknown): value is CreatorSessionStatus {
       "applying",
       "awaiting_verification",
       "verifying",
+      "awaiting_verification_retry",
       "cancelling",
       "committing",
       "repairing",
+      "refresh_required",
+      "refreshing",
+      "superseded",
+      "awaiting_source_sync",
       "awaiting_review",
       "creator_accepted",
       "creator_rejected",
@@ -5833,6 +7209,74 @@ function isId(value: unknown): value is string {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+function isIndexedEngineContainer(
+  value: unknown,
+): value is { readonly path: string; readonly className: string } {
+  return (
+    isRecord(value) &&
+    typeof value.path === "string" &&
+    typeof value.className === "string" &&
+    STUDIO_AUTHORING_CONTAINERS.some(
+      (container) => container.path === value.path && container.className === value.className,
+    )
+  );
+}
+function assertCreatorProjectIndexView(value: unknown): asserts value is CreatorProjectIndexView {
+  if (
+    !isRecord(value) ||
+    !isRecord(value.project) ||
+    !isRecord(value.revision) ||
+    !isHash(value.revision.hash) ||
+    !Array.isArray(value.instances) ||
+    !Array.isArray(value.scripts) ||
+    !value.instances.every(
+      (entry) =>
+        isRecord(entry) &&
+        isId(entry.objectId) &&
+        typeof entry.path === "string" &&
+        typeof entry.name === "string" &&
+        isStudioInstanceName(entry.name) &&
+        STUDIO_OBJECT_IDENTITY_SCHEMA.safeParse(entry.identity).success &&
+        (entry.parentIdentity === undefined ||
+          STUDIO_OBJECT_IDENTITY_SCHEMA.safeParse(entry.parentIdentity).success) &&
+        (entry.engineContainer === undefined || isIndexedEngineContainer(entry.engineContainer)) &&
+        isId(entry.className) &&
+        isRecord(entry.properties) &&
+        isRecord(entry.attributes) &&
+        Array.isArray(entry.tags),
+    ) ||
+    !value.scripts.every(
+      (entry) =>
+        isRecord(entry) &&
+        isId(entry.documentId) &&
+        typeof entry.path === "string" &&
+        isId(entry.className) &&
+        isHash(entry.sourceHash) &&
+        Number.isSafeInteger(entry.utf8Bytes) &&
+        Number(entry.utf8Bytes) >= 0,
+    )
+  )
+    throw new Error("Invalid creator project-index view");
+  const instanceIds = new Set(value.instances.map((entry) => entry.objectId));
+  if (
+    value.instances.some(
+      (entry) =>
+        (entry.parentIdentity !== undefined &&
+          (!instanceIds.has(studioObjectIdentityKey(entry.parentIdentity)) ||
+            entry.objectId === studioObjectIdentityKey(entry.parentIdentity))) ||
+        (entry.engineContainer !== undefined &&
+          entry.className !== entry.engineContainer.className),
+    ) ||
+    new Set(
+      value.instances.flatMap((entry) =>
+        entry.engineContainer === undefined
+          ? []
+          : [`${entry.engineContainer.path}\u0000${entry.engineContainer.className}`],
+      ),
+    ).size !== value.instances.filter((entry) => entry.engineContainer !== undefined).length
+  )
+    throw new Error("Invalid creator project-index hierarchy metadata");
+}
 class ToolFailure extends Error {
   constructor(
     readonly code: string,
@@ -5841,18 +7285,22 @@ class ToolFailure extends Error {
     super(message);
   }
 }
-function correctiveFailure(
-  code: string,
-  message: string,
-  details: unknown,
-): ToolFailure {
+class CreatorValidationFailure extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly details: unknown,
+  ) {
+    super(message);
+  }
+}
+function correctiveFailure(code: string, message: string, details: unknown): ToolFailure {
   return new ToolFailure(code, stableJson({ message, details }));
 }
 
-export const CREATOR_PLANNER_SYSTEM_PROMPT =
-  "You are Forge's read-only creator planner. Use studio.api_lookup to ground every Roblox class, member, datatype, or enum that source-bearing work depends on in the pinned official catalog; its source-only results authorize Luau references, not direct Studio mutation or behavioral proof. Use studio.inspect for exact initial paths whose properties, attributes, position, ownership, or script hashes matter, then publish one typed plan and visible charter with creator.propose_plan. Explicitly declare the exact already-inspected inspectionPaths the builder will need for relationships, placement, integration, or preservation; do not rely on prose inference. Forge derives the plan goal exactly from the immutable creator request: never restate, weaken, or replace it. Each step must bind exact changeIds and the steps must cover every change once. Each change requires an exact path, action, class, and initialization. Every create and move parent must already exist in the initial snapshot and be Studio-writable; a planned instance cannot parent another planned instance. Script, LocalScript, and ModuleScript creation uses initialization inline_source_required: the builder supplies complete source inside that one create operation. write_source only targets a script present in the initial snapshot; never use it for a planned creation. Non-script creation uses initial_properties. Supply only typed fields for machine checks because Forge generates their exact statements. Every create or move output requires an exact class-aware instance_exists check. Any source-bearing plan requires luau_syntax. instance_exists can use an allowlisted Studio root; position_series is Workspace BasePart-only and every creator position series must span the current creator observation window while all sequential series remain within the generated manifest runtime budget, so creator interaction can occur during the authoritative Play Solo window. Playtest diagnostics count the complete playtest rather than attributable messages; subtree_unchanged is only a bounded snapshot comparison. Put visual quality, causal attribution, exact input-to-effect claims, and unsupported gameplay judgments in creator_review. Do not stage changes or invent hidden criteria.";
+export const CREATOR_PLANNER_SYSTEM_PROMPT = `You are Forge's read-only creator planner. Use studio.api_lookup to ground Roblox APIs and use source.search, source.read, source.symbols, source.references, and source.dependencies to explore an existing project before selecting source targets. Those results are static analysis, not runtime proof, and Forge records the exact consulted source ranges and graph closure. Use studio.inspect for exact initial-index paths whose non-source facts matter, then publish one typed plan and visible charter with creator.propose_plan. Forge derives the immutable goal. Every step binds exact changeIds and covers every change once. Script creation carries complete initial source; edit_source targets only an existing consulted script and requires luau_syntax. Every create or move parent must be a manifest-declared authoring container or an exact Studio-document-owned structural anchor in the initial index; that does not authorize changing the parent itself. Supply only typed machine-check fields; put client-only output, visual quality, causal attribution, and unsupported gameplay judgments in creator_review. Do not stage changes or invent hidden criteria.`;
 export const CREATOR_BUILDER_SYSTEM_PROMPT =
-  "You are Forge's bounded Studio builder. The exact immutable CreatorBuildContract is supplied below. It already fixes each operation's kind, path, parent, name, class, stable ID, precondition hashes, temporary ID, and operation ID. Never repeat or invent structural fields. Use studio.api_lookup to ground every Roblox class, member, datatype, or enum used in authored source in the pinned official catalog; source-only entries may be referenced in Luau but cannot be sent as typed Studio mutations or claimed as proof. Use studio.inspect only with explicit contract initial paths. For an approved write_source change, use studio.read_source to read its bounded current source before authoring the complete replacement. Use studio.stage with only a planChangeId plus the permitted creative payload. Property inputs use natural JSON without type/value wrappers; follow each sealed property's required codec. Scalars are booleans, finite numbers, or strings. Compound inputs use Vector2 {x,y}, Vector3 {x,y,z}, Color3 {r,g,b} in 0..1, CFrame {position:{x,y,z},rotation:{x,y,z}} in Euler degrees, UDim {scale,offset}, UDim2 {x:{scale,offset},y:{scale,offset}}, Rect {min:{x,y},max:{x,y}}, NumberRange {min,max}, sequences {keypoints:[...]}, BrickColor {name}, Font {family,weight,style}, PhysicalProperties, Axes, Faces, Ray {origin,direction}, or stable instance reference {stableId,path,className}. Implement every contract change exactly once, inspect the diff, and run forge.verify. The contract's per-class property policy is authoritative. A source-required change needs complete non-empty inline source. Never use arbitrary execution, generic property access, unapproved content IDs, terrain, or externally owned Rojo targets. The live place is not mutated until the creator separately approves the sealed change set.";
+  "You are Forge's bounded Studio builder. The immutable CreatorBuildContract fixes all structural authority and binds the planner's source consultation. Use source.read only inside that approved closure. For edit_source, stage sorted non-overlapping UTF-8 byte edits against the exact before-source hash; Forge materializes the full candidate, verifies its final hash and byte count, shows the exact diff, and applies it through Studio only after creator approval. New scripts still carry complete source. Use studio.stage only with planChangeId and the allowed creative payload, inspect studio.diff, then run forge.verify. Use studio.api_lookup for API context, never as mutation or behavioral proof. Never execute project source, invent structural fields, access source outside the consultation closure, or claim Studio mutation before approval.";
 
 export function creatorBuilderSystemPrompt(
   plan: CreatorPlan,
@@ -5866,17 +7314,11 @@ export function creatorBuilderSystemPrompt(
     contract.planHash !== plan.hash ||
     contract.promptHash !== plan.promptHash
   )
-    throw new Error(
-      "CreatorBuildContract does not bind the approved CreatorPlan",
-    );
+    throw new Error("CreatorBuildContract does not bind the approved CreatorPlan");
   if (
     verificationFeedback.length > 32 ||
-    verificationFeedback.some(
-      (failure) => failure.trim().length === 0 || failure.length > 4096,
-    )
+    verificationFeedback.some((failure) => failure.trim().length === 0 || failure.length > 4096)
   )
-    throw new Error(
-      "Creator verification feedback is invalid or exceeds its bound",
-    );
+    throw new Error("Creator verification feedback is invalid or exceeds its bound");
   return `${CREATOR_BUILDER_SYSTEM_PROMPT}\n\nApproved CreatorPlan semantics (verbatim):\n${stableJson(plan)}\n\nCanonical CreatorBuildContract (verbatim):\n${stableJson(contract)}${verificationFeedback.length === 0 ? "" : `\n\nForge verification facts from the prior approved attempt follow as canonical data. Repair the implementation without weakening or changing the approved charter:\n${stableJson({ verificationFeedback: [...verificationFeedback] })}`}`;
 }

@@ -28,7 +28,10 @@ const sentAt = "2026-09-01T00:00:00.000Z";
 const project = { name: "Attestation Project", placeId: 71, universeId: 72 };
 const capabilities: StudioCapability[] = [
   "studio_evidence",
-  "evidence_chunks",
+  "studio_project_index",
+  "opaque_identity",
+  "project_change_monitor",
+  "semantic_message_stream",
   "sha256",
   "stable_identity",
   "reflection_attestation",
@@ -76,12 +79,16 @@ test("creator control exposes backend-graded live attestation and authorizes its
     binding: { sessionId: "studio_session_attestation" },
     requirements: STUDIO_CAPABILITY_MANIFEST.classes.flatMap((classDefinition) =>
       classDefinition.properties.map((property) => ({
-        key: studioEvidenceFactKey("reflection", target, `${classDefinition.name}.${property.name}`),
+        key: studioEvidenceFactKey(
+          "reflection",
+          target,
+          `${classDefinition.name}.${property.name}`,
+        ),
         kind: "reflection" as const,
         target,
       })),
     ),
-    scope: { mode: "exact", roots: [], requireCompleteInventory: false },
+    scope: { roots: [] },
     bounds: {
       maximumFacts: STUDIO_CAPABILITY_MANIFEST.limits.maximumProjectionFacts,
       maximumBytes: STUDIO_CAPABILITY_MANIFEST.limits.maximumProjectionBytes,
@@ -96,7 +103,6 @@ test("creator control exposes backend-graded live attestation and authorizes its
     manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
     connectorBuildHash: "1".repeat(64),
     capabilityAttestationProjectionHash: projection.contentHash,
-    projectStateProjectionHash: "2".repeat(64),
     sessionToken: "studio_session_token_attestation",
     connectedAt: sentAt,
   };
@@ -115,7 +121,9 @@ test("creator control exposes backend-graded live attestation and authorizes its
       return [session];
     },
     async close() {},
-  } as unknown as StudioBridgeConnection & { getSessions(): StudioBridgeSession[] };
+  } as unknown as StudioBridgeConnection & {
+    getSessions(): StudioBridgeSession[];
+  };
   const worker = {
     descriptor: {
       kind: "CreatorAgentWorkerDescriptor",
@@ -134,6 +142,11 @@ test("creator control exposes backend-graded live attestation and authorizes its
     connection,
     worker,
     directory: root,
+    sourceAnalysisHost: {
+      async analyze() {
+        throw new Error("attestation must not analyze source");
+      },
+    },
     timeoutMs: 500,
   });
   try {
@@ -141,7 +154,11 @@ test("creator control exposes backend-graded live attestation and authorizes its
       (classDefinition) =>
         classDefinition.properties.map((property) => ({
           kind: "reflection" as const,
-          key: studioEvidenceFactKey("reflection", target, `${classDefinition.name}.${property.name}`),
+          key: studioEvidenceFactKey(
+            "reflection",
+            target,
+            `${classDefinition.name}.${property.name}`,
+          ),
           target,
           result: {
             status: "observed" as const,
@@ -164,14 +181,22 @@ test("creator control exposes backend-graded live attestation and authorizes its
       },
       projection,
     );
-    handler!({
-      kind: "StudioProtocolMessage",
-      direction: "plugin_to_backend",
-      type: "StudioEvidenceProduced",
-      messageId: "attestation-complete",
-      sentAt,
-      payload: { project, reason: "capability_attestation", projection, envelope: complete },
-    }, session);
+    handler!(
+      {
+        kind: "StudioProtocolMessage",
+        direction: "plugin_to_backend",
+        type: "StudioEvidenceProduced",
+        messageId: "attestation-complete",
+        sentAt,
+        payload: {
+          project,
+          reason: "capability_attestation",
+          projection,
+          envelope: complete,
+        },
+      },
+      session,
+    );
     const verified = await eventually(
       () => coordinator.dashboardState(),
       (state) => state.pairedStudio.attestationStatus === "verified",
@@ -181,14 +206,17 @@ test("creator control exposes backend-graded live attestation and authorizes its
     assert.equal(verified.pairedStudio.attestationHash, complete.contentHash);
     const verifiedArtifactHash = verified.pairedStudio.attestationArtifact?.artifactHash;
     assert.ok(verifiedArtifactHash);
-    assert.deepEqual(
-      await coordinator.readAuthorizedArtifact(verifiedArtifactHash),
-      complete,
-    );
+    assert.deepEqual(await coordinator.readAuthorizedArtifact(verifiedArtifactHash), complete);
 
     const unavailable = facts.map((fact, index) =>
       index === 0
-        ? { ...fact, result: { status: "unavailable" as const, code: "reflection_service_denied" } }
+        ? {
+            ...fact,
+            result: {
+              status: "unavailable" as const,
+              code: "reflection_service_denied",
+            },
+          }
         : fact,
     );
     const incomplete = createStudioEvidenceEnvelope(
@@ -206,14 +234,22 @@ test("creator control exposes backend-graded live attestation and authorizes its
       },
       projection,
     );
-    handler!({
-      kind: "StudioProtocolMessage",
-      direction: "plugin_to_backend",
-      type: "StudioEvidenceProduced",
-      messageId: "attestation-incomplete",
-      sentAt,
-      payload: { project, reason: "capability_attestation", projection, envelope: incomplete },
-    }, session);
+    handler!(
+      {
+        kind: "StudioProtocolMessage",
+        direction: "plugin_to_backend",
+        type: "StudioEvidenceProduced",
+        messageId: "attestation-incomplete",
+        sentAt,
+        payload: {
+          project,
+          reason: "capability_attestation",
+          projection,
+          envelope: incomplete,
+        },
+      },
+      session,
+    );
     const incompleteState = await eventually(
       () => coordinator.dashboardState(),
       (state) => state.pairedStudio.attestationStatus === "incomplete",

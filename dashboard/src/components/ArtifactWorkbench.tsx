@@ -17,9 +17,13 @@ export function ArtifactWorkbench({ controlView }: ArtifactWorkbenchProps): Reac
         <div>
           <h2 id="artifact-title">{controlView.title}</h2>
         </div>
-        <span className="view-hash" title={controlView.hash}>view {abbreviate(controlView.hash)}</span>
+        <span className="view-hash" title={controlView.hash}>
+          view {abbreviate(controlView.hash)}
+        </span>
       </div>
-      <p className="view-message" aria-live="polite">{controlView.detail}</p>
+      <p className="view-message" aria-live="polite">
+        {controlView.detail}
+      </p>
       <ReviewPresentation controlView={controlView} />
       <CreatorJudgmentPrompts prompts={controlView.creatorReviewPrompts} />
       {artifacts.length > 0 ? (
@@ -27,7 +31,12 @@ export function ArtifactWorkbench({ controlView }: ArtifactWorkbenchProps): Reac
           <h3>Evidence files</h3>
           <div className="artifact-grid">
             {artifacts.map(([label, artifact]) => (
-              <ArtifactCard key={artifact.artifactHash} label={label} artifact={artifact} onOpen={setSelectedArtifact} />
+              <ArtifactCard
+                key={artifact.artifactHash}
+                label={label}
+                artifact={artifact}
+                onOpen={setSelectedArtifact}
+              />
             ))}
           </div>
         </section>
@@ -35,37 +44,85 @@ export function ArtifactWorkbench({ controlView }: ArtifactWorkbenchProps): Reac
       <MutationSummary controlView={controlView} />
       <VerificationSummary controlView={controlView} />
       {selectedArtifact ? (
-        <Suspense fallback={<div className="raw-evidence-loading">Loading immutable evidence…</div>}>
-          <RawArtifactViewer artifact={selectedArtifact} onClose={() => setSelectedArtifact(undefined)} />
+        <Suspense
+          fallback={<div className="raw-evidence-loading">Loading immutable evidence…</div>}
+        >
+          <RawArtifactViewer
+            artifact={selectedArtifact}
+            onClose={() => setSelectedArtifact(undefined)}
+          />
         </Suspense>
       ) : null}
     </section>
   );
 }
 
-function MutationSummary({ controlView }: { controlView: CreatorControlView }): React.JSX.Element | null {
+function MutationSummary({
+  controlView,
+}: {
+  controlView: CreatorControlView;
+}): React.JSX.Element | null {
   const mutation = controlView.mutation;
   if (!mutation) return null;
   return (
-    <section className={`verification-summary verification-summary--${mutation.status}`} aria-label="Mutation evidence summary">
+    <section
+      className={`verification-summary verification-summary--${mutation.status}`}
+      aria-label="Mutation evidence summary"
+    >
       <div>
         <strong>Transactional mutation proof</strong>
-        <span className="verification-summary__status">{mutation.status.replaceAll("_", " ")}</span>
-        <span>{mutation.projectionFactCount} projected facts · {mutation.replayable ? "Provider-free replay available" : "Evidence is explicitly incomplete"}</span>
+        <span className="verification-summary__status">{mutationStatusLabel(mutation.status)}</span>
+        <span>
+          {mutation.projectionFactCount} projected facts ·{" "}
+          {mutation.replayable
+            ? "Provider-free replay available"
+            : "Evidence is explicitly incomplete"}
+        </span>
       </div>
       {mutation.failureFacts.length > 0 ? (
-        <ul>{mutation.failureFacts.map((fact) => <li key={fact.hash}>{fact.statement}</li>)}</ul>
+        <ul>
+          {mutation.failureFacts.map((fact) => (
+            <li key={fact.hash}>
+              <strong>{failurePhaseLabel(fact.code)}</strong>
+              {fact.statement}
+            </li>
+          ))}
+        </ul>
       ) : null}
     </section>
   );
 }
 
-function ReviewPresentation({ controlView }: { controlView: CreatorControlView }): React.JSX.Element | null {
+function mutationStatusLabel(
+  status: NonNullable<CreatorControlView["mutation"]>["status"],
+): string {
+  if (status === "source_transfer_failed") return "source transfer failed";
+  if (status === "prepare_failed") return "change-set preparation failed";
+  if (status === "preflight_failed") return "detached preflight failed";
+  return status.replaceAll("_", " ");
+}
+
+function failurePhaseLabel(code: string): string {
+  if (code === "creator_source_transfer_failed") return "Source transfer: ";
+  if (code === "creator_prepare_transport_failed") return "Preparation transport: ";
+  if (code === "creator_preflight_transport_failed") return "Preflight transport: ";
+  if (code === "creator_preflight_evidence_persistence_failed") return "Preflight evidence: ";
+  if (code === "creator_durable_mutation_intent_failed") return "Mutation intent: ";
+  return "Evidence: ";
+}
+
+function ReviewPresentation({
+  controlView,
+}: {
+  controlView: CreatorControlView;
+}): React.JSX.Element | null {
   const artifact = controlView.artifact;
   if (!artifact || !isRecord(artifact.presentation)) return null;
-  return artifact.kind === "plan"
-    ? <PlanPresentation value={artifact.presentation} />
-    : <ChangePresentation value={artifact.presentation} />;
+  return artifact.kind === "plan" ? (
+    <PlanPresentation value={artifact.presentation} />
+  ) : (
+    <ChangePresentation value={artifact.presentation} />
+  );
 }
 
 function PlanPresentation({ value }: { value: Record<string, unknown> }): React.JSX.Element {
@@ -78,10 +135,17 @@ function PlanPresentation({ value }: { value: Record<string, unknown> }): React.
     <section className="review-presentation" aria-label="Plan review evidence">
       <div className="review-presentation__header">
         <h3>Exact request</h3>
-        {typeof request.promptHash === "string" ? <code>{abbreviate(request.promptHash)}</code> : null}
+        {typeof request.promptHash === "string" ? (
+          <code>{abbreviate(request.promptHash)}</code>
+        ) : null}
       </div>
       {typeof request.text === "string" ? <blockquote>{request.text}</blockquote> : null}
-      {typeof plan.goal === "string" ? <p className="review-goal"><strong>Goal</strong>{plan.goal}</p> : null}
+      {typeof plan.goal === "string" ? (
+        <p className="review-goal">
+          <strong>Goal</strong>
+          {plan.goal}
+        </p>
+      ) : null}
       <div className="review-columns">
         <ReviewList
           title="Typed changes"
@@ -94,14 +158,17 @@ function PlanPresentation({ value }: { value: Record<string, unknown> }): React.
           title="Machine checks"
           values={checks.map((check) => ({
             title: textValue(check.statement, textValue(check.check, "Check")),
-            detail: [check.check, check.path].filter((item): item is string => typeof item === "string").join(" · "),
+            detail: [check.check, check.path]
+              .filter((item): item is string => typeof item === "string")
+              .join(" · "),
           }))}
         />
       </div>
       {coverage.length > 0 ? (
         <p className="coverage-line">
           <strong>Output coverage</strong>
-          {coverage.filter((item) => item.covered === true).length}/{coverage.length} planned outputs have exact checks
+          {coverage.filter((item) => item.covered === true).length}/{coverage.length} planned
+          outputs have exact checks
         </p>
       ) : null}
     </section>
@@ -117,14 +184,24 @@ function ChangePresentation({ value }: { value: Record<string, unknown> }): Reac
     <section className="review-presentation" aria-label="Change review evidence">
       <div className="review-presentation__header">
         <h3>Exact mutation</h3>
-        <span className={`gate-chip gate-chip--${textValue(gate.status, "unknown")}`}>{textValue(gate.status, "not run")}</span>
+        <span className={`gate-chip gate-chip--${textValue(gate.status, "unknown")}`}>
+          {textValue(gate.status, "not run")}
+        </span>
       </div>
       <div className="operation-list">
         {operations.map((operation, index) => (
-          <article className="operation-row" key={textValue(operation.operationHash, String(index))}>
-            <div><strong>{textValue(operation.kind, "operation")}</strong><span>{textValue(operation.target, textValue(operation.path, "Bound target"))}</span></div>
+          <article
+            className="operation-row"
+            key={textValue(operation.operationHash, String(index))}
+          >
+            <div>
+              <strong>{textValue(operation.kind, "operation")}</strong>
+              <span>{textValue(operation.target, textValue(operation.path, "Bound target"))}</span>
+            </div>
             {typeof operation.className === "string" ? <span>{operation.className}</span> : null}
-            {typeof operation.operationHash === "string" ? <code>{abbreviate(operation.operationHash)}</code> : null}
+            {typeof operation.operationHash === "string" ? (
+              <code>{abbreviate(operation.operationHash)}</code>
+            ) : null}
             {isRecord(operation.properties) && Object.keys(operation.properties).length > 0 ? (
               <pre>{JSON.stringify(operation.properties, null, 2)}</pre>
             ) : null}
@@ -134,13 +211,18 @@ function ChangePresentation({ value }: { value: Record<string, unknown> }): Reac
       {proofObligations.length > 0 ? (
         <section className="proof-obligations" aria-label="Projected mutation proof obligations">
           <h4>Direct readback obligations</h4>
-          <p>These exact expected facts are bound into this review before Studio may open a recording.</p>
-          <ul>{proofObligations.map((obligation, index) => (
-            <li key={`${textValue(obligation.fact, "fact")}-${index}`}>
-              <strong>{textValue(obligation.fact, "Mutation fact")}</strong>
-              <code>{textValue(obligation.expected, "observed")}</code>
-            </li>
-          ))}</ul>
+          <p>
+            These exact expected facts are bound into this review before Studio may open a
+            recording.
+          </p>
+          <ul>
+            {proofObligations.map((obligation, index) => (
+              <li key={`${textValue(obligation.fact, "fact")}-${index}`}>
+                <strong>{textValue(obligation.fact, "Mutation fact")}</strong>
+                <code>{textValue(obligation.expected, "observed")}</code>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
       {sourceDiffs.map((diff, index) => (
@@ -153,23 +235,46 @@ function ChangePresentation({ value }: { value: Record<string, unknown> }): Reac
   );
 }
 
-function CreatorJudgmentPrompts({ prompts }: { prompts: string[] | undefined }): React.JSX.Element | null {
+function CreatorJudgmentPrompts({
+  prompts,
+}: {
+  prompts: string[] | undefined;
+}): React.JSX.Element | null {
   if (!prompts || prompts.length === 0) return null;
   return (
     <section className="creator-prompts" aria-label="Creator review prompts">
       <h3>Creator checks</h3>
-      <ul>{prompts.map((prompt) => <li key={prompt}>{prompt}</li>)}</ul>
+      <ul>
+        {prompts.map((prompt) => (
+          <li key={prompt}>{prompt}</li>
+        ))}
+      </ul>
     </section>
   );
 }
 
-function ReviewList({ title, values }: { title: string; values: Array<{ title: string; detail: string }> }): React.JSX.Element {
+function ReviewList({
+  title,
+  values,
+}: {
+  title: string;
+  values: Array<{ title: string; detail: string }>;
+}): React.JSX.Element {
   return (
     <div className="review-list">
       <h4>{title}</h4>
-      {values.length > 0 ? <ul>{values.map((value, index) => (
-        <li key={`${value.title}-${index}`}><strong>{value.title}</strong>{value.detail ? <span>{value.detail}</span> : null}</li>
-      ))}</ul> : <p>No items recorded.</p>}
+      {values.length > 0 ? (
+        <ul>
+          {values.map((value, index) => (
+            <li key={`${value.title}-${index}`}>
+              <strong>{value.title}</strong>
+              {value.detail ? <span>{value.detail}</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>No items recorded.</p>
+      )}
     </div>
   );
 }
@@ -183,7 +288,9 @@ function records(value: unknown): Record<string, unknown>[] {
 }
 
 function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function textValue(value: unknown, fallback: string): string {
@@ -192,7 +299,10 @@ function textValue(value: unknown, fallback: string): string {
 
 function AwaitingEvidence(): React.JSX.Element {
   return (
-    <section className="artifact-workbench artifact-workbench--empty" aria-labelledby="artifact-title">
+    <section
+      className="artifact-workbench artifact-workbench--empty"
+      aria-labelledby="artifact-title"
+    >
       <div>
         <h2 id="artifact-title">Evidence record</h2>
       </div>
@@ -218,7 +328,9 @@ function ArtifactCard({ label, artifact, onOpen }: ArtifactCardProps): React.JSX
         <code title={artifact.artifactHash}>{abbreviate(artifact.artifactHash)}</code>
       </div>
       <span>{formatBytes(artifact.bytes)}</span>
-      <button type="button" className="quiet-button" onClick={() => onOpen(artifact)}>Inspect JSON</button>
+      <button type="button" className="quiet-button" onClick={() => onOpen(artifact)}>
+        Inspect JSON
+      </button>
     </article>
   );
 }
@@ -230,23 +342,58 @@ interface VerificationSummaryProps {
 function VerificationSummary({ controlView }: VerificationSummaryProps): React.JSX.Element | null {
   const verification = controlView.verification;
   if (!verification) return null;
+  const runtime = verification.runtimeSummary;
   return (
-    <section className={`verification-summary verification-summary--${verification.status}`} aria-label="Verification summary">
+    <section
+      className={`verification-summary verification-summary--${verification.status}`}
+      aria-label="Verification summary"
+    >
       <div>
         <strong>Verification</strong>
         <span className="verification-summary__status">{verification.status}</span>
-        <span>{verification.replayable ? "Provider-free replay available" : "Evidence is explicitly incomplete"}</span>
+        <span>
+          {verification.replayable
+            ? "Provider-free replay available"
+            : "Evidence is explicitly incomplete"}
+        </span>
+        {runtime ? (
+          <span>
+            Play interval {formatInterval(runtime.startedAt, runtime.endedAt)} ·{" "}
+            {runtime.observedFacts} observed · {runtime.absentFacts} absent ·{" "}
+            {runtime.unavailableFacts} unavailable · {runtime.readErrorFacts} read errors ·{" "}
+            {runtime.diagnosticCount} diagnostics
+          </span>
+        ) : null}
       </div>
-      {verification.failureFacts.length > 0 ? (
+      {runtime && runtime.issues.length > 0 ? (
         <ul>
-          {verification.failureFacts.map((fact) => <li key={fact.hash}>{fact.statement}</li>)}
+          {runtime.issues.map((issue) => (
+            <li key={`${issue.key}:${issue.status}:${issue.code}`}>
+              <code>{issue.key}</code>: {issue.status.replaceAll("_", " ")} / {issue.code}
+            </li>
+          ))}
+        </ul>
+      ) : verification.failureFacts.length > 0 ? (
+        <ul>
+          {verification.failureFacts.map((fact) => (
+            <li key={fact.hash}>{fact.statement}</li>
+          ))}
         </ul>
       ) : null}
     </section>
   );
 }
 
-function artifactEntries(controlView: CreatorControlView | undefined): Array<[string, ArtifactReference]> {
+function formatInterval(startedAt: string, endedAt: string): string {
+  const duration = Date.parse(endedAt) - Date.parse(startedAt);
+  return Number.isFinite(duration) && duration >= 0
+    ? `${(duration / 1_000).toFixed(1)}s`
+    : `${startedAt} → ${endedAt}`;
+}
+
+function artifactEntries(
+  controlView: CreatorControlView | undefined,
+): Array<[string, ArtifactReference]> {
   if (!controlView) return [];
   const labels: Array<[keyof CreatorArtifactSet, string]> = [
     ["prompt", "Creator request"],
@@ -264,6 +411,16 @@ function artifactEntries(controlView: CreatorControlView | undefined): Array<[st
     ["runtimeEvidence", "Runtime evidence"],
     ["verification", "Verification result"],
     ["reviewReport", "Creator review report"],
+    ["projectIndex", "Project index metadata"],
+    ["sourceConsultation", "Source consultation"],
+    ["projectChangeNotice", "Project change notice"],
+    ["projectDelta", "Project refresh delta"],
+    ["projectAuthorityMap", "Project authority map"],
+    ["rojoSourceChangeSet", "Rojo source change set"],
+    ["rojoMutationAttempt", "Rojo mutation attempt"],
+    ["sourceSync", "Rojo source sync proof"],
+    ["sourceRevert", "Rojo source revert"],
+    ["sourceRevertSync", "Rojo source revert sync proof"],
     ["agentRun", "Agent run"],
     ["trace", "Build trace"],
   ];

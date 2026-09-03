@@ -1,0 +1,20 @@
+# Generated or tool-managed artifacts have their own deterministic writers.
+.forge/
+dashboard/dist/
+dist/
+node_modules/
+dashboard/node_modules/
+plugin/ForgeStudioPlugin.rbxmx
+package-lock.json
+dashboard/package-lock.json
+packages/luau-toolchain/roblox/definitions.json
+packages/source-intelligence/source-analysis-toolchain.lock.json
+packages/studio-evidence/catalog/
+packages/studio-evidence/manifest/
+packages/studio-evidence/src/generated.ts
+packages/studio-evidence/src/roblox-api-catalog.generated.ts
+plugin/src/Forge/GeneratedStudioEvidence.luau
+
+# These formal specifications use TLC's conventional layout, which Prettier
+# does not parse and must not rewrite as generic plaintext.
+formal/

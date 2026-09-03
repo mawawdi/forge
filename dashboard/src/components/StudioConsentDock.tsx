@@ -1,24 +1,23 @@
 import { useState } from "react";
 import { dashboardStore } from "../api-store";
 import { hasRequiredReport, makeActionRequest, reportByteLength } from "../derived";
-import type {
-  CreatorControlAction,
-  CreatorDashboardState,
-} from "../types";
+import type { CreatorControlAction, CreatorDashboardState } from "../types";
 
 interface StudioConsentDockProps {
   state: CreatorDashboardState | undefined;
   pendingAction: string | undefined;
 }
 
-export function StudioConsentDock({ state, pendingAction }: StudioConsentDockProps): React.JSX.Element {
+export function StudioConsentDock({
+  state,
+  pendingAction,
+}: StudioConsentDockProps): React.JSX.Element {
   const [report, setReport] = useState("");
   const [message, setMessage] = useState<string | undefined>();
   const pairedStudio = state?.pairedStudio;
-  const actions = [
-    state?.controlView?.primaryAction,
-    state?.controlView?.secondaryAction,
-  ].filter((action): action is CreatorControlAction => action !== undefined);
+  const actions = [state?.controlView?.primaryAction, state?.controlView?.secondaryAction].filter(
+    (action): action is CreatorControlAction => action !== undefined,
+  );
   const finalReviewOpen = actions.some(isFinalReviewAction);
 
   async function act(action: CreatorControlAction): Promise<void> {
@@ -37,11 +36,15 @@ export function StudioConsentDock({ state, pendingAction }: StudioConsentDockPro
       <section className="panel control-dock">
         <div className="panel-heading">
           <h2 id="studio-title">Studio &amp; consent</h2>
-          <span className={`connection-state connection-state--${pairedStudio?.status ?? "unpaired"}`}>
+          <span
+            className={`connection-state connection-state--${pairedStudio?.status ?? "unpaired"}`}
+          >
             {pairedStudio?.status ?? "unpaired"}
           </span>
         </div>
-        <div className={`studio-connection studio-connection--${pairedStudio?.status ?? "unpaired"}`}>
+        <div
+          className={`studio-connection studio-connection--${pairedStudio?.status ?? "unpaired"}`}
+        >
           <span className="connection-orb" aria-hidden="true" />
           <div>
             <p>{pairedStudio?.message ?? "Waiting for a paired Studio project."}</p>
@@ -49,40 +52,72 @@ export function StudioConsentDock({ state, pendingAction }: StudioConsentDockPro
         </div>
         {pairedStudio?.projectName || pairedStudio?.projectId ? (
           <dl className="studio-facts">
-            <div><dt>Project</dt><dd>{pairedStudio.projectName ?? pairedStudio.projectId}</dd></div>
-            {pairedStudio.revisionHash ? <div><dt>Revision</dt><dd><code>{shortHash(pairedStudio.revisionHash)}</code></dd></div> : null}
-            {pairedStudio.manifestHash ? <div><dt>Manifest</dt><dd><code>{shortHash(pairedStudio.manifestHash)}</code></dd></div> : null}
+            <div>
+              <dt>Project</dt>
+              <dd>{pairedStudio.projectName ?? pairedStudio.projectId}</dd>
+            </div>
+            {pairedStudio.revisionHash ? (
+              <div>
+                <dt>Revision</dt>
+                <dd>
+                  <code>{shortHash(pairedStudio.revisionHash)}</code>
+                </dd>
+              </div>
+            ) : null}
+            {pairedStudio.manifestHash ? (
+              <div>
+                <dt>Manifest</dt>
+                <dd>
+                  <code>{shortHash(pairedStudio.manifestHash)}</code>
+                </dd>
+              </div>
+            ) : null}
             {pairedStudio.attestationStatus ? (
               <div>
                 <dt>Attestation</dt>
                 <dd>{attestationStatus(pairedStudio)}</dd>
               </div>
             ) : null}
-            {pairedStudio.capabilities ? <div><dt>Capabilities</dt><dd>{pairedStudio.capabilities.length}</dd></div> : null}
+            {pairedStudio.capabilities ? (
+              <div>
+                <dt>Capabilities</dt>
+                <dd>{pairedStudio.capabilities.length}</dd>
+              </div>
+            ) : null}
           </dl>
         ) : null}
         <div className="consent-section" aria-labelledby="consent-title">
           <div className="consent-section__heading">
             <h3 id="consent-title">Current action</h3>
-            {state?.controlView ? <code title={state.controlView.hash}>{shortHash(state.controlView.hash)}</code> : null}
+            {state?.controlView ? (
+              <code title={state.controlView.hash}>{shortHash(state.controlView.hash)}</code>
+            ) : null}
           </div>
-        {finalReviewOpen ? (
-          <CreatorReport report={report} onChange={setReport} />
-        ) : (
-          <p className="consent-copy">Only exact, hash-bound actions from the current evidence view are available here.</p>
-        )}
-        <div className="action-list">
-          {actions.length > 0 ? actions.map((action) => (
-            <ControlActionButton
-              key={action.id}
-              action={action}
-              report={report}
-              pendingAction={pendingAction}
-              onAct={act}
-            />
-          )) : <p className="empty-actions">No creator action is available for this session.</p>}
-        </div>
-        <p className="action-message" role="status" aria-live="polite">{message ?? ""}</p>
+          {finalReviewOpen ? (
+            <CreatorReport report={report} onChange={setReport} />
+          ) : (
+            <p className="consent-copy">
+              Only exact, hash-bound actions from the current evidence view are available here.
+            </p>
+          )}
+          <div className="action-list">
+            {actions.length > 0 ? (
+              actions.map((action) => (
+                <ControlActionButton
+                  key={action.id}
+                  action={action}
+                  report={report}
+                  pendingAction={pendingAction}
+                  onAct={act}
+                />
+              ))
+            ) : (
+              <p className="empty-actions">No creator action is available for this session.</p>
+            )}
+          </div>
+          <p className="action-message" role="status" aria-live="polite">
+            {message ?? ""}
+          </p>
         </div>
         <ReplayControl state={state} />
       </section>
@@ -108,7 +143,9 @@ function CreatorReport({ report, onChange }: CreatorReportProps): React.JSX.Elem
         placeholder="Record the interaction you observed, any limits, and your final judgment."
         aria-describedby="creator-report-rule"
       />
-      <span id="creator-report-rule">{count}/4096 bytes · a non-whitespace report is required to accept or reject.</span>
+      <span id="creator-report-rule">
+        {count}/4096 bytes · a non-whitespace report is required to accept or reject.
+      </span>
     </div>
   );
 }
@@ -120,7 +157,12 @@ interface ControlActionButtonProps {
   onAct: (action: CreatorControlAction) => Promise<void>;
 }
 
-function ControlActionButton({ action, report, pendingAction, onAct }: ControlActionButtonProps): React.JSX.Element {
+function ControlActionButton({
+  action,
+  report,
+  pendingAction,
+  onAct,
+}: ControlActionButtonProps): React.JSX.Element {
   const isPending = pendingAction === action.id;
   const disabled = Boolean(pendingAction) || !hasRequiredReport(action, report);
   return (
@@ -151,8 +193,11 @@ function ReplayControl({ state }: ReplayControlProps): React.JSX.Element | null 
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
       });
-      const value = await response.json() as { detail?: unknown };
-      if (!response.ok) throw new Error(typeof value.detail === "string" ? value.detail : `Replay failed (${response.status}).`);
+      const value = (await response.json()) as { detail?: unknown };
+      if (!response.ok)
+        throw new Error(
+          typeof value.detail === "string" ? value.detail : `Replay failed (${response.status}).`,
+        );
       setResult(typeof value.detail === "string" ? value.detail : "Replay completed.");
     } catch (error) {
       setResult(error instanceof Error ? error.message : "Replay failed.");
@@ -165,18 +210,40 @@ function ReplayControl({ state }: ReplayControlProps): React.JSX.Element | null 
         <span>Provider-free check</span>
       </div>
       {mutation?.replayable ? (
-        <button type="button" className="quiet-button" onClick={() => void replay(`/api/mutations/${encodeURIComponent(mutation.attemptId)}/replay`)}>Replay mutation</button>
+        <button
+          type="button"
+          className="quiet-button"
+          onClick={() =>
+            void replay(`/api/mutations/${encodeURIComponent(mutation.attemptId)}/replay`)
+          }
+        >
+          Replay mutation
+        </button>
       ) : null}
       {verification?.replayable ? (
-        <button type="button" className="quiet-button" onClick={() => void replay(`/api/verifications/${encodeURIComponent(verification.id)}/replay`)}>Replay verification</button>
+        <button
+          type="button"
+          className="quiet-button"
+          onClick={() =>
+            void replay(`/api/verifications/${encodeURIComponent(verification.id)}/replay`)
+          }
+        >
+          Replay verification
+        </button>
       ) : null}
-      {result ? <p role="status" aria-live="polite">{result}</p> : null}
+      {result ? (
+        <p role="status" aria-live="polite">
+          {result}
+        </p>
+      ) : null}
     </section>
   );
 }
 
 function isFinalReviewAction(action: CreatorControlAction): boolean {
-  return action.requiresReport || action.id === "accept_result" || action.id === "reject_and_rollback";
+  return (
+    action.requiresReport || action.id === "accept_result" || action.id === "reject_and_rollback"
+  );
 }
 
 function shortHash(value: string): string {
@@ -186,6 +253,10 @@ function shortHash(value: string): string {
 function attestationStatus(state: NonNullable<CreatorDashboardState["pairedStudio"]>): string {
   const summary = state.attestation;
   if (!summary) return state.attestationStatus ?? "pending";
-  const findings = summary.mismatchedFacts + summary.missingFacts + summary.unavailableFacts + summary.readErrorFacts;
+  const findings =
+    summary.mismatchedFacts +
+    summary.missingFacts +
+    summary.unavailableFacts +
+    summary.readErrorFacts;
   return `${state.attestationStatus ?? "pending"} · ${summary.observedFacts}/${summary.totalFacts} observed · ${findings} finding${findings === 1 ? "" : "s"}`;
 }

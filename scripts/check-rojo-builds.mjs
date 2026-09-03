@@ -1,0 +1,90 @@
+import { execFile as execFileCallback } from "node:child_process";
+import { promisify } from "node:util";
+import { lstat, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const execFile = promisify(execFileCallback);
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const sourceAnalysisLockPrefix = "49699a17a8536fc0";
+const requiredRojoVersion = "7.7.0";
+const projects = [
+  ["plugin", "plugin/default.project.json", "ForgeStudioPlugin.rbxmx"],
+  ["status-beacon", "examples/status-beacon/default.project.json", "StatusBeacon.rbxlx"],
+  ["door-control", "examples/door-control/default.project.json", "DoorControl.rbxlx"],
+  [
+    "orbital-freight-airlock",
+    "examples/orbital-freight-airlock/default.project.json",
+    "OrbitalFreightAirlock.rbxlx",
+  ],
+];
+const execOptions = {
+  cwd: root,
+  maxBuffer: 4 * 1024 * 1024,
+  windowsHide: true,
+};
+
+function sourceAnalysisPlatform() {
+  const architecture =
+    process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x64" : undefined;
+  if (!architecture || !["darwin", "linux", "win32"].includes(process.platform)) {
+    throw new Error(
+      `Pinned Rojo 7.7.0 has no supported source-analysis platform for ${process.platform}/${process.arch}`,
+    );
+  }
+  return `${process.platform}-${architecture}`;
+}
+
+async function assertRegular(path, label) {
+  const info = await lstat(path).catch(() => undefined);
+  if (!info || info.isSymbolicLink() || !info.isFile())
+    throw new Error(`${label} is not a regular file: ${path}`);
+  return info;
+}
+
+async function main() {
+  const platform = sourceAnalysisPlatform();
+  const binary = resolve(
+    root,
+    ".forge",
+    "tooling",
+    "source-analysis",
+    `lock-${sourceAnalysisLockPrefix}`,
+    platform,
+    "bin",
+    "rojo",
+  );
+  await assertRegular(binary, "Verified pinned Rojo executable");
+  const version = await execFile(binary, ["--version"], execOptions);
+  const renderedVersion = `${version.stdout}\n${version.stderr}`.trim();
+  if (
+    !new RegExp(
+      `(?:^|\\s)Rojo\\s+${requiredRojoVersion.replaceAll(".", "\\.")}(?:\\s|$)`,
+      "m",
+    ).test(renderedVersion)
+  ) {
+    throw new Error(
+      `Expected verified Rojo ${requiredRojoVersion}, received: ${renderedVersion || "no version output"}`,
+    );
+  }
+
+  const temporary = await mkdtemp(join(tmpdir(), "forge-rojo-check-"));
+  try {
+    for (const [name, project, filename] of projects) {
+      const projectPath = resolve(root, project);
+      await assertRegular(projectPath, `${name} project`);
+      const output = resolve(temporary, filename);
+      await execFile(binary, ["build", projectPath, "--output", output], execOptions);
+      const artifact = await assertRegular(output, `${name} temporary Rojo build`);
+      if (artifact.size === 0) throw new Error(`${name} temporary Rojo build is empty`);
+    }
+  } finally {
+    await rm(temporary, { recursive: true, force: true, maxRetries: 3 });
+  }
+  process.stdout.write(
+    `Rojo check passed with pinned Rojo ${requiredRojoVersion}: ${projects.map(([name]) => name).join(", ")}\n`,
+  );
+}
+
+await main();

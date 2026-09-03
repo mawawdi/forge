@@ -20,6 +20,7 @@ const terminalStatuses = new Set<CreatorSessionStatus>([
   "creator_accepted",
   "creator_rejected",
   "rolled_back",
+  "superseded",
 ]);
 
 export function getDashboardSurface(
@@ -37,10 +38,7 @@ export function getDashboardSurface(
   return "active";
 }
 
-export function hasRequiredReport(
-  action: CreatorControlAction,
-  report: string,
-): boolean {
+export function hasRequiredReport(action: CreatorControlAction, report: string): boolean {
   if (!requiresCreatorReport(action)) return true;
   const length = reportByteLength(report.trim());
   return length >= 1 && length <= 4096;
@@ -76,7 +74,9 @@ export function makeActionRequest(
 }
 
 function requiresCreatorReport(action: CreatorControlAction): boolean {
-  return action.requiresReport || action.id === "accept_result" || action.id === "reject_and_rollback";
+  return (
+    action.requiresReport || action.id === "accept_result" || action.id === "reject_and_rollback"
+  );
 }
 
 export function formatStatus(status: CreatorSessionStatus): string {

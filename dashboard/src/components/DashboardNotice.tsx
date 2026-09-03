@@ -6,7 +6,10 @@ interface DashboardNoticeProps {
   detail?: string;
 }
 
-const NOTICE_CONTENT: Record<Exclude<DashboardSurface, "active">, { title: string; body: string }> = {
+const NOTICE_CONTENT: Record<
+  Exclude<DashboardSurface, "active">,
+  { title: string; body: string }
+> = {
   loading: {
     title: "Opening the evidence record",
     body: "Forge is retrieving the current session state from the local control plane.",
@@ -37,14 +40,19 @@ const NOTICE_CONTENT: Record<Exclude<DashboardSurface, "active">, { title: strin
   },
 };
 
-export function DashboardNotice({ surface, error, detail }: DashboardNoticeProps): React.JSX.Element | null {
+export function DashboardNotice({
+  surface,
+  error,
+  detail,
+}: DashboardNoticeProps): React.JSX.Element | null {
   if (surface === "active") return null;
   const notice = NOTICE_CONTENT[surface];
-  const body = surface === "api-error" && error
-    ? error
-    : detail && ["incomplete", "recovery-required", "terminal"].includes(surface)
-      ? detail
-      : notice.body;
+  const body =
+    surface === "api-error" && error
+      ? error
+      : detail && ["incomplete", "recovery-required", "terminal"].includes(surface)
+        ? detail
+        : notice.body;
   return (
     <section className={`dashboard-notice dashboard-notice--${surface}`} aria-live="polite">
       <div className="dashboard-notice__heading">

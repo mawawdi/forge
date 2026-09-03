@@ -20,4 +20,5 @@ Keep this file operational. Documentation authority is split deliberately:
 - The user runs all Roblox Studio checks. Never launch or operate Studio. Provide the exact commands, generated place path, connector artifact path, and click sequence, then wait for the user's result.
 - Use `apply_patch` for repository edits. Preserve unrelated dirty work. Avoid broad or destructive targets; create an external rollback snapshot before an authorized purge.
 - Run `git diff --check`, TypeScript build, current Node tests, plugin parse/analyze/module tests, and a temporary-output Rojo build before completion. Do not make model calls or Studio runs during tests.
+- Always materialize the final connector with `npm run plugin:build` directly at `$HOME/Documents/Roblox/Plugins/ForgeStudioPlugin.rbxmx`. Temporary or repository-local Rojo builds are verification artifacts and never replace this installed build.
 - Report what changed, commands actually run, exact test results, model/Studio calls actually made, unresolved claims, and the next smallest evidence-producing task.

@@ -20,8 +20,11 @@ export function PromptComposer({ disabled }: PromptComposerProps): React.JSX.Ele
     try {
       await dashboardStore.submit({ action: "start", prompt: trimmed });
       setPrompt("");
-    } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "The prompt was not submitted.");
+    } catch {
+      // The store publishes the bounded technical failure in the page-level
+      // notice. Repeating an unbounded connector stack here makes the request
+      // controls unreadable and adds no recovery information.
+      setError("Request did not start. See the control-plane error above.");
     }
   }
 
@@ -38,8 +41,12 @@ export function PromptComposer({ disabled }: PromptComposerProps): React.JSX.Ele
         maxLength={16000}
       />
       <div className="prompt-composer__footer">
-        <span className="field-message" aria-live="polite">{error ?? "Studio stays read-only until you approve a visible plan."}</span>
-        <button type="submit" disabled={disabled}>Start request</button>
+        <span className="field-message" aria-live="polite">
+          {error ?? "Studio stays read-only until you approve a visible plan."}
+        </span>
+        <button type="submit" disabled={disabled}>
+          Start request
+        </button>
       </div>
     </form>
   );

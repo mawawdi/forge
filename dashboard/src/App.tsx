@@ -8,6 +8,7 @@ import { DashboardNotice } from "./components/DashboardNotice";
 import { EvidenceSpine } from "./components/EvidenceSpine";
 import { PromptComposer } from "./components/PromptComposer";
 import { SessionHistory } from "./components/SessionHistory";
+import { SourceExplorer } from "./components/SourceExplorer";
 import { StudioConsentDock } from "./components/StudioConsentDock";
 
 export function App(): React.JSX.Element {
@@ -16,7 +17,11 @@ export function App(): React.JSX.Element {
   const surface = getDashboardSurface(state, snapshot.error);
   const connection = state?.pairedStudio.status ?? "unknown";
   const connectionMessage = state?.pairedStudio.message ?? "Local control plane";
-  const promptDisabled = connection !== "paired" || Boolean(snapshot.pendingAction);
+  const promptDisabled =
+    connection !== "paired" ||
+    state?.pairedStudio.attestationStatus !== "verified" ||
+    state?.pairedStudio.transactionInventoryStatus !== "clear" ||
+    Boolean(snapshot.pendingAction);
 
   useEffect(() => {
     dashboardStore.start();
@@ -33,16 +38,52 @@ export function App(): React.JSX.Element {
       <div className="dashboard-layout">
         <aside className="left-rail">
           <PromptComposer disabled={promptDisabled} />
-          <SessionHistory sessions={state?.sessions ?? []} selectedSessionId={state?.selectedSessionId} />
+          <SessionHistory
+            sessions={state?.sessions ?? []}
+            selectedSessionId={state?.selectedSessionId}
+          />
         </aside>
         <section className="evidence-column" aria-label="Evidence workbench">
           <EvidenceSpine stages={state?.stages ?? []} />
           <ArtifactWorkbench controlView={state?.controlView} />
-          <CapabilityExplorer
-            catalog={snapshot.catalog}
-            pairedStudio={state?.pairedStudio}
-            onExplore={dashboardStore.exploreCapabilities}
-          />
+          <details className="technical-drawer">
+            <summary>
+              <span className="technical-drawer__label">
+                <strong>Source intelligence</strong>
+                <small>
+                  Search immutable scripts, symbols, references, dependencies, and exact diffs.
+                </small>
+              </span>
+              <span className="technical-drawer__state">
+                {state?.selectedSessionId ? "session bound" : "no session"}
+              </span>
+            </summary>
+            <div className="technical-drawer__body">
+              <SourceExplorer
+                source={snapshot.sources}
+                controlView={state?.controlView}
+                onExplore={dashboardStore.exploreSources}
+              />
+            </div>
+          </details>
+          <details className="technical-drawer">
+            <summary>
+              <span className="technical-drawer__label">
+                <strong>Roblox API coverage</strong>
+                <small>
+                  Inspect the pinned catalog, manifest disposition, and capability proof chain.
+                </small>
+              </span>
+              <span className="technical-drawer__state">pinned catalog</span>
+            </summary>
+            <div className="technical-drawer__body">
+              <CapabilityExplorer
+                catalog={snapshot.catalog}
+                pairedStudio={state?.pairedStudio}
+                onExplore={dashboardStore.exploreCapabilities}
+              />
+            </div>
+          </details>
         </section>
         <StudioConsentDock
           key={state?.controlView?.id ?? "empty-control-view"}

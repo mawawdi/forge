@@ -5,12 +5,12 @@
 local Constants = if script ~= nil then require(script.Parent.Constants) else require("./Constants")
 local Generated = if script ~= nil then require(script.Parent.GeneratedStudioEvidence) else require("./GeneratedStudioEvidence")
 local Hash = if script ~= nil then require(script.Parent.Hash) else require("./Hash")
+local StudioScriptSource = if script ~= nil then require(script.Parent.StudioScriptSource) else require("./StudioScriptSource")
 
 local StudioEvidenceCollector = {}
 StudioEvidenceCollector.__index = StudioEvidenceCollector
 
 local function collectionService() return game:GetService("CollectionService") end
-local function httpService() return game:GetService("HttpService") end
 local function iso(): string return os.date("!%Y-%m-%dT%H:%M:%S.000Z") end
 local function project() return { name = game.Name, placeId = game.PlaceId, universeId = game.GameId } end
 
@@ -25,20 +25,13 @@ local function parentPath(instance: Instance): string?
 	return pathOf(instance.Parent)
 end
 
-local function resolvePath(path: any): Instance?
-	if typeof(path) ~= "string" or not Generated.isAllowedRoot(path) then return nil end
-	local pieces = string.split(path, "/"); local current: Instance? = game:FindFirstChild(pieces[1])
-	for index = 2, #pieces do
-		if not current or pieces[index] == "" or pieces[index] == "." or pieces[index] == ".." then return nil end
-		current = current:FindFirstChild(pieces[index])
-	end
-	return current
-end
-
 local function targetInstance(target: any, registry): Instance?
 	if typeof(target) ~= "table" then return nil end
-	if target.kind == "instance" and typeof(target.stableId) == "string" then return registry:find(target.stableId) end
-	if target.kind == "instance" then return resolvePath(target.path) end
+	if target.kind ~= "instance" or typeof(target.identity) ~= "table" then return nil end
+	local instance: Instance? = nil
+	if target.identity.kind == "forge_attribute" then instance = registry:find(target.identity.stableId) end
+	if target.identity.kind == "studio_ephemeral" then instance = registry:findOpaque(target.identity) end
+	if instance and pathOf(instance) == target.path and instance.ClassName == target.className then return instance end
 	return nil
 end
 
@@ -59,23 +52,20 @@ local function fact(requirement: any, result: any)
 end
 
 local function readRequirement(requirement: any, registry)
-	if requirement.kind == "inventory" then return fact(requirement, status("unavailable", "inventory requires project-state discovery")) end
 	if requirement.target.kind == "project" then return fact(requirement, status("observed", project())) end
 	local instance = targetInstance(requirement.target, registry)
 	if not instance then return fact(requirement, status("absent")) end
 	if requirement.kind == "structure" then
-		local value: any = { stableId = instance:GetAttribute(Constants.IDENTITY_ATTRIBUTE), path = pathOf(instance), className = instance.ClassName }
-		local parent = parentPath(instance); if parent then value.parentPath = parent end
+		local value: any = { identity = registry:identityFor(instance), path = pathOf(instance), className = instance.ClassName }
+		local parent = parentPath(instance); if parent then value.parentPath = parent; if instance.Parent and instance.Parent ~= game then value.parentIdentity = registry:identityFor(instance.Parent) end end
 		return fact(requirement, status("observed", value))
 	elseif requirement.kind == "property" then
 		local metadata = Generated.propertyMetadata(instance.ClassName, requirement.propertyName)
 		if not metadata then return fact(requirement, status("unavailable", "property is outside the manifest")) end
 		local ok, value = pcall(function()
 			return Generated.read(instance, requirement.propertyName, function(reference: Instance, property: any)
-				local stableId = reference:GetAttribute(Constants.IDENTITY_ATTRIBUTE)
-				if typeof(stableId) ~= "string" or registry:find(stableId) ~= reference then error("Instance reference lacks a stable Forge identity") end
 				if typeof(property) ~= "table" or typeof(property.referenceClass) ~= "string" or not reference:IsA(property.referenceClass) then error("Instance reference violates its manifest class constraint") end
-				return { kind = "instance_ref", state = "reference", stableId = stableId, path = pathOf(reference), className = reference.ClassName, expectedClass = property.referenceClass }
+				return { kind = "instance_ref", state = "reference", identity = registry:identityFor(reference), path = pathOf(reference), className = reference.ClassName, expectedClass = property.referenceClass }
 			end)
 		end)
 		return fact(requirement, ok and status("observed", value) or status("read_error", value))
@@ -91,13 +81,13 @@ local function readRequirement(requirement: any, registry)
 		if value == nil then return fact(requirement, status("absent")) end
 		local valid, canonical = pcall(function() return Generated.canonicalAttribute(value) end)
 		return fact(requirement, valid and status("observed", canonical) or status("read_error", canonical))
-	elseif requirement.kind == "source_hash" or requirement.kind == "source_body" then
+	elseif requirement.kind == "source_hash" then
 		if not instance:IsA("LuaSourceContainer") then return fact(requirement, status("unavailable", "source capability unavailable")) end
-		local ok, source = pcall(function() return instance.Source end)
+		local ok, source = pcall(function() return StudioScriptSource.read(instance) end)
 		if not ok or typeof(source) ~= "string" then return fact(requirement, status("read_error", source)) end
 		local valid, reason = pcall(function() Generated.validateSource(source, false) end)
 		if not valid then return fact(requirement, status("read_error", reason)) end
-		return fact(requirement, status("observed", requirement.kind == "source_hash" and Hash.sha256(source) or source))
+		return fact(requirement, status("observed", Hash.sha256(source)))
 	elseif requirement.kind == "tags" then
 		local ok, tags = pcall(function() return collectionService():GetTags(instance) end)
 		if not ok then return fact(requirement, status("read_error", tags)) end
@@ -118,7 +108,7 @@ end
 
 local function complete(projection: any, facts: {any}): boolean
 	local requirements = Generated.projectionRequirements(projection)
-	if projection.scope.mode == "exact" and #facts ~= #requirements then return false end
+	if #facts ~= #requirements then return false end
 	local seen, required = {}, {}
 	for _, requirement in ipairs(requirements) do required[requirement.key] = requirement end
 	for _, item in ipairs(facts) do
@@ -128,14 +118,14 @@ local function complete(projection: any, facts: {any}): boolean
 	end
 	for _, requirement in ipairs(requirements) do
 		local item = seen[requirement.key]
-		if not item or item.result.status ~= (requirement.expectedStatus or "observed") then return false end
+		if not item then return false end
 	end
-	-- An explicit absent result is complete evidence only when that exact fact
-	-- required absence.  Extra project-state facts must be observed; omission
-	-- cannot silently mean false, empty, or absent.
+	-- Completeness is availability/coverage rather than expectation matching:
+	-- observed and authoritative absent facts are both complete, while failed
+	-- reads remain explicitly incomplete evidence.
 	for _, item in ipairs(facts) do
 		local requirement = required[item.key]
-		if item.result.status == "absent" and (not requirement or requirement.expectedStatus ~= "absent") then return false end
+		if not requirement then return false end
 		if item.result.status ~= "observed" and item.result.status ~= "absent" then return false end
 	end
 	return true
@@ -147,147 +137,19 @@ end
 
 function StudioEvidenceCollector:identity() return project() end
 
-function StudioEvidenceCollector:produce(projection: any, diagnostics: any?)
+function StudioEvidenceCollector:produce(projection: any, diagnostics: any?, cooperate: (() -> ())?)
 	Generated.validateProjection(projection)
 	local startedAt = iso(); local facts = {}
-	for _, requirement in ipairs(Generated.projectionRequirements(projection)) do table.insert(facts, readRequirement(requirement, self.registry)) end
+	for _, requirement in ipairs(Generated.projectionRequirements(projection)) do
+		table.insert(facts, readRequirement(requirement, self.registry))
+		if cooperate then cooperate() end
+	end
 	facts = Generated.sortFacts(facts)
 	local envelope: any = {
 		kind = "StudioEvidenceEnvelope", manifestHash = Generated.manifestHash, projectionId = projection.id, projectionHash = projection.contentHash,
 		bindingHash = projection.bindingHash, project = project(), authoritative = true, startedAt = startedAt, endedAt = iso(),
 		completion = complete(projection, facts) and "complete" or "incomplete", facts = facts, diagnostics = diagnostics,
 	}
-	envelope.contentHash = Generated.envelopeHash(envelope)
-	return envelope
-end
-
-function StudioEvidenceCollector:stateRevision(projection: any, envelope: any)
-	if envelope.completion ~= "complete" then error("a Studio state revision requires complete evidence") end
-	if projection.contentHash ~= envelope.projectionHash then error("state revision projection binding mismatch") end
-	local stateDomainHash = Generated.stateDomainHash(projection)
-	return { kind = "StudioStateRevision", manifestHash = Generated.manifestHash, projectionHash = envelope.projectionHash, stateDomainHash = stateDomainHash, stateHash = Generated.stateRevisionHash(Generated.manifestHash, stateDomainHash, envelope.facts), capturedAt = envelope.endedAt }
-end
-
--- A project-state observation can exceed a closed evidence bound only by
--- becoming incomplete.  Do not emit a truncated inventory or an over-bound
--- envelope (both would be invalid evidence); retain the required inventory
--- fact with an explicit read error and make every other required fact
--- unavailable.  This keeps absence distinct from collection failure.
-local function incompleteProjectStateEnvelope(projection: any, diagnostics: any?, inventoryCode: string, otherCode: string)
-	local facts = {}
-	for _, requirement in ipairs(Generated.projectionRequirements(projection)) do
-		if requirement.kind == "inventory" then
-			table.insert(facts, fact(requirement, status("read_error", inventoryCode)))
-		elseif requirement.target.kind == "project" then
-			table.insert(facts, readRequirement(requirement, nil))
-		else
-			table.insert(facts, fact(requirement, status("unavailable", otherCode)))
-		end
-	end
-	facts = Generated.sortFacts(facts)
-	local envelope: any = {
-		kind = "StudioEvidenceEnvelope", manifestHash = Generated.manifestHash, projectionId = projection.id, projectionHash = projection.contentHash,
-		bindingHash = projection.bindingHash, project = project(), authoritative = true, startedAt = iso(), endedAt = iso(),
-		completion = "incomplete", facts = facts, diagnostics = diagnostics,
-	}
-	envelope.contentHash = Generated.envelopeHash(envelope)
-	return envelope
-end
-
-function StudioEvidenceCollector:produceProjectState(projection: any, diagnostics: any?)
-	Generated.validateProjection(projection)
-	if projection.scope.mode ~= "project_state" or projection.scope.requireCompleteInventory ~= true then error("project-state projection requires complete inventory") end
-	local roots, inventory, facts = {}, {}, {}
-	for _, root in ipairs(projection.scope.roots) do roots[root] = true end
-	-- Count the whole applicable inventory before producing a single inventory
-	-- fact.  A bounded projection must never masquerade as a complete but
-	-- truncated state: an over-bound place yields an explicit read error with no
-	-- fabricated partial inventory.
-	local discovered = 0
-	for _, rootName in ipairs(Generated.authoringRoots) do
-		if roots[rootName] then
-			local root = game:FindFirstChild(rootName)
-			if root then
-				local instances = root:GetDescendants(); table.insert(instances, 1, root)
-				for _, instance in ipairs(instances) do
-					if Generated.classMetadata(instance.ClassName) then
-						discovered += 1
-						-- Project-state closure requires a durable identity for every
-						-- applicable instance.  Do not construct a partial inventory
-						-- and do not introduce an unprojected diagnostic fact: the
-						-- required inventory fact itself must say that collection was
-						-- unavailable.
-						if typeof(instance:GetAttribute(Constants.IDENTITY_ATTRIBUTE)) ~= "string" then
-							return incompleteProjectStateEnvelope(projection, diagnostics, "missing_stable_identity", "project_state_identity_incomplete")
-						end
-					end
-				end
-			end
-		end
-	end
-	if discovered > (projection.bounds.maximumInstances or Generated.manifest.projectState.maximumInstances) then
-		return incompleteProjectStateEnvelope(projection, diagnostics, "project_state_instance_bound", "project_state_inventory_over_bound")
-	end
-	for _, rootName in ipairs(Generated.authoringRoots) do
-		if roots[rootName] then
-			local root = game:FindFirstChild(rootName)
-			if root then
-				local instances = root:GetDescendants(); table.insert(instances, 1, root)
-				for _, instance in ipairs(instances) do
-					if Generated.classMetadata(instance.ClassName) then
-						local stableId = instance:GetAttribute(Constants.IDENTITY_ATTRIBUTE)
-						if typeof(stableId) == "string" then
-							local target = { kind = "instance", stableId = stableId, path = pathOf(instance), className = instance.ClassName }
-							local structure: any = { stableId = stableId, path = pathOf(instance), className = instance.ClassName }
-							local parent = parentPath(instance); if parent then structure.parentPath = parent end
-							table.insert(inventory, structure)
-							table.insert(facts, { kind = "structure", key = Generated.factKey("structure", target), target = target, result = status("observed", structure) })
-							for propertyName in pairs(Generated.classMetadata(instance.ClassName).properties) do
-								local requirement = { kind = "property", key = Generated.factKey("property", target, propertyName), target = target, propertyName = propertyName }
-								table.insert(facts, readRequirement(requirement, self.registry))
-							end
-							local attributesOk, attributes = pcall(function() return instance:GetAttributes() end)
-							if attributesOk then
-								local names = {}
-								for name in pairs(attributes) do if name ~= Constants.IDENTITY_ATTRIBUTE then table.insert(names, name) end end
-								table.sort(names)
-								table.insert(facts, { kind = "attribute_inventory", key = Generated.factKey("attribute_inventory", target), target = target, result = status("observed", names) })
-								for _, name in ipairs(names) do table.insert(facts, readRequirement({ kind = "attribute", key = Generated.factKey("attribute", target, name), target = target, attributeName = name }, self.registry)) end
-							else
-								table.insert(facts, { kind = "attribute_inventory", key = Generated.factKey("attribute_inventory", target), target = target, result = status("read_error", attributes) })
-							end
-							local tagsRequirement = { kind = "tags", key = Generated.factKey("tags", target), target = target }
-							table.insert(facts, readRequirement(tagsRequirement, self.registry))
-							if Generated.classMetadata(instance.ClassName).source ~= "forbidden" then
-								table.insert(facts, readRequirement({ kind = "source_hash", key = Generated.factKey("source_hash", target), target = target }, self.registry))
-								table.insert(facts, readRequirement({ kind = "source_body", key = Generated.factKey("source_body", target), target = target }, self.registry))
-							end
-							if instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction") then table.insert(facts, readRequirement({ kind = "remote", key = Generated.factKey("remote", target), target = target }, self.registry)) end
-						end
-					end
-				end
-			end
-		end
-	end
-	table.sort(inventory, function(left, right) return left.stableId < right.stableId end)
-	for _, requirement in ipairs(Generated.projectionRequirements(projection)) do
-		if requirement.kind == "inventory" then table.insert(facts, fact(requirement, status("observed", inventory)))
-		elseif requirement.target.kind == "project" then table.insert(facts, readRequirement(requirement, self.registry))
-		-- Instance requirements are already included in the closed dynamic inventory.
-		end
-	end
-	facts = Generated.sortFacts(facts)
-	if #facts > projection.bounds.maximumFacts then
-		return incompleteProjectStateEnvelope(projection, diagnostics, "project_state_fact_bound", "project_state_fact_over_bound")
-	end
-	local envelope: any = {
-		kind = "StudioEvidenceEnvelope", manifestHash = Generated.manifestHash, projectionId = projection.id, projectionHash = projection.contentHash,
-		bindingHash = projection.bindingHash, project = project(), authoritative = true, startedAt = iso(), endedAt = iso(),
-		completion = complete(projection, facts) and "complete" or "incomplete", facts = facts, diagnostics = diagnostics,
-	}
-	if #Generated.envelopeMaterial(envelope) > projection.bounds.maximumBytes then
-		return incompleteProjectStateEnvelope(projection, diagnostics, "project_state_evidence_bound", "project_state_evidence_over_bound")
-	end
 	envelope.contentHash = Generated.envelopeHash(envelope)
 	return envelope
 end
@@ -339,7 +201,7 @@ function StudioEvidenceCollector.reflectedPropertyValueForTest(descriptor: any, 
 	return reflectedPropertyValue(descriptor, className, propertyName)
 end
 
-function StudioEvidenceCollector:attestation(projection: any)
+function StudioEvidenceCollector:attestation(projection: any, cooperate: (() -> ())?)
 	Generated.validateProjection(projection)
 	local ReflectionService = game:GetService("ReflectionService")
 	local reflected = {}
@@ -350,6 +212,7 @@ function StudioEvidenceCollector:attestation(projection: any)
 		-- capability source.
 		local ok, descriptors = pcall(function() return ReflectionService:GetPropertiesOfClass(className, { ExcludeInherited = false, ExcludeDisplay = true }) end)
 		reflected[className] = ok and descriptors or nil
+		if cooperate then cooperate() end
 	end
 	local facts = {}
 	for _, requirement in ipairs(Generated.projectionRequirements(projection)) do
@@ -360,34 +223,24 @@ function StudioEvidenceCollector:attestation(projection: any)
 		if typeof(className) ~= "string" or typeof(propertyName) ~= "string" then error("invalid reflection requirement") end
 		local descriptors = reflected[className]
 		if descriptors == nil then table.insert(facts, fact(requirement, status("unavailable", "ReflectionService unavailable")))
-		else
-			local descriptor: any = nil
-			for _, item in ipairs(descriptors) do if (item :: any).Name == propertyName then descriptor = item; break end end
+			else
+				local descriptor: any = nil
+				for _, item in ipairs(descriptors) do
+					if (item :: any).Name == propertyName then descriptor = item; break end
+					if cooperate then cooperate() end
+				end
 			if descriptor == nil then table.insert(facts, fact(requirement, status("absent")))
 			else
 				local reflectedValue, readError = reflectedPropertyValue(descriptor, className, propertyName)
 				table.insert(facts, fact(requirement, reflectedValue ~= nil and status("observed", reflectedValue) or status("read_error", readError)))
 			end
-		end
+		if cooperate then cooperate() end
+	end
 	end
 	facts = Generated.sortFacts(facts)
 	local envelope: any = { kind = "StudioEvidenceEnvelope", manifestHash = Generated.manifestHash, projectionId = projection.id, projectionHash = projection.contentHash, bindingHash = projection.bindingHash, project = project(), authoritative = true, startedAt = iso(), endedAt = iso(), completion = complete(projection, facts) and "complete" or "incomplete", facts = facts }
 	envelope.contentHash = Generated.envelopeHash(envelope)
 	return envelope
-end
-
-function StudioEvidenceCollector:chunks(payload: any): ({any}?, any?)
-	local HttpService = httpService()
-	local encoded = HttpService:JSONEncode(payload)
-	if #encoded <= Constants.MAX_EVIDENCE_BYTES then return nil, payload end
-	local total = math.ceil(#encoded / Constants.MAX_EVIDENCE_BYTES)
-	if total > Constants.MAX_EVIDENCE_CHUNKS then error("evidence exceeds transport bounds") end
-	local evidenceId = "evidence_" .. HttpService:GenerateGUID(false); local chunks = {}
-	for index = 1, total do
-		local part = string.sub(encoded, (index - 1) * Constants.MAX_EVIDENCE_BYTES + 1, index * Constants.MAX_EVIDENCE_BYTES)
-		table.insert(chunks, { project = payload.project, reason = payload.reason, evidenceId = evidenceId, index = index - 1, total = total, encoding = "json", payload = part, payloadHash = Hash.sha256(part) })
-	end
-	return chunks, nil
 end
 
 return StudioEvidenceCollector

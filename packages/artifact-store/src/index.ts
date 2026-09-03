@@ -1,7 +1,17 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { chmod, link, lstat, mkdir, open, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, normalize, parse, relative, resolve, sep, win32 } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  normalize,
+  parse,
+  relative,
+  resolve,
+  sep,
+  win32,
+} from "node:path";
 import { stableJson } from "../../contracts/src/index.js";
 
 /**
@@ -36,9 +46,11 @@ export class ImmutableJsonArtifactStore {
   public readonly maxBytes: number;
 
   constructor(root: string, options: ImmutableJsonArtifactStoreOptions = {}) {
-    if (typeof root !== "string" || root.trim().length === 0) throw new Error("Artifact store root must be a non-empty path");
+    if (typeof root !== "string" || root.trim().length === 0)
+      throw new Error("Artifact store root must be a non-empty path");
     const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
-    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw new Error("Artifact store maxBytes must be a positive safe integer");
+    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0)
+      throw new Error("Artifact store maxBytes must be a positive safe integer");
     this.root = resolve(root);
     this.maxBytes = maxBytes;
   }
@@ -47,7 +59,8 @@ export class ImmutableJsonArtifactStore {
   async write(value: unknown): Promise<ArtifactReference> {
     const serialized = serializeCanonicalJson(value);
     const bytes = Buffer.byteLength(serialized, "utf8");
-    if (bytes > this.maxBytes) throw new Error(`Artifact exceeds byte limit (${bytes} > ${this.maxBytes})`);
+    if (bytes > this.maxBytes)
+      throw new Error(`Artifact exceeds byte limit (${bytes} > ${this.maxBytes})`);
     const artifactHash = hashBytes(serialized);
     const locator = `${ARTIFACT_DIRECTORY}/${artifactHash}.json`;
     const reference: ArtifactReference = { locator, artifactHash, bytes };
@@ -66,14 +79,25 @@ export class ImmutableJsonArtifactStore {
   }
 
   /** Read, integrity-check, parse, and optionally assert an artifact. */
-  async read<T = unknown>(reference: ArtifactReference, assertion?: JsonArtifactAssertion<T>): Promise<T> {
+  async read<T = unknown>(
+    reference: ArtifactReference,
+    assertion?: JsonArtifactAssertion<T>,
+  ): Promise<T> {
     assertArtifactReference(reference);
-    if (reference.bytes > this.maxBytes) throw new Error(`Artifact reference exceeds byte limit (${reference.bytes} > ${this.maxBytes})`);
+    if (reference.bytes > this.maxBytes)
+      throw new Error(
+        `Artifact reference exceeds byte limit (${reference.bytes} > ${this.maxBytes})`,
+      );
     const destination = await this.resolveForRead(reference.locator);
-    const serialized = await readRegularFileWithoutFollowingTarget(destination, reference.bytes, this.maxBytes);
+    const serialized = await readRegularFileWithoutFollowingTarget(
+      destination,
+      reference.bytes,
+      this.maxBytes,
+    );
     const bytes = Buffer.byteLength(serialized, "utf8");
     if (bytes !== reference.bytes) throw new Error("Artifact byte count mismatch");
-    if (hashBytes(serialized) !== reference.artifactHash) throw new Error("Artifact SHA-256 mismatch");
+    if (hashBytes(serialized) !== reference.artifactHash)
+      throw new Error("Artifact SHA-256 mismatch");
 
     let value: unknown;
     try {
@@ -81,7 +105,8 @@ export class ImmutableJsonArtifactStore {
     } catch {
       throw new Error("Artifact is not valid JSON");
     }
-    if (serializeCanonicalJson(value) !== serialized) throw new Error("Artifact JSON is not canonical");
+    if (serializeCanonicalJson(value) !== serialized)
+      throw new Error("Artifact JSON is not canonical");
     if (assertion !== undefined) {
       const assertionCallback: JsonArtifactAssertion<T> = assertion;
       assertionCallback(value);
@@ -130,7 +155,16 @@ export class ImmutableJsonArtifactStore {
 export function assertArtifactReference(value: unknown): asserts value is ArtifactReference {
   if (!isRecord(value)) throw new Error("Invalid ArtifactReference");
   const { locator, artifactHash, bytes } = value;
-  if (typeof locator !== "string" || !isSafeLocator(locator) || typeof artifactHash !== "string" || !HASH_PATTERN.test(artifactHash) || locator !== `${ARTIFACT_DIRECTORY}/${artifactHash}.json` || typeof bytes !== "number" || !Number.isSafeInteger(bytes) || bytes <= 0) {
+  if (
+    typeof locator !== "string" ||
+    !isSafeLocator(locator) ||
+    typeof artifactHash !== "string" ||
+    !HASH_PATTERN.test(artifactHash) ||
+    locator !== `${ARTIFACT_DIRECTORY}/${artifactHash}.json` ||
+    typeof bytes !== "number" ||
+    !Number.isSafeInteger(bytes) ||
+    bytes <= 0
+  ) {
     throw new Error("Invalid ArtifactReference");
   }
 }
@@ -150,15 +184,30 @@ function hashBytes(value: string): string {
 }
 
 function resolveLocator(root: string, locator: string): string {
-  if (!isSafeLocator(locator)) throw new Error("Artifact locator must be a safe root-relative path");
+  if (!isSafeLocator(locator))
+    throw new Error("Artifact locator must be a safe root-relative path");
   const destination = resolve(root, ...locator.split("/"));
   const fromRoot = relative(root, destination);
-  if (fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) throw new Error("Artifact locator escapes store root");
+  if (
+    fromRoot === "" ||
+    fromRoot === ".." ||
+    fromRoot.startsWith(`..${sep}`) ||
+    isAbsolute(fromRoot)
+  )
+    throw new Error("Artifact locator escapes store root");
   return destination;
 }
 
 function isSafeLocator(value: string): boolean {
-  if (value.length === 0 || value.length > 4096 || value.includes("\0") || value.includes("\\") || isAbsolute(value) || win32.isAbsolute(value)) return false;
+  if (
+    value.length === 0 ||
+    value.length > 4096 ||
+    value.includes("\0") ||
+    value.includes("\\") ||
+    isAbsolute(value) ||
+    win32.isAbsolute(value)
+  )
+    return false;
   const normalized = normalize(value).replaceAll("\\", "/");
   if (normalized !== value) return false;
   const parts = value.split("/");
@@ -180,7 +229,8 @@ async function ensureSafeAbsoluteDirectory(directory: string): Promise<void> {
     try {
       const info = await lstat(current);
       if (info.isSymbolicLink() && current !== absolute) continue;
-      if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`Unsafe artifact store directory: ${current}`);
+      if (info.isSymbolicLink() || !info.isDirectory())
+        throw new Error(`Unsafe artifact store directory: ${current}`);
     } catch (error: unknown) {
       if (!isMissing(error)) throw error;
       try {
@@ -189,21 +239,29 @@ async function ensureSafeAbsoluteDirectory(directory: string): Promise<void> {
         if (!isAlreadyExists(mkdirError)) throw mkdirError;
       }
       const info = await lstat(current);
-      if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`Unsafe artifact store directory: ${current}`);
+      if (info.isSymbolicLink() || !info.isDirectory())
+        throw new Error(`Unsafe artifact store directory: ${current}`);
     }
   }
 }
 
 async function ensureSafeDirectoryWithinRoot(root: string, directory: string): Promise<void> {
   const fromRoot = relative(root, directory);
-  if (fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) throw new Error("Artifact directory escapes store root");
+  if (
+    fromRoot === "" ||
+    fromRoot === ".." ||
+    fromRoot.startsWith(`..${sep}`) ||
+    isAbsolute(fromRoot)
+  )
+    throw new Error("Artifact directory escapes store root");
   let current = root;
   for (const part of fromRoot.split(sep)) {
     if (!part) continue;
     current = `${current}${sep}${part}`;
     try {
       const info = await lstat(current);
-      if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`Unsafe artifact directory: ${current}`);
+      if (info.isSymbolicLink() || !info.isDirectory())
+        throw new Error(`Unsafe artifact directory: ${current}`);
     } catch (error: unknown) {
       if (!isMissing(error)) throw error;
       try {
@@ -212,19 +270,31 @@ async function ensureSafeDirectoryWithinRoot(root: string, directory: string): P
         if (!isAlreadyExists(mkdirError)) throw mkdirError;
       }
       const info = await lstat(current);
-      if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`Unsafe artifact directory: ${current}`);
+      if (info.isSymbolicLink() || !info.isDirectory())
+        throw new Error(`Unsafe artifact directory: ${current}`);
     }
   }
 }
 
-async function assertSafeExistingPathWithinRoot(root: string, destination: string, includeTarget: boolean): Promise<void> {
+async function assertSafeExistingPathWithinRoot(
+  root: string,
+  destination: string,
+  includeTarget: boolean,
+): Promise<void> {
   const fromRoot = relative(root, destination);
-  if (fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) throw new Error("Artifact path escapes store root");
+  if (
+    fromRoot === "" ||
+    fromRoot === ".." ||
+    fromRoot.startsWith(`..${sep}`) ||
+    isAbsolute(fromRoot)
+  )
+    throw new Error("Artifact path escapes store root");
   const rootInfo = await lstat(root).catch((error: unknown) => {
     if (isMissing(error)) throw new Error("Artifact store root does not exist");
     throw error;
   });
-  if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory()) throw new Error("Unsafe artifact store root");
+  if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory())
+    throw new Error("Unsafe artifact store root");
   const parts = fromRoot.split(sep).filter(Boolean);
   let current = root;
   for (let index = 0; index < parts.length; index += 1) {
@@ -237,17 +307,24 @@ async function assertSafeExistingPathWithinRoot(root: string, destination: strin
     });
     if (info.isSymbolicLink()) throw new Error("Artifact path contains a symbolic link");
     const target = index === parts.length - 1;
-    if ((!target || !includeTarget) && !info.isDirectory()) throw new Error("Artifact path component is not a directory");
-    if (target && includeTarget && !info.isFile()) throw new Error("Artifact target is not a regular file");
+    if ((!target || !includeTarget) && !info.isDirectory())
+      throw new Error("Artifact path component is not a directory");
+    if (target && includeTarget && !info.isFile())
+      throw new Error("Artifact target is not a regular file");
   }
 }
 
-async function readRegularFileWithoutFollowingTarget(path: string, expectedBytes: number, maxBytes: number): Promise<string> {
+async function readRegularFileWithoutFollowingTarget(
+  path: string,
+  expectedBytes: number,
+  maxBytes: number,
+): Promise<string> {
   const descriptor = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const info = await descriptor.stat();
     if (!info.isFile()) throw new Error("Artifact target is not a regular file");
-    if (info.size > maxBytes) throw new Error(`Artifact exceeds byte limit (${info.size} > ${maxBytes})`);
+    if (info.size > maxBytes)
+      throw new Error(`Artifact exceeds byte limit (${info.size} > ${maxBytes})`);
     if (info.size !== expectedBytes) throw new Error("Artifact byte count mismatch");
     return await descriptor.readFile({ encoding: "utf8" });
   } finally {
@@ -268,5 +345,10 @@ function isAlreadyExists(error: unknown): boolean {
 }
 
 function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === code;
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === code
+  );
 }

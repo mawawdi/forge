@@ -28,8 +28,7 @@ export interface RobloxApiCatalogLookupRequest {
   readonly limit?: number;
 }
 
-export interface RobloxApiCatalogLookupEntry
-  extends StudioCapabilityCoverageEntry {
+export interface RobloxApiCatalogLookupEntry extends StudioCapabilityCoverageEntry {
   readonly deprecated: boolean;
   readonly tags: readonly string[];
   readonly sourceFile: string;
@@ -65,16 +64,10 @@ export interface RobloxApiCatalogLookupResult {
   readonly entries: readonly RobloxApiCatalogLookupEntry[];
 }
 
-type CatalogMetadata = Omit<
-  RobloxApiCatalogLookupEntry,
-  keyof StudioCapabilityCoverageEntry
->;
+type CatalogMetadata = Omit<RobloxApiCatalogLookupEntry, keyof StudioCapabilityCoverageEntry>;
 
-const coverage =
-  STUDIO_CAPABILITY_COVERAGE_REPORT as StudioCapabilityCoverageReport;
-const coverageById = new Map(
-  coverage.entries.map((entry) => [entry.catalogEntryId, entry]),
-);
+const coverage = STUDIO_CAPABILITY_COVERAGE_REPORT as StudioCapabilityCoverageReport;
+const coverageById = new Map(coverage.entries.map((entry) => [entry.catalogEntryId, entry]));
 const metadataById = buildCatalogMetadata();
 
 /** Returns one fully joined catalog/coverage row by its stable catalog ID. */
@@ -83,9 +76,7 @@ export function getRobloxApiCatalogLookupEntry(
 ): RobloxApiCatalogLookupEntry | undefined {
   const coverageEntry = coverageById.get(catalogEntryId);
   const metadata = metadataById.get(catalogEntryId);
-  return coverageEntry && metadata
-    ? { ...coverageEntry, ...metadata }
-    : undefined;
+  return coverageEntry && metadata ? { ...coverageEntry, ...metadata } : undefined;
 }
 
 /**
@@ -136,9 +127,7 @@ export function lookupRobloxApiCatalog(
 function effectiveClassEntryIds(className: string): ReadonlySet<string> {
   const classDefinition = getRobloxApiClass(className);
   if (!classDefinition)
-    throw new Error(
-      `Roblox API class is not present in the pinned catalog: ${className}`,
-    );
+    throw new Error(`Roblox API class is not present in the pinned catalog: ${className}`);
   return new Set([
     classDefinition.id,
     ...resolveRobloxClassMembers(className).map((entry) => entry.id),
@@ -150,15 +139,10 @@ function matchesLookupQuery(
   query: string | undefined,
 ): boolean {
   if (!query) return true;
-  return lookupText(entry).some((candidate) =>
-    candidate.toLowerCase().includes(query),
-  );
+  return lookupText(entry).some((candidate) => candidate.toLowerCase().includes(query));
 }
 
-function lookupScore(
-  entry: RobloxApiCatalogLookupEntry,
-  query: string | undefined,
-): number {
+function lookupScore(entry: RobloxApiCatalogLookupEntry, query: string | undefined): number {
   if (!query) return 3;
   const qualifiedName = entry.owner
     ? `${entry.owner}.${entry.name}`.toLowerCase()
@@ -185,18 +169,14 @@ function lookupText(entry: RobloxApiCatalogLookupEntry): string[] {
     ...(entry.tags ?? []),
     ...(entry.capabilities ?? []),
     ...(entry.operandTypes ?? []),
-    ...(entry.parameters ?? []).flatMap((parameter) => [
-      parameter.name,
-      parameter.type,
-    ]),
+    ...(entry.parameters ?? []).flatMap((parameter) => [parameter.name, parameter.type]),
     ...(entry.returns ?? []).map((result) => result.type),
   ];
 }
 
 function requiredMetadata(id: string): CatalogMetadata {
   const metadata = metadataById.get(id);
-  if (!metadata)
-    throw new Error(`Pinned Roblox API catalog metadata is missing for ${id}`);
+  if (!metadata) throw new Error(`Pinned Roblox API catalog metadata is missing for ${id}`);
   return metadata;
 }
 
@@ -208,9 +188,7 @@ function buildCatalogMetadata(): ReadonlyMap<string, CatalogMetadata> {
       tags: classDefinition.tags,
       sourceFile: classDefinition.sourceFile,
       sourceFileHash: classDefinition.sourceFileHash,
-      ...(classDefinition.superclass
-        ? { superclass: classDefinition.superclass }
-        : {}),
+      ...(classDefinition.superclass ? { superclass: classDefinition.superclass } : {}),
     });
     for (const member of classDefinition.members) {
       entries.set(member.id, {
@@ -224,9 +202,7 @@ function buildCatalogMetadata(): ReadonlyMap<string, CatalogMetadata> {
         ...(member.security ? { security: member.security } : {}),
         ...(member.serialization ? { serialization: member.serialization } : {}),
         ...(member.threadSafety ? { threadSafety: member.threadSafety } : {}),
-        ...(member.capabilities.length > 0
-          ? { capabilities: member.capabilities }
-          : {}),
+        ...(member.capabilities.length > 0 ? { capabilities: member.capabilities } : {}),
       });
     }
   }
@@ -315,14 +291,9 @@ function assertLookupRequest(input: {
     throw new Error("Roblox API lookup class name is invalid");
   if (
     input.query !== undefined &&
-    (input.query.length > MAX_LOOKUP_QUERY_LENGTH ||
-      /[\u0000-\u001f\u007f]/.test(input.query))
+    (input.query.length > MAX_LOOKUP_QUERY_LENGTH || /[\u0000-\u001f\u007f]/.test(input.query))
   )
     throw new Error("Roblox API lookup query is invalid");
-  if (
-    !Number.isSafeInteger(input.limit) ||
-    input.limit < 1 ||
-    input.limit > MAX_LOOKUP_LIMIT
-  )
+  if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > MAX_LOOKUP_LIMIT)
     throw new Error("Roblox API lookup limit is invalid");
 }

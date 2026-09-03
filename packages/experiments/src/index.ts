@@ -12,14 +12,14 @@ import {
   type AgentRuntime,
   type BudgetPolicy,
   type ExperimentRegistrationBinding,
-  type WorkspaceCandidateArtifact
+  type WorkspaceCandidateArtifact,
 } from "../../agent-runtime/src/index.js";
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 import {
   assertRuntimeEvalDefinition,
   assertRuntimeEvaluatorConfiguration,
   type RuntimeEvalDefinition,
-  type RuntimeEvaluatorConfiguration
+  type RuntimeEvaluatorConfiguration,
 } from "../../studio-capabilities/src/index.js";
 import { STUDIO_CAPABILITY_MANIFEST_HASH } from "../../studio-evidence/src/index.js";
 import {
@@ -28,25 +28,29 @@ import {
   assertRequirementSet,
   resolveRequirementView,
   type AcceptanceSpec,
-  type RequirementSet
+  type RequirementSet,
 } from "../../semantic-authority/src/index.js";
 
 export interface ImplementationSnapshot {
   kind: "ForgeImplementationSnapshot";
-    hash: string;
+  hash: string;
   files: Array<{ path: string; hash: string }>;
 }
 
 export interface ExperimentRegistration {
   kind: "ExperimentRegistration";
-    id: string;
+  id: string;
   hash: string;
   name: string;
   hypothesis: string;
   creatorPrompt: string;
   creatorPromptHash: string;
   environment: "benchmark";
-  model: { transport: string; name: string; transportConfiguration: AgentRuntime["modelClientDescriptor"]["configuration"] };
+  model: {
+    transport: string;
+    name: string;
+    transportConfiguration: AgentRuntime["modelClientDescriptor"]["configuration"];
+  };
   budgets: BudgetPolicy;
   implementation: ImplementationSnapshot;
   seed: { hash: string; sourceRoots: string[] };
@@ -64,7 +68,11 @@ export interface ExperimentRegistration {
   };
   expected: ExperimentRegistrationBinding["expected"];
   studio: { manifestHash: string };
-  policy: { providerAdmission: "single_valid_provider_envelope"; studioAdmission: "single_runtime_start"; execution: "creator_triggered_play_solo" };
+  policy: {
+    providerAdmission: "single_valid_provider_envelope";
+    studioAdmission: "single_runtime_start";
+    execution: "creator_triggered_play_solo";
+  };
 }
 
 export interface RegisterExperimentInput {
@@ -91,7 +99,9 @@ export interface RegisteredExperimentRunInput {
   traceDirectory: string;
 }
 
-export async function registerExperiment(input: RegisterExperimentInput): Promise<ExperimentRegistration> {
+export async function registerExperiment(
+  input: RegisterExperimentInput,
+): Promise<ExperimentRegistration> {
   assertRegistrationInput(input);
   const budgets = { ...(input.budgets ?? DEFAULT_AGENT_BUDGETS) };
   const temporary = await mkdtemp(join(tmpdir(), "forge-experiment-registration-"));
@@ -106,12 +116,28 @@ export async function registerExperiment(input: RegisterExperimentInput): Promis
       traceDirectory: temporary,
       environment: "benchmark",
       budgets,
-      registrationPreflight: true
+      registrationPreflight: true,
     });
     const builderView = prepared.requirementView;
-    const evaluatorView = resolveRequirementView(input.requirementSet, { phase: "evaluate", environment: "benchmark", audience: "evaluator" });
-    if (input.runtimeEvalDefinition.requirementSetId !== input.requirementSet.id || input.runtimeEvalDefinition.evaluatorViewId !== evaluatorView.id || input.runtimeEvalDefinition.evaluatorViewHash !== contentHash(stableJson(evaluatorView)) || input.runtimeEvalDefinition.acceptanceSpecId !== input.acceptanceSpec.id) throw new Error("Runtime evaluator definition does not bind the registered task artifacts");
-    if (input.runtimeEvaluatorConfiguration.runtimeEvalDefinitionId !== input.runtimeEvalDefinition.id || input.runtimeEvaluatorConfiguration.runtimeEvalDefinitionHash !== input.runtimeEvalDefinition.hash) throw new Error("Runtime evaluator configuration does not bind the registered definition");
+    const evaluatorView = resolveRequirementView(input.requirementSet, {
+      phase: "evaluate",
+      environment: "benchmark",
+      audience: "evaluator",
+    });
+    if (
+      input.runtimeEvalDefinition.requirementSetId !== input.requirementSet.id ||
+      input.runtimeEvalDefinition.evaluatorViewId !== evaluatorView.id ||
+      input.runtimeEvalDefinition.evaluatorViewHash !== contentHash(stableJson(evaluatorView)) ||
+      input.runtimeEvalDefinition.acceptanceSpecId !== input.acceptanceSpec.id
+    )
+      throw new Error("Runtime evaluator definition does not bind the registered task artifacts");
+    if (
+      input.runtimeEvaluatorConfiguration.runtimeEvalDefinitionId !==
+        input.runtimeEvalDefinition.id ||
+      input.runtimeEvaluatorConfiguration.runtimeEvalDefinitionHash !==
+        input.runtimeEvalDefinition.hash
+    )
+      throw new Error("Runtime evaluator configuration does not bind the registered definition");
     const payload: Omit<ExperimentRegistration, "kind" | "id" | "hash"> = {
       name: input.name,
       hypothesis: input.hypothesis,
@@ -121,11 +147,14 @@ export async function registerExperiment(input: RegisterExperimentInput): Promis
       model: {
         transport: input.runtime.modelClientDescriptor.transport,
         name: input.model,
-        transportConfiguration: input.runtime.modelClientDescriptor.configuration
+        transportConfiguration: input.runtime.modelClientDescriptor.configuration,
       },
       budgets,
       implementation: await createImplementationSnapshot(input.repositoryRoot),
-      seed: { hash: prepared.workspace.seedTreeHash, sourceRoots: [...prepared.workspace.sourceRoots] },
+      seed: {
+        hash: prepared.workspace.seedTreeHash,
+        sourceRoots: [...prepared.workspace.sourceRoots],
+      },
       artifacts: {
         requirementSet: input.requirementSet,
         requirementSetHash: contentHash(stableJson(input.requirementSet)),
@@ -136,7 +165,7 @@ export async function registerExperiment(input: RegisterExperimentInput): Promis
         acceptanceSpec: input.acceptanceSpec,
         acceptanceSpecHash: contentHash(stableJson(input.acceptanceSpec)),
         runtimeEvalDefinition: input.runtimeEvalDefinition,
-        runtimeEvaluatorConfiguration: input.runtimeEvaluatorConfiguration
+        runtimeEvaluatorConfiguration: input.runtimeEvaluatorConfiguration,
       },
       expected: {
         seedHash: prepared.workspace.seedTreeHash,
@@ -145,10 +174,14 @@ export async function registerExperiment(input: RegisterExperimentInput): Promis
         orientationContentHash: prepared.orientation.contentHash,
         toolDescriptionsHash: orderedToolDescriptionsHash(prepared.toolHost.definitions()),
         harnessConfigurationId: prepared.configuration.id,
-        harnessConfigurationHash: prepared.configuration.hash
+        harnessConfigurationHash: prepared.configuration.hash,
       },
       studio: { manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH },
-      policy: { providerAdmission: "single_valid_provider_envelope", studioAdmission: "single_runtime_start", execution: "creator_triggered_play_solo" }
+      policy: {
+        providerAdmission: "single_valid_provider_envelope",
+        studioAdmission: "single_runtime_start",
+        execution: "creator_triggered_play_solo",
+      },
     };
     return createExperimentRegistration(payload);
   } finally {
@@ -156,37 +189,135 @@ export async function registerExperiment(input: RegisterExperimentInput): Promis
   }
 }
 
-export function createExperimentRegistration(input: Omit<ExperimentRegistration, "kind" | "id" | "hash">): ExperimentRegistration {
+export function createExperimentRegistration(
+  input: Omit<ExperimentRegistration, "kind" | "id" | "hash">,
+): ExperimentRegistration {
   const canonical = canonicalRegistration(input);
   const hash = contentHash(stableJson(canonical));
-  const registration: ExperimentRegistration = { kind: "ExperimentRegistration", id: `experiment_registration_${hash.slice(0, 24)}`, hash, ...canonical };
+  const registration: ExperimentRegistration = {
+    kind: "ExperimentRegistration",
+    id: `experiment_registration_${hash.slice(0, 24)}`,
+    hash,
+    ...canonical,
+  };
   assertExperimentRegistration(registration);
   return registration;
 }
 
-export function assertExperimentRegistration(value: unknown): asserts value is ExperimentRegistration {
-  if (!isRecord(value) || value.kind !== "ExperimentRegistration" || !isId(value.id) || !isHash(value.hash) || !isNonEmpty(value.name) || !isNonEmpty(value.hypothesis) || !isNonEmpty(value.creatorPrompt) || !isHash(value.creatorPromptHash) || value.creatorPromptHash !== contentHash(value.creatorPrompt) || value.environment !== "benchmark" || !isRecord(value.model) || !isRecord(value.budgets) || !isRecord(value.implementation) || !isRecord(value.seed) || !isRecord(value.artifacts) || !isRecord(value.expected) || !isRecord(value.studio) || !isRecord(value.policy)) throw new Error("Invalid ExperimentRegistration");
+export function assertExperimentRegistration(
+  value: unknown,
+): asserts value is ExperimentRegistration {
+  if (
+    !isRecord(value) ||
+    value.kind !== "ExperimentRegistration" ||
+    !isId(value.id) ||
+    !isHash(value.hash) ||
+    !isNonEmpty(value.name) ||
+    !isNonEmpty(value.hypothesis) ||
+    !isNonEmpty(value.creatorPrompt) ||
+    !isHash(value.creatorPromptHash) ||
+    value.creatorPromptHash !== contentHash(value.creatorPrompt) ||
+    value.environment !== "benchmark" ||
+    !isRecord(value.model) ||
+    !isRecord(value.budgets) ||
+    !isRecord(value.implementation) ||
+    !isRecord(value.seed) ||
+    !isRecord(value.artifacts) ||
+    !isRecord(value.expected) ||
+    !isRecord(value.studio) ||
+    !isRecord(value.policy)
+  )
+    throw new Error("Invalid ExperimentRegistration");
   assertRequirementSet(value.artifacts.requirementSet);
   assertAcceptanceSpec(value.artifacts.acceptanceSpec);
   assertAcceptanceSpecReferences(value.artifacts.acceptanceSpec, value.artifacts.requirementSet);
   assertRuntimeEvalDefinition(value.artifacts.runtimeEvalDefinition);
   assertRuntimeEvaluatorConfiguration(value.artifacts.runtimeEvaluatorConfiguration);
   assertImplementationSnapshot(value.implementation);
-  if (value.artifacts.requirementSetHash !== contentHash(stableJson(value.artifacts.requirementSet)) || value.artifacts.acceptanceSpecHash !== contentHash(stableJson(value.artifacts.acceptanceSpec))) throw new Error("ExperimentRegistration task artifact hash mismatch");
-  const builder = resolveRequirementView(value.artifacts.requirementSet, { phase: "build", environment: "benchmark", audience: "builder" });
-  const evaluator = resolveRequirementView(value.artifacts.requirementSet, { phase: "evaluate", environment: "benchmark", audience: "evaluator" });
-  if (value.artifacts.builderViewId !== builder.id || value.artifacts.builderViewHash !== contentHash(stableJson(builder)) || value.artifacts.evaluatorViewId !== evaluator.id || value.artifacts.evaluatorViewHash !== contentHash(stableJson(evaluator))) throw new Error("ExperimentRegistration requirement-view identity mismatch");
-  if (value.artifacts.runtimeEvalDefinition.requirementSetId !== value.artifacts.requirementSet.id || value.artifacts.runtimeEvalDefinition.evaluatorViewId !== evaluator.id || value.artifacts.runtimeEvalDefinition.evaluatorViewHash !== contentHash(stableJson(evaluator)) || value.artifacts.runtimeEvalDefinition.acceptanceSpecId !== value.artifacts.acceptanceSpec.id || value.artifacts.runtimeEvalDefinition.manifestHash !== STUDIO_CAPABILITY_MANIFEST_HASH) throw new Error("ExperimentRegistration runtime definition mismatch");
-  if (value.artifacts.runtimeEvaluatorConfiguration.runtimeEvalDefinitionId !== value.artifacts.runtimeEvalDefinition.id || value.artifacts.runtimeEvaluatorConfiguration.runtimeEvalDefinitionHash !== value.artifacts.runtimeEvalDefinition.hash) throw new Error("ExperimentRegistration evaluator configuration mismatch");
-  if (!isHash(value.seed.hash) || !isCanonicalRoots(value.seed.sourceRoots) || stableJson(value.seed) !== stableJson({ hash: value.expected.seedHash, sourceRoots: value.expected.sourceRoots }) || !isExpected(value.expected) || value.studio.manifestHash !== STUDIO_CAPABILITY_MANIFEST_HASH || value.policy.providerAdmission !== "single_valid_provider_envelope" || value.policy.studioAdmission !== "single_runtime_start" || value.policy.execution !== "creator_triggered_play_solo") throw new Error("ExperimentRegistration treatment mismatch");
-  if (!isModel(value.model) || stableJson(value).includes("OPENROUTER_API_KEY") || stableJson(value).includes("apiKey")) throw new Error("ExperimentRegistration must not contain secrets");
+  if (
+    value.artifacts.requirementSetHash !==
+      contentHash(stableJson(value.artifacts.requirementSet)) ||
+    value.artifacts.acceptanceSpecHash !== contentHash(stableJson(value.artifacts.acceptanceSpec))
+  )
+    throw new Error("ExperimentRegistration task artifact hash mismatch");
+  const builder = resolveRequirementView(value.artifacts.requirementSet, {
+    phase: "build",
+    environment: "benchmark",
+    audience: "builder",
+  });
+  const evaluator = resolveRequirementView(value.artifacts.requirementSet, {
+    phase: "evaluate",
+    environment: "benchmark",
+    audience: "evaluator",
+  });
+  if (
+    value.artifacts.builderViewId !== builder.id ||
+    value.artifacts.builderViewHash !== contentHash(stableJson(builder)) ||
+    value.artifacts.evaluatorViewId !== evaluator.id ||
+    value.artifacts.evaluatorViewHash !== contentHash(stableJson(evaluator))
+  )
+    throw new Error("ExperimentRegistration requirement-view identity mismatch");
+  if (
+    value.artifacts.runtimeEvalDefinition.requirementSetId !== value.artifacts.requirementSet.id ||
+    value.artifacts.runtimeEvalDefinition.evaluatorViewId !== evaluator.id ||
+    value.artifacts.runtimeEvalDefinition.evaluatorViewHash !==
+      contentHash(stableJson(evaluator)) ||
+    value.artifacts.runtimeEvalDefinition.acceptanceSpecId !== value.artifacts.acceptanceSpec.id ||
+    value.artifacts.runtimeEvalDefinition.manifestHash !== STUDIO_CAPABILITY_MANIFEST_HASH
+  )
+    throw new Error("ExperimentRegistration runtime definition mismatch");
+  if (
+    value.artifacts.runtimeEvaluatorConfiguration.runtimeEvalDefinitionId !==
+      value.artifacts.runtimeEvalDefinition.id ||
+    value.artifacts.runtimeEvaluatorConfiguration.runtimeEvalDefinitionHash !==
+      value.artifacts.runtimeEvalDefinition.hash
+  )
+    throw new Error("ExperimentRegistration evaluator configuration mismatch");
+  if (
+    !isHash(value.seed.hash) ||
+    !isCanonicalRoots(value.seed.sourceRoots) ||
+    stableJson(value.seed) !==
+      stableJson({ hash: value.expected.seedHash, sourceRoots: value.expected.sourceRoots }) ||
+    !isExpected(value.expected) ||
+    value.studio.manifestHash !== STUDIO_CAPABILITY_MANIFEST_HASH ||
+    value.policy.providerAdmission !== "single_valid_provider_envelope" ||
+    value.policy.studioAdmission !== "single_runtime_start" ||
+    value.policy.execution !== "creator_triggered_play_solo"
+  )
+    throw new Error("ExperimentRegistration treatment mismatch");
+  if (
+    !isModel(value.model) ||
+    stableJson(value).includes("OPENROUTER_API_KEY") ||
+    stableJson(value).includes("apiKey")
+  )
+    throw new Error("ExperimentRegistration must not contain secrets");
   const { kind: _kind, id: _id, hash: _hash, ...payload } = value;
-  const canonical = canonicalRegistration(payload as Omit<ExperimentRegistration, "kind" | "id" | "hash">);
+  const canonical = canonicalRegistration(
+    payload as Omit<ExperimentRegistration, "kind" | "id" | "hash">,
+  );
   const expectedHash = contentHash(stableJson(canonical));
-  if (value.hash !== expectedHash || value.id !== `experiment_registration_${expectedHash.slice(0, 24)}`) throw new Error("Invalid ExperimentRegistration identity");
+  if (
+    value.hash !== expectedHash ||
+    value.id !== `experiment_registration_${expectedHash.slice(0, 24)}`
+  )
+    throw new Error("Invalid ExperimentRegistration identity");
 }
 
-export async function assertExperimentRegistrationCurrent(registration: ExperimentRegistration, input: Omit<RegisterExperimentInput, "name" | "hypothesis" | "creatorPrompt" | "requirementSet" | "acceptanceSpec" | "runtimeEvalDefinition" | "runtimeEvaluatorConfiguration" | "model" | "budgets">): Promise<void> {
+export async function assertExperimentRegistrationCurrent(
+  registration: ExperimentRegistration,
+  input: Omit<
+    RegisterExperimentInput,
+    | "name"
+    | "hypothesis"
+    | "creatorPrompt"
+    | "requirementSet"
+    | "acceptanceSpec"
+    | "runtimeEvalDefinition"
+    | "runtimeEvaluatorConfiguration"
+    | "model"
+    | "budgets"
+  >,
+): Promise<void> {
   assertExperimentRegistration(registration);
   const fresh = await registerExperiment({
     ...input,
@@ -198,17 +329,36 @@ export async function assertExperimentRegistrationCurrent(registration: Experime
     runtimeEvalDefinition: registration.artifacts.runtimeEvalDefinition,
     runtimeEvaluatorConfiguration: registration.artifacts.runtimeEvaluatorConfiguration,
     model: registration.model.name,
-    budgets: registration.budgets
+    budgets: registration.budgets,
   });
-  if (fresh.hash !== registration.hash) throw new Error("ExperimentRegistration drift detected before external execution");
+  if (fresh.hash !== registration.hash)
+    throw new Error("ExperimentRegistration drift detected before external execution");
 }
 
-export async function runRegisteredExperiment(input: RegisteredExperimentRunInput): Promise<AgentBuildResult> {
+export async function runRegisteredExperiment(
+  input: RegisteredExperimentRunInput,
+): Promise<AgentBuildResult> {
   assertExperimentRegistration(input.registration);
-  if (input.runtime.identity.name !== FORGE_NATIVE_RUNTIME_IDENTITY.name || stableJson(input.runtime.modelClientDescriptor) !== stableJson({ transport: input.registration.model.transport, configuration: input.registration.model.transportConfiguration })) throw new Error("Registered experiment runtime or transport configuration drifted");
-  const current = { repositoryRoot: input.repositoryRoot, seedRoot: input.seedRoot, runtime: input.runtime };
+  if (
+    input.runtime.identity.name !== FORGE_NATIVE_RUNTIME_IDENTITY.name ||
+    stableJson(input.runtime.modelClientDescriptor) !==
+      stableJson({
+        transport: input.registration.model.transport,
+        configuration: input.registration.model.transportConfiguration,
+      })
+  )
+    throw new Error("Registered experiment runtime or transport configuration drifted");
+  const current = {
+    repositoryRoot: input.repositoryRoot,
+    seedRoot: input.seedRoot,
+    runtime: input.runtime,
+  };
   await assertExperimentRegistrationCurrent(input.registration, current);
-  const binding: ExperimentRegistrationBinding = { id: input.registration.id, hash: input.registration.hash, expected: input.registration.expected };
+  const binding: ExperimentRegistrationBinding = {
+    id: input.registration.id,
+    hash: input.registration.hash,
+    expected: input.registration.expected,
+  };
   return runBoundedAgent({
     seedRoot: input.seedRoot,
     creatorPrompt: input.registration.creatorPrompt,
@@ -220,16 +370,33 @@ export async function runRegisteredExperiment(input: RegisteredExperimentRunInpu
     environment: "benchmark",
     budgets: input.registration.budgets,
     experiment: binding,
-    beforeModelInvocation: async () => assertExperimentRegistrationCurrent(input.registration, current)
+    beforeModelInvocation: async () =>
+      assertExperimentRegistrationCurrent(input.registration, current),
   });
 }
 
-export function assertRegisteredCandidate(registration: ExperimentRegistration, candidate: WorkspaceCandidateArtifact): void {
+export function assertRegisteredCandidate(
+  registration: ExperimentRegistration,
+  candidate: WorkspaceCandidateArtifact,
+): void {
   assertExperimentRegistration(registration);
-  if (candidate.origin.kind !== "registered_experiment" || candidate.origin.experimentRegistrationId !== registration.id || candidate.origin.experimentRegistrationHash !== registration.hash || candidate.requirementSetId !== registration.artifacts.requirementSet.id || candidate.requirementViewId !== registration.artifacts.builderViewId || candidate.harnessConfigurationId !== registration.expected.harnessConfigurationId || candidate.harnessConfigurationHash !== registration.expected.harnessConfigurationHash || candidate.seedHash !== registration.seed.hash) throw new Error("Candidate does not bind the supplied ExperimentRegistration");
+  if (
+    candidate.origin.kind !== "registered_experiment" ||
+    candidate.origin.experimentRegistrationId !== registration.id ||
+    candidate.origin.experimentRegistrationHash !== registration.hash ||
+    candidate.requirementSetId !== registration.artifacts.requirementSet.id ||
+    candidate.requirementViewId !== registration.artifacts.builderViewId ||
+    candidate.harnessConfigurationId !== registration.expected.harnessConfigurationId ||
+    candidate.harnessConfigurationHash !== registration.expected.harnessConfigurationHash ||
+    candidate.seedHash !== registration.seed.hash
+  )
+    throw new Error("Candidate does not bind the supplied ExperimentRegistration");
 }
 
-export async function persistExperimentRegistration(registration: ExperimentRegistration, path: string): Promise<{ path: string; hash: string }> {
+export async function persistExperimentRegistration(
+  registration: ExperimentRegistration,
+  path: string,
+): Promise<{ path: string; hash: string }> {
   assertExperimentRegistration(registration);
   const destination = resolve(path);
   const serialized = `${stableJson(registration)}\n`;
@@ -246,11 +413,21 @@ export async function loadExperimentRegistration(path: string): Promise<Experime
   return value;
 }
 
-export async function createImplementationSnapshot(repositoryRoot: string): Promise<ImplementationSnapshot> {
+export async function createImplementationSnapshot(
+  repositoryRoot: string,
+): Promise<ImplementationSnapshot> {
   const root = resolve(repositoryRoot);
   const files: Array<{ path: string; hash: string }> = [];
-  for (const path of ["bin/forge.js", "package.json", "package-lock.json", "tsconfig.json", "plugin/default.project.json"]) files.push(await hashFile(root, path));
-  for (const directory of ["packages", "plugin/src"]) await collectImplementationFiles(root, directory, files);
+  for (const path of [
+    "bin/forge.js",
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "plugin/default.project.json",
+  ])
+    files.push(await hashFile(root, path));
+  for (const directory of ["packages", "plugin/src"])
+    await collectImplementationFiles(root, directory, files);
   files.sort((left, right) => left.path.localeCompare(right.path));
   const hash = contentHash(stableJson(files));
   const snapshot: ImplementationSnapshot = { kind: "ForgeImplementationSnapshot", hash, files };
@@ -258,22 +435,45 @@ export async function createImplementationSnapshot(repositoryRoot: string): Prom
   return snapshot;
 }
 
-function canonicalRegistration(input: Omit<ExperimentRegistration, "kind" | "id" | "hash">): Omit<ExperimentRegistration, "kind" | "id" | "hash"> {
+function canonicalRegistration(
+  input: Omit<ExperimentRegistration, "kind" | "id" | "hash">,
+): Omit<ExperimentRegistration, "kind" | "id" | "hash"> {
   return {
     ...input,
-    model: { ...input.model, transportConfiguration: structuredClone(input.model.transportConfiguration) },
+    model: {
+      ...input.model,
+      transportConfiguration: structuredClone(input.model.transportConfiguration),
+    },
     budgets: { ...input.budgets },
-    implementation: { ...input.implementation, files: input.implementation.files.map((file) => ({ ...file })).sort((left, right) => left.path.localeCompare(right.path)) },
+    implementation: {
+      ...input.implementation,
+      files: input.implementation.files
+        .map((file) => ({ ...file }))
+        .sort((left, right) => left.path.localeCompare(right.path)),
+    },
     seed: { hash: input.seed.hash, sourceRoots: [...input.seed.sourceRoots] },
-    artifacts: { ...input.artifacts, requirementSet: structuredClone(input.artifacts.requirementSet), acceptanceSpec: structuredClone(input.artifacts.acceptanceSpec), runtimeEvalDefinition: structuredClone(input.artifacts.runtimeEvalDefinition), runtimeEvaluatorConfiguration: structuredClone(input.artifacts.runtimeEvaluatorConfiguration) },
+    artifacts: {
+      ...input.artifacts,
+      requirementSet: structuredClone(input.artifacts.requirementSet),
+      acceptanceSpec: structuredClone(input.artifacts.acceptanceSpec),
+      runtimeEvalDefinition: structuredClone(input.artifacts.runtimeEvalDefinition),
+      runtimeEvaluatorConfiguration: structuredClone(input.artifacts.runtimeEvaluatorConfiguration),
+    },
     expected: { ...input.expected, sourceRoots: [...input.expected.sourceRoots] },
     studio: { ...input.studio },
-    policy: { ...input.policy }
+    policy: { ...input.policy },
   };
 }
 
 function assertRegistrationInput(input: RegisterExperimentInput): void {
-  if (!isNonEmpty(input.name) || !isNonEmpty(input.hypothesis) || !isNonEmpty(input.creatorPrompt) || input.model !== "openai/gpt-5.6-luna" || input.runtime.identity.name !== FORGE_NATIVE_RUNTIME_IDENTITY.name) throw new Error("Invalid experiment registration input");
+  if (
+    !isNonEmpty(input.name) ||
+    !isNonEmpty(input.hypothesis) ||
+    !isNonEmpty(input.creatorPrompt) ||
+    input.model !== "openai/gpt-5.6-luna" ||
+    input.runtime.identity.name !== FORGE_NATIVE_RUNTIME_IDENTITY.name
+  )
+    throw new Error("Invalid experiment registration input");
   assertRequirementSet(input.requirementSet);
   assertAcceptanceSpec(input.acceptanceSpec);
   assertAcceptanceSpecReferences(input.acceptanceSpec, input.requirementSet);
@@ -281,7 +481,11 @@ function assertRegistrationInput(input: RegisterExperimentInput): void {
   assertRuntimeEvaluatorConfiguration(input.runtimeEvaluatorConfiguration);
 }
 
-async function collectImplementationFiles(root: string, relativeDirectory: string, files: Array<{ path: string; hash: string }>): Promise<void> {
+async function collectImplementationFiles(
+  root: string,
+  relativeDirectory: string,
+  files: Array<{ path: string; hash: string }>,
+): Promise<void> {
   const directory = resolve(root, relativeDirectory);
   const entries = await readdir(directory, { withFileTypes: true });
   for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
@@ -297,25 +501,75 @@ async function hashFile(root: string, path: string): Promise<{ path: string; has
 }
 
 function assertImplementationSnapshot(value: unknown): asserts value is ImplementationSnapshot {
-  if (!isRecord(value) || value.kind !== "ForgeImplementationSnapshot" || !isHash(value.hash) || !Array.isArray(value.files) || !value.files.every((file) => isRecord(file) && isSafeRelative(String(file.path)) && isHash(file.hash))) throw new Error("Invalid implementation snapshot");
+  if (
+    !isRecord(value) ||
+    value.kind !== "ForgeImplementationSnapshot" ||
+    !isHash(value.hash) ||
+    !Array.isArray(value.files) ||
+    !value.files.every(
+      (file) => isRecord(file) && isSafeRelative(String(file.path)) && isHash(file.hash),
+    )
+  )
+    throw new Error("Invalid implementation snapshot");
   const files = value.files as Array<{ path: string; hash: string }>;
-  if (new Set(files.map((file) => file.path)).size !== files.length || files.some((file, index) => index > 0 && files[index - 1]!.path.localeCompare(file.path) >= 0) || value.hash !== contentHash(stableJson(files))) throw new Error("Invalid implementation snapshot identity");
+  if (
+    new Set(files.map((file) => file.path)).size !== files.length ||
+    files.some(
+      (file, index) => index > 0 && files[index - 1]!.path.localeCompare(file.path) >= 0,
+    ) ||
+    value.hash !== contentHash(stableJson(files))
+  )
+    throw new Error("Invalid implementation snapshot identity");
 }
 
 function isExpected(value: unknown): value is ExperimentRegistrationBinding["expected"] {
-  return isRecord(value) && isHash(value.seedHash) && isCanonicalRoots(value.sourceRoots) && isId(value.orientationId) && isHash(value.orientationContentHash) && isHash(value.toolDescriptionsHash) && isId(value.harnessConfigurationId) && isHash(value.harnessConfigurationHash);
+  return (
+    isRecord(value) &&
+    isHash(value.seedHash) &&
+    isCanonicalRoots(value.sourceRoots) &&
+    isId(value.orientationId) &&
+    isHash(value.orientationContentHash) &&
+    isHash(value.toolDescriptionsHash) &&
+    isId(value.harnessConfigurationId) &&
+    isHash(value.harnessConfigurationHash)
+  );
 }
 
 function isModel(value: unknown): value is ExperimentRegistration["model"] {
-  return isRecord(value) && value.transport === "openrouter-ai-sdk-core" && value.name === "openai/gpt-5.6-luna" && isRecord(value.transportConfiguration);
+  return (
+    isRecord(value) &&
+    value.transport === "openrouter-ai-sdk-core" &&
+    value.name === "openai/gpt-5.6-luna" &&
+    isRecord(value.transportConfiguration)
+  );
 }
 
 function isCanonicalRoots(value: unknown): value is string[] {
-  return Array.isArray(value) && value.length > 0 && value.every((entry) => typeof entry === "string" && isSafeRelative(entry)) && value.every((entry, index) => index === 0 || value[index - 1]!.localeCompare(entry) < 0);
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((entry) => typeof entry === "string" && isSafeRelative(entry)) &&
+    value.every((entry, index) => index === 0 || value[index - 1]!.localeCompare(entry) < 0)
+  );
 }
 
-function isSafeRelative(path: string): boolean { return path.length > 0 && !path.startsWith("/") && !path.includes("\\") && !path.split("/").some((segment) => segment.length === 0 || segment === "." || segment === ".."); }
-function isHash(value: unknown): value is string { return typeof value === "string" && /^[a-f0-9]{64}$/.test(value); }
-function isId(value: unknown): value is string { return typeof value === "string" && /^[a-z][a-z0-9_]{2,127}$/.test(value); }
-function isNonEmpty(value: unknown): value is string { return typeof value === "string" && value.trim().length > 0; }
-function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
+function isSafeRelative(path: string): boolean {
+  return (
+    path.length > 0 &&
+    !path.startsWith("/") &&
+    !path.includes("\\") &&
+    !path.split("/").some((segment) => segment.length === 0 || segment === "." || segment === "..")
+  );
+}
+function isHash(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+function isId(value: unknown): value is string {
+  return typeof value === "string" && /^[a-z][a-z0-9_]{2,127}$/.test(value);
+}
+function isNonEmpty(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

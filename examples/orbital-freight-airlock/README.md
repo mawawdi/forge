@@ -2,7 +2,7 @@
 
 This is a solution-free Studio seed for a single interconnected creator-session proof. Build it to a temporary place, open that place in Studio, and do not keep Rojo connected: Studio is the creator session's sole writer.
 
-The seed contains the named physical assembly, an empty replicated networking folder, and an empty HUD panel because every approved create must have a parent that existed in the initial Studio state. It deliberately contains no prompts, remotes, scripts, UI controls, evaluator material, or prepared behavior.
+The seed contains the named physical assembly, an empty replicated networking folder, and an empty HUD panel because mutable user-created intermediate parents must exist in the initial Studio state. Engine-owned roots and the fixed StarterPlayer script containers are separate generated manifest parent contracts and are rechecked by plugin preflight. The seed deliberately contains no prompts, remotes, scripts, UI controls, evaluator material, or prepared behavior.
 
 Use this exact prompt:
 

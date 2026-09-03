@@ -1,4 +1,5 @@
 export type CreatorSessionStatus =
+  | "indexing"
   | "planning"
   | "awaiting_plan_approval"
   | "building"
@@ -7,9 +8,14 @@ export type CreatorSessionStatus =
   | "applying"
   | "awaiting_verification"
   | "verifying"
+  | "awaiting_verification_retry"
   | "cancelling"
   | "committing"
   | "repairing"
+  | "refresh_required"
+  | "refreshing"
+  | "superseded"
+  | "awaiting_source_sync"
   | "awaiting_review"
   | "creator_accepted"
   | "creator_rejected"
@@ -22,8 +28,11 @@ export type CreatorActionId =
   | "reject_plan"
   | "approve_and_apply_changes"
   | "reject_changes"
-  | "start_checks"
+  | "retry_play_verification"
   | "cancel_changes"
+  | "refresh_project"
+  | "check_source_sync"
+  | "revert_source_changes"
   | "accept_result"
   | "reject_and_rollback"
   | "cancel_interrupted_recording";
@@ -36,8 +45,11 @@ export interface ArtifactReference {
 
 export interface CreatorSessionSummary {
   id: string;
+  hash: string;
   prompt: string;
+  promptHash: string;
   status: CreatorSessionStatus;
+  createdAt: string;
   updatedAt: string;
   projectId: string;
   projectName?: string;
@@ -63,6 +75,16 @@ export interface CreatorArtifactSet {
   reviewReport?: ArtifactReference;
   agentRun?: ArtifactReference;
   trace?: ArtifactReference;
+  projectIndex?: ArtifactReference;
+  sourceConsultation?: ArtifactReference;
+  projectChangeNotice?: ArtifactReference;
+  projectDelta?: ArtifactReference;
+  projectAuthorityMap?: ArtifactReference;
+  rojoSourceChangeSet?: ArtifactReference;
+  rojoMutationAttempt?: ArtifactReference;
+  sourceSync?: ArtifactReference;
+  sourceRevert?: ArtifactReference;
+  sourceRevertSync?: ArtifactReference;
 }
 
 export interface CreatorStage {
@@ -105,11 +127,27 @@ export interface CreatorControlView {
     status: "passed" | "failed" | "incomplete" | "not_run";
     failureFacts: Array<{ statement: string; hash: string }>;
     replayable: boolean;
+    runtimeSummary?: {
+      startedAt: string;
+      endedAt: string;
+      observedFacts: number;
+      absentFacts: number;
+      unavailableFacts: number;
+      readErrorFacts: number;
+      diagnosticCount: number;
+      issues: Array<{
+        key: string;
+        status: "unavailable" | "read_error";
+        code: string;
+      }>;
+    };
   };
   mutation?: {
     attemptId: string;
     status:
       | "preflighting"
+      | "source_transfer_failed"
+      | "prepare_failed"
       | "preflight_failed"
       | "provisional"
       | "matched"
@@ -119,9 +157,41 @@ export interface CreatorControlView {
       | "committed"
       | "rolled_back"
       | "recovery_required";
-    failureFacts: Array<{ statement: string; hash: string }>;
+    failureFacts: Array<{ code: string; statement: string; hash: string }>;
     replayable: boolean;
     projectionFactCount: number;
+  };
+  projectIndex?: {
+    status: "indexing" | "complete" | "incomplete" | "dirty";
+    authorityMode: "studio_document" | "rojo_source";
+    connectorEpoch: string;
+    manifestHash?: string;
+    rootHash?: string;
+    indexedInstances: number;
+    indexedBytes: number;
+    sourceBlobs: number;
+    dirty: boolean;
+    artifact?: ArtifactReference;
+  };
+  sourceConsultation?: {
+    artifact: ArtifactReference;
+    sourceIndexHash: string;
+    sourceCount: number;
+    rangeCount: number;
+    dependencyNodeCount: number;
+  };
+  projectChange?: {
+    detectedAt: string;
+    reasons: string[];
+    notice?: ArtifactReference;
+    delta?: ArtifactReference;
+    predecessorSessionId?: string;
+    successorSessionId?: string;
+  };
+  sourceSync?: {
+    status: "awaiting" | "matched" | "mismatched" | "reverted";
+    attemptId: string;
+    artifact?: ArtifactReference;
   };
 }
 
@@ -142,6 +212,8 @@ export interface PairedStudioState {
    * diagnostic evidence only: it never grants a dashboard action.
    */
   attestation?: StudioAttestationSummary;
+  /** Backend-derived recovery gate; the dashboard never infers this. */
+  transactionInventoryStatus: "clear" | "pending" | "blocked" | "unavailable";
   message: string;
 }
 
@@ -239,7 +311,11 @@ export interface StudioCapabilityExplorerEntry {
   sourceFileHash: string;
   superclass?: string;
   valueType?: string;
-  parameters?: Array<{ name: string; type: string; default?: string | number | boolean }>;
+  parameters?: Array<{
+    name: string;
+    type: string;
+    default?: string | number | boolean;
+  }>;
   returns?: Array<{ type: string }>;
   operandTypes?: string[];
   security?: { read?: string; write?: string };
@@ -270,6 +346,192 @@ export interface CapabilityExplorerSnapshot {
   phase: "loading" | "ready" | "error";
   summary?: StudioCatalogSummary;
   page?: StudioCapabilityExplorerPage;
+  error?: string;
+}
+
+/** A stable, read-only address within one immutable Studio source index. */
+export interface StudioSourceDocumentLocator {
+  documentId: string;
+  path: string;
+  className: string;
+  executionContext: "client" | "server" | "shared";
+  sourceHash: string;
+}
+
+export interface StudioSourceLocation {
+  startByte: number;
+  endByte: number;
+  startLine: number;
+  startColumn: number;
+  endLine: number;
+  endColumn: number;
+}
+
+export interface StudioSourceDocumentPage {
+  indexId: string;
+  indexHash: string;
+  documents: StudioSourceDocumentLocator[];
+  nextCursor?: string;
+}
+
+export interface StudioSourceSearchPage {
+  indexId: string;
+  indexHash: string;
+  query: string;
+  matches: Array<{
+    document: StudioSourceDocumentLocator;
+    location: StudioSourceLocation;
+    snippetRange: { startByte: number; endByte: number };
+    snippet: string;
+  }>;
+  nextCursor?: string;
+}
+
+export interface StudioSourceReadPage {
+  indexId: string;
+  indexHash: string;
+  document: StudioSourceDocumentLocator;
+  totalUtf8Bytes: number;
+  range: { startByte: number; endByte: number };
+  source: string;
+  nextCursor?: string;
+}
+
+export interface StudioSourceSymbol {
+  id: string;
+  document: StudioSourceDocumentLocator;
+  name: string;
+  kind: "local" | "function" | "type" | "export_type";
+  location: StudioSourceLocation;
+}
+
+export interface StudioSourceSymbolPage {
+  indexId: string;
+  indexHash: string;
+  query: string;
+  symbols: StudioSourceSymbol[];
+  nextCursor?: string;
+}
+
+export interface StudioSourceReference {
+  id: string;
+  document: StudioSourceDocumentLocator;
+  name: string;
+  role: "declaration" | "reference";
+  location: StudioSourceLocation;
+}
+
+export interface StudioSourceReferencePage {
+  indexId: string;
+  indexHash: string;
+  symbol: string;
+  references: StudioSourceReference[];
+  nextCursor?: string;
+}
+
+export interface StudioSourceDependency {
+  id: string;
+  source: StudioSourceDocumentLocator;
+  expressionHash: string;
+  location: StudioSourceLocation;
+  resolution: "resolved" | "dynamic" | "unresolved";
+  target?: StudioSourceDocumentLocator;
+  reason?: string;
+}
+
+export interface StudioSourceDependencyPage {
+  indexId: string;
+  indexHash: string;
+  root: StudioSourceDocumentLocator;
+  direction: "imports" | "importers" | "closure";
+  maxDepth: number;
+  dependencies: StudioSourceDependency[];
+  discoveredNodes: StudioSourceDocumentLocator[];
+  truncated: boolean;
+  nextCursor?: string;
+}
+
+/** Exact, server-produced bytes for one bounded slice of a sealed source edit. */
+export interface CreatorExactSourceDiffPage {
+  kind: "CreatorExactSourceDiffPage";
+  sessionId: string;
+  sourceIndex: { id: string; hash: string; snapshotHash: string };
+  changeSet: { id: string; hash: string };
+  operation: {
+    id: string;
+    document: StudioSourceDocumentLocator;
+    beforeSourceHash: string;
+    finalSourceHash: string;
+    finalByteCount: number;
+  };
+  edit: {
+    ordinal: number;
+    editCount: number;
+    before: {
+      totalUtf8Bytes: number;
+      range: { startByte: number; endByte: number };
+      source: string;
+    };
+    replacement: {
+      sourceHash: string;
+      totalUtf8Bytes: number;
+      range: { startByte: number; endByte: number };
+      source: string;
+    };
+  };
+  nextCursor?: string;
+}
+
+/**
+ * Dashboard requests are intentionally capability-free: they can only read a
+ * session's immutable source index. The control server derives authority from
+ * the authenticated session and rejects any cursor that is not bound to this
+ * exact query/index.
+ */
+export type SourceExplorerRequest =
+  | { operation: "documents"; cursor?: string }
+  | { operation: "search"; query: string; pathPrefix?: string; cursor?: string }
+  | { operation: "read"; documentId: string; cursor?: string }
+  | {
+      operation: "symbols";
+      query: string;
+      pathPrefix?: string;
+      cursor?: string;
+    }
+  | {
+      operation: "references";
+      symbol: string;
+      pathPrefix?: string;
+      cursor?: string;
+    }
+  | {
+      operation: "diff";
+      operationId: string;
+      changeSetId?: string;
+      cursor?: string;
+    }
+  | {
+      operation: "dependencies";
+      documentId: string;
+      direction: "imports" | "importers" | "closure";
+      cursor?: string;
+    };
+
+export type SourceExplorerResult =
+  | { operation: "documents"; page: StudioSourceDocumentPage }
+  | { operation: "search"; page: StudioSourceSearchPage }
+  | { operation: "read"; page: StudioSourceReadPage }
+  | { operation: "symbols"; page: StudioSourceSymbolPage }
+  | { operation: "references"; page: StudioSourceReferencePage }
+  | { operation: "diff"; page: CreatorExactSourceDiffPage }
+  | { operation: "dependencies"; page: StudioSourceDependencyPage };
+
+export interface SourceExplorerSnapshot {
+  phase: "idle" | "loading" | "ready" | "error";
+  /** The session to which `result` is cryptographically index-bound. */
+  sessionId?: string;
+  request?: SourceExplorerRequest;
+  result?: SourceExplorerResult;
   error?: string;
 }
 
@@ -324,4 +586,5 @@ export interface DashboardSnapshot {
   error?: string;
   pendingAction?: CreatorActionId | "start";
   catalog: CapabilityExplorerSnapshot;
+  sources: SourceExplorerSnapshot;
 }

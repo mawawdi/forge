@@ -5,7 +5,12 @@ import {
   type BudgetPolicy,
 } from "../../agent-runtime/src/index.js";
 import { ImmutableJsonArtifactStore } from "../../artifact-store/src/index.js";
-import type { StudioProjectState } from "../../studio-evidence/src/index.js";
+import type { ArtifactReference } from "../../artifact-store/src/index.js";
+import type {
+  CreatorSourceConsultation,
+  StudioSourceIndex,
+  VerifiedSourceResolver,
+} from "../../source-intelligence/src/index.js";
 import {
   creatorOrientation,
   runCreatorBuilder,
@@ -14,6 +19,8 @@ import {
   type CreatorApproval,
   type CreatorBuildContract,
   type CreatorChangeSet,
+  type CreatorSourceWriteBlobCapture,
+  type CreatorProjectIndexView,
   type CreatorPlan,
   type CreatorSession,
   type CreatorSessionBundle,
@@ -25,17 +32,22 @@ export interface CreatorAgentWorker {
   plan(input: {
     session: CreatorSession;
     ownership: StudioOwnershipMap;
-    observation: StudioProjectState;
+    projectIndex: CreatorProjectIndexView;
+    sourceIndex: StudioSourceIndex;
+    sourceResolver: VerifiedSourceResolver;
     prompt: string;
     budgets: BudgetPolicy;
   }): Promise<CreatorWorkerPlanResult>;
   build(input: {
     session: CreatorSession;
     ownership: StudioOwnershipMap;
-    observation: StudioProjectState;
+    projectIndex: CreatorProjectIndexView;
+    sourceIndex: StudioSourceIndex;
+    sourceResolver: VerifiedSourceResolver;
     prompt: string;
     plan: CreatorPlan;
     planApproval: CreatorApproval;
+    sourceConsultation: CreatorSourceConsultation;
     verificationFeedback?: readonly string[];
     budgets: BudgetPolicy;
   }): Promise<CreatorWorkerBuildResult>;
@@ -46,17 +58,26 @@ export type CreatorWorkerPlanResult =
       status: "sealed";
       plan: CreatorPlan;
       evidence: CreatorSessionBundle["agentRuns"][number];
+      source: CreatorWorkerSourceEvidence;
     }
   | {
       status: "unsealed";
       failure: { code: string; detail: string };
       evidence: CreatorSessionBundle["agentRuns"][number];
+      source: CreatorWorkerSourceEvidence;
     };
+export interface CreatorWorkerSourceEvidence {
+  index: StudioSourceIndex;
+  indexArtifact: ArtifactReference;
+  consultation: CreatorSourceConsultation;
+  consultationArtifact: ArtifactReference;
+}
 export type CreatorWorkerBuildResult =
   | {
       status: "sealed";
       buildContract: CreatorBuildContract;
       changeSet: CreatorChangeSet;
+      sourceWriteBlobs: readonly CreatorSourceWriteBlobCapture[];
       evidence: CreatorSessionBundle["agentRuns"][number];
     }
   | {
@@ -82,11 +103,22 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
   async plan(input: {
     session: CreatorSession;
     ownership: StudioOwnershipMap;
-    observation: StudioProjectState;
+    projectIndex: CreatorProjectIndexView;
+    sourceIndex: StudioSourceIndex;
+    sourceResolver: VerifiedSourceResolver;
     prompt: string;
     budgets: BudgetPolicy;
   }): Promise<CreatorWorkerPlanResult> {
-    const result = await runCreatorPlanner({ ...input, runtime: this.runtime });
+    const result = await runCreatorPlanner({
+      session: input.session,
+      ownership: input.ownership,
+      projectIndex: input.projectIndex,
+      sourceIndex: input.sourceIndex,
+      sourceResolver: input.sourceResolver,
+      prompt: input.prompt,
+      runtime: this.runtime,
+      budgets: input.budgets,
+    });
     const phase = await persistCreatorPhaseAgentRun({
       phase: "creator_planner",
       creatorSession: { id: input.session.id, hash: input.session.hash },
@@ -96,7 +128,7 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
       orientation: creatorOrientation({
         session: input.session,
         ownership: input.ownership,
-        observation: input.observation,
+        projectIndex: input.projectIndex,
       }),
       systemPrompt: result.systemPrompt,
       finalization: result.finalization,
@@ -113,6 +145,15 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
       "creator_planner",
       new ImmutableJsonArtifactStore(resolve(this.directory)),
     );
+    const artifactStore = new ImmutableJsonArtifactStore(resolve(this.directory));
+    const sourceIndex = result.toolHost.getSourceIndex();
+    const sourceConsultation = result.toolHost.getSourceConsultation();
+    const source: CreatorWorkerSourceEvidence = {
+      index: sourceIndex,
+      indexArtifact: await artifactStore.write(sourceIndex),
+      consultation: sourceConsultation,
+      consultationArtifact: await artifactStore.write(sourceConsultation),
+    };
     if (phase.run.status !== "locally_eligible")
       return {
         status: "unsealed",
@@ -122,10 +163,10 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
               ? phase.run.creatorPhaseOutcome.failureCode
               : "CREATOR_PHASE_NOT_ADMITTED",
           detail:
-            phase.run.error ??
-            "Persisted creator planner evidence did not pass local admission",
+            phase.run.error ?? "Persisted creator planner evidence did not pass local admission",
         },
         evidence,
+        source,
       };
     if (result.finalization.status === "unsealed" || !result.plan)
       return {
@@ -141,21 +182,40 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
               : "Creator planner did not publish a plan",
         },
         evidence,
+        source,
       };
-    return { status: "sealed", plan: result.plan, evidence };
+    return { status: "sealed", plan: result.plan, evidence, source };
   }
 
   async build(input: {
     session: CreatorSession;
     ownership: StudioOwnershipMap;
-    observation: StudioProjectState;
+    projectIndex: CreatorProjectIndexView;
     prompt: string;
     plan: CreatorPlan;
     planApproval: CreatorApproval;
+    sourceIndex: StudioSourceIndex;
+    sourceResolver: VerifiedSourceResolver;
+    sourceConsultation: CreatorSourceConsultation;
     verificationFeedback?: readonly string[];
     budgets: BudgetPolicy;
   }): Promise<CreatorWorkerBuildResult> {
-    const result = await runCreatorBuilder({ ...input, runtime: this.runtime });
+    const result = await runCreatorBuilder({
+      session: input.session,
+      ownership: input.ownership,
+      projectIndex: input.projectIndex,
+      sourceIndex: input.sourceIndex,
+      sourceResolver: input.sourceResolver,
+      prompt: input.prompt,
+      plan: input.plan,
+      planApproval: input.planApproval,
+      sourceConsultation: input.sourceConsultation,
+      ...(input.verificationFeedback === undefined
+        ? {}
+        : { verificationFeedback: input.verificationFeedback }),
+      runtime: this.runtime,
+      budgets: input.budgets,
+    });
     const phase = await persistCreatorPhaseAgentRun({
       phase: "creator_builder",
       creatorSession: { id: input.session.id, hash: input.session.hash },
@@ -165,7 +225,7 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
       orientation: creatorOrientation({
         session: input.session,
         ownership: input.ownership,
-        observation: input.observation,
+        projectIndex: input.projectIndex,
       }),
       systemPrompt: result.systemPrompt,
       finalization: result.finalization,
@@ -196,8 +256,7 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
               ? phase.run.creatorPhaseOutcome.failureCode
               : "CREATOR_PHASE_NOT_ADMITTED",
           detail:
-            phase.run.error ??
-            "Persisted creator builder evidence did not pass local admission",
+            phase.run.error ?? "Persisted creator builder evidence did not pass local admission",
         },
         evidence,
       };
@@ -221,6 +280,11 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
       status: "sealed",
       buildContract: result.toolHost.contract,
       changeSet: result.changeSet,
+      sourceWriteBlobs:
+        result.sourceWriteBlobs ??
+        (() => {
+          throw new Error("Sealed builder result lost source-write blobs");
+        })(),
       evidence,
     };
   }
@@ -240,13 +304,8 @@ async function reference(
     !result.tracePersistence.locator ||
     !result.tracePersistence.artifactHash
   )
-    throw new Error(
-      "Creator phase trace persistence did not produce content-bound evidence",
-    );
-  const [agentRun, trace] = await Promise.all([
-    store.write(result.run),
-    store.write(result.trace),
-  ]);
+    throw new Error("Creator phase trace persistence did not produce content-bound evidence");
+  const [agentRun, trace] = await Promise.all([store.write(result.run), store.write(result.trace)]);
   return {
     phase,
     agentRunId: result.run.id,

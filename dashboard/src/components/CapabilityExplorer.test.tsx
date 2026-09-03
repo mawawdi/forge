@@ -64,7 +64,15 @@ const catalog: CapabilityExplorerSnapshot = {
         authoringGroup: "parts",
         codec: "boolean",
         inheritedBy: ["MeshPart"],
-        proofObligations: ["canonicalize", "validate", "preflight", "write", "read", "project", "compare"],
+        proofObligations: [
+          "canonicalize",
+          "validate",
+          "preflight",
+          "write",
+          "read",
+          "project",
+          "compare",
+        ],
         deprecated: false,
         tags: [],
         sourceFile: "classes/BasePart.yaml",
@@ -105,7 +113,13 @@ describe("CapabilityExplorer", () => {
   });
 
   it("shows the catalog pin, attestation boundary, and authoring proof route", () => {
-    render(<CapabilityExplorer catalog={catalog} pairedStudio={pairedStudio} onExplore={() => undefined} />);
+    render(
+      <CapabilityExplorer
+        catalog={catalog}
+        pairedStudio={pairedStudio}
+        onExplore={() => undefined}
+      />,
+    );
 
     expect(screen.getByText("9,685 cataloged API entries")).toBeVisible();
     expect(screen.getByText("Curated manifest attested")).toBeVisible();
@@ -141,26 +155,54 @@ describe("CapabilityExplorer", () => {
         mismatchedFacts: 1,
         missingFacts: 0,
         findingsTruncated: false,
-        findings: [{
-          key: "reflection:project:Beam.Attachment0",
-          code: "reflection_type_mismatch",
-          expected: { catalogType: { category: "class", name: "Attachment" }, reflection: { engineType: "RefType", scriptType: "Instance", instanceType: "Attachment" } },
-          received: { engineType: "RefType", instanceType: "Attachment" },
-        }],
+        findings: [
+          {
+            key: "reflection:project:Beam.Attachment0",
+            code: "reflection_type_mismatch",
+            expected: {
+              catalogType: { category: "class", name: "Attachment" },
+              reflection: {
+                engineType: "RefType",
+                scriptType: "Instance",
+                instanceType: "Attachment",
+              },
+            },
+            received: { engineType: "RefType", instanceType: "Attachment" },
+          },
+        ],
       },
       message: "Studio paired, but its capability attestation was rejected.",
     };
 
-    render(<CapabilityExplorer catalog={catalog} pairedStudio={rejectedStudio} onExplore={() => undefined} />);
+    render(
+      <CapabilityExplorer
+        catalog={catalog}
+        pairedStudio={rejectedStudio}
+        onExplore={() => undefined}
+      />,
+    );
 
     expect(screen.getByText("Connector attestation rejected")).toBeVisible();
     expect(screen.getByText("reflection_type_mismatch")).toBeVisible();
     expect(screen.getByText("reflection:project:Beam.Attachment0")).toBeVisible();
     expect(screen.getByText("catalogType.category")).toBeVisible();
     expect(screen.getByText("engineType")).toBeVisible();
-    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response(JSON.stringify({ envelope: "exact raw evidence" }), { status: 200 }))));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ envelope: "exact raw evidence" }), {
+            status: 200,
+          }),
+        ),
+      ),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Inspect raw attestation" }));
-    expect(await screen.findByRole("heading", { name: "studio-evidence/attestation-envelope.json" })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", {
+        name: "studio-evidence/attestation-envelope.json",
+      }),
+    ).toBeVisible();
     expect(await screen.findByText(/exact raw evidence/)).toBeVisible();
     expect(screen.getByText(/no dashboard rule made this decision/i)).toBeVisible();
   });
@@ -177,7 +219,13 @@ describe("CapabilityExplorer", () => {
       },
     };
 
-    render(<CapabilityExplorer catalog={unboundCatalog} pairedStudio={pairedStudio} onExplore={() => undefined} />);
+    render(
+      <CapabilityExplorer
+        catalog={unboundCatalog}
+        pairedStudio={pairedStudio}
+        onExplore={() => undefined}
+      />,
+    );
 
     expect(screen.getByText("Unbound")).toBeVisible();
     expect(screen.getByText("Coverage report is not bound")).toBeVisible();
@@ -197,7 +245,13 @@ describe("CapabilityExplorer", () => {
       },
     };
 
-    render(<CapabilityExplorer catalog={unboundCatalog} pairedStudio={pairedStudio} onExplore={() => undefined} />);
+    render(
+      <CapabilityExplorer
+        catalog={unboundCatalog}
+        pairedStudio={pairedStudio}
+        onExplore={() => undefined}
+      />,
+    );
 
     expect(screen.getByText("Coverage report is not bound")).toBeVisible();
     expect(screen.queryByText("Proof route")).not.toBeInTheDocument();
@@ -210,7 +264,13 @@ describe("CapabilityExplorer", () => {
       message: "Studio did not report its identity.",
     };
 
-    render(<CapabilityExplorer catalog={catalog} pairedStudio={incompletePair} onExplore={() => undefined} />);
+    render(
+      <CapabilityExplorer
+        catalog={catalog}
+        pairedStudio={incompletePair}
+        onExplore={() => undefined}
+      />,
+    );
 
     expect(screen.getByText("Connector identity incomplete")).toBeVisible();
     expect(screen.queryByText("Curated manifest attested")).not.toBeInTheDocument();
@@ -229,16 +289,34 @@ describe("CapabilityExplorer", () => {
         mismatchedFacts: 0,
         missingFacts: 0,
         findingsTruncated: false,
-        findings: [{
-          key: "reflection:project:Trail.Attachment1",
-          code: "reflection_unavailable",
-          expected: { catalogType: { category: "class", name: "Attachment" }, reflection: { engineType: "RefType", scriptType: "Instance", instanceType: "Attachment" } },
-          received: { status: "unavailable", code: "reflection_property_unavailable" },
-        }],
+        findings: [
+          {
+            key: "reflection:project:Trail.Attachment1",
+            code: "reflection_unavailable",
+            expected: {
+              catalogType: { category: "class", name: "Attachment" },
+              reflection: {
+                engineType: "RefType",
+                scriptType: "Instance",
+                instanceType: "Attachment",
+              },
+            },
+            received: {
+              status: "unavailable",
+              code: "reflection_property_unavailable",
+            },
+          },
+        ],
       },
     };
 
-    render(<CapabilityExplorer catalog={catalog} pairedStudio={incompletePair} onExplore={() => undefined} />);
+    render(
+      <CapabilityExplorer
+        catalog={catalog}
+        pairedStudio={incompletePair}
+        onExplore={() => undefined}
+      />,
+    );
 
     expect(screen.getByText("Connector attestation incomplete")).toBeVisible();
     expect(screen.getByText("reflection_unavailable")).toBeVisible();
@@ -249,8 +327,12 @@ describe("CapabilityExplorer", () => {
     const onExplore = vi.fn();
     render(<CapabilityExplorer catalog={catalog} pairedStudio={undefined} onExplore={onExplore} />);
 
-    fireEvent.change(screen.getByLabelText("Class"), { target: { value: "ProximityPrompt" } });
-    fireEvent.change(screen.getByLabelText("Find a capability"), { target: { value: "ActionText" } });
+    fireEvent.change(screen.getByLabelText("Class"), {
+      target: { value: "ProximityPrompt" },
+    });
+    fireEvent.change(screen.getByLabelText("Find a capability"), {
+      target: { value: "ActionText" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Search coverage" }));
 
     expect(onExplore).toHaveBeenCalledWith({
