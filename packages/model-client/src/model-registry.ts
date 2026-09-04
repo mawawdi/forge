@@ -5,6 +5,7 @@ export const CREATOR_MODEL_IDS = Object.freeze([
   "z-ai/glm-5.3-flash",
   "deepseek/deepseek-v4-flash-0731",
   "openai/gpt-5.6-luna",
+  "google/gemini-3.8-flash",
 ] as const);
 
 export type CreatorModelId = (typeof CREATOR_MODEL_IDS)[number];
@@ -45,6 +46,11 @@ const MODEL_DEFINITIONS: readonly CreatorModelDefinition[] = Object.freeze([
   Object.freeze({
     id: "openai/gpt-5.6-luna",
     label: "GPT-5.6 Luna",
+    requiredSupportedParameters: REQUIRED_TOOL_PARAMETER,
+  }),
+  Object.freeze({
+    id: "google/gemini-3.8-flash",
+    label: "Gemini 3.8 Flash",
     requiredSupportedParameters: REQUIRED_TOOL_PARAMETER,
   }),
 ]);

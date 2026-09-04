@@ -53,6 +53,9 @@ export interface ActionDraft {
 }
 
 export interface DashboardSnapshot {
+  readonly draftStorageError?: string;
+  readonly loadingHistoryFor?: string | undefined;
+  readonly connectionLost?: boolean;
   readonly phase: "loading" | "ready" | "error";
   readonly data?: CreatorDashboardState;
   readonly error?: string;

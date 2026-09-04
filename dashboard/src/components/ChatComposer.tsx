@@ -1,15 +1,19 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { dashboardStore } from "../api-store";
 import { byteLength, makeTurnRequest } from "../derived";
+import { useBrowserPreferences } from "../browser-preferences";
 import type { ConversationDraft, CreatorDashboardState, DashboardSnapshot } from "../types";
+import { Icon } from "./Icon";
 
 interface ChatComposerProps {
   readonly state: CreatorDashboardState | undefined;
   readonly snapshot: DashboardSnapshot;
+  readonly onSent?: (conversationId: string | undefined) => void;
 }
 
-export function ChatComposer({ state, snapshot }: ChatComposerProps): React.JSX.Element {
+export function ChatComposer({ state, snapshot, onSent }: ChatComposerProps): React.JSX.Element {
   const [message, setMessage] = useState<string | undefined>();
+  const { enterToSend } = useBrowserPreferences();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const conversationId = state?.selectedConversationId;
   const draft = dashboardStore.draftFor(conversationId);
@@ -25,12 +29,29 @@ export function ChatComposer({ state, snapshot }: ChatComposerProps): React.JSX.
   const selectedModel = registry?.models.find((model) => model.id === selectedModelId);
   const hasText = Boolean(draft.text.trim());
   const bytes = byteLength(draft.text);
-  useEffect(() => {
-    const input = inputRef.current;
-    if (!input) return;
-    input.style.height = "auto";
-    input.style.height = `${Math.min(220, Math.max(64, input.scrollHeight))}px`;
-  }, [draft.text]);
+  useLayoutEffect(() => {
+    function resize(): void {
+      const input = inputRef.current;
+      if (!input) return;
+      input.style.height = "auto";
+      input.style.height = `${Math.min(180, window.innerHeight * 0.3, Math.max(28, input.scrollHeight))}px`;
+    }
+    resize();
+    window.addEventListener("resize", resize);
+    let width = inputRef.current?.clientWidth;
+    const observer = new ResizeObserver(() => {
+      const nextWidth = inputRef.current?.clientWidth;
+      if (nextWidth !== width) {
+        width = nextWidth;
+        resize();
+      }
+    });
+    if (inputRef.current) observer.observe(inputRef.current);
+    return () => {
+      window.removeEventListener("resize", resize);
+      observer.disconnect();
+    };
+  }, [draft.text, conversationId]);
   useEffect(() => {
     setMessage(undefined);
   }, [conversationId]);
@@ -38,6 +59,7 @@ export function ChatComposer({ state, snapshot }: ChatComposerProps): React.JSX.
     contract && bytes >= contract.minimumBytes && bytes <= contract.maximumBytes,
   );
   const canSend = Boolean(
+    !snapshot.connectionLost &&
     !snapshot.pendingRequest &&
     (unconfirmed ||
       (contract &&
@@ -61,6 +83,7 @@ export function ChatComposer({ state, snapshot }: ChatComposerProps): React.JSX.
         await dashboardStore.submitTurn(
           makeTurnRequest(state, turnKind, draft.text, selectedModelId),
         );
+      onSent?.(conversationId);
       setMessage(undefined);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Forge could not accept this message.");
@@ -89,14 +112,15 @@ export function ChatComposer({ state, snapshot }: ChatComposerProps): React.JSX.
         value={draft.text}
         onChange={(event) => changeDraft({ text: event.target.value })}
         placeholder={placeholder(state)}
-        disabled={Boolean(snapshot.pendingRequest)}
         aria-describedby="composer-status"
-        rows={2}
+        title="Focus message with ⌘/Ctrl Shift L"
+        rows={1}
         onKeyDown={(event) => {
           if (
             event.key === "Enter" &&
             !event.shiftKey &&
             !event.nativeEvent.isComposing &&
+            (enterToSend || event.metaKey || event.ctrlKey) &&
             canSend
           ) {
             event.preventDefault();
@@ -120,7 +144,11 @@ export function ChatComposer({ state, snapshot }: ChatComposerProps): React.JSX.
             ))}
           </select>
         </label>
-        <span className="composer-keyboard-hint">Enter to send</span>
+        {canSend ? (
+          <span className="composer-keyboard-hint">
+            {enterToSend ? "Enter to send" : "⌘/Ctrl Enter"}
+          </span>
+        ) : null}
         <button
           type="submit"
           aria-label={
@@ -131,28 +159,23 @@ export function ChatComposer({ state, snapshot }: ChatComposerProps): React.JSX.
                 : "Send"
           }
           title={unconfirmed ? "Retry the original message" : "Send message"}
-          className={unconfirmed ? "chat-composer__retry" : undefined}
+          className={`chat-composer__send${unconfirmed ? " chat-composer__retry" : ""}`}
           disabled={!canSend || bytes === 0}
         >
           {snapshot.pendingRequest?.kind === "turn" ? (
             <span className="sending-spinner" aria-hidden="true" />
           ) : unconfirmed ? (
-            "Retry"
+            <Icon name="retry" />
           ) : (
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              aria-hidden="true"
-            >
-              <path d="M12 19V5m-6 6 6-6 6 6" />
-            </svg>
+            <Icon name="arrowUp" />
           )}
         </button>
       </div>
+      {snapshot.draftStorageError ? (
+        <p className="draft-storage-error" role="status">
+          {snapshot.draftStorageError}
+        </p>
+      ) : null}
       <p id="composer-status" className="chat-composer__status" role="status" aria-live="polite">
         {message ??
           (unconfirmed
@@ -162,7 +185,7 @@ export function ChatComposer({ state, snapshot }: ChatComposerProps): React.JSX.
                 selectedModel,
                 bytes,
                 hasText,
-                state?.agentActivity?.running === true,
+                state?.agentActivities?.some((activity) => activity.running) === true,
               ))}
       </p>
     </form>
@@ -171,7 +194,8 @@ export function ChatComposer({ state, snapshot }: ChatComposerProps): React.JSX.
 
 function placeholder(state: CreatorDashboardState | undefined): string {
   if (state?.pairedStudio.status === "unpaired") return "Connect Studio to start chatting.";
-  if (state?.agentActivity?.running) return "Write your next message while Forge works…";
+  if (state?.agentActivities?.some((activity) => activity.running))
+    return "Write your next message while Forge works…";
   if (!state?.controlView?.turnContract) return "Write a message…";
   return "Ask Forge to build, fix, or explore your project…";
 }
@@ -183,7 +207,7 @@ function composerMessage(
   hasText: boolean,
   running: boolean,
 ): string {
-  if (running) return "Forge is working. You can draft your next message here.";
+  if (running) return "";
   if (!contract) return "Complete the current step above to continue this conversation.";
   if (!model || model.availability !== "available")
     return model?.detail ?? "Choose an available model. Your message is preserved.";

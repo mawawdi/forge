@@ -80,6 +80,7 @@ export type PluginMessageType =
   | "CreatorCheckpointRolledBack"
   | "StudioProjectIdentityFinalized"
   | "PluginError"
+  | "StudioPlaytestObserved"
   | "Heartbeat";
 
 export type BackendMessageType =
@@ -861,6 +862,63 @@ export interface HeartbeatPayload {
   currentProjectRevisionHash?: string;
   activeRecording?: RecordingBinding;
 }
+
+/** Advisory server log context from an ordinary creator Play session. No pass/fail authority. */
+export interface StudioPlaytestObservation {
+  observationId: string;
+  projectId: string;
+  baselineRevisionHash: string;
+  connectorBuildHash: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  diagnostics: Array<{ severity: "error" | "warning"; message: string }>;
+  truncated: boolean;
+}
+
+export function assertStudioPlaytestObservation(
+  value: unknown,
+): asserts value is StudioPlaytestObservation {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      "observationId",
+      "projectId",
+      "baselineRevisionHash",
+      "connectorBuildHash",
+      "startedAt",
+      "endedAt",
+      "durationMs",
+      "diagnostics",
+      "truncated",
+    ]) ||
+    !isId(value.observationId) ||
+    !isId(value.projectId) ||
+    !isHash(value.baselineRevisionHash) ||
+    !isHash(value.connectorBuildHash) ||
+    typeof value.startedAt !== "string" ||
+    !Number.isFinite(Date.parse(value.startedAt)) ||
+    typeof value.endedAt !== "string" ||
+    !Number.isFinite(Date.parse(value.endedAt)) ||
+    Date.parse(value.endedAt) < Date.parse(value.startedAt) ||
+    typeof value.durationMs !== "number" ||
+    !Number.isFinite(value.durationMs) ||
+    value.durationMs < 0 ||
+    value.durationMs > 86_400_000 ||
+    !Array.isArray(value.diagnostics) ||
+    value.diagnostics.length > 32 ||
+    !value.diagnostics.every(
+      (entry) =>
+        isRecord(entry) &&
+        hasOnlyKeys(entry, ["severity", "message"]) &&
+        ["error", "warning"].includes(String(entry.severity)) &&
+        typeof entry.message === "string" &&
+        entry.message.length <= 512,
+    ) ||
+    typeof value.truncated !== "boolean"
+  )
+    throw new Error("Invalid Studio Play observation");
+}
 export interface PairingResponse {
   sessionId: string;
   sessionToken: string;
@@ -1276,6 +1334,7 @@ export type PluginToBackendMessage =
       StudioProjectIdentityFinalizedPayload
     >
   | StudioMessageBase<"plugin_to_backend", "PluginError", PluginErrorPayload>
+  | StudioMessageBase<"plugin_to_backend", "StudioPlaytestObserved", StudioPlaytestObservation>
   | StudioMessageBase<"plugin_to_backend", "Heartbeat", HeartbeatPayload>;
 export type BackendToPluginMessage =
   | StudioMessageBase<
@@ -1430,6 +1489,7 @@ const PLUGIN_MESSAGE_TYPES = new Set<PluginMessageType>([
   "CreatorCheckpointRolledBack",
   "StudioProjectIdentityFinalized",
   "PluginError",
+  "StudioPlaytestObserved",
   "Heartbeat",
 ]);
 const BACKEND_MESSAGE_TYPES = new Set<BackendMessageType>([
@@ -1920,6 +1980,10 @@ function validatePayload(type: string, payload: Record<string, unknown>): void {
       fail(type);
     assertStudioProjectIdentityState(payload.projectIdentity);
     if (!sameProject(payload.project, payload.projectIdentity.project)) fail(type);
+    return;
+  }
+  if (type === "StudioPlaytestObserved") {
+    assertStudioPlaytestObservation(payload);
     return;
   }
   if (type === "StudioProjectIdentityFinalized") {

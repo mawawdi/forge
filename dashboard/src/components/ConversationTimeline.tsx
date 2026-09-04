@@ -1,5 +1,9 @@
 import { useState } from "react";
 import { dashboardStore } from "../api-store";
+import { CopyButton } from "./CopyButton";
+import { RichText } from "./RichText";
+import { Icon, type IconName } from "./Icon";
+import { AgentActivity } from "./AgentActivity";
 import {
   actionsForEvent,
   byteLength,
@@ -18,23 +22,54 @@ import type {
 interface ConversationTimelineProps {
   readonly state: CreatorDashboardState | undefined;
   readonly snapshot: DashboardSnapshot;
-  readonly onOpenDetails: (event: CreatorConversationEvent, source: HTMLElement) => void;
+  readonly onLoadEarlier?: () => void;
 }
 
 export function ConversationTimeline({
   state,
   snapshot,
-  onOpenDetails,
+  onLoadEarlier = dashboardStore.loadPreviousEvents,
 }: ConversationTimelineProps): React.JSX.Element {
   const events = state?.eventPage?.events ?? [];
-  const visibleEvents = foldActivityEvents(events, state?.controlView);
+  const visibleEvents = foldActivityEvents(events);
   const last = visibleEvents.at(-1);
   if (!state) return <ConversationPlaceholder title="Loading the project conversation…" />;
-  const unanchoredActions = actionsWithoutLoadedAuthorizer(state.controlView, events);
+  const unanchoredActions = actionsWithoutLoadedAuthorizer(state.controlView, visibleEvents);
+  const latestPlan = [...visibleEvents]
+    .reverse()
+    .find((event) => event.eventType === "plan_revision");
+  const planActions = latestPlan ? unanchoredActions.filter(isPlanAction) : [];
+  const remainingActions = unanchoredActions.filter((action) => !planActions.includes(action));
+  const entries = [
+    ...visibleEvents.map((event) => ({ kind: "event" as const, order: event.sequence * 2, event })),
+    ...(state.agentActivities ?? []).map((activity) => ({
+      kind: "activity" as const,
+      order: activity.afterEventSequence * 2 + 1,
+      activity,
+    })),
+  ].sort((left, right) => left.order - right.order);
+  const historyControl = state.eventPage?.nextBeforeCursor ? (
+    <button
+      type="button"
+      className="load-history"
+      disabled={snapshot.loadingHistoryFor === state.selectedConversationId}
+      onClick={onLoadEarlier}
+    >
+      {snapshot.loadingHistoryFor === state.selectedConversationId
+        ? "Loading earlier messages…"
+        : "Load earlier conversation"}
+    </button>
+  ) : null;
   if (visibleEvents.length === 0)
     return (
       <section className="conversation-timeline" aria-label="Project conversation">
-        <EmptyConversation state={state} />
+        {historyControl}
+        {(state.controlView?.turnContract || !state.controlView) &&
+        events.every(
+          (event) => event.eventType === "project_identity" && event.data.state === "linked",
+        ) ? (
+          <EmptyConversation state={state} />
+        ) : null}
         {state.controlView && (unanchoredActions.length > 0 || !state.controlView.turnContract) ? (
           <CurrentControlCard
             state={state}
@@ -50,31 +85,31 @@ export function ConversationTimeline({
       <p className="sr-only" role="status" aria-live="polite">
         {last ? `${eventLabel(last)} added to the conversation.` : ""}
       </p>
-      {state.eventPage?.nextBeforeCursor ? (
-        <button type="button" className="load-history" onClick={dashboardStore.loadPreviousEvents}>
-          Load earlier conversation
-        </button>
-      ) : null}
-      <ol>
-        {visibleEvents.map((event) => (
-          <li key={event.id}>
-            <EventCard
-              event={event}
-              state={state}
-              controlView={state.controlView}
-              snapshot={snapshot}
-              onOpenDetails={onOpenDetails}
-            />
+      {historyControl}
+      <ol aria-label="Messages">
+        {entries.map((entry) => (
+          <li key={entry.kind === "event" ? entry.event.id : entry.activity.jobId}>
+            {entry.kind === "activity" ? (
+              <AgentActivity activity={entry.activity} connectionLost={snapshot.connectionLost} />
+            ) : (
+              <EventCard
+                event={entry.event}
+                state={state}
+                controlView={state.controlView}
+                snapshot={snapshot}
+                additionalActions={entry.event === latestPlan ? planActions : []}
+              />
+            )}
           </li>
         ))}
       </ol>
-      {unanchoredActions.length ||
+      {remainingActions.length ||
       state.controlView?.status === "recovery_required" ||
       state.controlView?.status === "blocked" ? (
         <CurrentControlCard
           state={state}
           controlView={state.controlView!}
-          actions={unanchoredActions}
+          actions={remainingActions}
           snapshot={snapshot}
         />
       ) : null}
@@ -84,31 +119,72 @@ export function ConversationTimeline({
 
 /**
  * A foreground job may publish several immutable phase boundaries. The main
- * conversation presents the latest durable boundary for that job as one live
- * activity card; the complete sequence remains available in Technical details.
+ * conversation uses AgentActivity for progress. Job bookkeeping stays in
+ * Details; actions on hidden records are rendered by CurrentControlCard with
+ * their original authority bindings intact.
  */
 function foldActivityEvents(
   events: readonly CreatorConversationEvent[],
-  controlView: CreatorControlView | undefined,
 ): readonly CreatorConversationEvent[] {
-  const latestActivityByJob = new Map<string, string>();
-  const actionAuthorities = new Set(
-    controlView?.actions
-      .filter(isConversationAction)
-      .map((action) => `${action.authorizingEventId}:${action.authorizingEventHash}`) ?? [],
+  const plannedEpisodes = new Set(
+    events.filter((event) => event.eventType === "plan_revision").map((event) => event.episodeId),
+  );
+  const latestProjectChange = new Map<string | undefined, string>();
+  const latestActivity = new Map<string, string>();
+  const latestPlaytest = new Map<string | undefined, string>();
+  const terminalMessages = new Map<string, string>();
+  const terminalSequences = new Map<string, number>();
+  const completedEpisodes = new Set(
+    events
+      .filter((event) => event.eventType === "terminal_output" || event.eventType === "recovery")
+      .map((event) => event.episodeId),
   );
   for (const event of events) {
-    if (event.eventType === "activity") latestActivityByJob.set(event.data.job.id, event.id);
+    if (event.eventType === "terminal_output") {
+      const key = creatorTerminalOutputKey(event);
+      if (!terminalMessages.has(key)) terminalMessages.set(key, event.id);
+      if (event.binding?.sessionId) terminalSequences.set(event.binding.sessionId, event.sequence);
+    }
+    if (event.eventType === "project_change") latestProjectChange.set(event.episodeId, event.id);
+    if (event.eventType === "activity") latestActivity.set(event.data.job.id, event.id);
+    if (event.eventType === "playtest") latestPlaytest.set(event.episodeId, event.id);
+    if (event.eventType === "final_review" || event.eventType === "terminal_output")
+      latestPlaytest.set(event.episodeId, "settled");
   }
   return events.filter(
     (event) =>
+      (event.eventType !== "terminal_output" ||
+        (event.data.outcome !== "superseded" &&
+          terminalMessages.get(creatorTerminalOutputKey(event)) === event.id)) &&
+      (event.eventType !== "project_change" || event.data.state === "detected") &&
+      !(
+        event.eventType === "recovery" &&
+        event.binding?.sessionId &&
+        (terminalSequences.get(event.binding.sessionId) ?? -1) > event.sequence
+      ) &&
       event.eventType !== "memory" &&
-      !(event.eventType === "project_identity" && event.data.state === "linked") &&
-      !(event.eventType === "decision" && isSettingsDecision(event.data.decision)) &&
+      !["change_set", "mutation", "verification", "playtest", "final_review"].includes(
+        event.eventType,
+      ) &&
+      (event.eventType !== "playtest" || latestPlaytest.get(event.episodeId) === event.id) &&
       (event.eventType !== "activity" ||
-        ((event.data.status === "failed" || event.data.status === "outcome_unknown") &&
-          latestActivityByJob.get(event.data.job.id) === event.id) ||
-        actionAuthorities.has(`${event.id}:${event.hash}`)),
+        (latestActivity.get(event.data.job.id) === event.id &&
+          ["failed", "outcome_unknown"].includes(event.data.status) &&
+          (!event.episodeId || !completedEpisodes.has(event.episodeId)))) &&
+      !(event.eventType === "project_identity" && event.data.state === "linked") &&
+      !(
+        event.eventType === "decision" &&
+        (!event.data.report || isSettingsDecision(event.data.decision))
+      ) &&
+      !(
+        event.eventType === "agent_turn" &&
+        event.data.outcome === "plan_proposed" &&
+        plannedEpisodes.has(event.episodeId)
+      ) &&
+      !(
+        event.eventType === "project_change" &&
+        latestProjectChange.get(event.episodeId) !== event.id
+      ),
   );
 }
 
@@ -144,6 +220,7 @@ function CurrentControlCard({
   readonly actions: readonly CreatorControlActionDescriptor[];
   readonly snapshot: DashboardSnapshot;
 }): React.JSX.Element {
+  const readyToBuild = actions.some((action) => action.actionId === "build_plan");
   return (
     <section
       className="conversation-current-action"
@@ -152,8 +229,14 @@ function CurrentControlCard({
     >
       <span className="conversation-current-action__joint" aria-hidden="true" />
       <div>
-        <h2 id="current-action-title">{controlView.title}</h2>
-        <p>{controlView.detail}</p>
+        <h2 id="current-action-title">
+          {readyToBuild ? "Ready to make this?" : controlView.title}
+        </h2>
+        <p>
+          {readyToBuild
+            ? "Accept to build and apply this plan in Studio, or tell Forge what to change."
+            : controlView.detail}
+        </p>
         <EventActions state={state} actions={actions} snapshot={snapshot} />
       </div>
     </section>
@@ -227,7 +310,7 @@ interface EventCardProps {
   readonly state: CreatorDashboardState;
   readonly controlView: CreatorControlView | undefined;
   readonly snapshot: DashboardSnapshot;
-  readonly onOpenDetails: (event: CreatorConversationEvent, source: HTMLElement) => void;
+  readonly additionalActions?: readonly CreatorControlActionDescriptor[];
 }
 
 function EventCard({
@@ -235,64 +318,161 @@ function EventCard({
   state,
   controlView,
   snapshot,
-  onOpenDetails,
+  additionalActions = [],
 }: EventCardProps): React.JSX.Element {
-  const actions = actionsForEvent(controlView, event).filter(isConversationAction);
+  const actions = [
+    ...actionsForEvent(controlView, event).filter(isConversationAction),
+    ...additionalActions,
+  ];
   const cardClass = cardClassFor(event);
+  const copyText =
+    event.eventType === "creator_turn" || event.eventType === "agent_turn"
+      ? event.data.text
+      : event.eventType === "plan_revision"
+        ? event.data.summary
+        : event.eventType === "terminal_output"
+          ? event.data.message
+          : undefined;
   return (
-    <article className={`conversation-event ${cardClass}`} aria-labelledby={`event-${event.id}`}>
+    <article
+      className={`conversation-event ${cardClass}`}
+      data-event-id={event.id}
+      aria-labelledby={`event-${event.id}`}
+    >
       <header className="conversation-event__heading">
         <div>
           <h2 id={`event-${event.id}`}>{eventTitle(event)}</h2>
         </div>
-        <time dateTime={event.occurredAt}>{formatTimestamp(event.occurredAt)}</time>
-        <button
-          type="button"
-          className="event-details-toggle"
-          aria-label="Details"
-          title="Message details"
-          onClick={(click) => onOpenDetails(event, click.currentTarget)}
-        >
-          ···
-        </button>
+        <time dateTime={event.occurredAt} title={new Date(event.occurredAt).toLocaleString()}>
+          {formatTimestamp(event.occurredAt)}
+        </time>
+        {copyText ? (
+          <span className="message-tools">
+            <CopyButton
+              text={copyText}
+              label={event.eventType === "plan_revision" ? "Copy plan" : "Copy message"}
+            />
+          </span>
+        ) : null}
       </header>
-      <EventBody event={event} onOpenDetails={onOpenDetails} />
+      <EventBody event={event} />
       {actions.length ? <EventActions state={state} actions={actions} snapshot={snapshot} /> : null}
     </article>
   );
 }
 
-function EventBody({
-  event,
-  onOpenDetails,
-}: Pick<EventCardProps, "event" | "onOpenDetails">): React.JSX.Element {
+function MessageText({
+  text,
+  markdown = false,
+}: {
+  readonly text: string;
+  readonly markdown?: boolean;
+}): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false);
+  const long = !markdown && text.length > 1400;
+  const firstParagraph = text.indexOf("\n\n");
+  const cut = firstParagraph > 0 && firstParagraph < 700 ? firstParagraph : 700;
+  return (
+    <div className="message-copy">
+      {markdown && (!long || expanded) ? (
+        <RichText text={text} />
+      ) : (
+        <p>{long && !expanded ? `${text.slice(0, cut).trimEnd()}…` : text}</p>
+      )}
+      {long ? (
+        <button
+          className="message-expand"
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? "Show less" : "Read full message"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function PlanText({ text }: { readonly text: string }): React.JSX.Element {
+  // Machine-generated structural checks remain in Details. They are not part
+  // of the creator-facing plan or review prompt.
+  const visible = text.replace(/\n\nChecks\n[\s\S]*?(?=\n\nYour review\n|$)/, "");
+  const [work = "", ...sections] = visible.split(/\n\n(?=Your review\n)/);
+  const reviews = sections.filter((section) => section.startsWith("Your review\n"));
+  const [expanded, setExpanded] = useState(false);
+  const steps = work.split(/\n\n(?=\d+\. )/);
+  const long = work.length > 2200 && steps.length > 2;
+  if (steps.every((step) => /^\d+\. /.test(step)))
+    return (
+      <>
+        <div className={`plan-outline${long && !expanded ? " plan-outline--collapsed" : ""}`}>
+          <ol className="plan-steps">
+            {(long && !expanded ? steps.slice(0, 2) : steps).map((step, index) => (
+              <li key={index}>
+                <RichText text={step.replace(/^\d+\. /, "")} />
+              </li>
+            ))}
+          </ol>
+        </div>
+        {long ? (
+          <button
+            type="button"
+            className="plan-expand"
+            aria-expanded={expanded}
+            onClick={() => setExpanded(!expanded)}
+          >
+            {expanded ? "Collapse plan" : "Read complete plan"}
+            <Icon name={expanded ? "arrowUp" : "arrowDown"} size={16} />
+          </button>
+        ) : null}
+        {reviews.map((section) => {
+          const [title, ...items] = section.split("\n");
+          return (
+            <details className="plan-checks" key={title}>
+              <summary>
+                Try it in Studio <span>({items.length})</span>
+              </summary>
+              <ul>
+                {items.map((item, index) => (
+                  <li key={index}>
+                    <RichText text={item.replace(/^- /, "").replace(/^Creator review:\s*/i, "")} />
+                  </li>
+                ))}
+              </ul>
+            </details>
+          );
+        })}
+      </>
+    );
+  return <MessageText text={work} markdown />;
+}
+
+function EventBody({ event }: Pick<EventCardProps, "event">): React.JSX.Element {
   switch (event.eventType) {
     case "creator_turn":
       return (
         <div className="creator-message">
-          <p>{event.data.text}</p>
+          <MessageText text={event.data.text} />
         </div>
       );
     case "agent_turn":
       return (
         <div className="agent-message">
-          <p>{event.data.text}</p>
-          <div className="agent-message__meta">
-            {event.data.citations.length ? (
-              <button type="button" onClick={(click) => onOpenDetails(event, click.currentTarget)}>
-                {event.data.citations.length} citation
-                {event.data.citations.length === 1 ? "" : "s"}
-              </button>
-            ) : null}
-          </div>
+          <MessageText text={event.data.text} markdown />
         </div>
       );
     case "activity":
-      return <ActivityBody phase={event.data.phase} message={event.data.message} />;
+      return (
+        <p>
+          {/[Ee]xecution-journal|never_dispatched|[Ll]ower creator runtime/.test(event.data.message)
+            ? "Forge couldn't finish this request. Open Details to inspect the saved error."
+            : event.data.message}
+        </p>
+      );
     case "plan_revision":
       return (
         <BlueprintBody>
-          <p>{event.data.summary}</p>
+          <PlanText text={event.data.summary} />
         </BlueprintBody>
       );
     case "change_set":
@@ -300,11 +480,11 @@ function EventBody({
         <BlueprintBody>
           <p>{event.data.summary}</p>
           <ul className="change-counts" aria-label="Change summary">
-            <li>{event.data.creates} added</li>
-            <li>{event.data.updates} updated</li>
-            <li>{event.data.moves} moved</li>
-            <li>{event.data.deletes} removed</li>
-            <li>{event.data.sourceEdits} source edits</li>
+            {event.data.creates > 0 ? <li>{event.data.creates} added</li> : null}
+            {event.data.updates > 0 ? <li>{event.data.updates} updated</li> : null}
+            {event.data.moves > 0 ? <li>{event.data.moves} moved</li> : null}
+            {event.data.deletes > 0 ? <li>{event.data.deletes} removed</li> : null}
+            {event.data.sourceEdits > 0 ? <li>{event.data.sourceEdits} scripts edited</li> : null}
           </ul>
         </BlueprintBody>
       );
@@ -312,30 +492,20 @@ function EventBody({
       return (
         <BlueprintBody>
           <p>{event.data.message}</p>
-          <CheckList
-            label={event.data.state === "complete" ? "Forge checked" : "Checks to run"}
-            values={event.data.machineChecks}
-          />
-          <CheckList label="Check this yourself" values={event.data.creatorChecks} />
+          <details className="playtest-guide">
+            <summary>What to try</summary>
+            <CheckList label="Try it in Studio" values={event.data.creatorChecks} />
+          </details>
         </BlueprintBody>
       );
     case "recovery":
       return (
         <div className="recovery-body">
           <p>{event.data.message}</p>
-          <strong>
-            {event.data.studioMayContainOpenRecording
-              ? "An unfinished change may still be open in Studio."
-              : "Forge has not found an unfinished change in Studio."}
-          </strong>
         </div>
       );
     case "decision":
-      return event.data.report ? (
-        <p className="creator-report-copy">{event.data.report}</p>
-      ) : (
-        <p>The creator recorded: {event.data.decision}.</p>
-      );
+      return event.data.report ? <p className="creator-report-copy">{event.data.report}</p> : <></>;
     case "project_change":
     case "mutation":
     case "verification":
@@ -343,8 +513,9 @@ function EventBody({
     case "source_sync":
     case "job":
     case "project_identity":
-    case "terminal_output":
       return <p>{messageFor(event)}</p>;
+    case "terminal_output":
+      return <RichText text={event.data.message} />;
     case "memory":
       return <p>The creator updated the project memory: {event.data.operation}.</p>;
   }
@@ -359,6 +530,8 @@ export function EventActions({
   readonly actions: readonly CreatorControlActionDescriptor[];
   readonly snapshot: DashboardSnapshot;
 }): React.JSX.Element {
+  if (actions.some((action) => action.actionId === "build_plan"))
+    return <PlanActions state={state} actions={actions} snapshot={snapshot} />;
   const sharedReportActions = actions.filter(isSharedReportAction);
   const firstSharedReportAction = sharedReportActions[0];
   return (
@@ -388,16 +561,71 @@ export function EventActions({
   );
 }
 
+function isPlanAction(action: CreatorControlActionDescriptor): boolean {
+  return ["build_plan", "revise_plan", "reject_plan"].includes(action.actionId);
+}
+
+function PlanActions({
+  state,
+  actions,
+  snapshot,
+}: {
+  readonly state: CreatorDashboardState;
+  readonly actions: readonly CreatorControlActionDescriptor[];
+  readonly snapshot: DashboardSnapshot;
+}): React.JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const revision = actions.find((action) => action.actionId === "revise_plan");
+  return (
+    <div className="plan-decision">
+      <p>Accepting this plan builds and applies the changes in Studio.</p>
+      <div className="event-actions plan-decision__choices" role="group" aria-label="Plan decision">
+        {actions.map((action) =>
+          action.actionId === "revise_plan" ? (
+            <button
+              key={action.actionInstanceId}
+              type="button"
+              className="control-action control-action--secondary"
+              aria-expanded={editing}
+              aria-controls={`plan-edit-${action.actionInstanceId}`}
+              disabled={Boolean(snapshot.pendingRequest) || snapshot.connectionLost}
+              onClick={() => setEditing(!editing)}
+            >
+              <Icon name="edit" size={16} />
+              Change plan
+            </button>
+          ) : (
+            <EventAction
+              key={action.actionInstanceId}
+              state={state}
+              action={action}
+              snapshot={snapshot}
+            />
+          ),
+        )}
+      </div>
+      {editing && revision ? (
+        <div className="plan-decision__editor" id={`plan-edit-${revision.actionInstanceId}`}>
+          <EventAction state={state} action={revision} snapshot={snapshot} inline />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function EventAction({
   state,
   action,
   snapshot,
+  inline = false,
 }: {
   readonly state: CreatorDashboardState;
   readonly action: CreatorControlActionDescriptor;
   readonly snapshot: DashboardSnapshot;
+  readonly inline?: boolean;
 }): React.JSX.Element {
   const [message, setMessage] = useState<string | undefined>();
+  const [submitting, setSubmitting] = useState(false);
   const input = action.input;
   const pending = Boolean(snapshot.pendingRequest);
   const actionKey = actionDraftKey(action);
@@ -415,6 +643,7 @@ function EventAction({
       (Boolean(value.trim()) && bytes >= input.minimumBytes && bytes <= input.maximumBytes));
   async function submit(): Promise<void> {
     try {
+      setSubmitting(true);
       setMessage(undefined);
       await dashboardStore.submitAction(
         makeActionRequest(state, action, value, {
@@ -422,9 +651,11 @@ function EventAction({
         }),
       );
       dashboardStore.clearActionDraft(actionKey);
-      setMessage("Forge accepted this decision and will record the outcome shortly.");
+      setMessage("Done. Updating your conversation…");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Forge could not accept this decision.");
+    } finally {
+      setSubmitting(false);
     }
   }
   const content = (
@@ -434,6 +665,10 @@ function EventAction({
           <span>{input.label}</span>
           {input.multiline ? (
             <textarea
+              autoFocus={inline}
+              placeholder={
+                action.actionId === "revise_plan" ? "Tell Forge what to change…" : undefined
+              }
               value={value}
               onChange={(event) =>
                 dashboardStore.updateActionDraft(actionKey, { text: event.target.value })
@@ -454,7 +689,7 @@ function EventAction({
           ) : null}
         </label>
       ) : null}
-      {action.actionId === "revise_plan" ? (
+      {action.actionId === "revise_plan" && !inline ? (
         <label>
           <span>Model</span>
           <select
@@ -479,10 +714,15 @@ function EventAction({
       <button
         type="button"
         className={`control-action control-action--${action.intent}`}
-        disabled={pending || !valid}
+        disabled={pending || snapshot.connectionLost === true || !valid}
         onClick={() => void submit()}
       >
-        {pending ? "Working…" : action.label}
+        <Icon name={submitting ? "more" : actionIcon(action)} size={16} />
+        {submitting
+          ? "Working…"
+          : inline && action.actionId === "revise_plan"
+            ? "Update plan"
+            : action.label}
       </button>
       {message ? (
         <p role="status" aria-live="polite">
@@ -491,14 +731,27 @@ function EventAction({
       ) : null}
     </div>
   );
-  return action.actionId === "revise_plan" ? (
+  return action.actionId === "revise_plan" && !inline ? (
     <details className="refine-disclosure">
-      <summary>{action.label}</summary>
+      <summary>
+        <Icon name="edit" size={16} />
+        {action.label}
+      </summary>
       {content}
     </details>
   ) : (
     content
   );
+}
+
+function actionIcon(action: CreatorControlActionDescriptor): IconName {
+  if (/reject|cancel/.test(action.actionId)) return "close";
+  if (/undo|revert/.test(action.actionId)) return "retry";
+  if (/retry|refresh|resume|sync/.test(action.actionId)) return "retry";
+  if (action.actionId === "revise_plan") return "edit";
+  if (action.actionId === "link_project") return "link";
+  if (/new|fork|start/.test(action.actionId)) return "plus";
+  return "check";
 }
 
 /**
@@ -530,7 +783,7 @@ function ReviewActions({
       setMessage(undefined);
       await dashboardStore.submitAction(makeActionRequest(state, action, value));
       dashboardStore.clearActionDraft(actionKey);
-      setMessage("Forge accepted this decision and will record the outcome shortly.");
+      setMessage("Done. Updating your conversation…");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Forge could not accept this decision.");
     }
@@ -560,9 +813,10 @@ function ReviewActions({
             key={action.actionInstanceId}
             type="button"
             className={`control-action control-action--${action.intent}`}
-            disabled={pending || !valid}
+            disabled={pending || snapshot.connectionLost === true || !valid}
             onClick={() => void submit(action)}
           >
+            <Icon name={actionIcon(action)} size={16} />
             {pending ? "Working…" : action.label}
           </button>
         ))}
@@ -599,26 +853,6 @@ function BlueprintBody({ children }: { readonly children: React.ReactNode }): Re
   return <div className="blueprint-body">{children}</div>;
 }
 
-function ActivityBody({
-  phase,
-  message,
-}: {
-  readonly phase: string;
-  readonly message: string;
-}): React.JSX.Element {
-  return (
-    <div className="activity-body">
-      <span className="activity-body__pulse" aria-hidden="true" />
-      <div>
-        <strong>
-          {phase === "stopped" ? "Couldn’t finish this request" : "Working on your request"}
-        </strong>
-        <p>{message}</p>
-      </div>
-    </div>
-  );
-}
-
 function CheckList({
   label,
   values,
@@ -632,7 +866,9 @@ function CheckList({
       <h3>{label}</h3>
       <ul>
         {values.map((value) => (
-          <li key={value}>{value}</li>
+          <li key={value}>
+            <RichText text={value.replace(/^Creator review:\s*/i, "")} />
+          </li>
         ))}
       </ul>
     </section>
@@ -650,7 +886,7 @@ function eventTitle(event: CreatorConversationEvent): string {
     case "plan_revision":
       return "Suggested plan";
     case "change_set":
-      return "Exact changes are ready";
+      return "Changes ready";
     case "project_change":
       return event.data.state === "detected"
         ? "Forge noticed a project edit"
@@ -678,7 +914,7 @@ function eventTitle(event: CreatorConversationEvent): string {
     case "project_identity":
       return "Project connection";
     case "terminal_output":
-      return "Work result";
+      return "Forge";
   }
 }
 
@@ -764,3 +1000,4 @@ function cardClassFor(event: CreatorConversationEvent): string {
   if (event.eventType === "activity") return "conversation-event--activity";
   return "conversation-event--ordinary";
 }
+import { creatorTerminalOutputKey } from "../../../packages/creator-conversation/src/contracts";

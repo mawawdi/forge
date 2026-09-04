@@ -516,7 +516,15 @@ async function seedResponseReadyAgentJob(directory: string): Promise<void> {
     maxOutputTokens: 100,
     timeoutMs: 1_000,
   };
-  const initial = journalState({ turns: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 });
+  const initial = journalState({
+    reasoningTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    turns: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    costUsd: 0,
+  });
   const intent = createRequestIntentCheckpoint(1, NOW, request, initial);
   const journalId = "agent_execution_journal:agent_run_interrupted_before_dispatch";
   await journalStore.append(journalId, intent);
@@ -545,13 +553,29 @@ async function seedResponseReadyAgentJob(directory: string): Promise<void> {
         requestHash: contentHash(stableJson(request)),
         responseHash,
         responseFacts: facts,
-        usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 },
+        usage: {
+          reasoningTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          inputTokens: 1,
+          outputTokens: 1,
+          costUsd: 0.001,
+        },
       },
       state: {
-        ...journalState({ turns: 1, inputTokens: 1, outputTokens: 1, costUsd: 0.001 }),
+        ...journalState({
+          reasoningTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          turns: 1,
+          inputTokens: 1,
+          outputTokens: 1,
+          costUsd: 0.001,
+        }),
         trialStarted: true,
       },
       turn: {
+        requestSizes: { systemInstructions: 0, conversation: 0, toolSchemas: 0, toolResults: 0 },
         sequence: 1,
         startedAt: NOW,
         endedAt: "2026-09-03T15:00:01.000Z",
@@ -562,7 +586,14 @@ async function seedResponseReadyAgentJob(directory: string): Promise<void> {
         stopReason: "end_turn",
         responseFacts: facts,
         toolCallIds: [],
-        usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 },
+        usage: {
+          reasoningTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          inputTokens: 1,
+          outputTokens: 1,
+          costUsd: 0.001,
+        },
       },
     }),
   );
@@ -586,7 +617,15 @@ async function seedToolIntentAgentJob(directory: string): Promise<void> {
     maxOutputTokens: 100,
     timeoutMs: 1_000,
   };
-  const initial = journalState({ turns: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 });
+  const initial = journalState({
+    reasoningTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    turns: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    costUsd: 0,
+  });
   const intent = createRequestIntentCheckpoint(1, NOW, request, initial);
   const journalId = "agent_execution_journal:agent_run_interrupted_before_dispatch";
   const call = { id: "call_tool_intent", name: "forge.inspect", arguments: {} };
@@ -603,7 +642,15 @@ async function seedToolIntentAgentJob(directory: string): Promise<void> {
     continuationBytes: null,
   };
   const responseState = {
-    ...journalState({ turns: 1, inputTokens: 1, outputTokens: 1, costUsd: 0.001 }),
+    ...journalState({
+      reasoningTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      turns: 1,
+      inputTokens: 1,
+      outputTokens: 1,
+      costUsd: 0.001,
+    }),
     trialStarted: true,
   };
   await journalStore.append(journalId, intent);
@@ -620,10 +667,18 @@ async function seedToolIntentAgentJob(directory: string): Promise<void> {
         requestHash: contentHash(stableJson(request)),
         responseHash,
         responseFacts: facts,
-        usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 },
+        usage: {
+          reasoningTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          inputTokens: 1,
+          outputTokens: 1,
+          costUsd: 0.001,
+        },
       },
       state: responseState,
       turn: {
+        requestSizes: { systemInstructions: 0, conversation: 0, toolSchemas: 0, toolResults: 0 },
         sequence: 1,
         startedAt: NOW,
         endedAt: "2026-09-03T15:00:01.000Z",
@@ -634,7 +689,14 @@ async function seedToolIntentAgentJob(directory: string): Promise<void> {
         stopReason: "tool_calls",
         responseFacts: facts,
         toolCallIds: [call.id],
-        usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 },
+        usage: {
+          reasoningTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          inputTokens: 1,
+          outputTokens: 1,
+          costUsd: 0.001,
+        },
       },
     }),
   );

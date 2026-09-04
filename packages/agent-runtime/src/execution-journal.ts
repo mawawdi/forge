@@ -11,6 +11,7 @@ import { contentHash, stableJson } from "../../contracts/src/index.js";
 import type {
   ModelMessage,
   ModelResponseFacts,
+  ModelRequestSizes,
   ModelTurnRequest,
   ModelTurnResult,
   ModelUsage,
@@ -51,6 +52,7 @@ export type JournalModelMessage =
 
 export interface JournalModelRequest {
   readonly model: string;
+  readonly requestSizes: ModelRequestSizes;
   readonly systemHash: string;
   readonly messages: readonly JournalModelMessage[];
   readonly tools: readonly {
@@ -701,6 +703,7 @@ export function createRequestIntentCheckpoint(
 ): Extract<AgentExecutionCheckpoint, { checkpointType: "request_intent" }> {
   const sanitized: JournalModelRequest = {
     model: request.model,
+    requestSizes: measureRequestSizes(request),
     systemHash: contentHash(request.system),
     messages: request.messages.map(sanitizeModelMessage),
     tools: request.tools.map((tool) => ({ ...tool })),
@@ -1156,6 +1159,10 @@ function assertJournalModelRequest(value: unknown): void {
   const record = asRecord(value, "Invalid journal model request");
   assertNonEmptyString(record.model, "journal requested model");
   assertHash(record.systemHash, "journal system prompt hash");
+  const sizes = asRecord(record.requestSizes, "Invalid request size breakdown");
+  for (const field of ["systemInstructions", "conversation", "toolSchemas", "toolResults"])
+    if (!Number.isSafeInteger(sizes[field]) || Number(sizes[field]) < 0)
+      throw new Error(`Invalid request size ${field}`);
   if (!Array.isArray(record.messages)) throw new Error("Invalid journal request messages");
   for (const message of record.messages) assertJournalModelMessage(message);
   if (!Array.isArray(record.tools)) throw new Error("Invalid journal request tools");
@@ -1236,8 +1243,12 @@ function assertAgentModelTurn(value: unknown): void {
   assertHash(record.requestHash, "journal model turn request hash");
   if (!Array.isArray(record.toolCallIds))
     throw new Error("Invalid journal model turn tool-call IDs");
-  for (const id of record.toolCallIds) assertNonEmptyString(id, "journal model turn tool-call ID");
+  for (const id of record.toolCallIds) assertUntrustedToolLabel(id);
   assertModelUsage(record.usage);
+  const sizes = asRecord(record.requestSizes, "Invalid journal request sizes");
+  for (const key of ["systemInstructions", "conversation", "toolSchemas", "toolResults"])
+    if (!Number.isSafeInteger(sizes[key]) || (sizes[key] as number) < 0)
+      throw new Error(`Invalid journal request size ${key}`);
   if (
     !["assistant", "invalid_model_response", "provider_error"].includes(String(record.resultKind))
   )
@@ -1320,8 +1331,8 @@ function assertJournalModelMessage(value: unknown): void {
   if (!Array.isArray(record.toolCalls)) throw new Error("Invalid journal assistant tool calls");
   for (const call of record.toolCalls) {
     const callRecord = asRecord(call, "Invalid journal assistant tool call");
-    assertNonEmptyString(callRecord.id, "journal assistant tool-call ID");
-    assertNonEmptyString(callRecord.name, "journal assistant tool-call name");
+    assertUntrustedToolLabel(callRecord.id);
+    assertUntrustedToolLabel(callRecord.name);
     if (!("arguments" in callRecord)) throw new Error("Journal tool-call arguments are missing");
   }
   const continuation = asRecord(record.continuation, "Invalid journal continuation descriptor");
@@ -1398,7 +1409,13 @@ function assertModelResponseFacts(value: unknown): void {
 
 function assertModelUsage(value: unknown): void {
   const record = asRecord(value, "Invalid journal model usage");
-  for (const key of ["inputTokens", "outputTokens"]) {
+  for (const key of [
+    "inputTokens",
+    "outputTokens",
+    "reasoningTokens",
+    "cacheReadTokens",
+    "cacheWriteTokens",
+  ]) {
     const amount = record[key];
     if (amount !== null && (!Number.isSafeInteger(amount) || (amount as number) < 0))
       throw new Error(`Invalid journal usage ${key}`);
@@ -1417,8 +1434,8 @@ function assertToolBatchDecision(value: unknown): void {
   if (!Array.isArray(record.feedback)) throw new Error("Invalid journal tool-batch feedback");
   for (const feedback of record.feedback) {
     const feedbackRecord = asRecord(feedback, "Invalid journal tool-batch feedback item");
-    assertNonEmptyString(feedbackRecord.id, "journal feedback tool-call ID");
-    assertNonEmptyString(feedbackRecord.name, "journal feedback tool name");
+    assertUntrustedToolLabel(feedbackRecord.id);
+    assertUntrustedToolLabel(feedbackRecord.name);
     assertToolResult(feedbackRecord.result);
   }
 }
@@ -1426,10 +1443,12 @@ function assertToolBatchDecision(value: unknown): void {
 function assertToolCallRecord(value: unknown): void {
   const record = asRecord(value, "Invalid journal tool-call record");
   assertPositiveInteger(record.sequence, "journal tool-call sequence");
-  assertNonEmptyString(record.toolCallId, "journal tool-call ID");
+  if (record.disposition === "rejected") assertUntrustedToolLabel(record.toolCallId);
+  else assertNonEmptyString(record.toolCallId, "journal tool-call ID");
   if (record.disposition !== "executed" && record.disposition !== "rejected")
     throw new Error("Invalid journal tool-call disposition");
-  assertNonEmptyString(record.name, "journal tool-call name");
+  if (record.disposition === "rejected") assertUntrustedToolLabel(record.name);
+  else assertNonEmptyString(record.name, "journal tool-call name");
   assertHash(record.inputHash, "journal tool-call input hash");
   assertHash(record.resultHash, "journal tool-call result hash");
   if (typeof record.truncated !== "boolean") throw new Error("Invalid journal truncation flag");
@@ -1439,6 +1458,11 @@ function assertToolCallRecord(value: unknown): void {
   if (!Number.isSafeInteger(record.durationMs) || (record.durationMs as number) < 0)
     throw new Error("Invalid journal tool-call duration");
   assertToolResult(record.result);
+}
+
+function assertUntrustedToolLabel(value: unknown): void {
+  if (typeof value !== "string" || value.length > 4096)
+    throw new Error("Invalid bounded raw tool identifier");
 }
 
 function assertToolResult(value: unknown): void {
@@ -1547,4 +1571,14 @@ function isNodeError(error: unknown, code: string): boolean {
     "code" in error &&
     (error as { code?: unknown }).code === code
   );
+}
+
+export function measureRequestSizes(request: ModelTurnRequest): ModelRequestSizes {
+  const bytes = (value: unknown) => Buffer.byteLength(stableJson(value), "utf8");
+  return {
+    systemInstructions: Buffer.byteLength(request.system, "utf8"),
+    conversation: bytes(request.messages.filter((message) => message.role !== "tool")),
+    toolSchemas: bytes(request.tools),
+    toolResults: bytes(request.messages.filter((message) => message.role === "tool")),
+  };
 }

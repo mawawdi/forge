@@ -1,0 +1,3489 @@
+{
+  "incident": {
+    "plannerRunId": "agent_run_b0d7600f-1786-4d35-ba16-9ac389ce8319",
+    "failedBuildRunId": "agent_run_fb3ff554-fa88-4858-a24c-5c1ab6c48417",
+    "captureHash": "5e91443190f733afd1f913a45fbffbbbaaf0a800673cc090e9c9e256f1339f32"
+  },
+  "session": {
+    "createdAt": "2026-09-04T09:31:20.952Z",
+    "currentProjectCaptureHash": "5e91443190f733afd1f913a45fbffbbbaaf0a800673cc090e9c9e256f1339f32",
+    "currentRevisionHash": "25616922a2dec5c886f4e436d8be0e8532d748c0c76eba2b7f5011df9ebfd9c3",
+    "failure": {
+      "code": "builder_failure",
+      "detailHash": "fa0dc0f04caaa73daf2d03322da9b2c968cd4e77f8d1d0a76894f1e160918621"
+    },
+    "hash": "59665ace07d71cc3402e98734a4a4df2c10ab0447b30e77f2c53f2ec55160d9b",
+    "id": "creator_session_ef0bfb71-8970-4721-86ca-17849e1cc4e6",
+    "initialProjectCaptureHash": "5e91443190f733afd1f913a45fbffbbbaaf0a800673cc090e9c9e256f1339f32",
+    "initialRevisionHash": "25616922a2dec5c886f4e436d8be0e8532d748c0c76eba2b7f5011df9ebfd9c3",
+    "kind": "CreatorSession",
+    "model": "google/gemini-3.8-flash",
+    "ownershipMapHash": "8406bcb9fd1bec4ea1740e8c16d8d7043a198655efa6b84999a875b6c6352318",
+    "ownershipMapId": "studio_ownership_map_8406bcb9fd1bec4ea1740e8c",
+    "plan": {
+      "hash": "386eab8b4377fcd1d292c0fcf83bde100ad6b8dcc5ffb4503f9d59a889d31c6b",
+      "id": "creator_plan_386eab8b4377fcd1d292c0fc"
+    },
+    "planApproval": {
+      "hash": "e604da8d969f33c39df296031ac35387d842e94c802f5718f82a95d66415420a",
+      "id": "creator_approval_e604da8d969f33c39df29603"
+    },
+    "policy": "prompt_first_studio_authoring",
+    "projectId": "studio_project_6f294c5b7e3db952430ef6d4",
+    "promptHash": "ebf9f20525725c6450580246470386178d496a9b829c945f5a7af43f7fd6ffc8",
+    "repairsUsed": 0,
+    "status": "incomplete",
+    "updatedAt": "2026-09-04T09:39:29.716Z"
+  },
+  "plan": {
+    "changes": [
+      {
+        "className": "ProximityPrompt",
+        "id": "create_power_prompt",
+        "initialization": "initial_properties",
+        "kind": "create",
+        "parent": {
+          "className": "Part",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-power-console"
+          },
+          "kind": "instance",
+          "path": "Workspace/OrbitalFreightAirlock/PowerConsole"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/PowerConsole/ProximityPrompt"
+      },
+      {
+        "className": "ProximityPrompt",
+        "id": "create_coolant_prompt",
+        "initialization": "initial_properties",
+        "kind": "create",
+        "parent": {
+          "className": "Part",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-coolant-valve"
+          },
+          "kind": "instance",
+          "path": "Workspace/OrbitalFreightAirlock/CoolantValve"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/CoolantValve/ProximityPrompt"
+      },
+      {
+        "className": "ProximityPrompt",
+        "id": "create_scanner_prompt",
+        "initialization": "initial_properties",
+        "kind": "create",
+        "parent": {
+          "className": "Part",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-cargo-scanner"
+          },
+          "kind": "instance",
+          "path": "Workspace/OrbitalFreightAirlock/CargoScanner"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/CargoScanner/ProximityPrompt"
+      },
+      {
+        "className": "ProximityPrompt",
+        "id": "create_emergency_prompt",
+        "initialization": "initial_properties",
+        "kind": "create",
+        "parent": {
+          "className": "Part",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-emergency-console"
+          },
+          "kind": "instance",
+          "path": "Workspace/OrbitalFreightAirlock/EmergencyConsole"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/EmergencyConsole/ProximityPrompt"
+      },
+      {
+        "className": "RemoteEvent",
+        "id": "create_net_command",
+        "initialization": "initial_properties",
+        "kind": "create",
+        "parent": {
+          "className": "Folder",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-network-root"
+          },
+          "kind": "instance",
+          "path": "ReplicatedStorage/AirlockSystem"
+        },
+        "path": "ReplicatedStorage/AirlockSystem/Command"
+      },
+      {
+        "className": "RemoteEvent",
+        "id": "create_net_state_changed",
+        "initialization": "initial_properties",
+        "kind": "create",
+        "parent": {
+          "className": "Folder",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-network-root"
+          },
+          "kind": "instance",
+          "path": "ReplicatedStorage/AirlockSystem"
+        },
+        "path": "ReplicatedStorage/AirlockSystem/StateChanged"
+      },
+      {
+        "className": "RemoteFunction",
+        "id": "create_net_get_state",
+        "initialization": "initial_properties",
+        "kind": "create",
+        "parent": {
+          "className": "Folder",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-network-root"
+          },
+          "kind": "instance",
+          "path": "ReplicatedStorage/AirlockSystem"
+        },
+        "path": "ReplicatedStorage/AirlockSystem/GetState"
+      },
+      {
+        "className": "ModuleScript",
+        "id": "create_protocol_module",
+        "initialization": "inline_source_required",
+        "kind": "create",
+        "parent": {
+          "className": "Folder",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-network-root"
+          },
+          "kind": "instance",
+          "path": "ReplicatedStorage/AirlockSystem"
+        },
+        "path": "ReplicatedStorage/AirlockSystem/Protocol"
+      },
+      {
+        "className": "Script",
+        "id": "create_server_script",
+        "initialization": "inline_source_required",
+        "kind": "create",
+        "parent": {
+          "className": "ServerScriptService",
+          "identity": {
+            "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+            "kind": "studio_ephemeral",
+            "opaqueHash": "fe122cb09eb3f64752c6e7775105cc6c00ec70f07f5ad3867de2c2dc6e2354b9"
+          },
+          "kind": "instance",
+          "path": "ServerScriptService"
+        },
+        "path": "ServerScriptService/AirlockServer"
+      },
+      {
+        "className": "LocalScript",
+        "id": "create_client_script",
+        "initialization": "inline_source_required",
+        "kind": "create",
+        "parent": {
+          "className": "StarterPlayerScripts",
+          "identity": {
+            "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+            "kind": "studio_ephemeral",
+            "opaqueHash": "247592853afea3ef5e28fe03f966dfb5d03756f633bcd688c25a0b64520751a7"
+          },
+          "kind": "instance",
+          "path": "StarterPlayer/StarterPlayerScripts"
+        },
+        "path": "StarterPlayer/StarterPlayerScripts/AirlockClient"
+      },
+      {
+        "expectedClass": "Frame",
+        "id": "update_hud_panel",
+        "kind": "update",
+        "target": {
+          "className": "Frame",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-hud-panel"
+          },
+          "kind": "instance",
+          "path": "StarterGui/AirlockHUD/Panel"
+        }
+      },
+      {
+        "className": "UIListLayout",
+        "id": "create_hud_layout",
+        "initialization": "initial_properties",
+        "kind": "create",
+        "parent": {
+          "className": "Frame",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-hud-panel"
+          },
+          "kind": "instance",
+          "path": "StarterGui/AirlockHUD/Panel"
+        },
+        "path": "StarterGui/AirlockHUD/Panel/UIListLayout"
+      },
+      {
+        "className": "UIPadding",
+        "id": "create_hud_padding",
+        "initialization": "initial_properties",
+        "kind": "create",
+        "parent": {
+          "className": "Frame",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-hud-panel"
+          },
+          "kind": "instance",
+          "path": "StarterGui/AirlockHUD/Panel"
+        },
+        "path": "StarterGui/AirlockHUD/Panel/UIPadding"
+      },
+      {
+        "className": "TextLabel",
+        "id": "create_hud_phase_label",
+        "initialization": "initial_properties",
+        "kind": "create",
+        "parent": {
+          "className": "Frame",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-hud-panel"
+          },
+          "kind": "instance",
+          "path": "StarterGui/AirlockHUD/Panel"
+        },
+        "path": "StarterGui/AirlockHUD/Panel/PhaseLabel"
+      },
+      {
+        "className": "TextLabel",
+        "id": "create_hud_pressure_label",
+        "initialization": "initial_properties",
+        "kind": "create",
+        "parent": {
+          "className": "Frame",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-hud-panel"
+          },
+          "kind": "instance",
+          "path": "StarterGui/AirlockHUD/Panel"
+        },
+        "path": "StarterGui/AirlockHUD/Panel/PressureLabel"
+      },
+      {
+        "className": "TextLabel",
+        "id": "create_hud_readiness_label",
+        "initialization": "initial_properties",
+        "kind": "create",
+        "parent": {
+          "className": "Frame",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-hud-panel"
+          },
+          "kind": "instance",
+          "path": "StarterGui/AirlockHUD/Panel"
+        },
+        "path": "StarterGui/AirlockHUD/Panel/ReadinessLabel"
+      },
+      {
+        "className": "TextLabel",
+        "id": "create_hud_rejection_label",
+        "initialization": "initial_properties",
+        "kind": "create",
+        "parent": {
+          "className": "Frame",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-hud-panel"
+          },
+          "kind": "instance",
+          "path": "StarterGui/AirlockHUD/Panel"
+        },
+        "path": "StarterGui/AirlockHUD/Panel/RejectionLabel"
+      },
+      {
+        "className": "TextButton",
+        "id": "create_hud_dispatch_button",
+        "initialization": "initial_properties",
+        "kind": "create",
+        "parent": {
+          "className": "Frame",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-hud-panel"
+          },
+          "kind": "instance",
+          "path": "StarterGui/AirlockHUD/Panel"
+        },
+        "path": "StarterGui/AirlockHUD/Panel/DispatchButton"
+      },
+      {
+        "className": "TextButton",
+        "id": "create_hud_reset_button",
+        "initialization": "initial_properties",
+        "kind": "create",
+        "parent": {
+          "className": "Frame",
+          "identity": {
+            "kind": "forge_attribute",
+            "stableId": "orbital-airlock-hud-panel"
+          },
+          "kind": "instance",
+          "path": "StarterGui/AirlockHUD/Panel"
+        },
+        "path": "StarterGui/AirlockHUD/Panel/ResetButton"
+      }
+    ],
+    "charter": {
+      "authority": "creator_approved_hypothesis",
+      "clauses": [
+        {
+          "check": "luau_syntax",
+          "id": "check_luau_syntax",
+          "kind": "local_check",
+          "statement": "Every staged Luau source passes the bounded local Luau syntax and analysis gate."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "ProximityPrompt",
+          "id": "check_power_prompt",
+          "kind": "studio_check",
+          "path": "Workspace/OrbitalFreightAirlock/PowerConsole/ProximityPrompt",
+          "statement": "Workspace/OrbitalFreightAirlock/PowerConsole/ProximityPrompt resolves as ProximityPrompt during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "ProximityPrompt",
+          "id": "check_coolant_prompt",
+          "kind": "studio_check",
+          "path": "Workspace/OrbitalFreightAirlock/CoolantValve/ProximityPrompt",
+          "statement": "Workspace/OrbitalFreightAirlock/CoolantValve/ProximityPrompt resolves as ProximityPrompt during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "ProximityPrompt",
+          "id": "check_scanner_prompt",
+          "kind": "studio_check",
+          "path": "Workspace/OrbitalFreightAirlock/CargoScanner/ProximityPrompt",
+          "statement": "Workspace/OrbitalFreightAirlock/CargoScanner/ProximityPrompt resolves as ProximityPrompt during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "ProximityPrompt",
+          "id": "check_emergency_prompt",
+          "kind": "studio_check",
+          "path": "Workspace/OrbitalFreightAirlock/EmergencyConsole/ProximityPrompt",
+          "statement": "Workspace/OrbitalFreightAirlock/EmergencyConsole/ProximityPrompt resolves as ProximityPrompt during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "RemoteEvent",
+          "id": "check_net_command",
+          "kind": "studio_check",
+          "path": "ReplicatedStorage/AirlockSystem/Command",
+          "statement": "ReplicatedStorage/AirlockSystem/Command resolves as RemoteEvent during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "RemoteEvent",
+          "id": "check_net_state_changed",
+          "kind": "studio_check",
+          "path": "ReplicatedStorage/AirlockSystem/StateChanged",
+          "statement": "ReplicatedStorage/AirlockSystem/StateChanged resolves as RemoteEvent during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "RemoteFunction",
+          "id": "check_net_get_state",
+          "kind": "studio_check",
+          "path": "ReplicatedStorage/AirlockSystem/GetState",
+          "statement": "ReplicatedStorage/AirlockSystem/GetState resolves as RemoteFunction during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "ModuleScript",
+          "id": "check_protocol_module",
+          "kind": "studio_check",
+          "path": "ReplicatedStorage/AirlockSystem/Protocol",
+          "statement": "ReplicatedStorage/AirlockSystem/Protocol resolves as ModuleScript during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "Script",
+          "id": "check_server_script",
+          "kind": "studio_check",
+          "path": "ServerScriptService/AirlockServer",
+          "statement": "ServerScriptService/AirlockServer resolves as Script during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "LocalScript",
+          "id": "check_client_script",
+          "kind": "studio_check",
+          "path": "StarterPlayer/StarterPlayerScripts/AirlockClient",
+          "statement": "StarterPlayer/StarterPlayerScripts/AirlockClient resolves as LocalScript during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "UIListLayout",
+          "id": "check_hud_layout",
+          "kind": "studio_check",
+          "path": "StarterGui/AirlockHUD/Panel/UIListLayout",
+          "statement": "StarterGui/AirlockHUD/Panel/UIListLayout resolves as UIListLayout during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "UIPadding",
+          "id": "check_hud_padding",
+          "kind": "studio_check",
+          "path": "StarterGui/AirlockHUD/Panel/UIPadding",
+          "statement": "StarterGui/AirlockHUD/Panel/UIPadding resolves as UIPadding during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "TextLabel",
+          "id": "check_hud_phase_label",
+          "kind": "studio_check",
+          "path": "StarterGui/AirlockHUD/Panel/PhaseLabel",
+          "statement": "StarterGui/AirlockHUD/Panel/PhaseLabel resolves as TextLabel during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "TextLabel",
+          "id": "check_hud_pressure_label",
+          "kind": "studio_check",
+          "path": "StarterGui/AirlockHUD/Panel/PressureLabel",
+          "statement": "StarterGui/AirlockHUD/Panel/PressureLabel resolves as TextLabel during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "TextLabel",
+          "id": "check_hud_readiness_label",
+          "kind": "studio_check",
+          "path": "StarterGui/AirlockHUD/Panel/ReadinessLabel",
+          "statement": "StarterGui/AirlockHUD/Panel/ReadinessLabel resolves as TextLabel during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "TextLabel",
+          "id": "check_hud_rejection_label",
+          "kind": "studio_check",
+          "path": "StarterGui/AirlockHUD/Panel/RejectionLabel",
+          "statement": "StarterGui/AirlockHUD/Panel/RejectionLabel resolves as TextLabel during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "TextButton",
+          "id": "check_hud_dispatch_button",
+          "kind": "studio_check",
+          "path": "StarterGui/AirlockHUD/Panel/DispatchButton",
+          "statement": "StarterGui/AirlockHUD/Panel/DispatchButton resolves as TextButton during the approved playtest."
+        },
+        {
+          "check": "instance_exists",
+          "expectedClass": "TextButton",
+          "id": "check_hud_reset_button",
+          "kind": "studio_check",
+          "path": "StarterGui/AirlockHUD/Panel/ResetButton",
+          "statement": "StarterGui/AirlockHUD/Panel/ResetButton resolves as TextButton during the approved playtest."
+        },
+        {
+          "baselineHash": "290b7487fcec06f18aecf06c182ad43a3d9df7ed55318ccc4022d8fff4e44140",
+          "check": "subtree_unchanged",
+          "expectedClass": "Model",
+          "id": "check_scenery_preserved",
+          "kind": "snapshot_check",
+          "path": "Workspace/PreservedScenery",
+          "statement": "Workspace/PreservedScenery has the same bounded Studio snapshot digest after the change as before it."
+        },
+        {
+          "check": "playtest_diagnostics",
+          "id": "check_playtest_diagnostics",
+          "kind": "studio_check",
+          "maximumErrors": 0,
+          "maximumWarnings": 10,
+          "statement": "The approved Play Server observation emits at most 0 errors and 10 warnings before creator Stop; server diagnostic capture must not truncate."
+        },
+        {
+          "id": "review_hud_and_indicators",
+          "kind": "creator_review",
+          "statement": "Creator verifies the technical HUD panel layout, status readouts, dispatch/reset buttons, and the inactive, ready, transitional, and fault appearances of the Power, Pressure, and Clearance physical indicators."
+        },
+        {
+          "id": "review_airlock_lifecycle",
+          "kind": "creator_review",
+          "statement": "Creator verifies the authoritative sequence: prerequisite enabling, illegal dispatch rejection, monotonic sealing and equalization, clearance opening, the invariant that doors are never open simultaneously, and safe emergency reset cancellation of active tweens."
+        }
+      ],
+      "hash": "80c28be263e1ea697c83f6ed6d6837f41c00e1372559ef0fb93a3946b7644e92",
+      "id": "verification_charter_80c28be263e1ea697c83f6ed",
+      "kind": "VerificationCharter",
+      "visibility": "creator_visible"
+    },
+    "goal": "Turn Workspace/OrbitalFreightAirlock into a complete server-authoritative orbital freight airlock.\n\nCreate four world interactions:\n\n- Workspace/OrbitalFreightAirlock/PowerConsole: a ProximityPrompt labeled “Enable Power”.\n- Workspace/OrbitalFreightAirlock/CoolantValve: a ProximityPrompt labeled “Open Coolant”.\n- Workspace/OrbitalFreightAirlock/CargoScanner: a ProximityPrompt labeled “Scan Cargo”.\n- Workspace/OrbitalFreightAirlock/EmergencyConsole: a ProximityPrompt labeled “Emergency Reset”.\n\nCreate a shared networking container at ReplicatedStorage/AirlockSystem containing:\n\n- Command, a RemoteEvent for bounded client requests;\n- StateChanged, a RemoteEvent for complete server-to-client state snapshots;\n- GetState, a RemoteFunction for initial state synchronization;\n- Protocol, a ModuleScript containing the shared phase names, action names, and snapshot validation.\n\nCreate the authoritative implementation in ServerScriptService/AirlockServer and the client implementation in StarterPlayer/StarterPlayerScripts/AirlockClient.\n\nThe server owns one explicit airlock state machine:\n\nLOCKED → READY → SEALING → EQUALIZING → CLEAR\nABORTING → LOCKED\n\nThe system starts in LOCKED with the outer door open, inner door closed, pressure 0, and all prerequisites false.\n\nPower, coolant, and cargo scanning may be completed in any order while locked. READY is reached only when all three are true. A dispatch request before READY must be rejected without moving either door or changing pressure.\n\nWhen a valid dispatch request is accepted:\n\n1. Move OuterDoor from its initial open position straight down 8 studs and wait until it is fully closed.\n2. Enter EQUALIZING and increase authoritative pressure monotonically from 0 to 100 over approximately four seconds.\n3. Only after pressure reaches 100, move InnerDoor straight up 8 studs and enter CLEAR.\n\nThe two doors must never be open at the same time. Keep both doors anchored throughout the complete lifecycle.\n\nEmergency reset must work during READY, SEALING, EQUALIZING, or CLEAR. It must invalidate any active asynchronous sequence, close the inner door, return pressure to 0, reopen the outer door only after the inner door is closed, clear all prerequisites, and finish in LOCKED. A stale delayed task or completed tween must never advance the state after a reset.\n\nStore the current phase, pressure, power state, coolant state, cargo-scan state, and monotonically increasing sequence number as server-owned attributes on Workspace/OrbitalFreightAirlock.\n\nEvery StateChanged message must contain one complete sanitized snapshot. The client must ignore snapshots whose sequence number is not newer than the latest accepted sequence.\n\nBuild a technical HUD inside StarterGui/AirlockHUD/Panel showing:\n\n- current phase;\n- pressure percentage;\n- power, coolant, and cargo-scan readiness;\n- the most recent server rejection;\n- a Dispatch button;\n- an Abort/Reset button.\n\nThe HUD may request actions and render server snapshots, but it must never move doors, set authoritative attributes, manufacture successful state, or decide whether an action is legal.\n\nClient Command payloads must contain only an allowlisted action name and a bounded request ID. The server must reject unknown fields, unknown actions, malformed or oversized values, repeated request IDs, requests in an illegal phase, dead or missing characters, and requests that violate a per-player rate limit. Never accept a client-provided instance, path, position, pressure value, phase, prerequisite state, or target player.\n\nFor every ProximityPrompt activation, independently validate on the server that the prompt is currently enabled, the player has a living character, the character is within 12 studs of the owning console, the phase permits the action, and the player has not exceeded the interaction rate limit.\n\nUse server-created TweenService animations for door movement. Cancel or invalidate old animations safely during emergency reset. Do not use DataStoreService, external assets, arbitrary require calls, or unbounded loops.\n\nGive Power, Pressure, and Clearance indicators distinct inactive, ready, transitional, and fault appearances using their existing parts and locally created lights or particle effects. Do not depend on uploaded asset IDs.\n\nPreserve Workspace/PreservedScenery exactly. Preserve every seeded airlock part’s name, size, and initial transform except for the approved runtime movement of OuterDoor and InnerDoor.\n\nThe visible plan must cover:\n\n- every required instance and source artifact;\n- Luau syntax;\n- the client/server authority boundary;\n- remote payload validation and rate limiting;\n- initial state synchronization and stale-snapshot rejection;\n- legal and illegal state transitions;\n- the never-both-open door invariant;\n- emergency cancellation of stale asynchronous work;\n- bounded diagnostics;\n- exact preservation of Workspace/PreservedScenery;\n- creator review of the HUD, indicator appearance, denied dispatch, complete dispatch sequence, and emergency recovery.\n\nMachine claims must remain limited to evidence Forge can actually observe. Interaction causality, visual quality, client display correctness, and behavior not present in the runtime projection must remain explicit creator-review items.",
+    "hash": "386eab8b4377fcd1d292c0fcf83bde100ad6b8dcc5ffb4503f9d59a889d31c6b",
+    "id": "creator_plan_386eab8b4377fcd1d292c0fc",
+    "inspectionPaths": [
+      "ReplicatedStorage/AirlockSystem",
+      "ServerScriptService",
+      "StarterGui/AirlockHUD",
+      "StarterGui/AirlockHUD/Panel",
+      "StarterPlayer/StarterPlayerScripts",
+      "Workspace/OrbitalFreightAirlock",
+      "Workspace/OrbitalFreightAirlock/CargoScanner",
+      "Workspace/OrbitalFreightAirlock/CoolantValve",
+      "Workspace/OrbitalFreightAirlock/EmergencyConsole",
+      "Workspace/OrbitalFreightAirlock/Indicators",
+      "Workspace/OrbitalFreightAirlock/Indicators/Clearance",
+      "Workspace/OrbitalFreightAirlock/Indicators/Power",
+      "Workspace/OrbitalFreightAirlock/Indicators/Pressure",
+      "Workspace/OrbitalFreightAirlock/InnerDoor",
+      "Workspace/OrbitalFreightAirlock/OuterDoor",
+      "Workspace/OrbitalFreightAirlock/PowerConsole",
+      "Workspace/PreservedScenery",
+      "Workspace/PreservedScenery/NavigationBeacon",
+      "Workspace/PreservedScenery/ObservationDeck"
+    ],
+    "kind": "CreatorPlan",
+    "mutationAuthority": "studio_document",
+    "ownershipMapHash": "8406bcb9fd1bec4ea1740e8c16d8d7043a198655efa6b84999a875b6c6352318",
+    "ownershipMapId": "studio_ownership_map_8406bcb9fd1bec4ea1740e8c",
+    "projectCaptureHash": "5e91443190f733afd1f913a45fbffbbbaaf0a800673cc090e9c9e256f1339f32",
+    "projectRevisionHash": "25616922a2dec5c886f4e436d8be0e8532d748c0c76eba2b7f5011df9ebfd9c3",
+    "promptHash": "ebf9f20525725c6450580246470386178d496a9b829c945f5a7af43f7fd6ffc8",
+    "sessionId": "creator_session_ef0bfb71-8970-4721-86ca-17849e1cc4e6",
+    "sourceConsultationHash": "c5b5362e1af29827ba96563c7f736c09888c9ca87fcf610a28c69d3affc1a013",
+    "sourceConsultationId": "creator_source_consultation_c5b5362e1af29827ba96563c",
+    "sourceIndexHash": "4388581f4472ee25cbf4f9033d8bcdf15389cd3efe3432d3afb93f125462b056",
+    "sourceIndexId": "studio_source_index_4388581f4472ee25cbf4f903",
+    "steps": [
+      {
+        "changeIds": [
+          "create_power_prompt",
+          "create_coolant_prompt",
+          "create_scanner_prompt",
+          "create_emergency_prompt"
+        ],
+        "id": "step_world_interactions",
+        "statement": "Create the four world ProximityPrompts for PowerConsole, CoolantValve, CargoScanner, and EmergencyConsole."
+      },
+      {
+        "changeIds": [
+          "create_net_command",
+          "create_net_state_changed",
+          "create_net_get_state",
+          "create_protocol_module"
+        ],
+        "id": "step_networking_and_protocol",
+        "statement": "Create the shared networking instances (Command, StateChanged, GetState) and the Protocol module in ReplicatedStorage/AirlockSystem."
+      },
+      {
+        "changeIds": ["create_server_script"],
+        "id": "step_authoritative_server",
+        "statement": "Create the authoritative state machine server script in ServerScriptService/AirlockServer, managing phases, tween animations, prompt validations, rate limiting, and emergency cancellation."
+      },
+      {
+        "changeIds": [
+          "update_hud_panel",
+          "create_hud_layout",
+          "create_hud_padding",
+          "create_hud_phase_label",
+          "create_hud_pressure_label",
+          "create_hud_readiness_label",
+          "create_hud_rejection_label",
+          "create_hud_dispatch_button",
+          "create_hud_reset_button"
+        ],
+        "id": "step_hud_interface",
+        "statement": "Configure the HUD panel and create the technical readout labels, status indicators, and dispatch/reset buttons under StarterGui/AirlockHUD/Panel."
+      },
+      {
+        "changeIds": ["create_client_script"],
+        "id": "step_client_implementation",
+        "statement": "Create the client controller script in StarterPlayer/StarterPlayerScripts/AirlockClient to synchronize snapshots, drive HUD readouts, and send rate-limited allowlisted commands."
+      }
+    ]
+  },
+  "planApproval": {
+    "artifactHash": "386eab8b4377fcd1d292c0fcf83bde100ad6b8dcc5ffb4503f9d59a889d31c6b",
+    "artifactId": "creator_plan_386eab8b4377fcd1d292c0fc",
+    "artifactKind": "plan",
+    "authority": "creator",
+    "decidedAt": "2026-09-04T09:39:29.172Z",
+    "decision": "approved",
+    "hash": "e604da8d969f33c39df296031ac35387d842e94c802f5718f82a95d66415420a",
+    "id": "creator_approval_e604da8d969f33c39df29603",
+    "kind": "CreatorApproval",
+    "sessionId": "creator_session_ef0bfb71-8970-4721-86ca-17849e1cc4e6"
+  },
+  "ownership": {
+    "availableAuthorities": ["studio_document"],
+    "entries": [
+      {
+        "className": "Lighting",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:92860f9eb55f159c96fb70029dea66bb8dd11f5c197f035cc7944132a157499a",
+        "owner": "studio_document",
+        "path": "Lighting"
+      },
+      {
+        "className": "ReplicatedFirst",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:d714ace473759a64b0c59c03f256c7fc3626fb9d180d1c03599de2becf208587",
+        "owner": "studio_document",
+        "path": "ReplicatedFirst"
+      },
+      {
+        "className": "ReplicatedStorage",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:6ff79668fea763e58b5ee52ea3da90da10539ae15ccce481a7371e51fe5c04d3",
+        "owner": "studio_document",
+        "path": "ReplicatedStorage"
+      },
+      {
+        "className": "Folder",
+        "objectId": "forge_attribute:orbital-airlock-network-root",
+        "owner": "studio_document",
+        "path": "ReplicatedStorage/AirlockSystem"
+      },
+      {
+        "className": "ServerScriptService",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:fe122cb09eb3f64752c6e7775105cc6c00ec70f07f5ad3867de2c2dc6e2354b9",
+        "owner": "studio_document",
+        "path": "ServerScriptService"
+      },
+      {
+        "className": "ServerStorage",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:0d69d067410cc1ece6075487c35aa2a5323a09b4fdd5795a21c328fac8057c25",
+        "owner": "studio_document",
+        "path": "ServerStorage"
+      },
+      {
+        "className": "SoundService",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:3f771b2591e03450afefa7b10962d43a45610e613789df0df23528ff9b9a9b20",
+        "owner": "studio_document",
+        "path": "SoundService"
+      },
+      {
+        "className": "StarterGui",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:5473751bbe3b5d4131e32c68e49b3a4a5a9d0a5ca783864f930fe50804c3918f",
+        "owner": "studio_document",
+        "path": "StarterGui"
+      },
+      {
+        "className": "ScreenGui",
+        "objectId": "forge_attribute:orbital-airlock-hud",
+        "owner": "studio_document",
+        "path": "StarterGui/AirlockHUD"
+      },
+      {
+        "className": "Frame",
+        "objectId": "forge_attribute:orbital-airlock-hud-panel",
+        "owner": "studio_document",
+        "path": "StarterGui/AirlockHUD/Panel"
+      },
+      {
+        "className": "StarterPack",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:29a3f0d0765c0588b4b4c0ff091c5b7c3b03ce606fbb03a3348161cf2ca11110",
+        "owner": "studio_document",
+        "path": "StarterPack"
+      },
+      {
+        "className": "StarterPlayer",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:37bb68979bed5aabdb211b1dbcd1af739d0090b6ebba0c7a11c5ca70bcde9993",
+        "owner": "studio_document",
+        "path": "StarterPlayer"
+      },
+      {
+        "className": "StarterCharacterScripts",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:f02d6056d597bc93b19e4bf29aacc7ed4b1feb7d506955ca4b374d3be470d6fb",
+        "owner": "studio_document",
+        "path": "StarterPlayer/StarterCharacterScripts"
+      },
+      {
+        "className": "StarterPlayerScripts",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:247592853afea3ef5e28fe03f966dfb5d03756f633bcd688c25a0b64520751a7",
+        "owner": "studio_document",
+        "path": "StarterPlayer/StarterPlayerScripts"
+      },
+      {
+        "className": "Workspace",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:237831566e48a492a1e805d6622312699144882962171f203ddf3c8b6bd11637",
+        "owner": "studio_document",
+        "path": "Workspace"
+      },
+      {
+        "className": "Camera",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:4ea1f067bd71dc0df137c7a1cdf7ca4a601e7281fca4bd6aa69d9695429962f2",
+        "owner": "studio_document",
+        "path": "Workspace/Camera"
+      },
+      {
+        "className": "Model",
+        "objectId": "forge_attribute:orbital-airlock-system",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock"
+      },
+      {
+        "className": "Part",
+        "objectId": "forge_attribute:orbital-airlock-cargo-crate",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/CargoCrate"
+      },
+      {
+        "className": "Snap",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:cb2608a2d69425db9d2cbdbe1cf213771ccc58f72feeff58ec0e35ff5ca39b69",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/CargoCrate/Snap"
+      },
+      {
+        "className": "Part",
+        "objectId": "forge_attribute:orbital-airlock-cargo-scanner",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/CargoScanner"
+      },
+      {
+        "className": "Snap",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:aae344f1f8c3a834ebd1a518700f371a6500a92744f0080211b75ea21ae2547d",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/CargoScanner/Snap"
+      },
+      {
+        "className": "Part",
+        "objectId": "forge_attribute:orbital-airlock-chamber-floor",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/ChamberFloor"
+      },
+      {
+        "className": "Snap",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:3f81a399fbd75b2e6d9d44f2eb7a0de49cd34d7ad90bab0fed8f750812e20a7d",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/ChamberFloor/Snap"
+      },
+      {
+        "className": "Snap",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:d33641ade2963e6f3b3196c91e3c62ee02e532f8896b3d3998b5c54db9e38c41",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/ChamberFloor/Snap"
+      },
+      {
+        "className": "Snap",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:e1c220c5d2a71505d338f648efa273365a0dab8689c0c683681cb47ebbe91b31",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/ChamberFloor/Snap"
+      },
+      {
+        "className": "Part",
+        "objectId": "forge_attribute:orbital-airlock-coolant-valve",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/CoolantValve"
+      },
+      {
+        "className": "Model",
+        "objectId": "forge_attribute:orbital-airlock-door-frames",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/DoorFrames"
+      },
+      {
+        "className": "Part",
+        "objectId": "forge_attribute:orbital-airlock-inner-header",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/DoorFrames/InnerHeader"
+      },
+      {
+        "className": "Snap",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:a5616fa7bdbbc6bd224c38b73a1019ed1a2a4977a6ffa5b6ce243afaa9f7f790",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/DoorFrames/InnerHeader/Snap"
+      },
+      {
+        "className": "Part",
+        "objectId": "forge_attribute:orbital-airlock-outer-header",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/DoorFrames/OuterHeader"
+      },
+      {
+        "className": "Part",
+        "objectId": "forge_attribute:orbital-airlock-emergency-console",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/EmergencyConsole"
+      },
+      {
+        "className": "Model",
+        "objectId": "forge_attribute:orbital-airlock-indicators",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/Indicators"
+      },
+      {
+        "className": "Part",
+        "objectId": "forge_attribute:orbital-airlock-indicator-clearance",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/Indicators/Clearance"
+      },
+      {
+        "className": "Part",
+        "objectId": "forge_attribute:orbital-airlock-indicator-power",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/Indicators/Power"
+      },
+      {
+        "className": "Part",
+        "objectId": "forge_attribute:orbital-airlock-indicator-pressure",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/Indicators/Pressure"
+      },
+      {
+        "className": "Part",
+        "objectId": "forge_attribute:orbital-airlock-inner-door",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/InnerDoor"
+      },
+      {
+        "className": "Part",
+        "objectId": "forge_attribute:orbital-airlock-outer-door",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/OuterDoor"
+      },
+      {
+        "className": "Part",
+        "objectId": "forge_attribute:orbital-airlock-power-console",
+        "owner": "studio_document",
+        "path": "Workspace/OrbitalFreightAirlock/PowerConsole"
+      },
+      {
+        "className": "Model",
+        "objectId": "forge_attribute:orbital-airlock-preserved-scenery",
+        "owner": "studio_document",
+        "path": "Workspace/PreservedScenery"
+      },
+      {
+        "className": "Part",
+        "objectId": "forge_attribute:orbital-airlock-navigation-beacon",
+        "owner": "studio_document",
+        "path": "Workspace/PreservedScenery/NavigationBeacon"
+      },
+      {
+        "className": "Part",
+        "objectId": "forge_attribute:orbital-airlock-observation-deck",
+        "owner": "studio_document",
+        "path": "Workspace/PreservedScenery/ObservationDeck"
+      },
+      {
+        "className": "Terrain",
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:0c84821dd849ff65dab5f2829b0a3a2788881b3ccc4d56ce1b202d92ef66591c",
+        "owner": "studio_document",
+        "path": "Workspace/Terrain"
+      }
+    ],
+    "hash": "8406bcb9fd1bec4ea1740e8c16d8d7043a198655efa6b84999a875b6c6352318",
+    "id": "studio_ownership_map_8406bcb9fd1bec4ea1740e8c",
+    "kind": "StudioOwnershipMap",
+    "policy": "per_change_set_single_writer",
+    "projectId": "studio_project_6f294c5b7e3db952430ef6d4",
+    "revisionHash": "25616922a2dec5c886f4e436d8be0e8532d748c0c76eba2b7f5011df9ebfd9c3"
+  },
+  "projectIndex": {
+    "project": {
+      "name": "game.rbxlx",
+      "placeId": 0,
+      "universeId": 0
+    },
+    "revision": {
+      "kind": "StudioProjectRevision",
+      "id": "studio_project_index_revision_25616922a2dec5c886f4e436",
+      "hash": "25616922a2dec5c886f4e436d8be0e8532d748c0c76eba2b7f5011df9ebfd9c3",
+      "manifestHash": "e145a9818afc436b7ebb18d1cb467049dcfbb06878fcb71e906491f2aad781d8",
+      "projectionHash": "4848a05ac80cde822abf700ef1e259a0cd55660e5d2d07b12918ab9187e2a910",
+      "indexManifestHash": "d23705df5b2abfe0dab41a6fd4cc73e945fc746fffdfa1b1df1f95df03c095ef",
+      "merkleRoot": "a9bbe3f0734effc15f8c5ae9d3e98998582e343d7ecf9e7a9f7874ac1e923289",
+      "project": {
+        "name": "game.rbxlx",
+        "placeId": 0,
+        "universeId": 0
+      },
+      "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+      "capturedAt": "2026-09-04T09:31:20.000Z"
+    },
+    "instances": [
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:92860f9eb55f159c96fb70029dea66bb8dd11f5c197f035cc7944132a157499a",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "92860f9eb55f159c96fb70029dea66bb8dd11f5c197f035cc7944132a157499a"
+        },
+        "path": "Lighting",
+        "name": "Lighting",
+        "engineContainer": {
+          "path": "Lighting",
+          "className": "Lighting"
+        },
+        "className": "Lighting",
+        "properties": {},
+        "attributes": {
+          "RBX_LightingTechnologyUnifiedMigration": true
+        },
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:d714ace473759a64b0c59c03f256c7fc3626fb9d180d1c03599de2becf208587",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "d714ace473759a64b0c59c03f256c7fc3626fb9d180d1c03599de2becf208587"
+        },
+        "path": "ReplicatedFirst",
+        "name": "ReplicatedFirst",
+        "engineContainer": {
+          "path": "ReplicatedFirst",
+          "className": "ReplicatedFirst"
+        },
+        "className": "ReplicatedFirst",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:6ff79668fea763e58b5ee52ea3da90da10539ae15ccce481a7371e51fe5c04d3",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "6ff79668fea763e58b5ee52ea3da90da10539ae15ccce481a7371e51fe5c04d3"
+        },
+        "path": "ReplicatedStorage",
+        "name": "ReplicatedStorage",
+        "engineContainer": {
+          "path": "ReplicatedStorage",
+          "className": "ReplicatedStorage"
+        },
+        "className": "ReplicatedStorage",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-network-root",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-network-root"
+        },
+        "path": "ReplicatedStorage/AirlockSystem",
+        "name": "AirlockSystem",
+        "parentIdentity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "6ff79668fea763e58b5ee52ea3da90da10539ae15ccce481a7371e51fe5c04d3"
+        },
+        "className": "Folder",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:fe122cb09eb3f64752c6e7775105cc6c00ec70f07f5ad3867de2c2dc6e2354b9",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "fe122cb09eb3f64752c6e7775105cc6c00ec70f07f5ad3867de2c2dc6e2354b9"
+        },
+        "path": "ServerScriptService",
+        "name": "ServerScriptService",
+        "engineContainer": {
+          "path": "ServerScriptService",
+          "className": "ServerScriptService"
+        },
+        "className": "ServerScriptService",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:0d69d067410cc1ece6075487c35aa2a5323a09b4fdd5795a21c328fac8057c25",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "0d69d067410cc1ece6075487c35aa2a5323a09b4fdd5795a21c328fac8057c25"
+        },
+        "path": "ServerStorage",
+        "name": "ServerStorage",
+        "engineContainer": {
+          "path": "ServerStorage",
+          "className": "ServerStorage"
+        },
+        "className": "ServerStorage",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:3f771b2591e03450afefa7b10962d43a45610e613789df0df23528ff9b9a9b20",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "3f771b2591e03450afefa7b10962d43a45610e613789df0df23528ff9b9a9b20"
+        },
+        "path": "SoundService",
+        "name": "SoundService",
+        "engineContainer": {
+          "path": "SoundService",
+          "className": "SoundService"
+        },
+        "className": "SoundService",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:5473751bbe3b5d4131e32c68e49b3a4a5a9d0a5ca783864f930fe50804c3918f",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "5473751bbe3b5d4131e32c68e49b3a4a5a9d0a5ca783864f930fe50804c3918f"
+        },
+        "path": "StarterGui",
+        "name": "StarterGui",
+        "engineContainer": {
+          "path": "StarterGui",
+          "className": "StarterGui"
+        },
+        "className": "StarterGui",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-hud",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-hud"
+        },
+        "path": "StarterGui/AirlockHUD",
+        "name": "AirlockHUD",
+        "parentIdentity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "5473751bbe3b5d4131e32c68e49b3a4a5a9d0a5ca783864f930fe50804c3918f"
+        },
+        "className": "ScreenGui",
+        "properties": {
+          "AutoLocalize": {
+            "kind": "boolean",
+            "value": true
+          },
+          "ClipToDeviceSafeArea": {
+            "kind": "boolean",
+            "value": true
+          },
+          "DisplayOrder": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Enabled": {
+            "kind": "boolean",
+            "value": true
+          },
+          "IgnoreGuiInset": {
+            "kind": "boolean",
+            "value": false
+          },
+          "ResetOnSpawn": {
+            "kind": "boolean",
+            "value": true
+          },
+          "RootLocalizationTable": {
+            "expectedClass": "LocalizationTable",
+            "kind": "instance_ref",
+            "state": "nil"
+          },
+          "SafeAreaCompatibility": {
+            "kind": "enum_name",
+            "value": "FullscreenExtension"
+          },
+          "ScreenInsets": {
+            "kind": "enum_name",
+            "value": "CoreUISafeInsets"
+          },
+          "SelectionBehaviorDown": {
+            "kind": "enum_name",
+            "value": "Escape"
+          },
+          "SelectionBehaviorLeft": {
+            "kind": "enum_name",
+            "value": "Escape"
+          },
+          "SelectionBehaviorRight": {
+            "kind": "enum_name",
+            "value": "Escape"
+          },
+          "SelectionBehaviorUp": {
+            "kind": "enum_name",
+            "value": "Escape"
+          },
+          "SelectionGroup": {
+            "kind": "boolean",
+            "value": false
+          },
+          "ZIndexBehavior": {
+            "kind": "enum_name",
+            "value": "Global"
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-hud-panel",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-hud-panel"
+        },
+        "path": "StarterGui/AirlockHUD/Panel",
+        "name": "Panel",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-hud"
+        },
+        "className": "Frame",
+        "properties": {
+          "Active": {
+            "kind": "boolean",
+            "value": false
+          },
+          "AnchorPoint": {
+            "kind": "vector2_f32",
+            "x": 0,
+            "y": 0
+          },
+          "AutoLocalize": {
+            "kind": "boolean",
+            "value": true
+          },
+          "AutomaticSize": {
+            "kind": "enum_name",
+            "value": "None"
+          },
+          "BackgroundColor3": {
+            "b": 165,
+            "g": 162,
+            "kind": "color3_rgb8",
+            "r": 163
+          },
+          "BackgroundTransparency": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "BorderColor3": {
+            "b": 53,
+            "g": 42,
+            "kind": "color3_rgb8",
+            "r": 27
+          },
+          "BorderMode": {
+            "kind": "enum_name",
+            "value": "Outline"
+          },
+          "BorderSizePixel": {
+            "kind": "int32",
+            "value": 1
+          },
+          "ClipsDescendants": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Interactable": {
+            "kind": "boolean",
+            "value": true
+          },
+          "LayoutOrder": {
+            "kind": "int32",
+            "value": 0
+          },
+          "NextSelectionDown": {
+            "expectedClass": "GuiObject",
+            "kind": "instance_ref",
+            "state": "nil"
+          },
+          "NextSelectionLeft": {
+            "expectedClass": "GuiObject",
+            "kind": "instance_ref",
+            "state": "nil"
+          },
+          "NextSelectionRight": {
+            "expectedClass": "GuiObject",
+            "kind": "instance_ref",
+            "state": "nil"
+          },
+          "NextSelectionUp": {
+            "expectedClass": "GuiObject",
+            "kind": "instance_ref",
+            "state": "nil"
+          },
+          "Position": {
+            "kind": "udim2",
+            "x": {
+              "offset": 0,
+              "scale": 0
+            },
+            "y": {
+              "offset": 0,
+              "scale": 0
+            }
+          },
+          "RootLocalizationTable": {
+            "expectedClass": "LocalizationTable",
+            "kind": "instance_ref",
+            "state": "nil"
+          },
+          "Rotation": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "Selectable": {
+            "kind": "boolean",
+            "value": false
+          },
+          "SelectionBehaviorDown": {
+            "kind": "enum_name",
+            "value": "Escape"
+          },
+          "SelectionBehaviorLeft": {
+            "kind": "enum_name",
+            "value": "Escape"
+          },
+          "SelectionBehaviorRight": {
+            "kind": "enum_name",
+            "value": "Escape"
+          },
+          "SelectionBehaviorUp": {
+            "kind": "enum_name",
+            "value": "Escape"
+          },
+          "SelectionGroup": {
+            "kind": "boolean",
+            "value": false
+          },
+          "SelectionImageObject": {
+            "expectedClass": "GuiObject",
+            "kind": "instance_ref",
+            "state": "nil"
+          },
+          "SelectionOrder": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Size": {
+            "kind": "udim2",
+            "x": {
+              "offset": 0,
+              "scale": 0
+            },
+            "y": {
+              "offset": 0,
+              "scale": 0
+            }
+          },
+          "SizeConstraint": {
+            "kind": "enum_name",
+            "value": "RelativeXY"
+          },
+          "Style": {
+            "kind": "enum_name",
+            "value": "Custom"
+          },
+          "Visible": {
+            "kind": "boolean",
+            "value": true
+          },
+          "ZIndex": {
+            "kind": "int32",
+            "value": 1
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:29a3f0d0765c0588b4b4c0ff091c5b7c3b03ce606fbb03a3348161cf2ca11110",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "29a3f0d0765c0588b4b4c0ff091c5b7c3b03ce606fbb03a3348161cf2ca11110"
+        },
+        "path": "StarterPack",
+        "name": "StarterPack",
+        "engineContainer": {
+          "path": "StarterPack",
+          "className": "StarterPack"
+        },
+        "className": "StarterPack",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:37bb68979bed5aabdb211b1dbcd1af739d0090b6ebba0c7a11c5ca70bcde9993",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "37bb68979bed5aabdb211b1dbcd1af739d0090b6ebba0c7a11c5ca70bcde9993"
+        },
+        "path": "StarterPlayer",
+        "name": "StarterPlayer",
+        "engineContainer": {
+          "path": "StarterPlayer",
+          "className": "StarterPlayer"
+        },
+        "className": "StarterPlayer",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:f02d6056d597bc93b19e4bf29aacc7ed4b1feb7d506955ca4b374d3be470d6fb",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "f02d6056d597bc93b19e4bf29aacc7ed4b1feb7d506955ca4b374d3be470d6fb"
+        },
+        "path": "StarterPlayer/StarterCharacterScripts",
+        "name": "StarterCharacterScripts",
+        "parentIdentity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "37bb68979bed5aabdb211b1dbcd1af739d0090b6ebba0c7a11c5ca70bcde9993"
+        },
+        "engineContainer": {
+          "path": "StarterPlayer/StarterCharacterScripts",
+          "className": "StarterCharacterScripts"
+        },
+        "className": "StarterCharacterScripts",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:247592853afea3ef5e28fe03f966dfb5d03756f633bcd688c25a0b64520751a7",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "247592853afea3ef5e28fe03f966dfb5d03756f633bcd688c25a0b64520751a7"
+        },
+        "path": "StarterPlayer/StarterPlayerScripts",
+        "name": "StarterPlayerScripts",
+        "parentIdentity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "37bb68979bed5aabdb211b1dbcd1af739d0090b6ebba0c7a11c5ca70bcde9993"
+        },
+        "engineContainer": {
+          "path": "StarterPlayer/StarterPlayerScripts",
+          "className": "StarterPlayerScripts"
+        },
+        "className": "StarterPlayerScripts",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:237831566e48a492a1e805d6622312699144882962171f203ddf3c8b6bd11637",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "237831566e48a492a1e805d6622312699144882962171f203ddf3c8b6bd11637"
+        },
+        "path": "Workspace",
+        "name": "Workspace",
+        "engineContainer": {
+          "path": "Workspace",
+          "className": "Workspace"
+        },
+        "className": "Workspace",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:4ea1f067bd71dc0df137c7a1cdf7ca4a601e7281fca4bd6aa69d9695429962f2",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "4ea1f067bd71dc0df137c7a1cdf7ca4a601e7281fca4bd6aa69d9695429962f2"
+        },
+        "path": "Workspace/Camera",
+        "name": "Camera",
+        "parentIdentity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "237831566e48a492a1e805d6622312699144882962171f203ddf3c8b6bd11637"
+        },
+        "className": "Camera",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-system",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-system"
+        },
+        "path": "Workspace/OrbitalFreightAirlock",
+        "name": "OrbitalFreightAirlock",
+        "parentIdentity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "237831566e48a492a1e805d6622312699144882962171f203ddf3c8b6bd11637"
+        },
+        "className": "Model",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-cargo-crate",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-cargo-crate"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/CargoCrate",
+        "name": "CargoCrate",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-system"
+        },
+        "className": "Part",
+        "properties": {
+          "Anchored": {
+            "kind": "boolean",
+            "value": true
+          },
+          "AssemblyAngularVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AssemblyLinearVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AudioCanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "BrickColor": {
+            "kind": "brick_color",
+            "name": "Flame reddish orange"
+          },
+          "CFrame": {
+            "components": [0, 2, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "CanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanQuery": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanTouch": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CastShadow": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CollisionGroup": {
+            "kind": "string_utf8",
+            "value": "Default"
+          },
+          "Color": {
+            "b": 36,
+            "g": 107,
+            "kind": "color3_rgb8",
+            "r": 184
+          },
+          "CustomPhysicalProperties": {
+            "expectedCodec": "physical_properties",
+            "kind": "nil"
+          },
+          "EnableFluidForces": {
+            "kind": "boolean",
+            "value": true
+          },
+          "Locked": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Massless": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Material": {
+            "kind": "enum_name",
+            "value": "Plastic"
+          },
+          "PivotOffset": {
+            "components": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "Reflectance": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "RootPriority": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Rotation": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "Shape": {
+            "kind": "enum_name",
+            "value": "Block"
+          },
+          "Size": {
+            "kind": "vector3_f32",
+            "x": 4,
+            "y": 3,
+            "z": 4
+          },
+          "Transparency": {
+            "kind": "number_f32",
+            "value": 0
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:cb2608a2d69425db9d2cbdbe1cf213771ccc58f72feeff58ec0e35ff5ca39b69",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "cb2608a2d69425db9d2cbdbe1cf213771ccc58f72feeff58ec0e35ff5ca39b69"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/CargoCrate/Snap",
+        "name": "Snap",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-cargo-crate"
+        },
+        "className": "Snap",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-cargo-scanner",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-cargo-scanner"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/CargoScanner",
+        "name": "CargoScanner",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-system"
+        },
+        "className": "Part",
+        "properties": {
+          "Anchored": {
+            "kind": "boolean",
+            "value": true
+          },
+          "AssemblyAngularVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AssemblyLinearVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AudioCanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "BrickColor": {
+            "kind": "brick_color",
+            "name": "Lilac"
+          },
+          "CFrame": {
+            "components": [6, 2, -4, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "CanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanQuery": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanTouch": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CastShadow": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CollisionGroup": {
+            "kind": "string_utf8",
+            "value": "Default"
+          },
+          "Color": {
+            "b": 158,
+            "g": 71,
+            "kind": "color3_rgb8",
+            "r": 117
+          },
+          "CustomPhysicalProperties": {
+            "expectedCodec": "physical_properties",
+            "kind": "nil"
+          },
+          "EnableFluidForces": {
+            "kind": "boolean",
+            "value": true
+          },
+          "Locked": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Massless": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Material": {
+            "kind": "enum_name",
+            "value": "Plastic"
+          },
+          "PivotOffset": {
+            "components": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "Reflectance": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "RootPriority": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Rotation": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "Shape": {
+            "kind": "enum_name",
+            "value": "Block"
+          },
+          "Size": {
+            "kind": "vector3_f32",
+            "x": 3,
+            "y": 3,
+            "z": 2
+          },
+          "Transparency": {
+            "kind": "number_f32",
+            "value": 0
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:aae344f1f8c3a834ebd1a518700f371a6500a92744f0080211b75ea21ae2547d",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "aae344f1f8c3a834ebd1a518700f371a6500a92744f0080211b75ea21ae2547d"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/CargoScanner/Snap",
+        "name": "Snap",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-cargo-scanner"
+        },
+        "className": "Snap",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-chamber-floor",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-chamber-floor"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/ChamberFloor",
+        "name": "ChamberFloor",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-system"
+        },
+        "className": "Part",
+        "properties": {
+          "Anchored": {
+            "kind": "boolean",
+            "value": true
+          },
+          "AssemblyAngularVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AssemblyLinearVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AudioCanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "BrickColor": {
+            "kind": "brick_color",
+            "name": "Black"
+          },
+          "CFrame": {
+            "components": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "CanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanQuery": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanTouch": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CastShadow": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CollisionGroup": {
+            "kind": "string_utf8",
+            "value": "Default"
+          },
+          "Color": {
+            "b": 64,
+            "g": 51,
+            "kind": "color3_rgb8",
+            "r": 41
+          },
+          "CustomPhysicalProperties": {
+            "expectedCodec": "physical_properties",
+            "kind": "nil"
+          },
+          "EnableFluidForces": {
+            "kind": "boolean",
+            "value": true
+          },
+          "Locked": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Massless": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Material": {
+            "kind": "enum_name",
+            "value": "Plastic"
+          },
+          "PivotOffset": {
+            "components": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "Reflectance": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "RootPriority": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Rotation": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "Shape": {
+            "kind": "enum_name",
+            "value": "Block"
+          },
+          "Size": {
+            "kind": "vector3_f32",
+            "x": 24,
+            "y": 1,
+            "z": 24
+          },
+          "Transparency": {
+            "kind": "number_f32",
+            "value": 0
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:3f81a399fbd75b2e6d9d44f2eb7a0de49cd34d7ad90bab0fed8f750812e20a7d",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "3f81a399fbd75b2e6d9d44f2eb7a0de49cd34d7ad90bab0fed8f750812e20a7d"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/ChamberFloor/Snap",
+        "name": "Snap",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-chamber-floor"
+        },
+        "className": "Snap",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:d33641ade2963e6f3b3196c91e3c62ee02e532f8896b3d3998b5c54db9e38c41",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "d33641ade2963e6f3b3196c91e3c62ee02e532f8896b3d3998b5c54db9e38c41"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/ChamberFloor/Snap",
+        "name": "Snap",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-chamber-floor"
+        },
+        "className": "Snap",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:e1c220c5d2a71505d338f648efa273365a0dab8689c0c683681cb47ebbe91b31",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "e1c220c5d2a71505d338f648efa273365a0dab8689c0c683681cb47ebbe91b31"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/ChamberFloor/Snap",
+        "name": "Snap",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-chamber-floor"
+        },
+        "className": "Snap",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-coolant-valve",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-coolant-valve"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/CoolantValve",
+        "name": "CoolantValve",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-system"
+        },
+        "className": "Part",
+        "properties": {
+          "Anchored": {
+            "kind": "boolean",
+            "value": true
+          },
+          "AssemblyAngularVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AssemblyLinearVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AudioCanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "BrickColor": {
+            "kind": "brick_color",
+            "name": "Dark Royal blue"
+          },
+          "CFrame": {
+            "components": [0, 2, -4, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "CanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanQuery": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanTouch": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CastShadow": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CollisionGroup": {
+            "kind": "string_utf8",
+            "value": "Default"
+          },
+          "Color": {
+            "b": 143,
+            "g": 107,
+            "kind": "color3_rgb8",
+            "r": 31
+          },
+          "CustomPhysicalProperties": {
+            "expectedCodec": "physical_properties",
+            "kind": "nil"
+          },
+          "EnableFluidForces": {
+            "kind": "boolean",
+            "value": true
+          },
+          "Locked": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Massless": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Material": {
+            "kind": "enum_name",
+            "value": "Plastic"
+          },
+          "PivotOffset": {
+            "components": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "Reflectance": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "RootPriority": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Rotation": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "Shape": {
+            "kind": "enum_name",
+            "value": "Block"
+          },
+          "Size": {
+            "kind": "vector3_f32",
+            "x": 3,
+            "y": 3,
+            "z": 2
+          },
+          "Transparency": {
+            "kind": "number_f32",
+            "value": 0
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-door-frames",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-door-frames"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/DoorFrames",
+        "name": "DoorFrames",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-system"
+        },
+        "className": "Model",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-inner-header",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-inner-header"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/DoorFrames/InnerHeader",
+        "name": "InnerHeader",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-door-frames"
+        },
+        "className": "Part",
+        "properties": {
+          "Anchored": {
+            "kind": "boolean",
+            "value": true
+          },
+          "AssemblyAngularVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AssemblyLinearVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AudioCanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "BrickColor": {
+            "kind": "brick_color",
+            "name": "Black metallic"
+          },
+          "CFrame": {
+            "components": [0, 9, 10.5, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "CanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanQuery": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanTouch": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CastShadow": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CollisionGroup": {
+            "kind": "string_utf8",
+            "value": "Default"
+          },
+          "Color": {
+            "b": 38,
+            "g": 28,
+            "kind": "color3_rgb8",
+            "r": 20
+          },
+          "CustomPhysicalProperties": {
+            "expectedCodec": "physical_properties",
+            "kind": "nil"
+          },
+          "EnableFluidForces": {
+            "kind": "boolean",
+            "value": true
+          },
+          "Locked": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Massless": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Material": {
+            "kind": "enum_name",
+            "value": "Plastic"
+          },
+          "PivotOffset": {
+            "components": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "Reflectance": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "RootPriority": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Rotation": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "Shape": {
+            "kind": "enum_name",
+            "value": "Block"
+          },
+          "Size": {
+            "kind": "vector3_f32",
+            "x": 14,
+            "y": 2,
+            "z": 2
+          },
+          "Transparency": {
+            "kind": "number_f32",
+            "value": 0
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:a5616fa7bdbbc6bd224c38b73a1019ed1a2a4977a6ffa5b6ce243afaa9f7f790",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "a5616fa7bdbbc6bd224c38b73a1019ed1a2a4977a6ffa5b6ce243afaa9f7f790"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/DoorFrames/InnerHeader/Snap",
+        "name": "Snap",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-inner-header"
+        },
+        "className": "Snap",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-outer-header",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-outer-header"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/DoorFrames/OuterHeader",
+        "name": "OuterHeader",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-door-frames"
+        },
+        "className": "Part",
+        "properties": {
+          "Anchored": {
+            "kind": "boolean",
+            "value": true
+          },
+          "AssemblyAngularVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AssemblyLinearVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AudioCanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "BrickColor": {
+            "kind": "brick_color",
+            "name": "Black metallic"
+          },
+          "CFrame": {
+            "components": [0, 9, -10.5, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "CanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanQuery": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanTouch": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CastShadow": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CollisionGroup": {
+            "kind": "string_utf8",
+            "value": "Default"
+          },
+          "Color": {
+            "b": 38,
+            "g": 28,
+            "kind": "color3_rgb8",
+            "r": 20
+          },
+          "CustomPhysicalProperties": {
+            "expectedCodec": "physical_properties",
+            "kind": "nil"
+          },
+          "EnableFluidForces": {
+            "kind": "boolean",
+            "value": true
+          },
+          "Locked": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Massless": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Material": {
+            "kind": "enum_name",
+            "value": "Plastic"
+          },
+          "PivotOffset": {
+            "components": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "Reflectance": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "RootPriority": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Rotation": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "Shape": {
+            "kind": "enum_name",
+            "value": "Block"
+          },
+          "Size": {
+            "kind": "vector3_f32",
+            "x": 14,
+            "y": 2,
+            "z": 2
+          },
+          "Transparency": {
+            "kind": "number_f32",
+            "value": 0
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-emergency-console",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-emergency-console"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/EmergencyConsole",
+        "name": "EmergencyConsole",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-system"
+        },
+        "className": "Part",
+        "properties": {
+          "Anchored": {
+            "kind": "boolean",
+            "value": true
+          },
+          "AssemblyAngularVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AssemblyLinearVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AudioCanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "BrickColor": {
+            "kind": "brick_color",
+            "name": "Bright red"
+          },
+          "CFrame": {
+            "components": [0, 2, 5, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "CanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanQuery": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanTouch": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CastShadow": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CollisionGroup": {
+            "kind": "string_utf8",
+            "value": "Default"
+          },
+          "Color": {
+            "b": 41,
+            "g": 31,
+            "kind": "color3_rgb8",
+            "r": 179
+          },
+          "CustomPhysicalProperties": {
+            "expectedCodec": "physical_properties",
+            "kind": "nil"
+          },
+          "EnableFluidForces": {
+            "kind": "boolean",
+            "value": true
+          },
+          "Locked": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Massless": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Material": {
+            "kind": "enum_name",
+            "value": "Plastic"
+          },
+          "PivotOffset": {
+            "components": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "Reflectance": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "RootPriority": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Rotation": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "Shape": {
+            "kind": "enum_name",
+            "value": "Block"
+          },
+          "Size": {
+            "kind": "vector3_f32",
+            "x": 3,
+            "y": 3,
+            "z": 2
+          },
+          "Transparency": {
+            "kind": "number_f32",
+            "value": 0
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-indicators",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-indicators"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/Indicators",
+        "name": "Indicators",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-system"
+        },
+        "className": "Model",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-indicator-clearance",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-indicator-clearance"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/Indicators/Clearance",
+        "name": "Clearance",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-indicators"
+        },
+        "className": "Part",
+        "properties": {
+          "Anchored": {
+            "kind": "boolean",
+            "value": true
+          },
+          "AssemblyAngularVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AssemblyLinearVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AudioCanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "BrickColor": {
+            "kind": "brick_color",
+            "name": "Black"
+          },
+          "CFrame": {
+            "components": [4, 7, 8, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "CanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanQuery": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanTouch": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CastShadow": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CollisionGroup": {
+            "kind": "string_utf8",
+            "value": "Default"
+          },
+          "Color": {
+            "b": 51,
+            "g": 46,
+            "kind": "color3_rgb8",
+            "r": 41
+          },
+          "CustomPhysicalProperties": {
+            "expectedCodec": "physical_properties",
+            "kind": "nil"
+          },
+          "EnableFluidForces": {
+            "kind": "boolean",
+            "value": true
+          },
+          "Locked": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Massless": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Material": {
+            "kind": "enum_name",
+            "value": "Plastic"
+          },
+          "PivotOffset": {
+            "components": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "Reflectance": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "RootPriority": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Rotation": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "Shape": {
+            "kind": "enum_name",
+            "value": "Block"
+          },
+          "Size": {
+            "kind": "vector3_f32",
+            "x": 2,
+            "y": 2,
+            "z": 1
+          },
+          "Transparency": {
+            "kind": "number_f32",
+            "value": 0
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-indicator-power",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-indicator-power"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/Indicators/Power",
+        "name": "Power",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-indicators"
+        },
+        "className": "Part",
+        "properties": {
+          "Anchored": {
+            "kind": "boolean",
+            "value": true
+          },
+          "AssemblyAngularVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AssemblyLinearVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AudioCanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "BrickColor": {
+            "kind": "brick_color",
+            "name": "Black"
+          },
+          "CFrame": {
+            "components": [-4, 7, 8, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "CanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanQuery": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanTouch": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CastShadow": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CollisionGroup": {
+            "kind": "string_utf8",
+            "value": "Default"
+          },
+          "Color": {
+            "b": 51,
+            "g": 46,
+            "kind": "color3_rgb8",
+            "r": 41
+          },
+          "CustomPhysicalProperties": {
+            "expectedCodec": "physical_properties",
+            "kind": "nil"
+          },
+          "EnableFluidForces": {
+            "kind": "boolean",
+            "value": true
+          },
+          "Locked": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Massless": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Material": {
+            "kind": "enum_name",
+            "value": "Plastic"
+          },
+          "PivotOffset": {
+            "components": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "Reflectance": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "RootPriority": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Rotation": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "Shape": {
+            "kind": "enum_name",
+            "value": "Block"
+          },
+          "Size": {
+            "kind": "vector3_f32",
+            "x": 2,
+            "y": 2,
+            "z": 1
+          },
+          "Transparency": {
+            "kind": "number_f32",
+            "value": 0
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-indicator-pressure",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-indicator-pressure"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/Indicators/Pressure",
+        "name": "Pressure",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-indicators"
+        },
+        "className": "Part",
+        "properties": {
+          "Anchored": {
+            "kind": "boolean",
+            "value": true
+          },
+          "AssemblyAngularVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AssemblyLinearVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AudioCanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "BrickColor": {
+            "kind": "brick_color",
+            "name": "Black"
+          },
+          "CFrame": {
+            "components": [0, 7, 8, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "CanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanQuery": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanTouch": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CastShadow": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CollisionGroup": {
+            "kind": "string_utf8",
+            "value": "Default"
+          },
+          "Color": {
+            "b": 51,
+            "g": 46,
+            "kind": "color3_rgb8",
+            "r": 41
+          },
+          "CustomPhysicalProperties": {
+            "expectedCodec": "physical_properties",
+            "kind": "nil"
+          },
+          "EnableFluidForces": {
+            "kind": "boolean",
+            "value": true
+          },
+          "Locked": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Massless": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Material": {
+            "kind": "enum_name",
+            "value": "Plastic"
+          },
+          "PivotOffset": {
+            "components": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "Reflectance": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "RootPriority": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Rotation": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "Shape": {
+            "kind": "enum_name",
+            "value": "Block"
+          },
+          "Size": {
+            "kind": "vector3_f32",
+            "x": 2,
+            "y": 2,
+            "z": 1
+          },
+          "Transparency": {
+            "kind": "number_f32",
+            "value": 0
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-inner-door",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-inner-door"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/InnerDoor",
+        "name": "InnerDoor",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-system"
+        },
+        "className": "Part",
+        "properties": {
+          "Anchored": {
+            "kind": "boolean",
+            "value": true
+          },
+          "AssemblyAngularVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AssemblyLinearVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AudioCanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "BrickColor": {
+            "kind": "brick_color",
+            "name": "Storm blue"
+          },
+          "CFrame": {
+            "components": [0, 4, 10, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "CanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanQuery": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanTouch": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CastShadow": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CollisionGroup": {
+            "kind": "string_utf8",
+            "value": "Default"
+          },
+          "Color": {
+            "b": 97,
+            "g": 77,
+            "kind": "color3_rgb8",
+            "r": 56
+          },
+          "CustomPhysicalProperties": {
+            "expectedCodec": "physical_properties",
+            "kind": "nil"
+          },
+          "EnableFluidForces": {
+            "kind": "boolean",
+            "value": true
+          },
+          "Locked": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Massless": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Material": {
+            "kind": "enum_name",
+            "value": "Plastic"
+          },
+          "PivotOffset": {
+            "components": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "Reflectance": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "RootPriority": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Rotation": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "Shape": {
+            "kind": "enum_name",
+            "value": "Block"
+          },
+          "Size": {
+            "kind": "vector3_f32",
+            "x": 10,
+            "y": 8,
+            "z": 1
+          },
+          "Transparency": {
+            "kind": "number_f32",
+            "value": 0
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-outer-door",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-outer-door"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/OuterDoor",
+        "name": "OuterDoor",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-system"
+        },
+        "className": "Part",
+        "properties": {
+          "Anchored": {
+            "kind": "boolean",
+            "value": true
+          },
+          "AssemblyAngularVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AssemblyLinearVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AudioCanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "BrickColor": {
+            "kind": "brick_color",
+            "name": "Storm blue"
+          },
+          "CFrame": {
+            "components": [0, 12, -10, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "CanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanQuery": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanTouch": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CastShadow": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CollisionGroup": {
+            "kind": "string_utf8",
+            "value": "Default"
+          },
+          "Color": {
+            "b": 97,
+            "g": 77,
+            "kind": "color3_rgb8",
+            "r": 56
+          },
+          "CustomPhysicalProperties": {
+            "expectedCodec": "physical_properties",
+            "kind": "nil"
+          },
+          "EnableFluidForces": {
+            "kind": "boolean",
+            "value": true
+          },
+          "Locked": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Massless": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Material": {
+            "kind": "enum_name",
+            "value": "Plastic"
+          },
+          "PivotOffset": {
+            "components": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "Reflectance": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "RootPriority": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Rotation": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "Shape": {
+            "kind": "enum_name",
+            "value": "Block"
+          },
+          "Size": {
+            "kind": "vector3_f32",
+            "x": 10,
+            "y": 8,
+            "z": 1
+          },
+          "Transparency": {
+            "kind": "number_f32",
+            "value": 0
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-power-console",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-power-console"
+        },
+        "path": "Workspace/OrbitalFreightAirlock/PowerConsole",
+        "name": "PowerConsole",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-system"
+        },
+        "className": "Part",
+        "properties": {
+          "Anchored": {
+            "kind": "boolean",
+            "value": true
+          },
+          "AssemblyAngularVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AssemblyLinearVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AudioCanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "BrickColor": {
+            "kind": "brick_color",
+            "name": "Earth blue"
+          },
+          "CFrame": {
+            "components": [-6, 2, -4, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "CanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanQuery": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanTouch": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CastShadow": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CollisionGroup": {
+            "kind": "string_utf8",
+            "value": "Default"
+          },
+          "Color": {
+            "b": 79,
+            "g": 61,
+            "kind": "color3_rgb8",
+            "r": 46
+          },
+          "CustomPhysicalProperties": {
+            "expectedCodec": "physical_properties",
+            "kind": "nil"
+          },
+          "EnableFluidForces": {
+            "kind": "boolean",
+            "value": true
+          },
+          "Locked": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Massless": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Material": {
+            "kind": "enum_name",
+            "value": "Plastic"
+          },
+          "PivotOffset": {
+            "components": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "Reflectance": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "RootPriority": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Rotation": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "Shape": {
+            "kind": "enum_name",
+            "value": "Block"
+          },
+          "Size": {
+            "kind": "vector3_f32",
+            "x": 3,
+            "y": 3,
+            "z": 2
+          },
+          "Transparency": {
+            "kind": "number_f32",
+            "value": 0
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-preserved-scenery",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-preserved-scenery"
+        },
+        "path": "Workspace/PreservedScenery",
+        "name": "PreservedScenery",
+        "parentIdentity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "237831566e48a492a1e805d6622312699144882962171f203ddf3c8b6bd11637"
+        },
+        "className": "Model",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-navigation-beacon",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-navigation-beacon"
+        },
+        "path": "Workspace/PreservedScenery/NavigationBeacon",
+        "name": "NavigationBeacon",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-preserved-scenery"
+        },
+        "className": "Part",
+        "properties": {
+          "Anchored": {
+            "kind": "boolean",
+            "value": true
+          },
+          "AssemblyAngularVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AssemblyLinearVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AudioCanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "BrickColor": {
+            "kind": "brick_color",
+            "name": "Dark Royal blue"
+          },
+          "CFrame": {
+            "components": [20, 8, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "CanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanQuery": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanTouch": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CastShadow": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CollisionGroup": {
+            "kind": "string_utf8",
+            "value": "Default"
+          },
+          "Color": {
+            "b": 148,
+            "g": 82,
+            "kind": "color3_rgb8",
+            "r": 31
+          },
+          "CustomPhysicalProperties": {
+            "expectedCodec": "physical_properties",
+            "kind": "nil"
+          },
+          "EnableFluidForces": {
+            "kind": "boolean",
+            "value": true
+          },
+          "Locked": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Massless": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Material": {
+            "kind": "enum_name",
+            "value": "Plastic"
+          },
+          "PivotOffset": {
+            "components": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "Reflectance": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "RootPriority": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Rotation": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "Shape": {
+            "kind": "enum_name",
+            "value": "Block"
+          },
+          "Size": {
+            "kind": "vector3_f32",
+            "x": 2,
+            "y": 12,
+            "z": 2
+          },
+          "Transparency": {
+            "kind": "number_f32",
+            "value": 0
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "forge_attribute:orbital-airlock-observation-deck",
+        "identity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-observation-deck"
+        },
+        "path": "Workspace/PreservedScenery/ObservationDeck",
+        "name": "ObservationDeck",
+        "parentIdentity": {
+          "kind": "forge_attribute",
+          "stableId": "orbital-airlock-preserved-scenery"
+        },
+        "className": "Part",
+        "properties": {
+          "Anchored": {
+            "kind": "boolean",
+            "value": true
+          },
+          "AssemblyAngularVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AssemblyLinearVelocity": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "AudioCanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "BrickColor": {
+            "kind": "brick_color",
+            "name": "Earth blue"
+          },
+          "CFrame": {
+            "components": [20, 2, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "CanCollide": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanQuery": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CanTouch": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CastShadow": {
+            "kind": "boolean",
+            "value": true
+          },
+          "CollisionGroup": {
+            "kind": "string_utf8",
+            "value": "Default"
+          },
+          "Color": {
+            "b": 82,
+            "g": 51,
+            "kind": "color3_rgb8",
+            "r": 26
+          },
+          "CustomPhysicalProperties": {
+            "expectedCodec": "physical_properties",
+            "kind": "nil"
+          },
+          "EnableFluidForces": {
+            "kind": "boolean",
+            "value": true
+          },
+          "Locked": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Massless": {
+            "kind": "boolean",
+            "value": false
+          },
+          "Material": {
+            "kind": "enum_name",
+            "value": "Plastic"
+          },
+          "PivotOffset": {
+            "components": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "kind": "cframe_f32x12"
+          },
+          "Reflectance": {
+            "kind": "number_f32",
+            "value": 0
+          },
+          "RootPriority": {
+            "kind": "int32",
+            "value": 0
+          },
+          "Rotation": {
+            "kind": "vector3_f32",
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "Shape": {
+            "kind": "enum_name",
+            "value": "Block"
+          },
+          "Size": {
+            "kind": "vector3_f32",
+            "x": 12,
+            "y": 1,
+            "z": 16
+          },
+          "Transparency": {
+            "kind": "number_f32",
+            "value": 0
+          }
+        },
+        "attributes": {},
+        "tags": []
+      },
+      {
+        "objectId": "studio_ephemeral:b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f:0c84821dd849ff65dab5f2829b0a3a2788881b3ccc4d56ce1b202d92ef66591c",
+        "identity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "0c84821dd849ff65dab5f2829b0a3a2788881b3ccc4d56ce1b202d92ef66591c"
+        },
+        "path": "Workspace/Terrain",
+        "name": "Terrain",
+        "parentIdentity": {
+          "kind": "studio_ephemeral",
+          "connectorEpoch": "b29dbe331eb22dc6e3771d4d89743a15b670fb4cfc47d0eb5509e1da5b32a11f",
+          "opaqueHash": "237831566e48a492a1e805d6622312699144882962171f203ddf3c8b6bd11637"
+        },
+        "className": "Terrain",
+        "properties": {},
+        "attributes": {},
+        "tags": []
+      }
+    ],
+    "scripts": []
+  }
+}

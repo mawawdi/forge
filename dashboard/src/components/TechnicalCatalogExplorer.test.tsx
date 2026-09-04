@@ -50,6 +50,6 @@ describe("TechnicalCatalogExplorer", () => {
     fireEvent.change(screen.getByLabelText("API search"), { target: { value: "ActionText" } });
     fireEvent.click(screen.getByRole("button", { name: "Inspect API coverage" }));
     expect(await screen.findByText("ProximityPrompt · ActionText · property")).toBeVisible();
-    expect(screen.getByText("authorable · proof_closed")).toBeVisible();
+    expect(screen.getByText("Forge can edit this directly")).toBeVisible();
   });
 });

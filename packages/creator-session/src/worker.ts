@@ -16,6 +16,8 @@ import type {
   VerifiedSourceResolver,
 } from "../../source-intelligence/src/index.js";
 import {
+  CreatorBuilderToolHost,
+  creatorBuilderSystemPrompt,
   creatorOrientation,
   runCreatorBuilder,
   runCreatorPlanner,
@@ -86,6 +88,11 @@ export interface CreatorWorkerSourceEvidence {
   consultationArtifact: ArtifactReference;
 }
 export type CreatorWorkerBuildResult =
+  | {
+      status: "preparation_failed";
+      failure: { stage: "preparation"; code: string; detail: string };
+      diagnostic: ArtifactReference;
+    }
   | {
       status: "sealed";
       buildContract: CreatorBuildContract;
@@ -237,6 +244,26 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
     const artifactStore = new ImmutableJsonArtifactStore(resolve(this.directory));
     const journalStore = new AgentExecutionJournalStore(artifactStore);
     await executionJournalResume(journalStore, input.execution, false);
+    try {
+      const prepared = new CreatorBuilderToolHost(input);
+      creatorBuilderSystemPrompt(input.plan, prepared.contract, input.verificationFeedback);
+    } catch (error) {
+      const failure = {
+        stage: "preparation" as const,
+        code: "BUILD_PREPARATION_FAILED",
+        detail: error instanceof Error ? error.message : String(error),
+      };
+      const diagnostic = await artifactStore.write({
+        kind: "CreatorPreparationDiagnostic",
+        execution: input.execution,
+        planId: input.plan.id,
+        planHash: input.plan.hash,
+        approvalHash: input.planApproval.hash,
+        revisionHash: input.session.currentRevisionHash,
+        failure,
+      });
+      return { status: "preparation_failed", failure, diagnostic };
+    }
     const result = await runCreatorBuilder({
       session: input.session,
       ownership: input.ownership,

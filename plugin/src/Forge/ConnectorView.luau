@@ -91,7 +91,7 @@ function ConnectorView.new(plugin: Plugin, options: {
 		return node
 	end
 
-	local widget = plugin:CreateDockWidgetPluginGuiAsync("ForgeStudio", DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, true, false, 380, 510, 280, 300))
+	local widget = plugin:CreateDockWidgetPluginGuiAsync("ForgeStudio", DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, true, false, 380, 320, 280, 180))
 	widget.Title = "Forge"
 	widget.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	local toolbar = plugin:CreateToolbar("Forge")
@@ -109,13 +109,13 @@ function ConnectorView.new(plugin: Plugin, options: {
 	local mark = create("TextLabel", { Name = "ForgeMark", Position = UDim2.fromOffset(20, 18), Size = UDim2.fromOffset(29, 29), BackgroundColor3 = colors.surface, BorderSizePixel = 0, Text = "F", Font = Enum.Font.BuilderSansBold, TextSize = 19, TextColor3 = colors.accent }, header)
 	corner(mark, 9)
 	create("TextLabel", { Position = UDim2.fromOffset(60, 14), Size = UDim2.new(1, -158, 0, 23), BackgroundTransparency = 1, Text = "Forge", TextSize = 18, Font = Enum.Font.BuilderSansBold, TextColor3 = colors.text, TextXAlignment = Enum.TextXAlignment.Left }, header)
-	create("TextLabel", { Position = UDim2.fromOffset(60, 37), Size = UDim2.new(1, -158, 0, 16), BackgroundTransparency = 1, Text = "Studio", TextSize = 11, Font = Enum.Font.BuilderSans, TextColor3 = colors.muted, TextXAlignment = Enum.TextXAlignment.Left }, header)
 	local scroll = create("ScrollingFrame", { Name = "WorkspaceContent", Position = UDim2.fromOffset(0, 64), Size = UDim2.new(1, 0, 1, -64), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = colors.line, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y }, root)
-	padding(scroll, 20)
-	local content = frame(scroll, "Content", 1); stack(content, 18)
-	local project = frame(content, "Project", 1); stack(project, 7)
+	padding(scroll, 12)
+	local content = frame(scroll, "Content", 1); stack(content, 10)
+	content.Size = UDim2.new(1, -24, 0, 0)
+	local project = frame(content, "Project", 1); stack(project, 7); project.Visible = false
 	local projectName = label(project, "ProjectName", game.Name, 15, colors.text, 1)
-	projectName.Font = Enum.Font.BuilderSansMedium
+	projectName.Parent = header; projectName.Font = Enum.Font.BuilderSans; projectName.TextSize = 11; projectName.TextColor3 = colors.muted; projectName.Position = UDim2.fromOffset(60, 37); projectName.Size = UDim2.new(1, -174, 0, 16); projectName.AutomaticSize = Enum.AutomaticSize.None; projectName.TextTruncate = Enum.TextTruncate.AtEnd; projectName.TextWrapped = false
 	connect(game:GetPropertyChangedSignal("Name"), function() projectName.Text = game.Name end)
 	local connectionRow = create("Frame", { Name = "Connection", LayoutOrder = 2, Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1 }, project)
 	local dot = create("Frame", { Position = UDim2.fromOffset(0, 7), Size = UDim2.fromOffset(6, 6), BackgroundColor3 = colors.muted, BorderSizePixel = 0 }, connectionRow); corner(dot, 3)
@@ -123,9 +123,9 @@ function ConnectorView.new(plugin: Plugin, options: {
 	connectionLabel.Position = UDim2.fromOffset(14, 1); connectionLabel.Size = UDim2.new(1, -14, 0, 18); connectionLabel.AutomaticSize = Enum.AutomaticSize.None
 	local statusCard = frame(content, "CurrentActivity", 2)
 	statusCard.BackgroundColor3 = colors.surface; statusCard.BackgroundTransparency = 0; statusCard.BorderSizePixel = 0
-	corner(statusCard, 14); padding(statusCard, 18); stack(statusCard, 10)
-	local statusTitle = label(statusCard, "StatusTitle", "", 23, colors.text, 1); statusTitle.Font = Enum.Font.BuilderSansMedium
-	local statusDescription = label(statusCard, "StatusDescription", "", 14, colors.muted, 2)
+	corner(statusCard, 10); padding(statusCard, 12); stack(statusCard, 8)
+	local statusTitle = label(statusCard, "StatusTitle", "", 18, colors.text, 1); statusTitle.Font = Enum.Font.BuilderSansMedium
+	local statusDescription = label(statusCard, "StatusDescription", "", 13, colors.muted, 2)
 	local primary = button(content, "Connect", "Connect", 3, true, options.onConnection)
 	local run = button(content, "RunApprovedTest", "Run approved test", 4, true, options.onRunTest); run.Visible = false
 	local setup = frame(content, "SetupHelp", 5); stack(setup, 9)
@@ -149,6 +149,7 @@ function ConnectorView.new(plugin: Plugin, options: {
 	local body = create("ScrollingFrame", { Name = "SettingsContent", Position = UDim2.fromOffset(0, 116), Size = UDim2.new(1, 0, 1, -116), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = colors.line, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y }, dialog)
 	padding(body, 18)
 	local connectionPanel = frame(body, "ConnectionPanel", 1); stack(connectionPanel, 14)
+	connectionPanel.Size = UDim2.new(1, -36, 0, 0)
 	label(connectionPanel, "ConnectionHeading", "Studio connection", 15, colors.text, 1)
 	label(connectionPanel, "ConnectionHelp", "Forge connects to a service on this computer.", 13, colors.muted, 2)
 	readOnly(connectionPanel, "BridgeAddress", options.bridgeUrl, 3, 52)
@@ -168,6 +169,8 @@ function ConnectorView.new(plugin: Plugin, options: {
 	motionButton.Text = reduceMotion and "Motion: reduced" or "Motion: system"
 	label(connectionPanel, "MotionHelp", "System mode follows your accessibility preference.", 12, colors.muted, 7)
 	local detailPanel = frame(body, "DetailsPanel", 1); stack(detailPanel, 12); detailPanel.Visible = false
+	activity.Parent = detailPanel; activity.LayoutOrder = 4
+	detailPanel.Size = UDim2.new(1, -36, 0, 0)
 	label(detailPanel, "DetailsHeading", "Connection details", 15, colors.text, 1)
 	label(detailPanel, "DetailsHelp", "Select the text to copy it when reporting a problem.", 12, colors.muted, 2)
 	local diagnostics = readOnly(detailPanel, "Diagnostics", "", 3, 290)
@@ -191,8 +194,11 @@ function ConnectorView.new(plugin: Plugin, options: {
 		settingsOpen = false; overlay.Visible = false; scroll.Visible = true; header.Visible = true
 		if selectedBeforeSettings and selectedBeforeSettings.Parent then GuiService.SelectedObject = selectedBeforeSettings end
 	end
-	closeButton = button(dialogHeader, "CloseSettings", "×", 9, false, closeSettings)
+	closeButton = button(dialogHeader, "CloseSettings", "", 9, false, closeSettings)
 	closeButton.Position = UDim2.new(1, -54, 0, 8); closeButton.Size = UDim2.fromOffset(44, 44)
+	for _, angle in { 45, -45 } do
+		create("Frame", { Name = "CloseIcon", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(16, 2), Rotation = angle, BackgroundColor3 = colors.text, BorderSizePixel = 0, ZIndex = closeButton.ZIndex + 1 }, closeButton)
+	end
 	local function openSettings(tab: string)
 		selectedBeforeSettings = GuiService.SelectedObject
 		settingsOpen = true; overlay.Visible = true; scroll.Visible = false; header.Visible = false
@@ -207,8 +213,6 @@ function ConnectorView.new(plugin: Plugin, options: {
 	end)
 	local settingsButton = button(header, "OpenSettings", "Settings", 1, false, function() openSettings("Connection") end)
 	settingsButton.Position = UDim2.new(1, -100, 0, 10); settingsButton.Size = UDim2.fromOffset(82, 44)
-	button(content, "OpenDetails", "Details", 7, false, function() openSettings("Details") end)
-	label(content, "Footer", "Keep Forge running while you work.", 12, colors.muted, 8)
 	refreshMotion = function()
 		local shouldPulse = widget.Enabled and not settingsOpen and Presentation.status(currentCode).working and not reduceMotion and not GuiService.ReducedMotionEnabled
 		local key = tostring(shouldPulse)
@@ -241,7 +245,7 @@ function ConnectorView.new(plugin: Plugin, options: {
 		run.Visible = testReady; enabled(run, testReady)
 		setup.Visible = connectionMode == "disconnected" or currentCode == "WAITING FOR BRIDGE"
 		activity.Visible = #history > 0
-		for index, row in activityRows do row.Visible = history[index] ~= nil; row.Text = history[index] and "·  " .. history[index] or "" end
+		for index, row in activityRows do row.Visible = history[index] ~= nil; row.Text = history[index] or "" end
 		diagnostics.Text = "Status: " .. currentCode .. "\n\n" .. currentDetail .. "\n\nService: " .. options.bridgeUrl .. "\n\nConnector: " .. options.buildHash
 		if refreshMotion then refreshMotion() end
 	end

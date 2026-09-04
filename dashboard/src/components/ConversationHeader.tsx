@@ -1,15 +1,21 @@
 import type { CreatorDashboardState } from "../types";
+import { Icon } from "./Icon";
+import { robloxPathsInText } from "../../../packages/studio-path/src/index.js";
 
 export function ConversationHeader({
   state,
+  connectionLost,
   onOpenProjects,
   onOpenContext,
   onOpenDetails,
+  projectsVisible,
 }: {
   readonly state: CreatorDashboardState | undefined;
+  readonly connectionLost: boolean | undefined;
   readonly onOpenProjects: (source: HTMLElement) => void;
   readonly onOpenContext: (source: HTMLElement) => void;
   readonly onOpenDetails: (source: HTMLElement) => void;
+  readonly projectsVisible: boolean;
 }): React.JSX.Element {
   const conversation = state?.conversations.find(
     (item) => item.id === state.selectedConversationId,
@@ -25,48 +31,44 @@ export function ConversationHeader({
         <button
           type="button"
           className="header-rail-toggle"
-          aria-label="Open projects"
+          aria-label={projectsVisible ? "Hide projects" : "Open projects"}
+          title={projectsVisible ? "Hide projects (⌘/Ctrl B)" : "Show projects (⌘/Ctrl B)"}
+          aria-expanded={projectsVisible}
           onClick={(event) => onOpenProjects(event.currentTarget)}
         >
-          ☰
+          <Icon name="sidebar" size={19} />
         </button>
       </div>
       <div className="conversation-header__title">
         <span>{conversation?.projectName ?? studio?.projectName ?? "Your workspace"}</span>
-        <h1>{conversation?.title ?? "New conversation"}</h1>
+        <h1 title={conversation ? robloxPathsInText(conversation.title) : undefined}>
+          {robloxPathsInText(conversation?.title ?? "New conversation")}
+        </h1>
       </div>
       <div className="conversation-header__studio">
-        <span className={`studio-indicator studio-indicator--${studio?.status ?? "connecting"}`}>
+        <span
+          className={`studio-indicator studio-indicator--${connectionLost ? "connecting" : (studio?.status ?? "connecting")}`}
+        >
           <span aria-hidden="true" />
-          {studioLabel(studio?.status)}
+          {connectionLost ? "Updates paused" : studioLabel(studio?.status)}
         </span>
         <button
           type="button"
           onClick={(event) => onOpenDetails(event.currentTarget)}
           aria-label="Open details"
+          title="Conversation details"
+          className="header-icon-button"
         >
-          Details
+          <Icon name="details" size={19} />
         </button>
         <button
           type="button"
-          className="header-settings"
+          className="header-settings header-icon-button"
           onClick={(event) => onOpenContext(event.currentTarget)}
           aria-label="Project settings"
           title="Project settings"
         >
-          <svg
-            viewBox="0 0 24 24"
-            width="19"
-            height="19"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            aria-hidden="true"
-          >
-            <path d="M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1z" />
-            <circle cx="12" cy="12" r="3" />
-          </svg>
-          <span>Settings</span>
+          <Icon name="settings" size={19} />
         </button>
       </div>
     </header>

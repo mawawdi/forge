@@ -24,6 +24,24 @@ perform no Studio operation. A creator-run Studio canary remains required before
 claiming that this shell has carried a live project through indexing, mutation,
 Play, and review.
 
+## Current conversation flow
+
+A read-only plan offers **Accept plan**, **Change plan**, and **Reject**. Acceptance
+starts Build and Apply together. Each job stays in the conversation beside its
+own result, with public model commentary and a compact chronological disclosure.
+While running, the goal summary shimmers; completed work collapses to its duration.
+Activity expands in the document flow without covering messages or closing when
+the user starts drafting. Plan actions share one icon row attached to the plan;
+changes open an inline editor. Machine checks and transaction
+records stay in Details. A successfully committed build ends with the model's
+Markdown result. The user can immediately continue the same conversation.
+
+Optional Play sessions quietly add bounded server diagnostics to a later request.
+They never create waiting paragraphs, require a final report, or restart the agent.
+Long histories automatically compact into durable model-written handoffs while
+recent messages and the original stored transcript remain intact. Compaction is
+an internal continuity step; summaries do not acquire creator authority.
+
 ## North star
 
 Forge should feel like returning to a Roblox collaborator who knows the project,
@@ -142,6 +160,30 @@ coordinator-produced conversation control read model; the browser does not
 derive workflow legality from status text. One module-level store owns the
 current snapshot, drafts, event-history paging, and a single SSE invalidation
 stream.
+Conversation search opens with Command/Control K, supports keyboard selection,
+and searches both project names and conversation titles. Browser-local pins keep
+frequent conversations first. The sidebar can be hidden, and each conversation
+retains its reading position while the page stays open. A jump-to-latest control
+appears when the creator is reading earlier messages. History paging reports its
+loading state and preserves the reading position when older events arrive.
+
+Conversation and review drafts survive reloads in the same browser tab through
+session storage. Unconfirmed requests are stored with their original JSON bytes
+and idempotency keys, so an explicit retry after reload remains the same request;
+restoration never sends anything automatically. Storage failures leave writing
+available and explain that the tab must remain open. Browser preferences such as
+pins, sidebar visibility, and Enter-to-send behavior are separate from project
+memory and never become agent instructions.
+
+The composer supports expansion, reversible draft clearing, Command/Control Enter
+to send, and Shift Enter for a new line. Typing a new draft while an earlier send
+is awaiting acknowledgement never lets that acknowledgement erase the new text.
+Agent replies and plan prose render GitHub-flavored Markdown, including lists,
+tables, inline code, and copyable code blocks. Raw HTML and remote image loading
+are disabled. Creator messages remain verbatim. Planner, builder, and repair
+instructions request Markdown only in prose fields; typed tool arguments and
+staged source retain their exact required formats.
+
 On a temporary connection failure it leaves the last durable conversation on
 screen. If an action response is ambiguous, it performs one read-only reload
 and never replays the state-changing request automatically. An explicit retry
@@ -346,8 +388,9 @@ The composer includes a compact **Model** selector with these initial choices:
 | GLM 5.3 Flash     | `z-ai/glm-5.3-flash`              |
 | DeepSeek V4 Flash | `deepseek/deepseek-v4-flash-0731` |
 | GPT-5.6 Luna      | `openai/gpt-5.6-luna`             |
+| Gemini 3.8 Flash  | `google/gemini-3.8-flash`         |
 
-`openai/gpt-5.6-luna` is the initial default. This is an exact four-entry,
+`openai/gpt-5.6-luna` is the initial default. This is an exact five-entry,
 host-owned allowlist, not a suggestion list. The list is not hardcoded inside a
 React component: the control server serves a sealed ordered registry with the
 stable labels, default, required `tools` capability, and availability state.
@@ -434,7 +477,7 @@ connection changes; invalid saved test data has an explicit discard action.
 Published and local places have different authority keys. A published place is
 the exact `(universeId, placeId)` pair. A local place has no platform identity
 and cannot start a durable conversation until it carries an observed reserved
-DataModel attribute, `_forgeProjectId`. The dedicated identity protocol is
+Workspace attribute, `_forgeProjectId`. The dedicated identity protocol is
 separate from the generated authoring manifest and permits only two
 host-issued, exact-state operations for a local place:
 
@@ -444,7 +487,7 @@ host-issued, exact-state operations for a local place:
 
 Both operations bind the connector epoch and complete before/after identity
 observations, use their own visible ChangeHistory recording, directly read back
-the DataModel attribute, persist a finalization receipt, and require an exact
+the Workspace attribute, persist a finalization receipt, and require an exact
 host acknowledgement. An opening/open/finalizing identity cursor is recovery,
 not permission to repeat the operation. Identity work cannot overlap a creator
 recording or an unknown Studio recording.
@@ -534,7 +577,10 @@ The detailed view retains exact opaque target identities, display paths,
 properties, UTF-8 edits, hashes, local-gate status, mutation authority, and
 projected readback obligations.
 
-Target actions are **Apply changes** and **Don't apply**.
+Target actions are **Apply changes**, **Request changes**, and **Don't apply**.
+Requesting changes opens a feedback field and starts a new plan after revoking
+the old draft's authority. The successor needs new approvals; an already
+applying or applied change cannot use this refinement path.
 
 ### 6. Handle creator edits
 

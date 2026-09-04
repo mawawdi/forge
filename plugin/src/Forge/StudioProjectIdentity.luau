@@ -1,7 +1,8 @@
 --!strict
 -- Dedicated local-place identity transaction. This authority is intentionally
 -- disjoint from the generated authoring manifest: only an exact host-issued
--- Link/Fork command can write the reserved DataModel attribute.
+-- Link/Fork command can write the reserved Workspace attribute. DataModel
+-- attributes are not serialized with a place and cannot carry durable identity.
 local Constants = if script ~= nil then require(script.Parent.Constants) else require("./Constants")
 local Hash = if script ~= nil then require(script.Parent.Hash) else require("./Hash")
 local Canonical = if script ~= nil then require(script.Parent.StudioProjectIndexCanonical) else require("./StudioProjectIndexCanonical")
@@ -9,7 +10,7 @@ local Canonical = if script ~= nil then require(script.Parent.StudioProjectIndex
 local StudioProjectIdentity = {}
 StudioProjectIdentity.__index = StudioProjectIdentity
 
-local TRANSACTION_SETTING = "ForgeStudioProjectIdentityTransactionV1"
+local TRANSACTION_SETTING = "ForgeStudioProjectIdentityTransactionV2"
 local PROJECT_ID_PATTERN = "^forge_project_[0-9a-f]+$"
 local MAXIMUM_SETTING_MATERIAL_BYTES = 64 * 1024
 
@@ -115,7 +116,7 @@ end
 
 local function observe(root: any): any
 	local project = canonicalProject(projectOf(root))
-	local read, raw = pcall(function() return root:GetAttribute(Constants.PROJECT_IDENTITY_ATTRIBUTE) end)
+	local read, raw = pcall(function() return root:GetService("Workspace"):GetAttribute(Constants.PROJECT_IDENTITY_ATTRIBUTE) end)
 	local attribute: any
 	if not read then
 		attribute = { status = "invalid", valueType = "read_error" }
@@ -345,7 +346,7 @@ local function monitorFact(monitor: any, root: any, beforeIdentity: any, afterId
 	if monitor == nil then return end
 	monitor:expectExactForgeMutationFact({
 		source = "attribute",
-		instance = root,
+		instance = root:GetService("Workspace"),
 		field = Constants.PROJECT_IDENTITY_ATTRIBUTE,
 		matchesBefore = function() return observe(root).hash == beforeIdentity.hash end,
 		matchesAfter = function() return observe(root).hash == afterIdentity.hash end,
@@ -500,7 +501,7 @@ function StudioProjectIdentity:execute(operationValue: any, connectorEpoch: stri
 	local monitorBound, monitorFailure = pcall(function() monitorFact(self.monitor, self.root, before, after) end)
 	if not monitorBound then error("RECOVERY_REQUIRED: project identity monitor binding failed: " .. boundedFailureDetail(monitorFailure)) end
 	local wrote, failure = pcall(function()
-		self.root:SetAttribute(Constants.PROJECT_IDENTITY_ATTRIBUTE, operation.assignedForgeProjectId)
+		self.root:GetService("Workspace"):SetAttribute(Constants.PROJECT_IDENTITY_ATTRIBUTE, operation.assignedForgeProjectId)
 		local observed = self:observe()
 		if Canonical.material(observed) ~= Canonical.material(after) then error("project identity direct readback mismatch") end
 	end)

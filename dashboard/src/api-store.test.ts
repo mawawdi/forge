@@ -89,6 +89,41 @@ describe("CreatorDashboardStore", () => {
     expect(store.draftFor("conversation_01").text).toBe("Keep this request.");
   });
 
+  it("refreshes stale actions without resubmitting or losing the draft", async () => {
+    const requests: string[] = [];
+    const latest = dashboardState();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string) => {
+        requests.push(input);
+        if (input === "/api/control/action")
+          return Promise.resolve(
+            json({ message: "Creator action became stale before durable admission" }, 400),
+          );
+        if (input.startsWith("/api/control/state")) return Promise.resolve(json(latest));
+        throw new Error(`Unexpected request ${input}`);
+      }),
+    );
+    const store = new CreatorDashboardStore();
+    store.updateActionDraft("action:action_01", { text: "Keep this revision." });
+    await expect(
+      store.submitAction({
+        conversationId: "conversation_01",
+        viewId: "control_01",
+        viewHash: HASH_B,
+        actionInstanceId: "action_01",
+        input: {},
+      }),
+    ).rejects.toThrow(
+      "This conversation changed while your request was being sent. Please try again.",
+    );
+    expect(requests).toEqual(["/api/control/action", "/api/control/state"]);
+    expect(store.getSnapshot().data).toEqual(latest);
+    expect(store.getSnapshot().pendingRequest).toBeUndefined();
+    expect(store.actionDraftFor("action:action_01").text).toBe("Keep this revision.");
+    expect(store.getSnapshot().unconfirmedTurns).toEqual([]);
+  });
+
   it("requires an exact 202 before clearing an admitted turn draft", async () => {
     vi.stubGlobal(
       "fetch",
@@ -115,7 +150,7 @@ describe("CreatorDashboardStore", () => {
         text: "Retain this until an exact admission.",
         selectedModelId: "openai/gpt-5.6-luna",
       }),
-    ).rejects.toThrow("requires an exact 202");
+    ).rejects.toThrow("couldn't confirm this request");
 
     expect(store.draftFor("conversation_01").text).toBe("Retain this until an exact admission.");
   });
@@ -149,7 +184,7 @@ describe("CreatorDashboardStore", () => {
         text: "Retain malformed admissions.",
         selectedModelId: "openai/gpt-5.6-luna",
       }),
-    ).rejects.toThrow("valid work admission");
+    ).rejects.toThrow("incomplete confirmation");
 
     expect(store.draftFor("conversation_01").text).toBe("Retain malformed admissions.");
   });
@@ -213,7 +248,7 @@ describe("CreatorDashboardStore", () => {
     };
     store.updateDraft("conversation_01", { text: input.text });
 
-    await expect(store.submitTurn(input)).rejects.toThrow("could not confirm");
+    await expect(store.submitTurn(input)).rejects.toThrow("Delivery wasn't confirmed");
     expect(store.draftFor("conversation_01").text).toBe(input.text);
     await waitFor(() => stateReads === 1 && store.getSnapshot().data !== undefined);
     expect(store.getSnapshot().data!.controlView!.turnContract!.id).toBe("contract_after_job");
@@ -268,7 +303,7 @@ describe("CreatorDashboardStore", () => {
       "Original message.",
       original.modelRegistry.defaultModelId,
     );
-    await expect(store.submitTurn(input)).rejects.toThrow("could not confirm");
+    await expect(store.submitTurn(input)).rejects.toThrow("Delivery wasn't confirmed");
     await waitFor(() => store.getSnapshot().data !== undefined);
     store.updateDraft("conversation_01", { text: "My next message." });
     const retained = store.getSnapshot().unconfirmedTurns![0]!;
@@ -404,7 +439,7 @@ describe("CreatorDashboardStore", () => {
     const changed = { ...first, input: { report: "Use this edited report instead." } };
     store.updateActionDraft("action:action_01", { text: first.input.report });
 
-    await expect(store.submitAction(first)).rejects.toThrow("could not confirm");
+    await expect(store.submitAction(first)).rejects.toThrow("Delivery wasn't confirmed");
     expect(store.actionDraftFor("action:action_01").text).toBe(first.input.report);
     store.updateActionDraft("action:action_01", { text: changed.input.report });
 
@@ -418,6 +453,42 @@ describe("CreatorDashboardStore", () => {
     );
     expect(requests[2]).toBe(requests[0]);
     expect(jobs).toHaveLength(2);
+  });
+
+  it("marks disconnected activity as stale and refreshes on reconnect without losing drafts", async () => {
+    const streams: EventSourceStub[] = [];
+    class EventSourceStub {
+      readyState = 1;
+      onmessage: ((event: MessageEvent<string>) => void) | null = null;
+      onerror: (() => void) | null = null;
+      onopen: (() => void) | null = null;
+      constructor(_url: string) {
+        streams.push(this);
+      }
+      addEventListener(_name: string, _listener: EventListener): void {}
+    }
+    vi.stubGlobal("EventSource", EventSourceStub);
+    const fetch = vi.fn(async () => json(dashboardState()));
+    vi.stubGlobal("fetch", fetch);
+    const store = new CreatorDashboardStore();
+    store.start();
+    await vi.waitFor(() => expect(store.getSnapshot().phase).toBe("ready"));
+    const stream = streams[0]!;
+    store.updateDraft("conversation_01", { text: "Keep my draft." });
+    stream.readyState = 0;
+    stream.onerror?.();
+    expect(store.getSnapshot().connectionLost).toBe(true);
+    expect(store.getSnapshot().data).toBeDefined();
+    stream.readyState = 1;
+    stream.onopen?.();
+    await vi.waitFor(() => expect(store.getSnapshot().connectionLost).toBe(false));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(store.draftFor("conversation_01").text).toBe("Keep my draft.");
+    stream.readyState = 2;
+    stream.onerror?.();
+    expect(store.getSnapshot().connectionLost).toBe(true);
+    expect(store.getSnapshot().error).toContain("latest dashboard link");
+    expect(store.draftFor("conversation_01").text).toBe("Keep my draft.");
   });
 
   it("runs a queued conversation selection refresh after an in-flight refresh", async () => {

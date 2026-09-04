@@ -30,7 +30,17 @@ export interface ModelToolDefinition {
 export interface ModelUsage {
   inputTokens: number | null;
   outputTokens: number | null;
+  reasoningTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
   costUsd: number | null;
+}
+
+export interface ModelRequestSizes {
+  systemInstructions: number;
+  conversation: number;
+  toolSchemas: number;
+  toolResults: number;
 }
 
 export interface ModelTurnRequest {
@@ -107,7 +117,8 @@ export interface ModelClientDescriptor {
       toolNameEncoding: "openai_function_slug";
       maxRetries: 0;
       telemetry: false;
-      timeoutPolicy: "remaining_runtime_budget";
+      timeoutPolicy: "bounded_turn_and_remaining_runtime_budget";
+      maxDurationMsPerTurn: number;
       maxOutputTokensPerTurn: number;
     };
     continuation: { maxBytes: number };

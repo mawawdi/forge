@@ -37,6 +37,7 @@ test("catalog parsing distinguishes confirmed, unavailable, and unconfirmed mode
         { id: CREATOR_MODEL_IDS[0], supported_parameters: ["tools", "tool_choice"] },
         { id: CREATOR_MODEL_IDS[1], supported_parameters: ["temperature"] },
         { id: CREATOR_MODEL_IDS[2] },
+        { id: "google/gemini-3.8-flash", supported_parameters: ["tools", "tool_choice"] },
       ],
     },
     CHECKED_AT,
@@ -65,6 +66,11 @@ test("catalog parsing distinguishes confirmed, unavailable, and unconfirmed mode
         status: "unavailable",
         reason: "model_not_listed",
       },
+      {
+        modelId: "google/gemini-3.8-flash",
+        status: "available",
+        reason: "catalog_confirmed",
+      },
     ],
   );
   assert.equal(
@@ -76,6 +82,10 @@ test("catalog parsing distinguishes confirmed, unavailable, and unconfirmed mode
     "model_not_allowlisted",
   );
   assert.equal(resolveCreatorModelSelection(DEFAULT_CREATOR_MODEL_ID).availability, "unconfirmed");
+  assert.equal(
+    resolveCreatorModelSelection("google/gemini-3.8-flash", catalog).definition?.label,
+    "Gemini 3.8 Flash",
+  );
 
   const tampered = structuredClone(catalog);
   tampered.models[0]!.status = "unavailable";

@@ -303,6 +303,13 @@ function deriveManifest(policy, catalog, evidenceContractHash) {
     throw new Error("Pinned Roblox API catalog is invalid");
   if (policy.catalogCommit !== catalog.source?.commit)
     throw new Error("Studio capability policy catalog commit does not match the pinned catalog");
+  const mappedCodecs = new Set(Object.values(policy.codecByApiType ?? {}));
+  for (const codec of Object.keys(CODEC_REFLECTION_ENGINE_TYPES))
+    if (!mappedCodecs.has(codec))
+      throw new Error(`Implemented Studio codec has no API-type mapping: ${codec}`);
+  for (const [apiType, codec] of Object.entries(policy.codecByApiType ?? {}))
+    if (!(codec in CODEC_REFLECTION_ENGINE_TYPES))
+      throw new Error(`Unknown Studio codec mapping: ${apiType} -> ${codec}`);
   const classesByName = new Map(catalog.classes.map((entry) => [entry.name, entry]));
   const datatypesByName = new Map(catalog.datatypes.map((entry) => [entry.name, entry]));
   const enumsByName = new Map(catalog.enums.map((entry) => [entry.name, entry]));
@@ -386,19 +393,13 @@ function deriveManifest(policy, catalog, evidenceContractHash) {
             propertyExclusionReason(exclusion, qualifiedName);
             if (override)
               throw new Error(`Property cannot be both excluded and overridden: ${qualifiedName}`);
-            if (!codec)
-              throw new Error(
-                `Policy excludes a property with no proof-closed codec: ${qualifiedName}`,
-              );
             selectedExclusions.add(qualifiedName);
             continue;
           }
           if (!codec) {
-            if (override)
-              throw new Error(
-                `Policy selects ${qualifiedName} without a proof-closed codec for ${member.valueType}`,
-              );
-            continue;
+            throw new Error(
+              `Uncovered authoring property ${qualifiedName} (${member.valueType}): implement its codec or declare an explicit property exclusion`,
+            );
           }
           selectedOverrides.add(qualifiedName);
           if ((codec === "enum_name") !== (catalogType.category === "enum"))
@@ -615,12 +616,18 @@ function copyPropertyBounds(override) {
     "maximumUtf8Bytes",
     "maximumEntries",
     "nullable",
+    "serialized",
     "referenceClass",
   ];
   const output = {};
   for (const [key, value] of Object.entries(override)) {
     if (!allowed.includes(key)) throw new Error(`Unknown property policy field: ${key}`);
     if (key === "referenceClass") {
+      output[key] = value;
+      continue;
+    }
+    if (key === "serialized") {
+      if (typeof value !== "boolean") throw new Error("Property serialization must be boolean");
       output[key] = value;
       continue;
     }
@@ -696,7 +703,10 @@ function deriveReflectionTypeExpectation(catalogType, codec) {
       enumType: catalogType.name,
     };
   }
-  const engineType = CODEC_REFLECTION_ENGINE_TYPES[codec];
+  // ContentId is a URI string; Content is a distinct engine datatype even
+  // though both use the bounded URI codec on the wire.
+  const engineType =
+    catalogType.name === "ContentId" ? "ContentId" : CODEC_REFLECTION_ENGINE_TYPES[codec];
   if (typeof engineType !== "string" || engineType.length === 0)
     throw new Error(`No ReflectionService EngineType contract for codec ${codec}`);
   const scriptType =
@@ -704,7 +714,7 @@ function deriveReflectionTypeExpectation(catalogType, codec) {
       ? catalogType.name
       : NUMERIC_PRIMITIVE_CATALOG_TYPES.has(catalogType.name)
         ? "number"
-        : catalogType.name === "Content"
+        : catalogType.name === "ContentId"
           ? "string"
           : catalogType.name;
   if (typeof scriptType !== "string" || scriptType.length === 0)
@@ -1605,7 +1615,7 @@ function Generated.canonicalValue(value: any, property: any?): any
 	if kind == "number_f64" then exactKeys(value, { "kind", "value" }); if not finite(value.value) then error("invalid float64") end; return { kind = kind, value = value.value } end
 	if kind == "int32" then exactKeys(value, { "kind", "value" }); if typeof(value.value) ~= "number" or value.value % 1 ~= 0 or value.value < -2147483648 or value.value > 2147483647 then error("invalid int32") end; return { kind = kind, value = value.value } end
 	if kind == "int64_decimal" then exactKeys(value, { "kind", "value" }); return { kind = kind, value = int64Decimal(value.value) } end
-	if kind == "string_utf8" or kind == "content" then exactKeys(value, { "kind", "value" }); if not validUtf8(value.value) or kind == "content" and value.value == "" then error("invalid UTF-8") end; if property and ((property.minimumUtf8Bytes and #value.value < property.minimumUtf8Bytes) or (property.maximumUtf8Bytes and #value.value > property.maximumUtf8Bytes)) then error("string bound") end; return { kind = kind, value = value.value } end
+	if kind == "string_utf8" or kind == "content" then exactKeys(value, { "kind", "value" }); if not validUtf8(value.value) then error("invalid UTF-8") end; if property and ((property.minimumUtf8Bytes and #value.value < property.minimumUtf8Bytes) or (property.maximumUtf8Bytes and #value.value > property.maximumUtf8Bytes)) then error("string bound") end; return { kind = kind, value = value.value } end
 	if kind == "color3_rgb8" then exactKeys(value, { "kind", "r", "g", "b" }); local color = rgb({ r = value.r, g = value.g, b = value.b }, "invalid RGB8"); return { kind = kind, r = color.r, g = color.g, b = color.b } end
 	if kind == "vector2_f32" then exactKeys(value, { "kind", "x", "y" }); local vector = vector2({ x = value.x, y = value.y }, "invalid Vector2"); return { kind = kind, x = vector.x, y = vector.y } end
 	if kind == "vector3_f32" then exactKeys(value, { "kind", "x", "y", "z" }); local vector = vector3({ x = value.x, y = value.y, z = value.z }, "invalid Vector3"); return { kind = kind, x = vector.x, y = vector.y, z = vector.z } end
@@ -1640,6 +1650,7 @@ end
 function Generated.toStudio(codec: any, value: any, property: any?, referenceResolver: any?): any
 	local canonical = Generated.validateValue(codec, value, property)
 	if canonical.kind == "nil" then return nil end
+	if codec == "content" and property and property.catalogType.category == "datatype" then return Content.fromUri(canonical.value) end
 	if codec == "boolean" or codec == "number_f32" or codec == "number_f64" or codec == "int32" or codec == "string_utf8" or codec == "content" then return canonical.value end
 	if codec == "int64_decimal" then local number = tonumber(canonical.value); if number == nil or number % 1 ~= 0 or math.abs(number) > 9007199254740991 then error("int64 is not exactly representable by Luau") end; return number end
 	if codec == "color3_rgb8" then return Color3.fromRGB(canonical.r, canonical.g, canonical.b) end
@@ -1677,6 +1688,11 @@ function Generated.fromStudio(codec: any, value: any, referenceEncoder: any?, pr
 	if value == nil then
 		if property == nil or property.nullable ~= true then error("nil Studio value is not declared for property") end
 		return Generated.canonicalValue({ kind = "nil", expectedCodec = codec }, property)
+	end
+	if codec == "content" and property and property.catalogType.category == "datatype" then
+		if value.SourceType == Enum.ContentSourceType.None then return Generated.canonicalValue({ kind = codec, value = "" }, property) end
+		if value.SourceType ~= Enum.ContentSourceType.Uri then error("Only URI content can be captured; object-backed and opaque assets require a separate content authority") end
+		return Generated.canonicalValue({ kind = codec, value = value.Uri }, property)
 	end
 	if codec == "boolean" or codec == "number_f32" or codec == "number_f64" or codec == "int32" or codec == "string_utf8" or codec == "content" then return Generated.canonicalValue({ kind = codec, value = value }) end
 	if codec == "int64_decimal" then if typeof(value) ~= "number" or value % 1 ~= 0 or math.abs(value) > 9007199254740991 then error("int64 readback is not exactly representable by Luau") end; return Generated.canonicalValue({ kind = codec, value = string.format("%.0f", value) }) end

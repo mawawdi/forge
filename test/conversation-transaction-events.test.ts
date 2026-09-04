@@ -1,16 +1,176 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { contentHash, stableJson } from "../packages/contracts/src/index.js";
-import { transactionMilestoneEvents } from "../packages/creator-control/src/conversation-coordinator.js";
+import {
+  episodeStatusForSession,
+  transactionMilestoneEvents,
+} from "../packages/creator-control/src/conversation-coordinator.js";
+import { isEpisodeStatusTransition } from "../packages/creator-conversation/src/store.js";
+import {
+  CREATOR_SESSION_TRANSITIONS,
+  type CreatorSessionStatus,
+} from "../packages/creator-session/src/index.js";
 import type {
   CreatorConversationEvent,
   CreatorWorkEpisode,
 } from "../packages/creator-conversation/src/index.js";
+import { creatorTerminalOutputKey } from "../packages/creator-conversation/src/contracts.js";
 import type { CreatorSessionBundle } from "../packages/creator-session/src/index.js";
 import type { ArtifactReference } from "../packages/artifact-store/src/index.js";
 
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
+
+test("rewriting a failure's display copy cannot republish the same immutable outcome", () => {
+  const original = {
+    episodeId: "episode_failed",
+    binding: { sessionId: "session_failed", sessionHash: HASH_A },
+    projectRevisionHash: HASH_B,
+    data: {
+      outcome: "incomplete" as const,
+      message: "Could not finish.",
+      studioHasAcceptedResult: false,
+    },
+  };
+  const reworded = {
+    ...original,
+    data: { ...original.data, message: "The interrupted change is closed." },
+  };
+  assert.equal(creatorTerminalOutputKey(original), creatorTerminalOutputKey(reworded));
+  assert.notEqual(
+    creatorTerminalOutputKey(original),
+    creatorTerminalOutputKey({
+      ...reworded,
+      binding: { ...original.binding, sessionHash: HASH_B },
+    }),
+  );
+});
+
+test("completed builds publish one model-authored Markdown result without inventing Play verification", async () => {
+  const bundle = {
+    session: {
+      id: "creator_session_completed",
+      hash: HASH_A,
+      status: "completed",
+      currentRevisionHash: HASH_B,
+    },
+    changeSets: [
+      {
+        id: "change_set_completed",
+        hash: HASH_B,
+        operations: [],
+        summary: "Built **controls**.\\n\\nTry them in Studio.",
+      },
+    ],
+    mutationAttempts: [],
+    verifications: [],
+  } as unknown as CreatorSessionBundle;
+  const events = await transactionMilestoneEvents({
+    bundle,
+    episode,
+    existingEvents: [],
+    writeArtifact,
+    readArtifact: async () => undefined,
+  });
+  const result = events.find((event) => event.eventType === "terminal_output");
+  assert.equal(result?.authority, "agent");
+  assert.equal(result?.data.outcome, "completed");
+  assert.equal(result?.data.message, bundle.changeSets[0]!.summary);
+  assert.equal(result?.data.studioHasAcceptedResult, false);
+  assert.equal(
+    events.some((event) => ["verification", "playtest", "final_review"].includes(event.eventType)),
+    false,
+  );
+  const persisted = events.map((event, index) => conversationEvent(event, index + 1));
+  const afterCleanup = {
+    ...bundle,
+    session: { ...bundle.session, hash: "c".repeat(64) },
+  };
+  assert.deepEqual(
+    await transactionMilestoneEvents({
+      bundle: afterCleanup,
+      episode,
+      existingEvents: persisted,
+      writeArtifact,
+      readArtifact: async () => undefined,
+    }),
+    [],
+    "Finalization acknowledgements must not publish the same reply again",
+  );
+  const next = await transactionMilestoneEvents({
+    bundle: afterCleanup,
+    episode: { ...episode, id: "creator_episode_next" },
+    existingEvents: persisted,
+    writeArtifact,
+    readArtifact: async () => undefined,
+  });
+  assert.equal(
+    next.filter((event) => event.eventType === "terminal_output").length,
+    1,
+    "The same text in a different turn remains a separate reply",
+  );
+});
+
+test("every authoritative transaction edge remains readable in its conversation", () => {
+  for (const [from, destinations] of Object.entries(CREATOR_SESSION_TRANSITIONS)) {
+    for (const to of destinations) {
+      assert.ok(
+        isEpisodeStatusTransition(
+          episodeStatusForSession(from as CreatorSessionStatus),
+          episodeStatusForSession(to),
+        ),
+        `${from} -> ${to}`,
+      );
+    }
+  }
+  assert.equal(episodeStatusForSession("refreshing"), "refreshing");
+  assert.equal(isEpisodeStatusTransition("accepted", "building"), false);
+  assert.equal(isEpisodeStatusTransition("observing_play", "applying"), false);
+});
+
+test("preparation failure remains the displayed cause after restoring a transaction", async () => {
+  const failure = {
+    stage: "preparation" as const,
+    code: "BUILD_PREPARATION_FAILED",
+    detail: "The approved change could not be prepared.",
+  };
+  const bundle = {
+    session: {
+      id: "creator_session_preparation",
+      hash: HASH_A,
+      status: "incomplete",
+      currentRevisionHash: HASH_B,
+    },
+    preparationFailure: {
+      failure,
+      execution: { agentRunId: "agent_run_never_dispatched" },
+      diagnostic: artifactReference(HASH_B),
+    },
+    agentRuns: [{ outcome: { status: "sealed" }, phase: "creator_planner" }],
+    changeSets: [],
+    mutationAttempts: [],
+    verifications: [],
+  } as unknown as CreatorSessionBundle;
+  const options = {
+    bundle,
+    episode,
+    existingEvents: [],
+    writeArtifact,
+    readArtifact: async () => {
+      throw new Error("A preparation failure has no AgentRun");
+    },
+  };
+  const events = await transactionMilestoneEvents(options);
+  assert.equal(events.length, 1);
+  assert.equal(events[0]!.eventType, "terminal_output");
+  if (events[0]!.eventType !== "terminal_output") return;
+  assert.equal(events[0]!.data.message, `Build could not start: ${failure.detail}`);
+  assert.equal(events[0]!.attachments[0]!.binding.artifact.artifactHash, HASH_B);
+  assert.deepEqual(
+    await transactionMilestoneEvents({ ...options, bundle: structuredClone(bundle) }),
+    events,
+  );
+});
 
 const episode: CreatorWorkEpisode = {
   kind: "CreatorWorkEpisode",
@@ -152,6 +312,24 @@ test("a completed mutation card and a Play-state card coexist without polling ch
     readArtifact: async () => undefined,
   });
   assert.deepEqual(stable, []);
+  const history = first.map((event, index) => conversationEvent(event, index + 1));
+  history.push({
+    ...history.at(-1)!,
+    id: "creator_event_intervening_host_progress",
+    sequence: history.length + 1,
+    eventType: "source_sync",
+    data: { status: "awaiting", message: "Host progress between Play snapshots" },
+  });
+  assert.deepEqual(
+    await transactionMilestoneEvents({
+      bundle,
+      episode,
+      existingEvents: history,
+      writeArtifact,
+      readArtifact: async () => undefined,
+    }),
+    [],
+  );
 });
 
 async function writeArtifact(value: unknown): Promise<ArtifactReference> {
@@ -163,6 +341,54 @@ async function writeArtifact(value: unknown): Promise<ArtifactReference> {
     bytes: Buffer.byteLength(text, "utf8"),
   };
 }
+
+test("activity between project notifications does not republish the same refresh warning", async () => {
+  const bundle = {
+    session: {
+      id: episode.sessionBundle.id,
+      hash: HASH_A,
+      status: "refresh_required",
+      currentRevisionHash: HASH_B,
+    },
+    changeSets: [],
+    mutationAttempts: [],
+    verifications: [],
+  } as unknown as CreatorSessionBundle;
+  const first = await transactionMilestoneEvents({
+    bundle,
+    episode,
+    existingEvents: [],
+    writeArtifact,
+    readArtifact: async () => undefined,
+  });
+  assert.equal(first.filter((event) => event.eventType === "project_change").length, 1);
+  const events = first.map((event, index) => conversationEvent(event, index + 1));
+  events.push(
+    conversationEvent(
+      {
+        authority: "forge",
+        episodeId: episode.id,
+        eventType: "activity",
+        data: {
+          phase: "building",
+          status: "running",
+          message: "Working",
+          job: artifactBinding("job-1", HASH_A),
+        },
+        attachments: [],
+      },
+      events.length + 1,
+    ),
+  );
+  const repeated = await transactionMilestoneEvents({
+    bundle,
+    episode,
+    existingEvents: events,
+    writeArtifact,
+    readArtifact: async () => undefined,
+  });
+  assert.equal(repeated.filter((event) => event.eventType === "project_change").length, 0);
+});
 
 function artifactBinding(id: string, hash: string) {
   return { id, hash, artifact: artifactReference(hash) };

@@ -51,11 +51,48 @@ function response(message: Record<string, unknown>, finishReason: string, id: st
       choices: [
         { index: 0, finish_reason: finishReason, message: { role: "assistant", ...message } },
       ],
-      usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16, cost: 0.002 },
+      usage: {
+        prompt_tokens: 12,
+        completion_tokens: 4,
+        total_tokens: 16,
+        cost: 0.002,
+        prompt_tokens_details: { cached_tokens: 8 },
+        completion_tokens_details: { reasoning_tokens: 2 },
+      },
     }),
     { status: 200, headers: { "content-type": "application/json" } },
   );
 }
+
+test("tool calls cannot conceal provider truncation or refusal", async () => {
+  for (const [finishReason, expected] of [
+    ["length", "max_tokens"],
+    ["content_filter", "refusal"],
+  ]) {
+    const client = new OpenRouterModelClient({
+      apiKey: "test-key",
+      fetchImpl: async () =>
+        response(
+          {
+            content: null,
+            tool_calls: [
+              {
+                id: "partial",
+                type: "function",
+                function: { name: "project_list", arguments: "{}" },
+              },
+            ],
+          },
+          finishReason!,
+          "response-truncated",
+        ),
+    });
+    const result = await client.complete(REQUEST);
+    assert.equal(result.kind, "assistant");
+    if (result.kind !== "assistant") throw new Error("Expected provider response evidence");
+    assert.equal(result.stopReason, expected);
+  }
+});
 
 test("AI SDK Core sends one locked-down OpenRouter step and replays opaque reasoning continuation", async () => {
   const bodies: Array<Record<string, unknown>> = [];
@@ -91,7 +128,14 @@ test("AI SDK Core sends one locked-down OpenRouter step and replays opaque reaso
     { id: "call-1", name: "project.list", arguments: {} },
   ]);
   assert.equal(first.stopReason, "tool_calls");
-  assert.deepEqual(first.usage, { inputTokens: 12, outputTokens: 4, costUsd: 0.002 });
+  assert.deepEqual(first.usage, {
+    reasoningTokens: 2,
+    cacheReadTokens: 8,
+    cacheWriteTokens: null,
+    inputTokens: 12,
+    outputTokens: 4,
+    costUsd: 0.002,
+  });
   assert.equal(first.responseFacts.requestedModel, DEFAULT_CREATOR_MODEL_ID);
   assert.equal(first.responseFacts.resolvedModel, DEFAULT_CREATOR_MODEL_ID);
   assert.equal(first.responseFacts.servingProvider, "OpenAI");
@@ -400,7 +444,28 @@ test("timeouts and malformed HTTP envelopes remain pre-trial provider failures",
       }),
   }).complete(REQUEST);
   assert.equal(malformed.kind, "provider_error");
-  if (malformed.kind === "provider_error") assert.equal(malformed.responseFacts.responseId, null);
+  if (malformed.kind === "provider_error") {
+    assert.equal(malformed.responseFacts.responseId, null);
+    assert.equal(malformed.errorClass, "invalid_response_schema");
+    assert.doesNotMatch(malformed.message, /HTTP 200/);
+  }
+  const errorEnvelope = await new OpenRouterModelClient({
+    apiKey: "secret",
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({ error: { code: 502, message: "sensitive provider details" } }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+  }).complete(REQUEST);
+  assert.equal(errorEnvelope.kind, "provider_error");
+  if (errorEnvelope.kind === "provider_error") {
+    assert.equal(errorEnvelope.errorClass, "provider_response_error_502");
+    assert.equal(errorEnvelope.message, "OpenRouter returned an error response (code 502).");
+    assert.doesNotMatch(errorEnvelope.message, /sensitive/);
+  }
 });
 
 test("AI SDK parses envelopes while Forge retains semantic tool-argument authority", async () => {

@@ -7,6 +7,32 @@ import {
 } from "../packages/creator-control/src/agent-failure.js";
 
 test("failed planner publication and journal activity preserve the actual stopping reason", () => {
+  assert.equal(
+    agentFailureMessage({
+      error: "http_404: OpenRouter request failed with HTTP 404.",
+      toolCalls: [],
+    }),
+    "This model is currently unavailable from the provider. Choose a different model to continue.",
+  );
+  assert.equal(
+    agentFailureMessage({
+      error: "provider_response_error_502: OpenRouter returned an error response (code 502).",
+      toolCalls: [],
+    }),
+    "The model provider returned an unusable response. Try again or choose a different model.",
+  );
+  assert.match(
+    agentFailureMessage({ failureCode: "MODEL_RESPONSE_TRUNCATED", toolCalls: [] }),
+    /response was cut off/,
+  );
+  assert.equal(
+    agentFailureMessage({
+      failureCode: "RUNTIME_BUDGET_EXHAUSTED",
+      error: "maxInputTokens",
+      toolCalls: [],
+    }),
+    "This run reached its usage limit before the work was ready. Start another attempt to continue.",
+  );
   // Reproduce the observed failure boundary, without invoking a model or Studio.
   const toolCall: ToolCallRecord = {
     sequence: 39,

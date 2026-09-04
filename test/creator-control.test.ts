@@ -64,6 +64,9 @@ function fakeCoordinator(
         acceptedAt: "2026-09-03T00:00:00.000Z",
       };
     },
+    async renameWorkspace() {
+      return { name: "Renamed project" };
+    },
     async readAuthorizedArtifact(hash) {
       if (hash !== "a".repeat(64)) throw new Error("unauthorized");
       return { safe: true };

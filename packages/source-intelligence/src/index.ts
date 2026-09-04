@@ -2196,7 +2196,9 @@ function cursorOffset(
   try {
     parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
   } catch {
-    fail("Source cursor is malformed");
+    fail(
+      "Source cursor is malformed. Omit cursor for the first page; otherwise copy nextCursor from the same tool with unchanged query/document and options.",
+    );
   }
   if (
     !isRecord(parsed) ||
@@ -2208,7 +2210,9 @@ function cursorOffset(
     Number(parsed.offset) > total ||
     !isHash(parsed.integrity)
   )
-    fail("Source cursor is invalid for this query");
+    fail(
+      "Source cursor is invalid for this query. Omit cursor to restart; otherwise copy nextCursor from the same tool with unchanged query/document and options.",
+    );
   const material = {
     kind,
     indexHash: index.hash,

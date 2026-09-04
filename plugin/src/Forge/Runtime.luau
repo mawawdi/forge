@@ -17,6 +17,7 @@ local StudioProjectChangeMonitor = require(script.Parent.StudioProjectChangeMoni
 local StudioProjectAuthority = require(script.Parent.StudioProjectAuthority)
 local StudioProjectIdentity = require(script.Parent.StudioProjectIdentity)
 local StudioSemanticTransport = require(script.Parent.StudioSemanticTransport)
+local PlaytestContext = require(script.Parent.PlaytestContext)
 
 local Runtime = {}
 
@@ -40,6 +41,7 @@ end
 -- arm; this path deliberately does not pair, create a widget, or touch a
 -- place object.  Play Client is excluded by Main.server.luau.
 function Runtime.startPassive(plugin: Plugin)
+  pcall(function() PlaytestContext.start(plugin, Generated.connectorBuildHash) end)
 	local contextOk, arm = pcall(function() return RuntimeCapabilityExecutor.passiveContext(plugin) end)
 	if not contextOk then return end
 	if not arm then
@@ -1382,6 +1384,13 @@ function Runtime.start(plugin: Plugin)
 					if not passiveResume and os.clock() >= nextHeartbeat then
 						local recovery = authoring:recovery()
 						local observedIdentity = projectIdentity:observe()
+						if projectId and currentProjectRevision then
+							pcall(function()
+								PlaytestContext.configure(plugin, projectId, currentProjectRevision, Generated.connectorBuildHash)
+								local observation = PlaytestContext.pending(plugin, projectId, Generated.connectorBuildHash)
+								if observation and postMessage(messageFor("StudioPlaytestObserved", observation, nil, observation.observationId, observation.endedAt)) then PlaytestContext.acknowledge(plugin, observation.observationId) end
+							end)
+						end
 						local sent = send("Heartbeat", { project = observedIdentity.project, projectIdentity = observedIdentity, manifestHash = Generated.manifestHash, currentProjectIndexManifestId = currentProjectIndexManifestId, currentProjectRevisionHash = currentProjectRevision, activeRecording = recovery.recording and recovery.recording or nil })
 						if sent then adoptProjectIdentity(observedIdentity) end
 						nextHeartbeat = os.clock() + 15

@@ -1,8 +1,8 @@
 {
   "kind": "StudioCapabilityCoverageReport",
   "catalogHash": "142406530e50b9c65fee0d7792e48aa22001e8697399820b43382dc5fdfe490e",
-  "policyHash": "0d049865294d384a90c1c4add2b8dea946c723d155b2ff4e3423f3a835978d04",
-  "manifestHash": "c87e33dbcc0774c4ec6bb04156b284aa800feaa5fd14abe500bff7d73a921889",
+  "policyHash": "fda9d068eca83cee5a6ac5e0130277358f1675de1f94327f110d06066bfafba2",
+  "manifestHash": "e145a9818afc436b7ebb18d1cb467049dcfbb06878fcb71e906491f2aad781d8",
   "entries": [
     {
       "catalogEntryId": "class_member:Accessory:property:AccessoryType",
@@ -5763,9 +5763,13 @@
       "entryKind": "class_property",
       "owner": "Beam",
       "name": "Texture",
-      "disposition": "source_only",
-      "reason": "unsupported_codec",
-      "authoringGroup": "effects_audio"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "effects_audio",
+      "codec": "content",
+      "inheritedBy": [
+        "Beam"
+      ]
     },
     {
       "catalogEntryId": "class_member:Beam:property:TextureLength",
@@ -7020,16 +7024,26 @@
       "entryKind": "class_property",
       "owner": "CanvasGroup",
       "name": "GroupColor3",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "color3_rgb8",
+      "inheritedBy": [
+        "CanvasGroup"
+      ]
     },
     {
       "catalogEntryId": "class_member:CanvasGroup:property:GroupTransparency",
       "entryKind": "class_property",
       "owner": "CanvasGroup",
       "name": "GroupTransparency",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "CanvasGroup"
+      ]
     },
     {
       "catalogEntryId": "class_member:Capture:property:CaptureTime",
@@ -13627,9 +13641,14 @@
       "authoringGroup": "ui",
       "codec": "boolean",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
         "ScreenGui",
+        "ScrollingFrame",
+        "SurfaceGui",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -13653,9 +13672,14 @@
       "authoringGroup": "ui",
       "codec": "instance_ref",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
         "ScreenGui",
+        "ScrollingFrame",
+        "SurfaceGui",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -13670,9 +13694,14 @@
       "authoringGroup": "ui",
       "codec": "enum_name",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
         "ScreenGui",
+        "ScrollingFrame",
+        "SurfaceGui",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -13687,9 +13716,14 @@
       "authoringGroup": "ui",
       "codec": "enum_name",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
         "ScreenGui",
+        "ScrollingFrame",
+        "SurfaceGui",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -13704,9 +13738,14 @@
       "authoringGroup": "ui",
       "codec": "enum_name",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
         "ScreenGui",
+        "ScrollingFrame",
+        "SurfaceGui",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -13721,9 +13760,14 @@
       "authoringGroup": "ui",
       "codec": "enum_name",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
         "ScreenGui",
+        "ScrollingFrame",
+        "SurfaceGui",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -13738,9 +13782,14 @@
       "authoringGroup": "ui",
       "codec": "boolean",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
         "ScreenGui",
+        "ScrollingFrame",
+        "SurfaceGui",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -13851,6 +13900,7 @@
       "authoringGroup": "ui",
       "codec": "boolean",
       "inheritedBy": [
+        "ImageButton",
         "TextButton"
       ]
     },
@@ -13864,6 +13914,7 @@
       "authoringGroup": "ui",
       "codec": "instance_ref",
       "inheritedBy": [
+        "ImageButton",
         "TextButton"
       ]
     },
@@ -13877,6 +13928,7 @@
       "authoringGroup": "ui",
       "codec": "boolean",
       "inheritedBy": [
+        "ImageButton",
         "TextButton"
       ]
     },
@@ -13890,6 +13942,7 @@
       "authoringGroup": "ui",
       "codec": "instance_ref",
       "inheritedBy": [
+        "ImageButton",
         "TextButton"
       ]
     },
@@ -13903,6 +13956,7 @@
       "authoringGroup": "ui",
       "codec": "boolean",
       "inheritedBy": [
+        "ImageButton",
         "TextButton"
       ]
     },
@@ -13916,6 +13970,7 @@
       "authoringGroup": "ui",
       "codec": "enum_name",
       "inheritedBy": [
+        "ImageButton",
         "TextButton"
       ]
     },
@@ -14097,8 +14152,12 @@
       "authoringGroup": "ui",
       "codec": "boolean",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14113,8 +14172,12 @@
       "authoringGroup": "ui",
       "codec": "vector2_f32",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14129,8 +14192,12 @@
       "authoringGroup": "ui",
       "codec": "enum_name",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14154,8 +14221,12 @@
       "authoringGroup": "ui",
       "codec": "color3_rgb8",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14170,8 +14241,12 @@
       "authoringGroup": "ui",
       "codec": "number_f32",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14195,8 +14270,12 @@
       "authoringGroup": "ui",
       "codec": "color3_rgb8",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14211,8 +14290,12 @@
       "authoringGroup": "ui",
       "codec": "enum_name",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14227,8 +14310,12 @@
       "authoringGroup": "ui",
       "codec": "int32",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14243,8 +14330,12 @@
       "authoringGroup": "ui",
       "codec": "boolean",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14286,8 +14377,12 @@
       "authoringGroup": "ui",
       "codec": "boolean",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14302,8 +14397,12 @@
       "authoringGroup": "ui",
       "codec": "int32",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14318,8 +14417,12 @@
       "authoringGroup": "ui",
       "codec": "instance_ref",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14334,8 +14437,12 @@
       "authoringGroup": "ui",
       "codec": "instance_ref",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14350,8 +14457,12 @@
       "authoringGroup": "ui",
       "codec": "instance_ref",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14366,8 +14477,12 @@
       "authoringGroup": "ui",
       "codec": "instance_ref",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14382,8 +14497,12 @@
       "authoringGroup": "ui",
       "codec": "udim2",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14398,8 +14517,12 @@
       "authoringGroup": "ui",
       "codec": "number_f32",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14414,8 +14537,12 @@
       "authoringGroup": "ui",
       "codec": "boolean",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14430,8 +14557,12 @@
       "authoringGroup": "ui",
       "codec": "instance_ref",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14446,8 +14577,12 @@
       "authoringGroup": "ui",
       "codec": "int32",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14462,8 +14597,12 @@
       "authoringGroup": "ui",
       "codec": "udim2",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14478,8 +14617,12 @@
       "authoringGroup": "ui",
       "codec": "enum_name",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14503,8 +14646,12 @@
       "authoringGroup": "ui",
       "codec": "boolean",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -14519,8 +14666,12 @@
       "authoringGroup": "ui",
       "codec": "int32",
       "inheritedBy": [
+        "CanvasGroup",
         "Frame",
+        "ImageButton",
         "ImageLabel",
+        "ScrollingFrame",
+        "TextBox",
         "TextButton",
         "TextLabel"
       ]
@@ -17570,64 +17721,104 @@
       "entryKind": "class_property",
       "owner": "ImageButton",
       "name": "HoverImage",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "content",
+      "inheritedBy": [
+        "ImageButton"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageButton:property:HoverImageContent",
       "entryKind": "class_property",
       "owner": "ImageButton",
       "name": "HoverImageContent",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "content",
+      "inheritedBy": [
+        "ImageButton"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageButton:property:Image",
       "entryKind": "class_property",
       "owner": "ImageButton",
       "name": "Image",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "content",
+      "inheritedBy": [
+        "ImageButton"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageButton:property:ImageColor3",
       "entryKind": "class_property",
       "owner": "ImageButton",
       "name": "ImageColor3",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "color3_rgb8",
+      "inheritedBy": [
+        "ImageButton"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageButton:property:ImageContent",
       "entryKind": "class_property",
       "owner": "ImageButton",
       "name": "ImageContent",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "content",
+      "inheritedBy": [
+        "ImageButton"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageButton:property:ImageRectOffset",
       "entryKind": "class_property",
       "owner": "ImageButton",
       "name": "ImageRectOffset",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "vector2_f32",
+      "inheritedBy": [
+        "ImageButton"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageButton:property:ImageRectSize",
       "entryKind": "class_property",
       "owner": "ImageButton",
       "name": "ImageRectSize",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "vector2_f32",
+      "inheritedBy": [
+        "ImageButton"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageButton:property:ImageTransparency",
       "entryKind": "class_property",
       "owner": "ImageButton",
       "name": "ImageTransparency",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "ImageButton"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageButton:property:IsLoaded",
@@ -17635,63 +17826,99 @@
       "owner": "ImageButton",
       "name": "IsLoaded",
       "disposition": "source_only",
-      "reason": "read_only"
+      "reason": "read_only",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class_member:ImageButton:property:PressedImage",
       "entryKind": "class_property",
       "owner": "ImageButton",
       "name": "PressedImage",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "content",
+      "inheritedBy": [
+        "ImageButton"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageButton:property:PressedImageContent",
       "entryKind": "class_property",
       "owner": "ImageButton",
       "name": "PressedImageContent",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "content",
+      "inheritedBy": [
+        "ImageButton"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageButton:property:ResampleMode",
       "entryKind": "class_property",
       "owner": "ImageButton",
       "name": "ResampleMode",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "ImageButton"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageButton:property:ScaleType",
       "entryKind": "class_property",
       "owner": "ImageButton",
       "name": "ScaleType",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "ImageButton"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageButton:property:SliceCenter",
       "entryKind": "class_property",
       "owner": "ImageButton",
       "name": "SliceCenter",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "rect",
+      "inheritedBy": [
+        "ImageButton"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageButton:property:SliceScale",
       "entryKind": "class_property",
       "owner": "ImageButton",
       "name": "SliceScale",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "ImageButton"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageButton:property:TileSize",
       "entryKind": "class_property",
       "owner": "ImageButton",
       "name": "TileSize",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "udim2",
+      "inheritedBy": [
+        "ImageButton"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageHandleAdornment:property:Image",
@@ -17722,9 +17949,13 @@
       "entryKind": "class_property",
       "owner": "ImageLabel",
       "name": "Image",
-      "disposition": "source_only",
-      "reason": "unsupported_codec",
-      "authoringGroup": "ui"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "content",
+      "inheritedBy": [
+        "ImageLabel"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageLabel:property:ImageColor3",
@@ -17744,9 +17975,13 @@
       "entryKind": "class_property",
       "owner": "ImageLabel",
       "name": "ImageContent",
-      "disposition": "source_only",
-      "reason": "unsupported_codec",
-      "authoringGroup": "ui"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "content",
+      "inheritedBy": [
+        "ImageLabel"
+      ]
     },
     {
       "catalogEntryId": "class_member:ImageLabel:property:ImageRectOffset",
@@ -18917,7 +19152,7 @@
       "owner": "Instance",
       "name": "Capabilities",
       "disposition": "source_only",
-      "reason": "unsupported_codec",
+      "reason": "engine_or_external_authority",
       "authoringGroup": "effects_audio"
     },
     {
@@ -19366,7 +19601,8 @@
       "authoringGroup": "ui",
       "codec": "boolean",
       "inheritedBy": [
-        "ScreenGui"
+        "ScreenGui",
+        "SurfaceGui"
       ]
     },
     {
@@ -19379,7 +19615,8 @@
       "authoringGroup": "ui",
       "codec": "boolean",
       "inheritedBy": [
-        "ScreenGui"
+        "ScreenGui",
+        "SurfaceGui"
       ]
     },
     {
@@ -19392,7 +19629,8 @@
       "authoringGroup": "ui",
       "codec": "enum_name",
       "inheritedBy": [
-        "ScreenGui"
+        "ScreenGui",
+        "SurfaceGui"
       ]
     },
     {
@@ -22756,9 +22994,13 @@
       "entryKind": "class_property",
       "owner": "ParticleEmitter",
       "name": "Texture",
-      "disposition": "source_only",
-      "reason": "unsupported_codec",
-      "authoringGroup": "effects_audio"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "effects_audio",
+      "codec": "content",
+      "inheritedBy": [
+        "ParticleEmitter"
+      ]
     },
     {
       "catalogEntryId": "class_member:ParticleEmitter:property:TimeScale",
@@ -28035,7 +28277,8 @@
       "owner": "ScrollingFrame",
       "name": "AbsoluteCanvasSize",
       "disposition": "source_only",
-      "reason": "read_only"
+      "reason": "read_only",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:AbsoluteWindowSize",
@@ -28043,151 +28286,242 @@
       "owner": "ScrollingFrame",
       "name": "AbsoluteWindowSize",
       "disposition": "source_only",
-      "reason": "read_only"
+      "reason": "read_only",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:AutomaticCanvasSize",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "AutomaticCanvasSize",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:BottomImage",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "BottomImage",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "content",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:BottomImageContent",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "BottomImageContent",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "content",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:CanvasPosition",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "CanvasPosition",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "vector2_f32",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:CanvasSize",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "CanvasSize",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "udim2",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:ElasticBehavior",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "ElasticBehavior",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:HorizontalScrollBarInset",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "HorizontalScrollBarInset",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:MidImage",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "MidImage",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "content",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:MidImageContent",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "MidImageContent",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "content",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:ScrollBarImageColor3",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "ScrollBarImageColor3",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "color3_rgb8",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:ScrollBarImageTransparency",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "ScrollBarImageTransparency",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:ScrollBarThickness",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "ScrollBarThickness",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "int32",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:ScrollingDirection",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "ScrollingDirection",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:ScrollingEnabled",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "ScrollingEnabled",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "boolean",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:TopImage",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "TopImage",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "content",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:TopImageContent",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "TopImageContent",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "content",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:VerticalScrollBarInset",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "VerticalScrollBarInset",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:ScrollingFrame:property:VerticalScrollBarPosition",
       "entryKind": "class_property",
       "owner": "ScrollingFrame",
       "name": "VerticalScrollBarPosition",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "ScrollingFrame"
+      ]
     },
     {
       "catalogEntryId": "class_member:Seat:method:Sit",
@@ -29483,9 +29817,13 @@
       "entryKind": "class_property",
       "owner": "Sound",
       "name": "SoundId",
-      "disposition": "source_only",
-      "reason": "unsupported_codec",
-      "authoringGroup": "effects_audio"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "effects_audio",
+      "codec": "content",
+      "inheritedBy": [
+        "Sound"
+      ]
     },
     {
       "catalogEntryId": "class_member:Sound:property:TimeLength",
@@ -32819,104 +33157,169 @@
       "entryKind": "class_property",
       "owner": "SurfaceGui",
       "name": "AlwaysOnTop",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "boolean",
+      "inheritedBy": [
+        "SurfaceGui"
+      ]
     },
     {
       "catalogEntryId": "class_member:SurfaceGui:property:Brightness",
       "entryKind": "class_property",
       "owner": "SurfaceGui",
       "name": "Brightness",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "SurfaceGui"
+      ]
     },
     {
       "catalogEntryId": "class_member:SurfaceGui:property:CanvasSize",
       "entryKind": "class_property",
       "owner": "SurfaceGui",
       "name": "CanvasSize",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "vector2_f32",
+      "inheritedBy": [
+        "SurfaceGui"
+      ]
     },
     {
       "catalogEntryId": "class_member:SurfaceGui:property:ClipsDescendants",
       "entryKind": "class_property",
       "owner": "SurfaceGui",
       "name": "ClipsDescendants",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "boolean",
+      "inheritedBy": [
+        "SurfaceGui"
+      ]
     },
     {
       "catalogEntryId": "class_member:SurfaceGui:property:LightInfluence",
       "entryKind": "class_property",
       "owner": "SurfaceGui",
       "name": "LightInfluence",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "SurfaceGui"
+      ]
     },
     {
       "catalogEntryId": "class_member:SurfaceGui:property:MaxDistance",
       "entryKind": "class_property",
       "owner": "SurfaceGui",
       "name": "MaxDistance",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "SurfaceGui"
+      ]
     },
     {
       "catalogEntryId": "class_member:SurfaceGui:property:PixelsPerStud",
       "entryKind": "class_property",
       "owner": "SurfaceGui",
       "name": "PixelsPerStud",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "SurfaceGui"
+      ]
     },
     {
       "catalogEntryId": "class_member:SurfaceGui:property:SizingMode",
       "entryKind": "class_property",
       "owner": "SurfaceGui",
       "name": "SizingMode",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "SurfaceGui"
+      ]
     },
     {
       "catalogEntryId": "class_member:SurfaceGui:property:ToolPunchThroughDistance",
       "entryKind": "class_property",
       "owner": "SurfaceGui",
       "name": "ToolPunchThroughDistance",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "SurfaceGui"
+      ]
     },
     {
       "catalogEntryId": "class_member:SurfaceGui:property:ZOffset",
       "entryKind": "class_property",
       "owner": "SurfaceGui",
       "name": "ZOffset",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "SurfaceGui"
+      ]
     },
     {
       "catalogEntryId": "class_member:SurfaceGuiBase:property:Active",
       "entryKind": "class_property",
       "owner": "SurfaceGuiBase",
       "name": "Active",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "boolean",
+      "inheritedBy": [
+        "SurfaceGui"
+      ]
     },
     {
       "catalogEntryId": "class_member:SurfaceGuiBase:property:Adornee",
       "entryKind": "class_property",
       "owner": "SurfaceGuiBase",
       "name": "Adornee",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "instance_ref",
+      "inheritedBy": [
+        "SurfaceGui"
+      ]
     },
     {
       "catalogEntryId": "class_member:SurfaceGuiBase:property:Face",
       "entryKind": "class_property",
       "owner": "SurfaceGuiBase",
       "name": "Face",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "SurfaceGui"
+      ]
     },
     {
       "catalogEntryId": "class_member:SurfaceLight:property:Angle",
@@ -34074,8 +34477,13 @@
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "ClearTextOnFocus",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "boolean",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:ContentText",
@@ -34083,7 +34491,8 @@
       "owner": "TextBox",
       "name": "ContentText",
       "disposition": "source_only",
-      "reason": "read_only"
+      "reason": "read_only",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class_member:TextBox:property:CursorPosition",
@@ -34091,7 +34500,8 @@
       "owner": "TextBox",
       "name": "CursorPosition",
       "disposition": "source_only",
-      "reason": "not_serialized"
+      "reason": "not_serialized",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class_member:TextBox:property:Font",
@@ -34099,15 +34509,21 @@
       "owner": "TextBox",
       "name": "Font",
       "disposition": "unsupported",
-      "reason": "hidden"
+      "reason": "hidden",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class_member:TextBox:property:FontFace",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "FontFace",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "font",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:FontSize",
@@ -34115,39 +34531,60 @@
       "owner": "TextBox",
       "name": "FontSize",
       "disposition": "unsupported",
-      "reason": "deprecated"
+      "reason": "deprecated",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class_member:TextBox:property:LineHeight",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "LineHeight",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:MaxVisibleGraphemes",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "MaxVisibleGraphemes",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "int32",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:MultiLine",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "MultiLine",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "boolean",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:OpenTypeFeatures",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "OpenTypeFeatures",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "string_utf8",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:OpenTypeFeaturesError",
@@ -34155,31 +34592,47 @@
       "owner": "TextBox",
       "name": "OpenTypeFeaturesError",
       "disposition": "source_only",
-      "reason": "read_only"
+      "reason": "read_only",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class_member:TextBox:property:PlaceholderColor3",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "PlaceholderColor3",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "color3_rgb8",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:PlaceholderText",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "PlaceholderText",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "string_utf8",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:RichText",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "RichText",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "boolean",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:SelectionStart",
@@ -34187,23 +34640,34 @@
       "owner": "TextBox",
       "name": "SelectionStart",
       "disposition": "source_only",
-      "reason": "not_serialized"
+      "reason": "not_serialized",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class_member:TextBox:property:ShowNativeInput",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "ShowNativeInput",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "boolean",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:Text",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "Text",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "string_utf8",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:TextBounds",
@@ -34211,7 +34675,8 @@
       "owner": "TextBox",
       "name": "TextBounds",
       "disposition": "source_only",
-      "reason": "read_only"
+      "reason": "read_only",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class_member:TextBox:property:TextColor",
@@ -34219,31 +34684,47 @@
       "owner": "TextBox",
       "name": "TextColor",
       "disposition": "unsupported",
-      "reason": "deprecated"
+      "reason": "deprecated",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class_member:TextBox:property:TextColor3",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "TextColor3",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "color3_rgb8",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:TextDirection",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "TextDirection",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:TextEditable",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "TextEditable",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "boolean",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:TextFits",
@@ -34251,55 +34732,86 @@
       "owner": "TextBox",
       "name": "TextFits",
       "disposition": "source_only",
-      "reason": "read_only"
+      "reason": "read_only",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class_member:TextBox:property:TextScaled",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "TextScaled",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "boolean",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:TextSize",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "TextSize",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:TextStrokeColor3",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "TextStrokeColor3",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "color3_rgb8",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:TextStrokeTransparency",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "TextStrokeTransparency",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:TextTransparency",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "TextTransparency",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:TextTruncate",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "TextTruncate",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:TextWrap",
@@ -34307,31 +34819,47 @@
       "owner": "TextBox",
       "name": "TextWrap",
       "disposition": "unsupported",
-      "reason": "deprecated"
+      "reason": "deprecated",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class_member:TextBox:property:TextWrapped",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "TextWrapped",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "boolean",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:TextXAlignment",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "TextXAlignment",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextBox:property:TextYAlignment",
       "entryKind": "class_property",
       "owner": "TextBox",
       "name": "TextYAlignment",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "TextBox"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextButton:property:ContentText",
@@ -34356,9 +34884,13 @@
       "entryKind": "class_property",
       "owner": "TextButton",
       "name": "FontFace",
-      "disposition": "source_only",
-      "reason": "unsupported_codec",
-      "authoringGroup": "ui"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "font",
+      "inheritedBy": [
+        "TextButton"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextButton:property:FontSize",
@@ -35102,9 +35634,13 @@
       "entryKind": "class_property",
       "owner": "TextLabel",
       "name": "FontFace",
-      "disposition": "source_only",
-      "reason": "unsupported_codec",
-      "authoringGroup": "ui"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "font",
+      "inheritedBy": [
+        "TextLabel"
+      ]
     },
     {
       "catalogEntryId": "class_member:TextLabel:property:FontSize",
@@ -35882,9 +36418,13 @@
       "entryKind": "class_property",
       "owner": "Trail",
       "name": "Texture",
-      "disposition": "source_only",
-      "reason": "unsupported_codec",
-      "authoringGroup": "effects_audio"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "effects_audio",
+      "codec": "content",
+      "inheritedBy": [
+        "Trail"
+      ]
     },
     {
       "catalogEntryId": "class_member:Trail:property:TextureLength",
@@ -36103,64 +36643,104 @@
       "entryKind": "class_property",
       "owner": "UIAspectRatioConstraint",
       "name": "AspectRatio",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "UIAspectRatioConstraint"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIAspectRatioConstraint:property:AspectType",
       "entryKind": "class_property",
       "owner": "UIAspectRatioConstraint",
       "name": "AspectType",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "UIAspectRatioConstraint"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIAspectRatioConstraint:property:DominantAxis",
       "entryKind": "class_property",
       "owner": "UIAspectRatioConstraint",
       "name": "DominantAxis",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "UIAspectRatioConstraint"
+      ]
     },
     {
       "catalogEntryId": "class_member:UICorner:property:BottomLeftRadius",
       "entryKind": "class_property",
       "owner": "UICorner",
       "name": "BottomLeftRadius",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "udim",
+      "inheritedBy": [
+        "UICorner"
+      ]
     },
     {
       "catalogEntryId": "class_member:UICorner:property:BottomRightRadius",
       "entryKind": "class_property",
       "owner": "UICorner",
       "name": "BottomRightRadius",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "udim",
+      "inheritedBy": [
+        "UICorner"
+      ]
     },
     {
       "catalogEntryId": "class_member:UICorner:property:CornerRadius",
       "entryKind": "class_property",
       "owner": "UICorner",
       "name": "CornerRadius",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "udim",
+      "inheritedBy": [
+        "UICorner"
+      ]
     },
     {
       "catalogEntryId": "class_member:UICorner:property:TopLeftRadius",
       "entryKind": "class_property",
       "owner": "UICorner",
       "name": "TopLeftRadius",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "udim",
+      "inheritedBy": [
+        "UICorner"
+      ]
     },
     {
       "catalogEntryId": "class_member:UICorner:property:TopRightRadius",
       "entryKind": "class_property",
       "owner": "UICorner",
       "name": "TopRightRadius",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "udim",
+      "inheritedBy": [
+        "UICorner"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIDragDetector:event:DragContinue",
@@ -36431,40 +37011,65 @@
       "entryKind": "class_property",
       "owner": "UIGradient",
       "name": "Color",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "color_sequence",
+      "inheritedBy": [
+        "UIGradient"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIGradient:property:Enabled",
       "entryKind": "class_property",
       "owner": "UIGradient",
       "name": "Enabled",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "boolean",
+      "inheritedBy": [
+        "UIGradient"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIGradient:property:Offset",
       "entryKind": "class_property",
       "owner": "UIGradient",
       "name": "Offset",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "vector2_f32",
+      "inheritedBy": [
+        "UIGradient"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIGradient:property:Rotation",
       "entryKind": "class_property",
       "owner": "UIGradient",
       "name": "Rotation",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "UIGradient"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIGradient:property:Transparency",
       "entryKind": "class_property",
       "owner": "UIGradient",
       "name": "Transparency",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_sequence",
+      "inheritedBy": [
+        "UIGradient"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIGridLayout:property:AbsoluteCellCount",
@@ -36472,7 +37077,8 @@
       "owner": "UIGridLayout",
       "name": "AbsoluteCellCount",
       "disposition": "source_only",
-      "reason": "read_only"
+      "reason": "read_only",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class_member:UIGridLayout:property:AbsoluteCellSize",
@@ -36480,39 +37086,60 @@
       "owner": "UIGridLayout",
       "name": "AbsoluteCellSize",
       "disposition": "source_only",
-      "reason": "read_only"
+      "reason": "read_only",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class_member:UIGridLayout:property:CellPadding",
       "entryKind": "class_property",
       "owner": "UIGridLayout",
       "name": "CellPadding",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "udim2",
+      "inheritedBy": [
+        "UIGridLayout"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIGridLayout:property:CellSize",
       "entryKind": "class_property",
       "owner": "UIGridLayout",
       "name": "CellSize",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "udim2",
+      "inheritedBy": [
+        "UIGridLayout"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIGridLayout:property:FillDirectionMaxCells",
       "entryKind": "class_property",
       "owner": "UIGridLayout",
       "name": "FillDirectionMaxCells",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "int32",
+      "inheritedBy": [
+        "UIGridLayout"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIGridLayout:property:StartCorner",
       "entryKind": "class_property",
       "owner": "UIGridLayout",
       "name": "StartCorner",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "UIGridLayout"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIGridStyleLayout:method:ApplyLayout",
@@ -36536,111 +37163,181 @@
       "owner": "UIGridStyleLayout",
       "name": "AbsoluteContentSize",
       "disposition": "source_only",
-      "reason": "read_only"
+      "reason": "read_only",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class_member:UIGridStyleLayout:property:FillDirection",
       "entryKind": "class_property",
       "owner": "UIGridStyleLayout",
       "name": "FillDirection",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "UIGridLayout",
+        "UIListLayout"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIGridStyleLayout:property:HorizontalAlignment",
       "entryKind": "class_property",
       "owner": "UIGridStyleLayout",
       "name": "HorizontalAlignment",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "UIGridLayout",
+        "UIListLayout"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIGridStyleLayout:property:SortOrder",
       "entryKind": "class_property",
       "owner": "UIGridStyleLayout",
       "name": "SortOrder",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "UIGridLayout",
+        "UIListLayout"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIGridStyleLayout:property:VerticalAlignment",
       "entryKind": "class_property",
       "owner": "UIGridStyleLayout",
       "name": "VerticalAlignment",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "UIGridLayout",
+        "UIListLayout"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIListLayout:property:HorizontalFlex",
       "entryKind": "class_property",
       "owner": "UIListLayout",
       "name": "HorizontalFlex",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "UIListLayout"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIListLayout:property:ItemLineAlignment",
       "entryKind": "class_property",
       "owner": "UIListLayout",
       "name": "ItemLineAlignment",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "UIListLayout"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIListLayout:property:Padding",
       "entryKind": "class_property",
       "owner": "UIListLayout",
       "name": "Padding",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "udim",
+      "inheritedBy": [
+        "UIListLayout"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIListLayout:property:VerticalFlex",
       "entryKind": "class_property",
       "owner": "UIListLayout",
       "name": "VerticalFlex",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "UIListLayout"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIListLayout:property:Wraps",
       "entryKind": "class_property",
       "owner": "UIListLayout",
       "name": "Wraps",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "boolean",
+      "inheritedBy": [
+        "UIListLayout"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIPadding:property:PaddingBottom",
       "entryKind": "class_property",
       "owner": "UIPadding",
       "name": "PaddingBottom",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "udim",
+      "inheritedBy": [
+        "UIPadding"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIPadding:property:PaddingLeft",
       "entryKind": "class_property",
       "owner": "UIPadding",
       "name": "PaddingLeft",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "udim",
+      "inheritedBy": [
+        "UIPadding"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIPadding:property:PaddingRight",
       "entryKind": "class_property",
       "owner": "UIPadding",
       "name": "PaddingRight",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "udim",
+      "inheritedBy": [
+        "UIPadding"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIPadding:property:PaddingTop",
       "entryKind": "class_property",
       "owner": "UIPadding",
       "name": "PaddingTop",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "udim",
+      "inheritedBy": [
+        "UIPadding"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIPageLayout:event:PageEnter",
@@ -36783,8 +37480,13 @@
       "entryKind": "class_property",
       "owner": "UIScale",
       "name": "Scale",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "UIScale"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIShadow:property:BlurRadius",
@@ -36863,80 +37565,130 @@
       "entryKind": "class_property",
       "owner": "UIStroke",
       "name": "ApplyStrokeMode",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "UIStroke"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIStroke:property:BorderOffset",
       "entryKind": "class_property",
       "owner": "UIStroke",
       "name": "BorderOffset",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "udim",
+      "inheritedBy": [
+        "UIStroke"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIStroke:property:BorderStrokePosition",
       "entryKind": "class_property",
       "owner": "UIStroke",
       "name": "BorderStrokePosition",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "UIStroke"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIStroke:property:Color",
       "entryKind": "class_property",
       "owner": "UIStroke",
       "name": "Color",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "color3_rgb8",
+      "inheritedBy": [
+        "UIStroke"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIStroke:property:Enabled",
       "entryKind": "class_property",
       "owner": "UIStroke",
       "name": "Enabled",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "boolean",
+      "inheritedBy": [
+        "UIStroke"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIStroke:property:LineJoinMode",
       "entryKind": "class_property",
       "owner": "UIStroke",
       "name": "LineJoinMode",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "UIStroke"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIStroke:property:StrokeSizingMode",
       "entryKind": "class_property",
       "owner": "UIStroke",
       "name": "StrokeSizingMode",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "enum_name",
+      "inheritedBy": [
+        "UIStroke"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIStroke:property:Thickness",
       "entryKind": "class_property",
       "owner": "UIStroke",
       "name": "Thickness",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "UIStroke"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIStroke:property:Transparency",
       "entryKind": "class_property",
       "owner": "UIStroke",
       "name": "Transparency",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "number_f32",
+      "inheritedBy": [
+        "UIStroke"
+      ]
     },
     {
       "catalogEntryId": "class_member:UIStroke:property:ZIndex",
       "entryKind": "class_property",
       "owner": "UIStroke",
       "name": "ZIndex",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "int32",
+      "inheritedBy": [
+        "UIStroke"
+      ]
     },
     {
       "catalogEntryId": "class_member:UITableLayout:property:FillEmptySpaceColumns",
@@ -36975,16 +37727,26 @@
       "entryKind": "class_property",
       "owner": "UITextSizeConstraint",
       "name": "MaxTextSize",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "int32",
+      "inheritedBy": [
+        "UITextSizeConstraint"
+      ]
     },
     {
       "catalogEntryId": "class_member:UITextSizeConstraint:property:MinTextSize",
       "entryKind": "class_property",
       "owner": "UITextSizeConstraint",
       "name": "MinTextSize",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui",
+      "codec": "int32",
+      "inheritedBy": [
+        "UITextSizeConstraint"
+      ]
     },
     {
       "catalogEntryId": "class_member:UniqueIdLookupService:method:GetOrCreateUniqueIdRemoteCommand",
@@ -40837,8 +41599,9 @@
       "catalogEntryId": "class:CanvasGroup",
       "entryKind": "class",
       "name": "CanvasGroup",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class:Capture",
@@ -41990,8 +42753,9 @@
       "catalogEntryId": "class:ImageButton",
       "entryKind": "class",
       "name": "ImageButton",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class:ImageHandleAdornment",
@@ -43370,8 +44134,9 @@
       "catalogEntryId": "class:ScrollingFrame",
       "entryKind": "class",
       "name": "ScrollingFrame",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class:Seat",
@@ -43863,8 +44628,9 @@
       "catalogEntryId": "class:SurfaceGui",
       "entryKind": "class",
       "name": "SurfaceGui",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class:SurfaceGuiBase",
@@ -43976,8 +44742,9 @@
       "catalogEntryId": "class:TextBox",
       "entryKind": "class",
       "name": "TextBox",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class:TextBoxService",
@@ -44204,8 +44971,9 @@
       "catalogEntryId": "class:UIAspectRatioConstraint",
       "entryKind": "class",
       "name": "UIAspectRatioConstraint",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class:UIBase",
@@ -44232,8 +45000,9 @@
       "catalogEntryId": "class:UICorner",
       "entryKind": "class",
       "name": "UICorner",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class:UIDragDetector",
@@ -44253,15 +45022,17 @@
       "catalogEntryId": "class:UIGradient",
       "entryKind": "class",
       "name": "UIGradient",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class:UIGridLayout",
       "entryKind": "class",
       "name": "UIGridLayout",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class:UIGridStyleLayout",
@@ -44281,15 +45052,17 @@
       "catalogEntryId": "class:UIListLayout",
       "entryKind": "class",
       "name": "UIListLayout",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class:UIPadding",
       "entryKind": "class",
       "name": "UIPadding",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class:UIPageLayout",
@@ -44302,8 +45075,9 @@
       "catalogEntryId": "class:UIScale",
       "entryKind": "class",
       "name": "UIScale",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class:UIShadow",
@@ -44323,8 +45097,9 @@
       "catalogEntryId": "class:UIStroke",
       "entryKind": "class",
       "name": "UIStroke",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class:UITableLayout",
@@ -44337,8 +45112,9 @@
       "catalogEntryId": "class:UITextSizeConstraint",
       "entryKind": "class",
       "name": "UITextSizeConstraint",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "authoringGroup": "ui"
     },
     {
       "catalogEntryId": "class:UnionOperation",
@@ -48002,8 +48778,9 @@
       "catalogEntryId": "datatype:Content",
       "entryKind": "datatype",
       "name": "Content",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "observable_only",
+      "reason": "catalog_only",
+      "codec": "content"
     },
     {
       "catalogEntryId": "datatype:DateTime",
@@ -48059,8 +48836,9 @@
       "catalogEntryId": "datatype:Font",
       "entryKind": "datatype",
       "name": "Font",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "observable_only",
+      "reason": "catalog_only",
+      "codec": "font"
     },
     {
       "catalogEntryId": "datatype:Instance",
@@ -49751,16 +50529,18 @@
       "entryKind": "enum_item",
       "owner": "ApplyStrokeMode",
       "name": "Border",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:ApplyStrokeMode:Contextual",
       "entryKind": "enum_item",
       "owner": "ApplyStrokeMode",
       "name": "Contextual",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:AppUpdateStatus:Available",
@@ -49823,16 +50603,18 @@
       "entryKind": "enum_item",
       "owner": "AspectType",
       "name": "FitWithinMaxSize",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:AspectType:ScaleWithParentSize",
       "entryKind": "enum_item",
       "owner": "AspectType",
       "name": "ScaleWithParentSize",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:AssetCreatorType:Group",
@@ -51870,24 +52652,27 @@
       "entryKind": "enum_item",
       "owner": "BorderStrokePosition",
       "name": "Center",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:BorderStrokePosition:Inner",
       "entryKind": "enum_item",
       "owner": "BorderStrokePosition",
       "name": "Inner",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:BorderStrokePosition:Outer",
       "entryKind": "enum_item",
       "owner": "BorderStrokePosition",
       "name": "Outer",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:BreakpointRemoveReason:Requested",
@@ -54908,16 +55693,18 @@
       "entryKind": "enum_item",
       "owner": "DominantAxis",
       "name": "Height",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:DominantAxis:Width",
       "entryKind": "enum_item",
       "owner": "DominantAxis",
       "name": "Width",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:DraftStatusCode:DraftCommitted",
@@ -55220,24 +56007,27 @@
       "entryKind": "enum_item",
       "owner": "ElasticBehavior",
       "name": "Always",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:ElasticBehavior:Never",
       "entryKind": "enum_item",
       "owner": "ElasticBehavior",
       "name": "Never",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:ElasticBehavior:WhenScrollable",
       "entryKind": "enum_item",
       "owner": "ElasticBehavior",
       "name": "WhenScrollable",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:EmitterPositionType:Instance",
@@ -55948,16 +56738,18 @@
       "entryKind": "enum_item",
       "owner": "FillDirection",
       "name": "Horizontal",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:FillDirection:Vertical",
       "entryKind": "enum_item",
       "owner": "FillDirection",
       "name": "Vertical",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:FilterErrorType:BackslashNotEscapingAnything",
@@ -57475,24 +58267,27 @@
       "entryKind": "enum_item",
       "owner": "HorizontalAlignment",
       "name": "Center",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:HorizontalAlignment:Left",
       "entryKind": "enum_item",
       "owner": "HorizontalAlignment",
       "name": "Left",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:HorizontalAlignment:Right",
       "entryKind": "enum_item",
       "owner": "HorizontalAlignment",
       "name": "Right",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:HoverAnimateSpeed:Fast",
@@ -58435,40 +59230,45 @@
       "entryKind": "enum_item",
       "owner": "ItemLineAlignment",
       "name": "Automatic",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:ItemLineAlignment:Center",
       "entryKind": "enum_item",
       "owner": "ItemLineAlignment",
       "name": "Center",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:ItemLineAlignment:End",
       "entryKind": "enum_item",
       "owner": "ItemLineAlignment",
       "name": "End",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:ItemLineAlignment:Start",
       "entryKind": "enum_item",
       "owner": "ItemLineAlignment",
       "name": "Start",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:ItemLineAlignment:Stretch",
       "entryKind": "enum_item",
       "owner": "ItemLineAlignment",
       "name": "Stretch",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:IXPLoadingStatus:ErrorConnection",
@@ -61306,24 +62106,27 @@
       "entryKind": "enum_item",
       "owner": "LineJoinMode",
       "name": "Bevel",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:LineJoinMode:Miter",
       "entryKind": "enum_item",
       "owner": "LineJoinMode",
       "name": "Miter",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:LineJoinMode:Round",
       "entryKind": "enum_item",
       "owner": "LineJoinMode",
       "name": "Round",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:ListDisplayMode:Horizontal",
@@ -66326,48 +67129,54 @@
       "entryKind": "enum_item",
       "owner": "ScrollBarInset",
       "name": "Always",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:ScrollBarInset:None",
       "entryKind": "enum_item",
       "owner": "ScrollBarInset",
       "name": "None",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:ScrollBarInset:ScrollBar",
       "entryKind": "enum_item",
       "owner": "ScrollBarInset",
       "name": "ScrollBar",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:ScrollingDirection:X",
       "entryKind": "enum_item",
       "owner": "ScrollingDirection",
       "name": "X",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:ScrollingDirection:XY",
       "entryKind": "enum_item",
       "owner": "ScrollingDirection",
       "name": "XY",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:ScrollingDirection:Y",
       "entryKind": "enum_item",
       "owner": "ScrollingDirection",
       "name": "Y",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:SecurityCapability:AccessOutsideWrite",
@@ -67243,48 +68052,54 @@
       "entryKind": "enum_item",
       "owner": "SortOrder",
       "name": "LayoutOrder",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:SortOrder:Name",
       "entryKind": "enum_item",
       "owner": "SortOrder",
       "name": "Name",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:StartCorner:BottomLeft",
       "entryKind": "enum_item",
       "owner": "StartCorner",
       "name": "BottomLeft",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:StartCorner:BottomRight",
       "entryKind": "enum_item",
       "owner": "StartCorner",
       "name": "BottomRight",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:StartCorner:TopLeft",
       "entryKind": "enum_item",
       "owner": "StartCorner",
       "name": "TopLeft",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:StartCorner:TopRight",
       "entryKind": "enum_item",
       "owner": "StartCorner",
       "name": "TopRight",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:StateObjectFieldType:Boolean",
@@ -67507,16 +68322,18 @@
       "entryKind": "enum_item",
       "owner": "StrokeSizingMode",
       "name": "FixedSize",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:StrokeSizingMode:ScaledSize",
       "entryKind": "enum_item",
       "owner": "StrokeSizingMode",
       "name": "ScaledSize",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:StudioCaptureBufferStatus:Error",
@@ -69267,16 +70084,18 @@
       "entryKind": "enum_item",
       "owner": "SurfaceGuiSizingMode",
       "name": "FixedSize",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:SurfaceGuiSizingMode:PixelsPerStud",
       "entryKind": "enum_item",
       "owner": "SurfaceGuiSizingMode",
       "name": "PixelsPerStud",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:SurfaceType:Glue",
@@ -70946,40 +71765,45 @@
       "entryKind": "enum_item",
       "owner": "UIFlexAlignment",
       "name": "Fill",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:UIFlexAlignment:None",
       "entryKind": "enum_item",
       "owner": "UIFlexAlignment",
       "name": "None",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:UIFlexAlignment:SpaceAround",
       "entryKind": "enum_item",
       "owner": "UIFlexAlignment",
       "name": "SpaceAround",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:UIFlexAlignment:SpaceBetween",
       "entryKind": "enum_item",
       "owner": "UIFlexAlignment",
       "name": "SpaceBetween",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:UIFlexAlignment:SpaceEvenly",
       "entryKind": "enum_item",
       "owner": "UIFlexAlignment",
       "name": "SpaceEvenly",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:UIFlexMode:Custom",
@@ -71386,40 +72210,45 @@
       "entryKind": "enum_item",
       "owner": "VerticalAlignment",
       "name": "Bottom",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:VerticalAlignment:Center",
       "entryKind": "enum_item",
       "owner": "VerticalAlignment",
       "name": "Center",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:VerticalAlignment:Top",
       "entryKind": "enum_item",
       "owner": "VerticalAlignment",
       "name": "Top",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:VerticalScrollBarPosition:Left",
       "entryKind": "enum_item",
       "owner": "VerticalScrollBarPosition",
       "name": "Left",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:VerticalScrollBarPosition:Right",
       "entryKind": "enum_item",
       "owner": "VerticalScrollBarPosition",
       "name": "Right",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum_item:VibrationMotor:Large",
@@ -72901,8 +73730,9 @@
       "catalogEntryId": "enum:ApplyStrokeMode",
       "entryKind": "enum",
       "name": "ApplyStrokeMode",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:AppUpdateStatus",
@@ -72915,8 +73745,9 @@
       "catalogEntryId": "enum:AspectType",
       "entryKind": "enum",
       "name": "AspectType",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:AssetCreatorType",
@@ -73218,8 +74049,9 @@
       "catalogEntryId": "enum:BorderStrokePosition",
       "entryKind": "enum",
       "name": "BorderStrokePosition",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:BreakpointRemoveReason",
@@ -73786,8 +74618,9 @@
       "catalogEntryId": "enum:DominantAxis",
       "entryKind": "enum",
       "name": "DominantAxis",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:DraftStatusCode",
@@ -73849,8 +74682,9 @@
       "catalogEntryId": "enum:ElasticBehavior",
       "entryKind": "enum",
       "name": "ElasticBehavior",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:EmitterPositionType",
@@ -73947,8 +74781,9 @@
       "catalogEntryId": "enum:FillDirection",
       "entryKind": "enum",
       "name": "FillDirection",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:FilterErrorType",
@@ -74151,8 +74986,9 @@
       "catalogEntryId": "enum:HorizontalAlignment",
       "entryKind": "enum",
       "name": "HorizontalAlignment",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:HoverAnimateSpeed",
@@ -74333,8 +75169,9 @@
       "catalogEntryId": "enum:ItemLineAlignment",
       "entryKind": "enum",
       "name": "ItemLineAlignment",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:IXPLoadingStatus",
@@ -74418,8 +75255,9 @@
       "catalogEntryId": "enum:LineJoinMode",
       "entryKind": "enum",
       "name": "LineJoinMode",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:ListDisplayMode",
@@ -75358,15 +76196,17 @@
       "catalogEntryId": "enum:ScrollBarInset",
       "entryKind": "enum",
       "name": "ScrollBarInset",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:ScrollingDirection",
       "entryKind": "enum",
       "name": "ScrollingDirection",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:SecurityCapability",
@@ -75493,15 +76333,17 @@
       "catalogEntryId": "enum:SortOrder",
       "entryKind": "enum",
       "name": "SortOrder",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:StartCorner",
       "entryKind": "enum",
       "name": "StartCorner",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:StateObjectFieldType",
@@ -75549,8 +76391,9 @@
       "catalogEntryId": "enum:StrokeSizingMode",
       "entryKind": "enum",
       "name": "StrokeSizingMode",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:StudioCaptureBufferStatus",
@@ -75654,8 +76497,9 @@
       "catalogEntryId": "enum:SurfaceGuiSizingMode",
       "entryKind": "enum",
       "name": "SurfaceGuiSizingMode",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:SurfaceType",
@@ -75988,8 +76832,9 @@
       "catalogEntryId": "enum:UIFlexAlignment",
       "entryKind": "enum",
       "name": "UIFlexAlignment",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:UIFlexMode",
@@ -76051,15 +76896,17 @@
       "catalogEntryId": "enum:VerticalAlignment",
       "entryKind": "enum",
       "name": "VerticalAlignment",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:VerticalScrollBarPosition",
       "entryKind": "enum",
       "name": "VerticalScrollBarPosition",
-      "disposition": "source_only",
-      "reason": "script_api"
+      "disposition": "authorable",
+      "reason": "proof_closed",
+      "codec": "enum_name"
     },
     {
       "catalogEntryId": "enum:VibrationMotor",
@@ -78167,29 +79014,29 @@
   "summary": {
     "total": 9685,
     "byDisposition": {
-      "authorable": 635,
-      "observable_only": 16,
-      "source_only": 7509,
+      "authorable": 840,
+      "observable_only": 18,
+      "source_only": 7302,
       "creator_reviewed": 0,
       "unsupported": 1525
     },
     "byReason": {
-      "script_api": 6814,
+      "script_api": 6615,
       "deprecated": 754,
       "hidden": 176,
       "read_only": 251,
       "not_serialized": 125,
       "security_gated": 601,
-      "proof_closed": 635,
-      "unsupported_codec": 9,
+      "proof_closed": 840,
+      "engine_or_external_authority": 1,
       "structure_managed": 1,
       "parent_policy_missing": 1,
       "service_root": 151,
       "class_not_creatable": 151,
-      "catalog_only": 16
+      "catalog_only": 18
     },
-    "authorableClasses": 33,
-    "authorableProperties": 364
+    "authorableClasses": 47,
+    "authorableProperties": 630
   },
-  "contentHash": "3ab82be5b16d0b31e021a2838c32b00dbca980955b948b8aa050e7d4477662d9"
+  "contentHash": "a66e9be120300a69a5e4c2e0fa1174879ae4890de86646f6af5c1a2514af18ab"
 }

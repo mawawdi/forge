@@ -13,6 +13,313 @@ afterEach(() => {
 });
 
 describe("ConversationTimeline", () => {
+  it("removes a resolved recovery instruction without hiding another session's open recording", () => {
+    const recovery = event({
+      id: "recovery-closed",
+      sequence: 2,
+      eventType: "recovery",
+      binding: { sessionId: "closed-session" },
+      data: {
+        state: "required",
+        message: "Reconnect the interrupted change.",
+        studioMayContainOpenRecording: true,
+      },
+    });
+    const finished = event({
+      id: "closed-result",
+      sequence: 3,
+      eventType: "terminal_output",
+      binding: { sessionId: "closed-session" },
+      data: {
+        outcome: "incomplete",
+        message: "The interrupted change is closed.",
+        studioHasAcceptedResult: false,
+      },
+    });
+    const stillOpen = event({
+      ...recovery,
+      id: "recovery-open",
+      sequence: 4,
+      binding: { sessionId: "open-session" },
+      data: {
+        state: "required",
+        message: "Reconnect this other change.",
+        studioMayContainOpenRecording: true,
+      },
+    });
+    render(
+      <ConversationTimeline
+        state={dashboardState({
+          eventPage: {
+            conversationId: "conversation_01",
+            events: [recovery, finished, stillOpen],
+            complete: true,
+          },
+        })}
+        snapshot={SNAPSHOT}
+      />,
+    );
+    expect(screen.queryByText("Reconnect the interrupted change.")).not.toBeInTheDocument();
+    expect(screen.getByText("The interrupted change is closed.")).toBeVisible();
+    expect(screen.getByText("Reconnect this other change.")).toBeVisible();
+  });
+
+  it("keeps refresh bookkeeping and internal runtime diagnostics out of the chat", () => {
+    const events = [
+      event({
+        id: "refresh-complete",
+        eventType: "project_change",
+        data: { state: "superseded", message: "No action authority was inherited." },
+      }),
+      event({
+        id: "superseded-output",
+        eventType: "terminal_output",
+        data: {
+          outcome: "superseded",
+          message: "This result was replaced.",
+          studioHasAcceptedResult: false,
+        },
+      }),
+      event({
+        id: "internal-failure",
+        episodeId: "failed-episode",
+        eventType: "activity",
+        data: {
+          job: {
+            id: "failed-job",
+            hash: HASH,
+            artifact: { locator: `artifacts/${HASH}.json`, artifactHash: HASH, bytes: 1 },
+          },
+          status: "failed",
+          phase: "stopped",
+          message:
+            "Lower creator runtime did not reach a terminal execution-journal boundary (never_dispatched)",
+        },
+      }),
+    ];
+    render(
+      <ConversationTimeline
+        state={dashboardState({
+          eventPage: { conversationId: "conversation_01", events, complete: true },
+        })}
+        snapshot={SNAPSHOT}
+      />,
+    );
+    expect(
+      screen.queryByText(/action authority|result was replaced|execution-journal/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Forge couldn't finish this request. Open Details to inspect the saved error.",
+      ),
+    ).toBeVisible();
+  });
+  it("renders an outcome once across cleanup revisions and retains identical replies in later turns", () => {
+    const result = event({
+      id: "first-result",
+      sequence: 2,
+      episodeId: "episode-1",
+      binding: { sessionId: "session-1", sessionHash: HASH },
+      eventType: "terminal_output",
+      authority: "agent",
+      data: {
+        outcome: "completed",
+        message: "Built **controls**.",
+        studioHasAcceptedResult: false,
+      },
+    });
+    const state = dashboardState();
+    render(
+      <ConversationTimeline
+        snapshot={SNAPSHOT}
+        state={{
+          ...state,
+          eventPage: {
+            ...state.eventPage!,
+            events: [
+              result,
+              {
+                ...result,
+                id: "cleanup-result",
+                sequence: 3,
+                binding: { sessionId: "session-1", sessionHash: HASH_B },
+              },
+              { ...result, id: "next-result", sequence: 4, episodeId: "episode-2" },
+            ],
+          },
+        }}
+      />,
+    );
+    expect(screen.getAllByText("controls")).toHaveLength(2);
+  });
+  it("keeps planning and build activity inside the conversation beside their own results", () => {
+    const user = event();
+    const plan = event({
+      id: "plan-inline",
+      sequence: 2,
+      occurredAt: "2026-09-03T00:00:05.000Z",
+      eventType: "plan_revision",
+      data: {
+        revision: 1,
+        summary: "1. Connect the airlock controls.",
+        planRevision: {
+          id: "plan_1",
+          hash: HASH,
+          artifact: { locator: `artifacts/${HASH}.json`, artifactHash: HASH, bytes: 1 },
+        },
+      },
+    });
+    const activity = {
+      jobId: "planner",
+      afterEventSequence: user.sequence,
+      agentRunId: "run_planner",
+      running: false,
+      startedAt: "2026-09-02T23:59:59.900Z",
+      updatedAt: "2026-09-03T00:00:05.000Z",
+      currentStep: "Work finished",
+      modelTurns: 1,
+      usage: null,
+      requestSizes: null,
+      commentary: [{ sequence: 1, text: "I’ll connect the **controls** to the server." }],
+      steps: [
+        {
+          sequence: 2,
+          label: "Inspected OuterDoor",
+          detail: "Workspace/Airlock/OuterDoor",
+          status: "complete" as const,
+        },
+      ],
+    };
+    render(
+      <ConversationTimeline
+        state={dashboardState({
+          eventPage: { conversationId: "conversation_01", events: [user, plan], complete: true },
+          agentActivities: [
+            activity,
+            {
+              ...activity,
+              jobId: "builder",
+              afterEventSequence: plan.sequence,
+              agentRunId: "run_builder",
+              running: true,
+              startedAt: "2026-09-03T00:00:06.000Z",
+              currentStep: "Connecting the airlock controls",
+              commentary: [],
+            },
+          ],
+        })}
+        snapshot={SNAPSHOT}
+      />,
+    );
+    const messages = screen.getByRole("list", { name: "Messages" });
+    expect(messages.children).toHaveLength(4);
+    expect(messages.children[0]).toHaveTextContent("Add a guarded airlock door.");
+    expect(messages.children[1]).toHaveTextContent("Worked for 5s");
+    expect(messages.children[2]).toHaveTextContent("Connect the airlock controls.");
+    expect(messages.children[3]).toHaveTextContent("Connecting the airlock controls");
+    expect(screen.getByText("controls", { selector: "strong" })).toBeVisible();
+    expect(document.querySelectorAll(".agent-progress-text.is-scanning")).toHaveLength(1);
+    expect(screen.queryByText("Work finished")).not.toBeInTheDocument();
+  });
+
+  it("shows one plan and one project notice without action bookkeeping or duplicate details buttons", () => {
+    const plan = event({
+      id: "plan-event",
+      episodeId: "episode-1",
+      eventType: "plan_revision",
+      data: {
+        revision: 1,
+        summary: "1. Add the prompt.\n\n2. Check the door.",
+        planRevision: {
+          id: "plan-1",
+          hash: HASH,
+          artifact: { locator: `artifacts/${HASH}.json`, artifactHash: HASH, bytes: 1 },
+        },
+      },
+    });
+    const duplicate = event({
+      id: "agent-plan",
+      episodeId: "episode-1",
+      eventType: "agent_turn",
+      data: {
+        outcome: "plan_proposed",
+        text: "Repeated goal",
+        citations: [],
+        turn: {
+          id: "agent-turn",
+          hash: HASH,
+          artifact: { locator: `artifacts/${HASH}.json`, artifactHash: HASH, bytes: 1 },
+        },
+        modelId: "openai/gpt-5.6-luna",
+        responseModelId: "openai/gpt-5.6-luna",
+        providerId: "openrouter",
+        agentRunId: "run-1",
+        timing: {
+          startedAt: "2026-09-03T00:00:00.000Z",
+          endedAt: "2026-09-03T00:00:01.000Z",
+          durationMs: 1000,
+        },
+        usage: {
+          reasoningTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          inputTokens: 1,
+          outputTokens: 1,
+          costUsd: 0,
+        },
+      },
+    } as Partial<CreatorConversationEvent>);
+    const decision = event({
+      id: "decision-build",
+      eventType: "decision",
+      data: { decision: "build", actionInstanceId: "build-1" },
+    });
+    const notices = [1, 2, 3].map((sequence) =>
+      event({
+        id: `notice-${sequence}`,
+        episodeId: "episode-1",
+        eventType: "project_change",
+        data: { state: "detected", message: "Refresh your project." },
+      }),
+    );
+    render(
+      <ConversationTimeline
+        state={dashboardState({
+          eventPage: {
+            conversationId: "conversation_01",
+            events: [duplicate, plan, decision, ...notices],
+            complete: true,
+          },
+        })}
+        snapshot={SNAPSHOT}
+      />,
+    );
+    expect(screen.getByText("Add the prompt.")).toBeVisible();
+    expect(screen.getByText("Check the door.")).toBeVisible();
+    expect(screen.queryByText("Repeated goal")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Refresh your project.")).toHaveLength(1);
+    expect(screen.queryByText(/creator recorded/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /details|citation/i })).not.toBeInTheDocument();
+  });
+
+  it("expands long messages in place and preserves their full text", () => {
+    const text = `Build an airlock.\n\n${"Keep this requirement. ".repeat(100)}`;
+    const message = event({ data: { ...event().data, text } } as Partial<CreatorConversationEvent>);
+    render(
+      <ConversationTimeline
+        state={dashboardState({
+          eventPage: { conversationId: "conversation_01", events: [message], complete: true },
+        })}
+        snapshot={SNAPSHOT}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Read full message" }));
+    expect(screen.getByRole("button", { name: "Show less" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(document.querySelector(".message-copy p")?.textContent).toBe(text);
+  });
   it("labels a failed planning result without claiming it came from Studio", () => {
     const failure = event({
       eventType: "terminal_output",
@@ -29,10 +336,9 @@ describe("ConversationTimeline", () => {
           eventPage: { conversationId: "conversation_01", events: [failure], complete: true },
         })}
         snapshot={SNAPSHOT}
-        onOpenDetails={vi.fn()}
       />,
     );
-    expect(screen.getByRole("heading", { name: "Work result" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Forge" })).toBeVisible();
     expect(screen.getByText(/repeated a step without making progress/)).toBeVisible();
     expect(screen.queryByText("Studio result")).not.toBeInTheDocument();
   });
@@ -50,7 +356,7 @@ describe("ConversationTimeline", () => {
         turnContract: undefined,
       },
     });
-    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} onOpenDetails={vi.fn()} />);
+    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} />);
     expect(screen.getByRole("heading", { name: "Project identity needs attention" })).toBeVisible();
     expect(screen.getByText(/Connection lost after dispatch/)).toBeVisible();
     expect(screen.queryByRole("button", { name: /retry|resume/i })).not.toBeInTheDocument();
@@ -82,7 +388,7 @@ describe("ConversationTimeline", () => {
         ],
       },
     });
-    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} onOpenDetails={vi.fn()} />);
+    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} />);
     expect(screen.getByText(/capability precondition failed/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Retry linking" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "Link project" })).not.toBeInTheDocument();
@@ -117,7 +423,7 @@ describe("ConversationTimeline", () => {
       },
     }) as CreatorDashboardState;
 
-    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} onOpenDetails={vi.fn()} />);
+    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} />);
 
     expect(screen.getByRole("heading", { name: "Link this project" })).toBeVisible();
     expect(screen.getByText(/visible Studio identity change/)).toBeVisible();
@@ -136,7 +442,7 @@ describe("ConversationTimeline", () => {
           {
             actionInstanceId: "action_current",
             actionId: "build_plan",
-            label: "Build this",
+            label: "Accept plan",
             intent: "primary",
             controlViewId: "control_01",
             authorizingEventId: creator.id,
@@ -148,9 +454,9 @@ describe("ConversationTimeline", () => {
       },
     }) as CreatorDashboardState;
 
-    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} onOpenDetails={vi.fn()} />);
+    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} />);
 
-    expect(screen.getAllByRole("button", { name: "Build this" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Accept plan" })).toHaveLength(1);
     expect(screen.queryByRole("heading", { name: "Current work" })).not.toBeInTheDocument();
   });
 
@@ -168,7 +474,8 @@ describe("ConversationTimeline", () => {
           artifact: { locator: `artifacts/${HASH}.json`, artifactHash: HASH, bytes: 90 },
         },
         revision: 2,
-        summary: "Forge will update the airlock authority and check the prompt in Studio.",
+        summary:
+          "1. Update the airlock authority.\n\nChecks\n- Validate Luau syntax.\n\nYour review\n- Try the prompt in Studio.",
       },
     } as CreatorConversationEvent;
     const state = dashboardState({
@@ -179,7 +486,7 @@ describe("ConversationTimeline", () => {
           {
             actionInstanceId: "action_build",
             actionId: "build_plan",
-            label: "Build this",
+            label: "Accept plan",
             intent: "primary",
             controlViewId: "control_01",
             authorizingEventId: "event_plan",
@@ -202,14 +509,16 @@ describe("ConversationTimeline", () => {
       },
     }) as CreatorDashboardState;
 
-    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} onOpenDetails={vi.fn()} />);
+    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} />);
 
     expect(screen.getByRole("heading", { name: "Suggested plan" })).toBeVisible();
-    expect(screen.getByText(/update the airlock authority/)).toBeVisible();
-    expect(screen.getByRole("button", { name: "Build this" })).toBeVisible();
+    expect(screen.queryByText("Validate Luau syntax.")).not.toBeInTheDocument();
+    expect(screen.getByText("Try the prompt in Studio.")).toBeInTheDocument();
+    expect(screen.getByText(/update the airlock authority/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Accept plan" })).toBeVisible();
     expect(screen.getAllByRole("button", { name: "Don't build this" })).toHaveLength(1);
-    expect(screen.getByRole("heading", { name: "Review the plan" })).toBeVisible();
-    expect(screen.getByRole("list")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Review the plan" })).not.toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Messages" })).toBeVisible();
   });
 
   it("preserves authored creator line breaks instead of flattening the request", () => {
@@ -220,7 +529,7 @@ describe("ConversationTimeline", () => {
     const state = dashboardState({
       eventPage: { conversationId: "conversation_01", events: [creator], complete: true },
     });
-    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} onOpenDetails={vi.fn()} />);
+    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} />);
     expect(
       screen.getByText(
         (_content, node) =>
@@ -263,16 +572,43 @@ describe("ConversationTimeline", () => {
         conversationId: "conversation_01",
         events: [reading, planning],
         complete: true,
+        nextBeforeCursor: "earlier-conversation",
       },
     });
 
-    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} onOpenDetails={vi.fn()} />);
+    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} />);
 
     expect(screen.queryByText("Forge is reading the project index.")).not.toBeInTheDocument();
     expect(screen.queryByText("Forge is producing a bounded plan.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Load earlier conversation" })).toBeVisible();
   });
 
-  it("never folds away the exact activity event that authorizes a current action", () => {
+  it("shows a startup failure even before an episode exists", () => {
+    const { episodeId: _episodeId, ...withoutEpisode } = event();
+    const failed = {
+      ...withoutEpisode,
+      id: "failed_start",
+      eventType: "activity",
+      data: {
+        job: {
+          id: "job_failed",
+          hash: HASH,
+          artifact: { locator: `artifacts/${HASH}.json`, artifactHash: HASH, bytes: 90 },
+        },
+        status: "failed",
+        phase: "stopped",
+        message: "Studio disconnected before the request started.",
+      },
+    } as CreatorConversationEvent;
+    const state = dashboardState({
+      eventPage: { conversationId: "conversation_01", events: [failed], complete: true },
+    });
+    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} />);
+    expect(screen.getByText("Studio disconnected before the request started.")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Work stopped" })).toBeVisible();
+  });
+
+  it("keeps an action on hidden activity usable without showing internal bookkeeping", () => {
     const job = {
       id: "job_01",
       hash: HASH,
@@ -325,9 +661,11 @@ describe("ConversationTimeline", () => {
       },
     });
 
-    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} onOpenDetails={vi.fn()} />);
+    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} />);
 
-    expect(screen.getByText("Forge is waiting for explicit creator authority.")).toBeVisible();
+    expect(
+      screen.queryByText("Forge is waiting for explicit creator authority."),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByText("Forge reconstructed the durable job state."),
     ).not.toBeInTheDocument();
@@ -369,14 +707,14 @@ describe("ConversationTimeline", () => {
         })),
       },
     });
-    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} onOpenDetails={vi.fn()} />);
+    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} />);
     expect(
       screen.queryByText(/bounded conversation context|provider intent|lower runtime/),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "new_conversation" })).not.toBeInTheDocument();
   });
 
-  it("visually marks incomplete verification as evidence requiring attention", () => {
+  it("keeps machine verification evidence out of the conversation", () => {
     const verification = {
       ...event(),
       authority: "forge",
@@ -399,13 +737,10 @@ describe("ConversationTimeline", () => {
       },
     });
 
-    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} onOpenDetails={vi.fn()} />);
+    render(<ConversationTimeline state={state} snapshot={SNAPSHOT} />);
 
-    const card = screen
-      .getByRole("heading", { name: "Forge couldn't confirm everything" })
-      .closest("article");
-    expect(card).toHaveClass("conversation-event--sheet", "conversation-event--attention");
-    expect(screen.getByText("Studio did not return one required fact.")).toBeVisible();
+    expect(screen.queryByText("Studio did not return one required fact.")).not.toBeInTheDocument();
+    expect(state.eventPage?.events[0]).toBe(verification);
   });
 
   it("shares one report across keep and undo and retains it until admission resolves", async () => {
@@ -479,7 +814,5 @@ describe("ConversationTimeline", () => {
 });
 
 function StoredTimeline({ state }: { readonly state: CreatorDashboardState }): React.JSX.Element {
-  return (
-    <ConversationTimeline state={state} snapshot={useDashboardSnapshot()} onOpenDetails={vi.fn()} />
-  );
+  return <ConversationTimeline state={state} snapshot={useDashboardSnapshot()} />;
 }

@@ -15,6 +15,7 @@ import {
   CreatorConversationStore,
   CreatorProjectIdentityJobStore,
   assertCreatorPublishedIdentityContinuityReceipt,
+  assertCreatorDashboardState,
   type CreatorActionRequest,
   type CreatorTurnRequest,
 } from "../packages/creator-conversation/src/index.js";
@@ -105,7 +106,16 @@ async function waitFor(predicate: () => boolean | Promise<boolean>): Promise<voi
 
 test("project Link admission returns before Studio and idempotently reaches a durable receipt", async () => {
   const directory = await mkdtemp(join(tmpdir(), "forge-identity-coordinator-"));
-  let studio = session();
+  let studio = {
+    ...session(),
+    projectIdentity: createStudioProjectIdentityState({
+      project,
+      reservedAttribute: {
+        status: "observed",
+        forgeProjectId: "forge_project_86958b1ba2524252a60821ae68713233",
+      },
+    }),
+  };
   let releaseLink!: () => void;
   const linkGate = new Promise<void>((resolve) => {
     releaseLink = resolve;
@@ -157,7 +167,14 @@ test("project Link admission returns before Studio and idempotently reaches a du
     now: () => new Date(time),
   });
   await coordinator.initialize();
-  const state = await coordinator.dashboardState();
+  const automatic = await coordinator.dashboardState();
+  const automaticId = automatic.selectedConversationId!;
+  assert.equal(automatic.conversations.length, 1);
+  // Incident: another open place paired briefly before the first explicit Link.
+  // Its same filename must not leave a second, empty project in the workspace.
+  studio = session();
+  const state = await coordinator.dashboardState(automaticId);
+  assert.equal(state.conversations.length, 0);
   const action = state.controlView!.actions.find(
     (candidate) => candidate.actionId === "link_project",
   )!;
@@ -196,7 +213,23 @@ test("project Link admission returns before Studio and idempotently reaches a du
 
   const linkedState = await coordinator.dashboardState();
   const linkedConversationId = linkedState.selectedConversationId!;
+  assert.equal(linkedState.conversations.length, 1);
+  assert.notEqual(linkedConversationId, automaticId);
+  const staleSelection = await coordinator.dashboardState(automaticId);
+  assertCreatorDashboardState(staleSelection);
+  assert.equal(staleSelection.selectedConversationId, linkedConversationId);
   assert.equal(linkedState.selectedConversation?.project.kind, "local_linked");
+  const browserAfterLink = await coordinator.dashboardState(admission.conversationId);
+  assert.equal(browserAfterLink.selectedConversationId, linkedConversationId);
+  assert.ok(browserAfterLink.controlView?.turnContract, "linking must unlock the composer");
+  const linkedStudio = studio;
+  studio = session();
+  assert.deepEqual(
+    (await coordinator.dashboardState()).conversations.map((item) => item.id),
+    [linkedConversationId],
+    "an explicitly linked empty project stays in the workspace after switching places",
+  );
+  studio = linkedStudio;
   assert.ok(
     linkedState.controlView?.actions.some((candidate) => candidate.actionId === "fork_project"),
     "an idle linked local place must expose an explicit Fork action",
@@ -263,7 +296,22 @@ test("project Link admission returns before Studio and idempotently reaches a du
     universeId: "1357",
     placeId: "2468",
   });
-  coordinator.close();
+  await coordinator.close();
+  const restarted = new CreatorConversationCoordinator({
+    transaction: transactionMock(() => studio),
+    connection,
+    directory,
+    defaultModelId: "openai/gpt-5.6-luna",
+    modelCatalog: unconfirmedCreatorModelCatalog(time, "catalog_request_failed"),
+    now: () => new Date(time),
+  });
+  await restarted.initialize();
+  const afterRestart = await restarted.dashboardState(automaticId);
+  assert.equal(afterRestart.conversations.length, 1);
+  assert.equal(afterRestart.selectedConversationId, linkedConversationId);
+  // Visibility is a projection; no retained identities or evidence are deleted.
+  assert.equal((await conversationStore.enumerate()).conversations.length, 2);
+  await restarted.close();
 });
 
 test("concurrent distinct Link admissions from one stale view produce one durable operation", async () => {
@@ -350,6 +398,11 @@ test("historical project selection is read-only and cached authority dies after 
   await coordinator.initialize();
   const projectA = await coordinator.dashboardState();
   const projectAId = projectA.selectedConversationId!;
+  await coordinator.renameWorkspace({
+    scope: "project",
+    conversationId: projectAId,
+    name: "Project A",
+  });
   const cachedView = projectA.controlView!;
   const turnContract = cachedView.turnContract!;
   const remember = cachedView.actions.find((candidate) => candidate.actionId === "remember")!;
@@ -386,6 +439,12 @@ test("historical project selection is read-only and cached authority dies after 
   await assert.rejects(coordinator.submitAction(staleAction), /open and pair this project/i);
   studio = session();
   const unlinked = await coordinator.dashboardState(projectAId);
+  assertCreatorDashboardState(unlinked);
+  assert.equal(unlinked.selectedConversationId, unlinked.controlView?.conversationId);
+  assert.equal(unlinked.selectedConversation, undefined);
+  assert.equal(unlinked.eventPage, undefined);
+  assert.equal(unlinked.projectSettings, undefined);
+  assert.ok(unlinked.conversations.some((conversation) => conversation.id === projectAId));
   assert.match(unlinked.controlView?.conversationId ?? "", /^pairing_/);
   assert.notEqual(unlinked.controlView?.conversationId, projectAId);
   await coordinator.close();
@@ -437,6 +496,58 @@ test("concurrent first reads publish one deterministic conversation head", async
   assert.equal(enumeration.conversations.length, 1);
   assert.equal(enumeration.conversations[0]?.head.sequence, 1);
   await coordinator.close();
+});
+
+test("same-named projects retain distinct IDs and explicitly named or created conversations", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "forge-workspace-project-membership-"));
+  let studio = publishedSession("game.rbxlx", 1001, 2001, "studio_membership_a");
+  const options = {
+    transaction: transactionMock(() => studio),
+    connection: {} as StudioBridgeConnection,
+    directory,
+    defaultModelId: "openai/gpt-5.6-luna" as const,
+    modelCatalog: unconfirmedCreatorModelCatalog(time, "catalog_request_failed"),
+    now: () => new Date(time),
+  };
+  const coordinator = new CreatorConversationCoordinator(options);
+  await coordinator.initialize();
+  const first = await coordinator.dashboardState();
+  const firstId = first.selectedConversationId!;
+  await coordinator.renameWorkspace({
+    scope: "conversation",
+    conversationId: firstId,
+    name: "My conversation",
+  });
+  studio = publishedSession("game.rbxlx", 1002, 2002, "studio_membership_b");
+  const second = await coordinator.dashboardState();
+  const secondId = second.selectedConversationId!;
+  assert.notEqual(secondId, firstId);
+  assert.equal(second.conversations.length, 2);
+  assert.notDeepEqual(second.conversations[0]!.project, second.conversations[1]!.project);
+  assert.ok(second.conversations.every((item) => item.projectName === "game.rbxlx"));
+  const view = second.controlView!;
+  const action = view.actions.find((item) => item.actionId === "new_conversation")!;
+  const admission = await coordinator.submitAction({
+    kind: "CreatorActionRequest",
+    conversationId: secondId,
+    viewId: view.id,
+    viewHash: view.hash,
+    actionInstanceId: action.actionInstanceId,
+    idempotencyKey: "workspace-explicit-empty-conversation",
+  });
+  await waitFor(async () => (await coordinator.dashboardState()).conversations.length === 3);
+  studio = session();
+  const retained = await coordinator.dashboardState();
+  assert.equal(retained.conversations.length, 3);
+  assert.ok(retained.conversations.some((item) => item.id === admission.conversationId));
+  await coordinator.close();
+  const restarted = new CreatorConversationCoordinator(options);
+  await restarted.initialize();
+  assert.deepEqual(
+    (await restarted.dashboardState()).conversations.map((item) => item.id).sort(),
+    retained.conversations.map((item) => item.id).sort(),
+  );
+  await restarted.close();
 });
 
 test("job admission authority and host context are authenticated conversation artifacts", async () => {
@@ -706,6 +817,9 @@ test("stale clear inventory is not no-effect proof after an unknown identity out
   });
   const store = new CreatorProjectIdentityJobStore(directory);
   await waitFor(async () => (await store.load(admitted.jobId)).job.status === "outcome_unknown");
+  await waitFor(
+    async () => (await coordinator.dashboardState()).controlView?.status === "recovery_required",
+  );
   const view = (await coordinator.dashboardState()).controlView!;
   assert.equal(view.status, "recovery_required");
   assert.match(view.detail, /transport closed/);

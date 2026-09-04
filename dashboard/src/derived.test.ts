@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { makeActionRequest, makeTurnRequest } from "./derived";
+import { formatTimestamp, makeActionRequest, makeTurnRequest } from "./derived";
 import { HASH_B, dashboardState } from "./test/fixtures";
 
 describe("conversation request derivation", () => {
+  it("shows time for today and a date without time for older messages", () => {
+    const now = new Date(2026, 8, 4, 12);
+    const today = new Date(2026, 8, 4, 8, 35);
+    const yesterday = new Date(2026, 8, 3, 23, 59);
+    expect(formatTimestamp(today.toISOString(), now)).toBe(
+      new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(today),
+    );
+    expect(formatTimestamp(yesterday.toISOString(), now)).toBe(
+      new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(yesterday),
+    );
+    const previousYear = new Date(2025, 8, 4);
+    expect(formatTimestamp(previousYear.toISOString(), now)).toContain("2025");
+  });
   it("preserves every creator-message byte while rejecting whitespace-only text", () => {
     const state = dashboardState();
     const text = "  Keep this exact line.\n";

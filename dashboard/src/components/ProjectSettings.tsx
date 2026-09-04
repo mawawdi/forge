@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { dashboardStore, useDashboardSnapshot } from "../api-store";
 import { byteLength, makeActionRequest } from "../derived";
 import { EventActions } from "./ConversationTimeline";
+import { Icon } from "./Icon";
+import { updateBrowserPreferences, useBrowserPreferences } from "../browser-preferences";
 import type {
   CreatorDashboardState,
   CreatorControlActionDescriptor,
@@ -14,16 +16,15 @@ export function ProjectSettings({
   state,
   open,
   onClose,
-  onOpenDetails,
   returnFocusTo,
 }: {
   readonly state: CreatorDashboardState | undefined;
   readonly open: boolean;
   readonly onClose: () => void;
-  readonly onOpenDetails: (source: HTMLElement) => void;
   readonly returnFocusTo: HTMLElement | undefined;
 }): React.JSX.Element | null {
   const snapshot = useDashboardSnapshot();
+  const { enterToSend } = useBrowserPreferences();
   const pending = Boolean(snapshot.pendingRequest);
   const dialog = useRef<HTMLElement>(null);
   const [tab, setTab] = useState<(typeof SETTINGS_TABS)[number]>("Preferences");
@@ -85,7 +86,7 @@ export function ProjectSettings({
             </p>
           </div>
           <button type="button" aria-label="Close project settings" onClick={onClose}>
-            ×
+            <Icon name="close" />
           </button>
         </header>
         <div
@@ -127,6 +128,23 @@ export function ProjectSettings({
         <div className="settings-content" id="settings-panel" role="tabpanel" aria-label={tab}>
           {tab === "Preferences" ? (
             <>
+              <label className="settings-send-preference">
+                <span>
+                  <strong>Enter to send</strong>
+                  <small>
+                    {enterToSend
+                      ? "Shift Enter adds a new line."
+                      : "⌘/Ctrl Enter sends your message."}
+                  </small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={enterToSend}
+                  onChange={(event) =>
+                    updateBrowserPreferences({ enterToSend: event.target.checked })
+                  }
+                />
+              </label>
               <h3>Make Forge work your way</h3>
               <p className="settings-description">
                 Save instructions for every conversation in this project.
@@ -161,19 +179,10 @@ export function ProjectSettings({
               <p className="settings-description">
                 Save your place with File → Save to File in Studio.
               </p>
-              <button
-                type="button"
-                onClick={(event) => {
-                  onOpenDetails(event.currentTarget);
-                  onClose();
-                }}
-              >
-                Connection details
-              </button>
             </>
           ) : (
             <>
-              <h3>Project identity and diagnostics</h3>
+              <h3>Project identity</h3>
               <p className="settings-description">
                 A new conversation keeps this project. A separate project identity is for a place
                 you want to treat as a different project.
@@ -188,15 +197,6 @@ export function ProjectSettings({
                   }
                 />
               ) : null}
-              <button
-                type="button"
-                onClick={(event) => {
-                  onOpenDetails(event.currentTarget);
-                  onClose();
-                }}
-              >
-                Open technical details
-              </button>
             </>
           )}
         </div>

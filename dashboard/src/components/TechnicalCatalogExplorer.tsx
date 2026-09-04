@@ -78,10 +78,7 @@ export function TechnicalCatalogExplorer(): React.JSX.Element {
       <div className="technical-section-heading">
         <div>
           <h3 id="coverage-title">Roblox API coverage</h3>
-          <p>
-            Official catalog metadata is context. Only an explicit, proof-closed manifest route can
-            authorize a Studio change.
-          </p>
+          <p>Search Roblox APIs and see which properties Forge can edit directly.</p>
         </div>
         <button
           type="button"
@@ -98,11 +95,11 @@ export function TechnicalCatalogExplorer(): React.JSX.Element {
             <dd>{new Intl.NumberFormat().format(summary.total)}</dd>
           </div>
           <div>
-            <dt>Authorable classes</dt>
+            <dt>Supported objects</dt>
             <dd>{new Intl.NumberFormat().format(summary.authorableClasses)}</dd>
           </div>
           <div>
-            <dt>Authorable properties</dt>
+            <dt>Editable properties</dt>
             <dd>{new Intl.NumberFormat().format(summary.authorableProperties)}</dd>
           </div>
         </dl>
@@ -147,9 +144,7 @@ export function TechnicalCatalogExplorer(): React.JSX.Element {
             {page.entries.map((entry) => (
               <li key={entry.id}>
                 <strong>{entry.title}</strong>
-                <span>
-                  {entry.disposition} · {entry.reason}
-                </span>
+                <span>{coverageDescription(entry)}</span>
               </li>
             ))}
           </ul>
@@ -172,6 +167,26 @@ export function TechnicalCatalogExplorer(): React.JSX.Element {
       ) : null}
     </section>
   );
+}
+
+function coverageDescription(entry: CoverageEntry): string {
+  if (entry.disposition === "authorable") return "Forge can edit this directly";
+  const reasons: Record<string, string> = {
+    deprecated: "Replaced by a newer Roblox API",
+    hidden: "Not exposed by Roblox",
+    read_only: "Read only",
+    security_gated: "Requires Roblox permissions",
+    not_serialized: "Runtime value; not stored in the place",
+    unsupported_codec: "Direct editing is not supported yet",
+    engine_or_external_authority: "Managed by Roblox",
+    structure_managed: "Managed when creating or moving objects",
+    parent_policy_missing: "Managed when creating or moving objects",
+    service_root: "Built-in Roblox service",
+    class_not_creatable: "Created by Roblox",
+    script_api: "Available through Luau scripts",
+    catalog_only: "Reference information",
+  };
+  return reasons[entry.reason] ?? "Direct editing is not supported";
 }
 
 function parseCoveragePage(value: Record<string, unknown>): CoveragePage {

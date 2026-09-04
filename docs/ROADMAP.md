@@ -4,6 +4,82 @@ This is the canonical status and next-work record. [ARCHITECTURE.md](ARCHITECTUR
 
 ## Current milestone: Creator Conversation presentation-ready clean break
 
+The latest implemented flow is **read-only plan → accept/change/reject → Build and
+automatic Apply → model Markdown result**. Optional Play is advisory follow-up
+context and does not block completion or trigger another model. Long conversations
+now compact older history into durable model-written handoffs while retaining
+recent messages and the original transcript. These changes replace the foreground
+Play/final-report workflow; live acceptance is tracked in the ledger below.
+
+The Gemini planning/build incident is preserved in the checksum-verified external
+archive `~/Documents/ForgeRecovery/gemini-planning-architecture-2026-09-04-125030`
+(513 files). Planner `agent_run_b0d7600f-1786-4d35-ba16-9ac389ce8319` took
+453,829 ms, 23 requests, 459,941 input tokens, 56,919 output tokens, and $0.3211503
+reported cost. Five rejected proposals consumed 241,096 ms and 33,237 output
+tokens; local tools consumed only 82 ms. Builder reservation
+`agent_run_fb3ff554-fa88-4858-a24c-5c1ab6c48417` never dispatched: contract
+validation read a nonexistent target class field.
+
+The exact 19-change plan and 42-object capture now construct a valid build
+contract offline. The compact handle-based planning interface, host-generated
+structural checks, preserved rejected continuations, semantic retry guard,
+immediate completion, preparation diagnostics/retry, and request-size/usage
+measurements are implemented. The two fresh Gemini samples completed in 72 and
+105 seconds with a single plan submission each; Spark completed in 65 seconds
+without rejected tools. Luna's comparison also published a valid plan. The
+creator selected Spark for subsequent work, replacing the planned third Gemini
+sample. See the [acceptance ledger](research/compact-planning-acceptance.md) for
+exact run identities, usage, and archives. The reviewed Build/Apply/Play cycle
+remains pending; planning measurements do not establish a clean game.
+
+The dashboard now includes keyboard conversation search, local pins, a hideable
+sidebar, tab-scoped draft recovery with exact explicit retries, reading-position
+restoration, jump-to-latest navigation, expandable composition, undo for cleared
+drafts, configurable send shortcuts, and copyable Markdown replies. Planner,
+builder, and repair prompts explicitly request Markdown for prose only. Reopening
+an unlinked Studio place no longer mixes its link controls with historical chat
+state. This QoL work does not change the 20-minute response deadline or claim a
+successful live game implementation.
+
+The property audit now fails generation on missing implemented-codec mappings
+or uncovered eligible properties in enabled classes. URI content, asset clearing,
+and common UI building blocks bring support to 47 classes and 630 property
+applications; 66 offline native-datatype conversion cases supplement the existing
+tests. The subsequently unlocked Mac enabled the requested live loop. Studio
+reflection now confirms all 630 property applications after correcting 18
+Content/ContentId metadata mismatches. Live linking and pasted-request admission
+also exposed and resolved independent failures. The first model attempt was
+operator-interrupted while a response was pending; no plan or Apply resulted.
+See the [live follow-up](research/durable-creator-conversation.md#live-property-attestation-and-request-admission-2026-09-04)
+for identities, archives, and remaining live work. A subsequent valid Luna plan
+exposed an automatically expanded citation list that exceeded its own contract;
+explicit citation selection and validation before tool success now fix that
+publication boundary. Another attempt exposed truncated tool output being
+treated as an ordinary response. Truncation/refusal now prevent every tool in
+that response from executing. The response timeout remains 20 minutes. Current
+offline verification passes 356 Node tests, 59 dashboard tests, 30 browser
+checks (18 existing layout skips), plugin analysis/module/66-codec tests, and
+temporary Rojo builds. Successful end-to-end Build/Apply/Play remains pending.
+The following DeepSeek run published one plan, then encountered a provider error
+during Build before any Apply. Its 311-file verified archive preserves the full
+trace. Error-envelope classification, failure presentation, planning/staging
+instructions, and complete missing-check feedback are corrected. The following
+Luna run completed a locally eligible 24-change Build, but source review found
+gameplay defects before Apply. Its 370-file archive preserves the draft. Review
+now supports requesting corrections before application and uses plain language.
+Native Play and visual inspection remain
+blocked while the computer-use tool reports the Mac locked.
+
+The subsequent plan/build/refresh incident is diagnosed from 409 verified
+artifacts and both complete journals. The product now presents one structured
+plan, hides action bookkeeping, consolidates Details access, and coalesces
+project notices. FontFace authoring is enabled, repeated refresh notices retain
+their original recovery state, and builder context shares identical property
+policies instead of repeating them per operation. The old local run state is
+preserved externally before the capability-contract clean break. See the
+[polish and build-cost incident](research/durable-creator-conversation.md#conversation-polish-font-authoring-and-refresh-2026-09-04)
+for measured costs, archive paths, and verification limits.
+
 The subsequent DeepSeek planner completed a six-step plan, but an oversized
 activity error froze browser updates and artifact-identity bugs blocked
 publication. Both boundaries are corrected and the exact saved plan now
@@ -52,9 +128,10 @@ planner-issued handles into durable source-range/project-fact citations. No
 model can mint a citation or inject hidden evaluator material as conversation
 authority.
 
-The model registry is a closed ordered four-model registry with tools required:
+The model registry is a closed ordered five-model registry with tools required:
 `meta/muse-spark-1.3-contributor`, `z-ai/glm-5.3-flash`,
-`deepseek/deepseek-v4-flash-0731`, and default `openai/gpt-5.6-luna`. Model and
+`deepseek/deepseek-v4-flash-0731`, default `openai/gpt-5.6-luna`, and
+`google/gemini-3.8-flash`. Model and
 provider fallback are disabled. Registry/catalog availability can reject a
 selection, and a published agent turn requires exact requested-model and
 serving-provider attribution.

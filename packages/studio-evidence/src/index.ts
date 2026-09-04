@@ -1496,7 +1496,7 @@ export function assertStudioValue(value: unknown): asserts value is StudioValue 
       return;
     case "content":
       exactKeys(item, ["kind", "value"], "content value");
-      if (!validUtf8(item.value) || item.value.length === 0) fail("content value");
+      if (!validUtf8(item.value)) fail("content value");
       return;
     case "color3_rgb8":
       exactKeys(item, ["kind", "r", "g", "b"], "color value");

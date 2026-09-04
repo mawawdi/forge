@@ -15,6 +15,46 @@ local ConnectorPresentation = require("../plugin/src/Forge/ConnectorPresentation
 local fs = require("@lune/fs")
 
 do
+	local withinRoot = StudioInstancePolicy.isWithinEvidenceRoot
+	StudioInstancePolicy.isWithinEvidenceRoot = function() return true end
+	local function mockInstance(className: string)
+		local handlers = {}
+		local function signal(field: string)
+			return { Connect = function(_, callback)
+				handlers[field] = callback
+				return { Disconnect = function() handlers[field] = nil end }
+			end }
+		end
+		return {
+			ClassName = className,
+			Changed = signal("Changed"),
+			AttributeChanged = signal("AttributeChanged"),
+			IsA = function(_, name) return className == "StringValue" and name == "ValueBase" end,
+			GetPropertyChangedSignal = function(_, field) return signal(field) end,
+		}, handlers
+	end
+	local monitor = StudioProjectChangeMonitor.new(function() end, {})
+	local camera, cameraEvents = mockInstance("Camera")
+	local label, labelEvents = mockInstance("TextLabel")
+	local value, valueEvents = mockInstance("StringValue")
+	monitor:attachInstance(camera)
+	monitor:attachInstance(label)
+	monitor:attachInstance(value)
+	assert(not monitor.monitoringFailed)
+	cameraEvents.Changed("CFrame")
+	labelEvents.Changed("AbsoluteSize")
+	assert(monitor:detectorEpoch() == 0, "viewport motion and computed UI layout must not invalidate the project")
+	labelEvents.Changed("FontFace")
+	valueEvents.Changed("Camera")
+	valueEvents.Name()
+	valueEvents.Parent()
+	assert(monitor:detectorEpoch() == 4, "authored fonts, value contents, renames, and reparenting must stay observable")
+	monitor:destroy()
+	assert(next(valueEvents) == nil, "all specialized ValueBase listeners must be released")
+	StudioInstancePolicy.isWithinEvidenceRoot = withinRoot
+end
+
+do
 	local connected = ConnectorPresentation.connection("connected")
 	assert(not connected.showPrimary and connected.action == "Disconnect", "a healthy connector must keep disconnection in settings instead of making it the main action")
 	for _, mode in { "reserved", "connecting" } do
@@ -45,6 +85,13 @@ local evidenceCollectorSource = fs.readFile("plugin/src/Forge/StudioEvidenceColl
 local scriptSource = fs.readFile("plugin/src/Forge/StudioScriptSource.luau")
 local projectIndexSource = fs.readFile("plugin/src/Forge/StudioProjectIndexCollector.luau")
 local projectChangeMonitorSource = fs.readFile("plugin/src/Forge/StudioProjectChangeMonitor.luau")
+assert(not StudioInstancePolicy.isIndexedProperty("Camera", "CFrame"), "viewport navigation must not invalidate an authoring plan")
+assert(not StudioInstancePolicy.isIndexedProperty("TextLabel", "AbsoluteSize"), "derived UI layout must not invalidate an authoring plan")
+assert(StudioInstancePolicy.isIndexedProperty("TextLabel", "FontFace"), "font authoring must invalidate indexed UI facts")
+assert(StudioInstancePolicy.isIndexedProperty("Part", "CFrame"), "moving an authored part must still invalidate its plan")
+assert(StudioInstancePolicy.isIndexedProperty("Camera", "Name"), "unknown-class structural changes remain indexed")
+assert(StudioInstancePolicy.isIndexedProperty("Script", "Source"), "script edits remain indexed")
+assert(StudioInstancePolicy.isIndexedProperty("StringValue", "Value"), "ValueBase value changes remain indexed")
 local projectIdentitySource = fs.readFile("plugin/src/Forge/StudioProjectIdentity.luau")
 local identityRegistrySource = fs.readFile("plugin/src/Forge/IdentityRegistry.luau")
 local authoringSource = fs.readFile("plugin/src/Forge/StudioAuthoring.luau")
@@ -62,7 +109,7 @@ Hash.setDigestForTest(function(value: string): string
 	for index = 1, 32 do result[index] = string.char(bytes[index]) end
 	return table.concat(result)
 end)
-assert(StudioProjectIdentity.settingKeyForTest() == "ForgeStudioProjectIdentityTransactionV1", "project identity must have one clean-break durable setting")
+assert(StudioProjectIdentity.settingKeyForTest() == "ForgeStudioProjectIdentityTransactionV2", "project identity must have one clean-break durable setting")
 assert(not string.find(projectIdentitySource, "GeneratedStudioEvidence", 1, true) and not string.find(projectIdentitySource, "Generated.", 1, true), "reserved project identity must stay outside generic manifest authoring")
 assert(not pcall(function()
 	Generated.validateAttributes({ [Constants.PROJECT_IDENTITY_ATTRIBUTE] = "forge_project_00000000000000000000000000000000" })
@@ -70,7 +117,7 @@ end), "generic authoring must reject the reserved project identity attribute")
 local identityIntent = assert(string.find(projectIdentitySource, 'persist(self.plugin, { kind = "StudioProjectIdentityTransactionCursor", operation = operation, beforeIdentity = before, phase = "opening" })', 1, true), "identity transaction must persist an opening intent")
 local identityBegin = assert(string.find(projectIdentitySource, "TryBeginRecording", identityIntent, true), "identity transaction must use ChangeHistoryService")
 assert(identityIntent < identityBegin, "project identity intent must be durable before TryBeginRecording can affect Studio")
-assert(string.find(projectIdentitySource, "SetAttribute(Constants.PROJECT_IDENTITY_ATTRIBUTE", 1, true) and string.find(projectIdentitySource, "local observed = self:observe()", 1, true), "project identity writes must use the reserved DataModel attribute and direct readback")
+assert(string.find(projectIdentitySource, "SetAttribute(Constants.PROJECT_IDENTITY_ATTRIBUTE", 1, true) and string.find(projectIdentitySource, "local observed = self:observe()", 1, true), "project identity writes must use the reserved Workspace attribute and direct readback")
 assert(string.find(projectIdentitySource, "IsRecordingInProgress(recordingId)", 1, true) and string.find(projectIdentitySource, "FinishRecording", 1, true), "project identity finalization must prove exact recording closure")
 assert(string.find(runtimeSource, 'message.type == "LinkStudioProject"', 1, true) and string.find(runtimeSource, 'message.type == "ForkStudioProject"', 1, true) and string.find(runtimeSource, 'message.type == "AbandonOpeningStudioProjectIdentity"', 1, true) and string.find(runtimeSource, 'message.type == "CancelInterruptedStudioProjectIdentity"', 1, true) and string.find(runtimeSource, 'message.type == "SettleClosedStudioProjectIdentity"', 1, true), "Runtime must expose only the dedicated identity transaction and recovery commands")
 assert(string.find(runtimeSource, 'postMessage(messageFor("UnpairProject", { reason = "plugin_unload" }', 1, true), "plugin unload must release only its bridge lease while retaining durable Studio recovery evidence")
@@ -81,12 +128,16 @@ local boundedIdentityFailure = StudioProjectIdentity.boundedFailureDetailForTest
 assert(#boundedIdentityFailure <= Constants.MAX_DIAGNOSTIC_CHARS and utf8.len(boundedIdentityFailure) ~= nil, "identity failure detail truncation must preserve UTF-8 and its protocol byte bound")
 
 local function identityRoot(initial: any?)
-	local root = { Name = "Identity Test", PlaceId = 0, GameId = 0, value = initial }
-	function root:GetAttribute(name: string): any
+	local root = { Name = "Identity Test", PlaceId = 0, GameId = 0, Workspace = { value = initial } }
+	function root:GetService(name: string): any
+		assert(name == "Workspace")
+		return self.Workspace
+	end
+	function root.Workspace:GetAttribute(name: string): any
 		assert(name == Constants.PROJECT_IDENTITY_ATTRIBUTE)
 		return self.value
 	end
-	function root:SetAttribute(name: string, value: any)
+	function root.Workspace:SetAttribute(name: string, value: any)
 		assert(name == Constants.PROJECT_IDENTITY_ATTRIBUTE)
 		self.value = value
 	end
@@ -107,6 +158,19 @@ local function identityOperation(root: any, action: string, assigned: string): a
 	semantic.id = "studio_project_identity_operation_" .. string.sub(hash, 1, 24)
 	semantic.hash = hash
 	return StudioProjectIdentity.canonicalOperationForTest(semantic)
+end
+
+do
+	local linked = identityRoot("forge_project_86958b1ba2524252a60821ae68713233")
+	local PlaytestContext = require("../plugin/src/Forge/PlaytestContext")
+	local first = PlaytestContext.projectKey(linked)
+	assert(first == "ForgePlaytestContext" .. Hash.sha256("local:" .. linked.Workspace.value))
+	linked.Name = "Renamed Place"
+	assert(PlaytestContext.projectKey(linked) == first, "Play context must follow the saved Workspace project identity across reopen and rename")
+	local unlinked = identityRoot(nil)
+	assert(PlaytestContext.projectKey(unlinked) == nil)
+	unlinked.PlaceId, unlinked.GameId = 41, 42
+	assert(PlaytestContext.projectKey(unlinked) == "ForgePlaytestContext" .. Hash.sha256("published:42:41"))
 end
 
 local identityEvents, identitySettings = {}, {}
@@ -143,19 +207,19 @@ local linkOperation = identityOperation(linkedRoot, "link", "forge_project_11111
 assert(not pcall(function() identityManager:execute(linkOperation, string.rep("b", 64), function() return true end) end), "an epoch mismatch must reject before recording")
 local rejectedLinkEvidence = identityManager:rejectionEvidence(linkOperation)
 assert(rejectedLinkEvidence.kind == "StudioProjectIdentityRejectionEvidence" and rejectedLinkEvidence.status == "observed" and rejectedLinkEvidence.operationHash == linkOperation.hash and rejectedLinkEvidence.identity.hash == linkOperation.expectedIdentity.hash and rejectedLinkEvidence.transaction.status == "none" and rejectedLinkEvidence.recordingState == "not_open", "a pre-recording rejection must capture exact bound no-effect evidence")
-assert(#identityEvents == 0 and linkedRoot.value == nil, "capturing rejection evidence must never write settings, open a recording or mutate identity")
+assert(#identityEvents == 0 and linkedRoot.Workspace.value == nil, "capturing rejection evidence must never write settings, open a recording or mutate identity")
 local linkReceipt = identityManager:execute(linkOperation, string.rep("a", 64), function() return true end)
-assert(linkReceipt.status == "linked" and linkedRoot.value == linkOperation.assignedForgeProjectId, "Link must commit only the exact assigned local project id")
+assert(linkReceipt.status == "linked" and linkedRoot.Workspace.value == linkOperation.assignedForgeProjectId, "Link must commit only the exact assigned local project id")
 assert(identityEvents[1] == "setting:StudioProjectIdentityTransactionCursor:opening" and identityEvents[2] == "begin", "the durable identity intent must precede the recording effect")
 assert(identityEvents[#identityEvents] == "setting:StudioProjectIdentityFinalizationReceipt:linked" and not identityHistory.open, "Link must retain a terminal receipt only after direct closure proof")
 local finalizedRejectionEvidence = identityManager:rejectionEvidence(linkOperation)
 assert(finalizedRejectionEvidence.status == "observed" and finalizedRejectionEvidence.transaction.status == "finalized" and finalizedRejectionEvidence.identity.hash ~= linkOperation.expectedIdentity.hash, "a rejected follow-up after effects must retain the actual receipt and changed identity rather than claim no effects")
 identityManager:acknowledge({ requestId = "identity-ack-test", receiptId = linkReceipt.id, receiptHash = linkReceipt.hash })
-assert(identitySettings.ForgeStudioProjectIdentityTransactionV1 == nil, "only an exact receipt acknowledgement may clear settled identity evidence")
+assert(identitySettings.ForgeStudioProjectIdentityTransactionV2 == nil, "only an exact receipt acknowledgement may clear settled identity evidence")
 
 local failedWriteSettings = {}
 local failedWriteRoot = identityRoot(nil)
-function failedWriteRoot:SetAttribute(_name: string, _value: any) error("injected identity write failure") end
+function failedWriteRoot.Workspace:SetAttribute(_name: string, _value: any) error("injected identity write failure") end
 local failedWritePlugin = {
 	GetSetting = function(_self: any, key: string): any return failedWriteSettings[key] end,
 	SetSetting = function(_self: any, key: string, value: any) failedWriteSettings[key] = value end,
@@ -196,8 +260,8 @@ assert(not pcall(function() intentFailureManager:execute(intentFailureOperation,
 local openingSettings = {}
 local openingRoot = identityRoot(nil)
 local openingWrites = 0
-local openingSetAttribute = openingRoot.SetAttribute
-function openingRoot:SetAttribute(name: string, value: any)
+local openingSetAttribute = openingRoot.Workspace.SetAttribute
+function openingRoot.Workspace:SetAttribute(name: string, value: any)
 	openingWrites += 1
 	openingSetAttribute(self, name, value)
 end
@@ -290,7 +354,7 @@ end
 function recoveryHistory:TryBeginRecording(_name: string): string self.open = true; return "identity-recording" end
 function recoveryHistory:FinishRecording(_recordingId: string, operation: any)
 	if self.failFinish then error("injected uncertain finish") end
-	if operation == "cancel" then recoveryRoot.value = nil end
+	if operation == "cancel" then recoveryRoot.Workspace.value = nil end
 	self.open = false
 end
 local recoveryManager = StudioProjectIdentity.new(recoveryPlugin, {
@@ -312,7 +376,7 @@ local recoveryReceipt = recoveryManager:cancelInterrupted({
 	recordingId = interruptedInventory.recordingId,
 	expectedIdentityStateHash = StudioProjectIdentity.observeForTest(recoveryRoot).hash,
 }, function() return true end)
-assert(recoveryReceipt.status == "cancelled" and recoveryReceipt.finalization == "recovery_cancel" and recoveryRoot.value == nil and not recoveryHistory.open, "creator-authorized recovery must cancel only the exact proven-open identity recording")
+assert(recoveryReceipt.status == "cancelled" and recoveryReceipt.finalization == "recovery_cancel" and recoveryRoot.Workspace.value == nil and not recoveryHistory.open, "creator-authorized recovery must cancel only the exact proven-open identity recording")
 assert(not pcall(function()
 	recoveryManager:cancelInterrupted({
 		requestId = "identity-recovery-stale-test",
@@ -327,8 +391,8 @@ end), "a stale or forged recovery cursor must never repeat identity finalization
 local settleSettings = {}
 local settleRoot = identityRoot(nil)
 local settleWrites = 0
-local settleSetAttribute = settleRoot.SetAttribute
-function settleRoot:SetAttribute(name: string, value: any)
+local settleSetAttribute = settleRoot.Workspace.SetAttribute
+function settleRoot.Workspace:SetAttribute(name: string, value: any)
 	settleWrites += 1
 	settleSetAttribute(self, name, value)
 end

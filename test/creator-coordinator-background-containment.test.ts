@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -26,9 +26,55 @@ import {
   type StudioProjectIndexCapture,
 } from "../packages/studio-evidence/src/index.js";
 import type { StudioBridgeSession } from "../packages/studio-bridge/src/index.js";
-import { createStudioProjectIdentityState } from "../packages/studio-protocol/src/index.js";
+import {
+  createStudioProjectIdentityState,
+  type BackendToPluginMessage,
+} from "../packages/studio-protocol/src/index.js";
 
 const project = { name: "Deferred coordinator follow-up", placeId: 901, universeId: 902 };
+
+test("concurrent and retried finalization acknowledgements keep the exact command identity", async () => {
+  const receipt = JSON.parse(
+    await readFile("test/fixtures/creator-finalization-incident.json", "utf8"),
+  );
+  const sent: BackendToPluginMessage[] = [];
+  let rejectFirst = true;
+  const coordinator = Object.assign(Object.create(CreatorSessionCoordinator.prototype), {
+    finalizationAcknowledgementCommands: new Map(),
+    input: {
+      connection: {
+        send: async (command: BackendToPluginMessage) => {
+          sent.push(structuredClone(command));
+          if (rejectFirst) {
+            rejectFirst = false;
+            throw new Error("lost acknowledgement transport");
+          }
+        },
+      },
+    },
+  }) as {
+    sendFinalizationAcknowledgement(
+      studio: StudioBridgeSession,
+      requestId: string,
+      pending: unknown,
+    ): Promise<void>;
+  };
+  const pending = { receipt };
+  const requestId = "creator_finalization_ack_incident";
+  await assert.rejects(
+    coordinator.sendFinalizationAcknowledgement(studio, requestId, pending),
+    /lost acknowledgement/,
+  );
+  await Promise.all([
+    coordinator.sendFinalizationAcknowledgement(studio, requestId, pending),
+    coordinator.sendFinalizationAcknowledgement(studio, requestId, pending),
+  ]);
+  assert.equal(sent.length, 3);
+  assert.deepEqual(sent[1], sent[0]);
+  assert.deepEqual(sent[2], sent[0]);
+  assert.equal(sent[0]!.type, "AcknowledgeCreatorChangeFinalization");
+  assert.equal(sent[0]!.requestId, requestId);
+});
 const studio: StudioBridgeSession = {
   sessionId: "studio_session_deferred_follow_up",
   projectId: "studio_project_deferred_follow_up",

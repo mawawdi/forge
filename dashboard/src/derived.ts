@@ -152,15 +152,23 @@ export function shortHash(value: string | undefined): string {
   return value.length > 16 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value;
 }
 
-export function formatTimestamp(value: string): string {
+export function formatTimestamp(value: string, now = new Date()): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
+  const today =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  return new Intl.DateTimeFormat(
+    undefined,
+    today
+      ? { hour: "numeric", minute: "2-digit" }
+      : {
+          month: "short",
+          day: "numeric",
+          ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" as const } : {}),
+        },
+  ).format(date);
 }
 
 export function eventLabel(event: CreatorConversationEvent): string {

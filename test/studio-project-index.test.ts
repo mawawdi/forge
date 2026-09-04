@@ -698,6 +698,11 @@ test("connector epoch changes invalidate an otherwise identical project revision
   assert.deepEqual(delta.addedShardHashes, []);
   assert.deepEqual(delta.removedShardHashes, []);
   assert.notEqual(before.revision.hash, after.revision.hash);
+  const changedPolicy = {
+    ...before,
+    revision: { ...before.revision, manifestHash: contentHash("new capability policy") },
+  };
+  assert.equal(createCreatorProjectDelta(before, changedPolicy).changed, true);
 });
 
 test("project deltas retain distinct complete captures when their semantic revision is unchanged", () => {

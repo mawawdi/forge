@@ -205,6 +205,14 @@ export class CreatorConversationStore {
     const current = await this.tryLoad(input.conversation.id);
     assertExpectedHead(input.expectedHead, current?.head);
     validateAppendTransition(input, current);
+    const episodes = new Map(current?.episodes.map((episode) => [episode.id, episode]));
+    const turns = new Map(current?.turns.map((turn) => [turn.id, turn]));
+    const jobs = new Map(current?.jobs.map((job) => [job.id, job]));
+    if (input.episode) episodes.set(input.episode.id, input.episode);
+    if (input.turn) turns.set(input.turn.id, input.turn);
+    if (input.job) jobs.set(input.job.id, input.job);
+    // Reject an unreadable head before publishing it, not on the next poll.
+    assertConversationEpisodeTopology(input.conversation, episodes, turns, jobs);
     await verifyExternalBindings(this.artifactStore, input);
 
     const conversationReference = await this.artifactStore.write(input.conversation);
@@ -754,6 +762,10 @@ function validateAppendTransition(
     return;
   }
   const prior = current.conversation;
+  if (input.episode) {
+    const previous = current.episodes.find((episode) => episode.id === input.episode!.id);
+    if (previous) assertEpisodeSnapshotProgression(previous, input.episode);
+  }
   if (
     (stableJson(prior.project) !== stableJson(input.conversation.project) &&
       !isPublishedContinuityTransition(prior, input.conversation, input.event)) ||
@@ -1589,7 +1601,7 @@ function assertJobExecutionAuthority(
       ? job.agentExecutions[0]?.purpose
       : actionId === "revise_plan"
         ? "planner"
-        : actionId === "build_plan"
+        : actionId === "build_plan" || actionId === "retry_build"
           ? "builder"
           : actionId === "refresh_project"
             ? "planner"
@@ -1673,7 +1685,7 @@ function isSameJournalResponseResume(prior: CreatorWorkJob, job: CreatorWorkJob)
   );
 }
 
-function isEpisodeStatusTransition(
+export function isEpisodeStatusTransition(
   from: CreatorWorkEpisode["status"],
   to: CreatorWorkEpisode["status"],
 ): boolean {
@@ -1681,6 +1693,7 @@ function isEpisodeStatusTransition(
   const allowed: Record<CreatorWorkEpisode["status"], readonly CreatorWorkEpisode["status"][]> = {
     indexing: ["planning", "refresh_required", "incomplete"],
     planning: [
+      "accepted",
       "awaiting_clarification",
       "awaiting_plan_decision",
       "refresh_required",
@@ -1695,36 +1708,111 @@ function isEpisodeStatusTransition(
       "incomplete",
     ],
     refining_plan: [
+      "accepted",
+      "superseded",
       "awaiting_clarification",
       "awaiting_plan_decision",
       "refresh_required",
       "incomplete",
     ],
-    building: ["awaiting_change_decision", "refresh_required", "incomplete"],
-    awaiting_change_decision: ["applying", "rejected", "refresh_required", "incomplete"],
+    // Conversation snapshots can coalesce host-only Apply/commit boundaries.
+    // The lower mutation graph, not the presentation edge, proves completion.
+    building: [
+      "awaiting_change_decision",
+      "applying",
+      "finalizing",
+      "completed",
+      "awaiting_source_sync",
+      "recovery_required",
+      "refresh_required",
+      "incomplete",
+    ],
+    awaiting_change_decision: [
+      "finalizing",
+      "completed",
+      "awaiting_source_sync",
+      "recovery_required",
+      "refining_plan",
+      "applying",
+      "rejected",
+      "refresh_required",
+      "incomplete",
+    ],
     applying: [
+      "completed",
+      "refresh_required",
+      "finalizing",
       "awaiting_play",
       "awaiting_review",
       "awaiting_source_sync",
       "recovery_required",
       "incomplete",
     ],
-    awaiting_play: ["observing_play", "recovery_required", "incomplete"],
+    awaiting_play: ["observing_play", "finalizing", "rejected", "recovery_required", "incomplete"],
     observing_play: [
+      "building",
+      "finalizing",
       "awaiting_verification_retry",
       "awaiting_review",
       "recovery_required",
       "incomplete",
     ],
-    awaiting_verification_retry: ["awaiting_play", "recovery_required", "rejected", "incomplete"],
-    awaiting_review: ["accepted", "rejected", "recovery_required", "incomplete"],
-    refresh_required: ["superseded", "recovery_required", "incomplete"],
-    recovery_required: ["rejected", "incomplete"],
-    awaiting_source_sync: ["awaiting_review", "recovery_required", "rejected", "incomplete"],
+    finalizing: [
+      "completed",
+      "building",
+      "awaiting_review",
+      "awaiting_source_sync",
+      "rejected",
+      "recovery_required",
+      "incomplete",
+    ],
+    awaiting_verification_retry: [
+      "awaiting_play",
+      "finalizing",
+      "recovery_required",
+      "rejected",
+      "incomplete",
+    ],
+    awaiting_review: [
+      "refresh_required",
+      "awaiting_source_sync",
+      "accepted",
+      "finalizing",
+      "rejected",
+      "recovery_required",
+      "incomplete",
+    ],
+    refresh_required: ["refreshing", "superseded", "recovery_required", "incomplete"],
+    refreshing: [
+      "completed",
+      "planning",
+      "awaiting_plan_decision",
+      "building",
+      "awaiting_change_decision",
+      "awaiting_review",
+      "superseded",
+      "refresh_required",
+      "incomplete",
+    ],
+    recovery_required: [
+      "finalizing",
+      "completed",
+      "awaiting_source_sync",
+      "rejected",
+      "incomplete",
+    ],
+    awaiting_source_sync: [
+      "completed",
+      "awaiting_review",
+      "recovery_required",
+      "rejected",
+      "incomplete",
+    ],
     accepted: [],
+    completed: [],
     rejected: [],
     superseded: [],
-    incomplete: [],
+    incomplete: ["building", "refresh_required"],
   };
   return allowed[from].includes(to);
 }

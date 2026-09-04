@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { COMPACTION_SYSTEM_PROMPT, ConversationCompactionToolHost } from "./compaction.js";
 import {
   cp,
   lstat,
@@ -35,6 +36,7 @@ import type {
   ModelClient,
   ModelMessage,
   ModelResponseFacts,
+  ModelRequestSizes,
   ModelToolCall,
   ModelTurnResult,
   ModelUsage,
@@ -53,6 +55,7 @@ import {
   AgentExecutionJournalStore,
   createBatchValidatedCheckpoint,
   createRequestIntentCheckpoint,
+  measureRequestSizes,
   createResponseReceivedCheckpoint,
   createTerminalCheckpoint,
   createToolCompletedCheckpoint,
@@ -359,9 +362,10 @@ export interface AgentModelTurn {
   responseFacts?: ModelResponseFacts;
   toolCallIds: string[];
   usage: ModelUsage;
+  requestSizes: ModelRequestSizes;
   errorClass?: string;
 }
-export interface RuntimeUsage {
+export interface RuntimeUsage extends ModelUsage {
   turns: number;
   inputTokens: number | null;
   outputTokens: number | null;
@@ -375,7 +379,7 @@ export interface RuntimeTiming {
 export interface AgentRuntimeInput {
   systemPrompt: string;
   prompt: string;
-  orientation: AgentOrientation;
+  orientation?: AgentOrientation;
   tools: AgentToolHost;
   budgets: BudgetPolicy;
   model: string;
@@ -417,6 +421,30 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
     this.clock = options.clock ?? createSystemFlightRecorderClock();
   }
 
+  async compact(input: {
+    prompt: string;
+    model: string;
+    executionJournal: AgentExecutionJournalSink;
+  }) {
+    const tools = new ConversationCompactionToolHost();
+    const result = await this.run({
+      ...input,
+      systemPrompt: COMPACTION_SYSTEM_PROMPT,
+      tools,
+      budgets: {
+        ...DEFAULT_AGENT_BUDGETS,
+        maxDurationMs: 20 * 60_000,
+        maxTurns: 3,
+        maxToolCalls: 3,
+        maxOutputTokens: 32_000,
+      },
+    });
+    return {
+      result,
+      ...(result.status === "completed" && tools.summary ? { summary: tools.summary } : {}),
+    };
+  }
+
   async run(input: AgentRuntimeInput): Promise<AgentRuntimeResult> {
     const resumed = input.resumeFromJournal;
     if (resumed !== undefined && input.executionJournal === undefined)
@@ -427,10 +455,9 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
       input.executionJournal.journalId !== resumed.journalId
     )
       throw new Error("Runtime resume journal does not match its checkpoint sink");
-    const initialMessage = stableJson({
-      creatorRequest: input.prompt,
-      orientation: input.orientation,
-    });
+    const initialMessage = input.orientation
+      ? `${input.prompt}\n\n<forge_project_orientation>\n${stableJson(input.orientation)}\n</forge_project_orientation>`
+      : input.prompt;
     const messages: ModelMessage[] =
       resumed === undefined
         ? [{ role: "user", content: initialMessage }]
@@ -576,7 +603,10 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
             this.modelClientDescriptor.configuration.request.maxOutputTokensPerTurn,
             remainingOutput,
           ),
-          timeoutMs: remainingMs,
+          timeoutMs: Math.min(
+            remainingMs,
+            this.modelClientDescriptor.configuration.request.maxDurationMsPerTurn,
+          ),
         };
         const checkpoint = createRequestIntentCheckpoint(
           sequence,
@@ -601,8 +631,16 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
               }),
             ),
             resultKind: "provider_error",
+            requestSizes: measureRequestSizes(request),
             toolCallIds: [],
-            usage: { inputTokens: null, outputTokens: null, costUsd: null },
+            usage: {
+              reasoningTokens: null,
+              cacheReadTokens: null,
+              cacheWriteTokens: null,
+              inputTokens: null,
+              outputTokens: null,
+              costUsd: null,
+            },
             errorClass: "provider_exception",
           });
           return finish({
@@ -624,6 +662,7 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
           sequence,
           ...modelTurnTiming,
           requestHash: result.requestHash,
+          requestSizes: measureRequestSizes(request),
           resultKind: result.kind,
           ...(result.kind === "assistant"
             ? {
@@ -677,25 +716,23 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
           usage,
           turns,
         });
+      if (result.stopReason === "max_tokens" || result.stopReason === "refusal")
+        return finish({
+          status: "failed",
+          trialStarted,
+          failureKind: "model",
+          failureCode:
+            result.stopReason === "max_tokens"
+              ? "MODEL_RESPONSE_TRUNCATED"
+              : "MODEL_RESPONSE_REFUSED",
+          error:
+            result.stopReason === "max_tokens"
+              ? "The model reached its response length limit. No tools from the incomplete response were executed."
+              : "The model refused the request. No tools from this response were executed.",
+          usage,
+          turns,
+        });
       if (result.message.toolCalls.length === 0) {
-        if (result.stopReason === "max_tokens")
-          return finish(
-            runtimeBudgetResult(
-              "Model stopped at the output-token limit",
-              usage,
-              turns,
-              trialStarted,
-            ),
-          );
-        if (result.stopReason === "refusal")
-          return finish({
-            status: "failed",
-            trialStarted,
-            failureKind: "model",
-            error: "Model refused the bounded build request",
-            usage,
-            turns,
-          });
         if (input.tools.completionStatus) {
           try {
             const completion = input.tools.completionStatus();
@@ -768,11 +805,7 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
         for (const call of result.message.toolCalls)
           if (call.id.length > 0) seenToolCallIds.add(call.id);
       if (!decision.valid) {
-        const fingerprint = rejectedBatchFingerprint(
-          result.message.toolCalls,
-          decision.feedback,
-          progressBefore,
-        );
+        const fingerprint = rejectedBatchFingerprint(decision.feedback, progressBefore);
         const repeats = recoveredBatch
           ? (rejectedBatchCounts.get(fingerprint) ?? 0)
           : (rejectedBatchCounts.get(fingerprint) ?? 0) + 1;
@@ -813,14 +846,37 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
             }),
           );
         }
-        messages.push({
-          role: "user",
-          content: stableJson({
-            forgeToolBatchRejected: true,
-            rule: "No tool was executed because the full batch was not valid.",
-            feedback: decision.feedback,
-          }),
-        });
+        const invalidEnvelope = decision.feedback.some((item) =>
+          ["TOOL_CALL_ID_EMPTY", "TOOL_CALL_ID_DUPLICATE", "TOOL_UNKNOWN"].includes(
+            item.result.error?.code ?? "",
+          ),
+        );
+        if (!invalidEnvelope) {
+          messages.push(result.message);
+          for (const call of result.message.toolCalls) {
+            const feedback = decision.feedback.find((item) => item.id === call.id);
+            if (!feedback) throw new Error("Rejected batch lost a tool result");
+            messages.push({
+              role: "tool",
+              toolCallId: call.id,
+              name: call.name,
+              content: stableJson(feedback.result),
+            });
+          }
+        } else {
+          messages.push({
+            role: "user",
+            content: stableJson({
+              forgeToolBatchRejected: true,
+              rule: "No tool was executed. Correct the invalid call envelope before retrying.",
+              attemptedCalls: result.message.toolCalls.map(({ id, name }) => ({
+                id: id.slice(0, 128),
+                name: name.slice(0, 128),
+              })),
+              feedback: decision.feedback,
+            }),
+          });
+        }
         const accountedToolCalls = toolCalls.length;
         const accountedToolResultBytes = toolCalls.reduce((sum, record) => sum + record.bytes, 0);
         const rejectedOutputBudgetExceeded = result.message.toolCalls
@@ -846,7 +902,8 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
             trialStarted,
             failureKind: "model",
             failureCode: "REPEATED_REJECTED_TOOL_BATCH",
-            error: "Model repeated an identical rejected tool batch; no progress was possible.",
+            error:
+              "Model repeated the same unresolved tool validation failure three times without accepted progress.",
             usage,
             turns,
           });
@@ -951,40 +1008,44 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
           );
       }
       const progressAfter = input.tools.progressToken?.();
-      if (progressBefore !== undefined && progressAfter === progressBefore) {
-        if (input.tools.completionStatus) {
-          try {
-            if (input.tools.completionStatus().ready)
-              return finish({
-                status: "completed",
-                trialStarted,
-                usage,
-                turns,
-              });
-          } catch (error) {
-            return finish({
-              status: "failed",
-              trialStarted,
-              failureKind: "harness",
-              failureCode: "TOOL_COMPLETION_CHECK_FAILED",
-              error: error instanceof Error ? error.message : String(error),
-              usage,
-              turns,
-            });
-          }
+      if (input.tools.completionStatus) {
+        try {
+          if (input.tools.completionStatus().ready)
+            return finish({ status: "completed", trialStarted, usage, turns });
+        } catch (error) {
+          return finish({
+            status: "failed",
+            trialStarted,
+            failureKind: "harness",
+            failureCode: "TOOL_COMPLETION_CHECK_FAILED",
+            error: error instanceof Error ? error.message : String(error),
+            usage,
+            turns,
+          });
         }
-        const fingerprint = contentHash(
-          stableJson({
-            progressToken: progressBefore,
-            calls: result.message.toolCalls.map((call, index) => ({
-              name: call.name,
-              arguments: call.arguments,
-              ok: batchResults[index]?.ok,
-              errorCode: batchResults[index]?.error?.code,
-              resultHash: batchResults[index]?.resultHash,
-            })),
-          }),
-        );
+      }
+      if (progressBefore !== undefined && progressAfter === progressBefore) {
+        const fingerprint = batchResults.some((entry) => !entry.ok)
+          ? rejectedBatchFingerprint(
+              result.message.toolCalls.map((call, index) => ({
+                id: call.id,
+                name: call.name,
+                result: batchResults[index]!,
+              })),
+              progressBefore,
+            )
+          : contentHash(
+              stableJson({
+                progressToken: progressBefore,
+                calls: result.message.toolCalls.map((call, index) => ({
+                  name: call.name,
+                  arguments: call.arguments,
+                  ok: batchResults[index]?.ok,
+                  errorCode: batchResults[index]?.error?.code,
+                  resultHash: batchResults[index]?.resultHash,
+                })),
+              }),
+            );
         const repeats = (noProgressBatchCounts.get(fingerprint) ?? 0) + 1;
         noProgressBatchCounts.set(fingerprint, repeats);
         if (repeats >= MAX_IDENTICAL_REJECTED_TOOL_BATCHES) {
@@ -994,7 +1055,7 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
             failureKind: "model",
             failureCode: "REPEATED_NO_PROGRESS_TOOL_BATCH",
             error:
-              "Model repeated an identical tool batch within the same accepted host state; no progress was possible.",
+              "Model repeated the same unresolved tool result three times without accepted progress.",
             usage,
             turns,
           });
@@ -3041,7 +3102,7 @@ function fail(code: string, message: string): ToolResult {
     bytes: Buffer.byteLength(serialized, "utf8"),
   };
 }
-const MAX_IDENTICAL_REJECTED_TOOL_BATCHES = 2;
+const MAX_IDENTICAL_REJECTED_TOOL_BATCHES = 3;
 const MAX_PREMATURE_COMPLETION_REPAIRS = 2;
 
 function materializeRejectedToolCalls(
@@ -3129,26 +3190,48 @@ function enforceToolResultBudget(
 }
 
 function rejectedBatchFingerprint(
-  calls: readonly ModelToolCall[],
   feedback: readonly ToolBatchDecision["feedback"][number][],
   progressToken: string | undefined,
 ): string {
   return contentHash(
     stableJson({
       progressToken: progressToken ?? null,
-      calls: calls.map((call) => ({
-        name: call.name,
-        arguments: call.arguments,
-      })),
-      rejectionResults: feedback
-        .map((entry) => ({
-          name: entry.name,
-          code: entry.result.error?.code ?? null,
-          resultHash: entry.result.resultHash,
-        }))
-        .sort((left, right) => stableJson(left).localeCompare(stableJson(right))),
+      rejectionResults: [
+        ...new Set(
+          feedback
+            .filter(
+              (entry) => entry.result.error && entry.result.error.code !== "TOOL_BATCH_REJECTED",
+            )
+            .map((entry) =>
+              stableJson({
+                name: entry.name,
+                code: entry.result.error?.code ?? null,
+                issues: semanticFailureIssues(entry.result.error?.message ?? ""),
+              }),
+            ),
+        ),
+      ].sort(),
     }),
   );
+}
+
+function semanticFailureIssues(message: string): string[] {
+  try {
+    const value: unknown = JSON.parse(message);
+    if (isRecord(value) && typeof value.message === "string") message = value.message;
+  } catch {
+    /* Plain-text diagnostics are already actionable. */
+  }
+  return [
+    ...new Set(
+      message.split("; ").map((issue) =>
+        issue
+          .replace(/\.[0-9]+(?=\.|:)/g, ".*")
+          .replace(/"[^"\n]*"/g, '"value"')
+          .replace(/[0-9]+/g, "#"),
+      ),
+    ),
+  ].sort();
 }
 
 function copyToolCallRecord(record: ToolCallRecord): ToolCallRecord {
@@ -3164,11 +3247,25 @@ function creatorStageSourceBytes(record: ToolCallRecord): number {
     record.name !== "studio.stage" ||
     !record.result.ok ||
     !isRecord(record.input) ||
-    !isRecord(record.input.change) ||
-    typeof record.input.change.source !== "string"
+    !Array.isArray(record.input.changes)
   )
     return 0;
-  return Buffer.byteLength(record.input.change.source, "utf8");
+  return record.input.changes.reduce((bytes, change: unknown) => {
+    if (!isRecord(change)) return bytes;
+    if (typeof change.source === "string") return bytes + Buffer.byteLength(change.source, "utf8");
+    if (!Array.isArray(change.sourceEdits)) return bytes;
+    return (
+      bytes +
+      change.sourceEdits.reduce(
+        (sum, edit: unknown) =>
+          sum +
+          (isRecord(edit) && typeof edit.replacement === "string"
+            ? Buffer.byteLength(edit.replacement, "utf8")
+            : 0),
+        0,
+      )
+    );
+  }, 0);
 }
 
 function sanitizeIssue(issue: VerificationIssue): unknown {
@@ -3382,16 +3479,28 @@ function zeroRuntimeTiming(): RuntimeTiming {
   return { startedAt: now, endedAt: now, durationMs: 0 };
 }
 function emptyRuntimeUsage(): RuntimeUsage {
-  return { turns: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
+  return {
+    turns: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    costUsd: 0,
+  };
 }
 function addUsage(current: RuntimeUsage, next: ModelUsage): RuntimeUsage {
   return {
     turns: current.turns + 1,
     inputTokens: addNullable(current.inputTokens, next.inputTokens),
     outputTokens: addNullable(current.outputTokens, next.outputTokens),
+    reasoningTokens: addNullable(current.reasoningTokens, next.reasoningTokens),
+    cacheReadTokens: addNullable(current.cacheReadTokens, next.cacheReadTokens),
+    cacheWriteTokens: addNullable(current.cacheWriteTokens, next.cacheWriteTokens),
     costUsd: addNullable(current.costUsd, next.costUsd),
   };
 }
+
 function addNullable(left: number | null, right: number | null): number | null {
   return left === null || right === null ? null : left + right;
 }
@@ -3516,6 +3625,9 @@ function isRuntimeTiming(value: unknown): value is RuntimeTiming {
   );
 }
 function isAgentModelTurn(value: unknown): value is AgentModelTurn {
+  if (!isRecord(value)) return false;
+  const usage = value.usage;
+  const requestSizes = value.requestSizes;
   return (
     isRecord(value) &&
     isRuntimeTiming(value) &&
@@ -3523,7 +3635,23 @@ function isAgentModelTurn(value: unknown): value is AgentModelTurn {
     ["assistant", "invalid_model_response", "provider_error"].includes(String(value.resultKind)) &&
     Array.isArray(value.toolCallIds) &&
     value.toolCallIds.every(isString) &&
-    isRecord(value.usage)
+    isRecord(usage) &&
+    [
+      "inputTokens",
+      "outputTokens",
+      "reasoningTokens",
+      "cacheReadTokens",
+      "cacheWriteTokens",
+      "costUsd",
+    ].every(
+      (field) =>
+        usage[field] === null ||
+        (typeof usage[field] === "number" && Number.isFinite(usage[field]) && usage[field] >= 0),
+    ) &&
+    isRecord(requestSizes) &&
+    ["systemInstructions", "conversation", "toolSchemas", "toolResults"].every(
+      (field) => Number.isSafeInteger(requestSizes[field]) && Number(requestSizes[field]) >= 0,
+    )
   );
 }
 function isToolCallRecord(value: unknown): value is ToolCallRecord {

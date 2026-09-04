@@ -517,6 +517,30 @@
         {
           "catalogType": {
             "category": "primitive",
+            "name": "ContentId"
+          },
+          "codec": "content",
+          "declaringClass": "Beam",
+          "maximumUtf8Bytes": 4096,
+          "name": "Texture",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "ContentId",
+            "scriptType": "string"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
             "name": "float"
           },
           "codec": "number_f32",
@@ -745,6 +769,839 @@
           "reflection": {
             "engineType": "CoordinateFrame",
             "scriptType": "CFrame"
+          }
+        }
+      ],
+      "source": "forbidden"
+    },
+    {
+      "creatable": true,
+      "name": "CanvasGroup",
+      "properties": [
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Active",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Vector2"
+          },
+          "codec": "vector2_f32",
+          "declaringClass": "GuiObject",
+          "maximum": 100,
+          "minimum": -100,
+          "name": "AnchorPoint",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Vector2",
+            "scriptType": "Vector2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "AutoLocalize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "None",
+            "X",
+            "XY",
+            "Y"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "AutomaticSize"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "AutomaticSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "AutomaticSize",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Color3"
+          },
+          "codec": "color3_rgb8",
+          "declaringClass": "GuiObject",
+          "name": "BackgroundColor3",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Color3",
+            "scriptType": "Color3"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "GuiObject",
+          "maximum": 1,
+          "minimum": 0,
+          "name": "BackgroundTransparency",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Color3"
+          },
+          "codec": "color3_rgb8",
+          "declaringClass": "GuiObject",
+          "name": "BorderColor3",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Color3",
+            "scriptType": "Color3"
+          }
+        },
+        {
+          "allowed": [
+            "Inset",
+            "Middle",
+            "Outline"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "BorderMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "BorderMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "BorderMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "maximum": 1000,
+          "minimum": 0,
+          "name": "BorderSizePixel",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "ClipsDescendants",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Color3"
+          },
+          "codec": "color3_rgb8",
+          "declaringClass": "CanvasGroup",
+          "name": "GroupColor3",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Color3",
+            "scriptType": "Color3"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "CanvasGroup",
+          "name": "GroupTransparency",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Interactable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "LayoutOrder",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim2"
+          },
+          "codec": "udim2",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "Position",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim2",
+            "scriptType": "UDim2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "LocalizationTable"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiBase2d",
+          "name": "RootLocalizationTable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "LocalizationTable",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "LocalizationTable",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "GuiObject",
+          "maximum": 360000,
+          "minimum": -360000,
+          "name": "Rotation",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Selectable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionGroup",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "SelectionImageObject",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "name": "SelectionOrder",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim2"
+          },
+          "codec": "udim2",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "Size",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim2",
+            "scriptType": "UDim2"
+          }
+        },
+        {
+          "allowed": [
+            "RelativeXX",
+            "RelativeXY",
+            "RelativeYY"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SizeConstraint"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "SizeConstraint",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SizeConstraint",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Visible",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "ZIndex",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
           }
         }
       ],
@@ -1818,6 +2675,1311 @@
     },
     {
       "creatable": true,
+      "name": "ImageButton",
+      "properties": [
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Active",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Vector2"
+          },
+          "codec": "vector2_f32",
+          "declaringClass": "GuiObject",
+          "maximum": 100,
+          "minimum": -100,
+          "name": "AnchorPoint",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Vector2",
+            "scriptType": "Vector2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiButton",
+          "name": "AutoButtonColor",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "AutoLocalize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "None",
+            "X",
+            "XY",
+            "Y"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "AutomaticSize"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "AutomaticSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "AutomaticSize",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Color3"
+          },
+          "codec": "color3_rgb8",
+          "declaringClass": "GuiObject",
+          "name": "BackgroundColor3",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Color3",
+            "scriptType": "Color3"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "GuiObject",
+          "maximum": 1,
+          "minimum": 0,
+          "name": "BackgroundTransparency",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Color3"
+          },
+          "codec": "color3_rgb8",
+          "declaringClass": "GuiObject",
+          "name": "BorderColor3",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Color3",
+            "scriptType": "Color3"
+          }
+        },
+        {
+          "allowed": [
+            "Inset",
+            "Middle",
+            "Outline"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "BorderMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "BorderMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "BorderMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "maximum": 1000,
+          "minimum": 0,
+          "name": "BorderSizePixel",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "ClipsDescendants",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "HapticEffect"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiButton",
+          "name": "HoverHapticEffect",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "HapticEffect",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "HapticEffect",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "ContentId"
+          },
+          "codec": "content",
+          "declaringClass": "ImageButton",
+          "maximumUtf8Bytes": 4096,
+          "name": "HoverImage",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "ContentId",
+            "scriptType": "string"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Content"
+          },
+          "codec": "content",
+          "declaringClass": "ImageButton",
+          "maximumUtf8Bytes": 4096,
+          "name": "HoverImageContent",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Content",
+            "scriptType": "Content"
+          },
+          "serialized": false
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "ContentId"
+          },
+          "codec": "content",
+          "declaringClass": "ImageButton",
+          "maximumUtf8Bytes": 4096,
+          "name": "Image",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "ContentId",
+            "scriptType": "string"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Color3"
+          },
+          "codec": "color3_rgb8",
+          "declaringClass": "ImageButton",
+          "name": "ImageColor3",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Color3",
+            "scriptType": "Color3"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Content"
+          },
+          "codec": "content",
+          "declaringClass": "ImageButton",
+          "maximumUtf8Bytes": 4096,
+          "name": "ImageContent",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Content",
+            "scriptType": "Content"
+          },
+          "serialized": false
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Vector2"
+          },
+          "codec": "vector2_f32",
+          "declaringClass": "ImageButton",
+          "name": "ImageRectOffset",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Vector2",
+            "scriptType": "Vector2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Vector2"
+          },
+          "codec": "vector2_f32",
+          "declaringClass": "ImageButton",
+          "name": "ImageRectSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Vector2",
+            "scriptType": "Vector2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "ImageButton",
+          "name": "ImageTransparency",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Interactable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "LayoutOrder",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiButton",
+          "name": "Modal",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim2"
+          },
+          "codec": "udim2",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "Position",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim2",
+            "scriptType": "UDim2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "HapticEffect"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiButton",
+          "name": "PressHapticEffect",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "HapticEffect",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "HapticEffect",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "ContentId"
+          },
+          "codec": "content",
+          "declaringClass": "ImageButton",
+          "maximumUtf8Bytes": 4096,
+          "name": "PressedImage",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "ContentId",
+            "scriptType": "string"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Content"
+          },
+          "codec": "content",
+          "declaringClass": "ImageButton",
+          "maximumUtf8Bytes": 4096,
+          "name": "PressedImageContent",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Content",
+            "scriptType": "Content"
+          },
+          "serialized": false
+        },
+        {
+          "allowed": [
+            "Default",
+            "Pixelated"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ResamplerMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ImageButton",
+          "name": "ResampleMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ResamplerMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "LocalizationTable"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiBase2d",
+          "name": "RootLocalizationTable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "LocalizationTable",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "LocalizationTable",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "GuiObject",
+          "maximum": 360000,
+          "minimum": -360000,
+          "name": "Rotation",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "allowed": [
+            "Crop",
+            "Fit",
+            "Slice",
+            "Stretch",
+            "Tile"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ScaleType"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ImageButton",
+          "name": "ScaleType",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ScaleType",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Selectable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiButton",
+          "name": "Selected",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionGroup",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "SelectionImageObject",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "name": "SelectionOrder",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim2"
+          },
+          "codec": "udim2",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "Size",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim2",
+            "scriptType": "UDim2"
+          }
+        },
+        {
+          "allowed": [
+            "RelativeXX",
+            "RelativeXY",
+            "RelativeYY"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SizeConstraint"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "SizeConstraint",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SizeConstraint",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Rect"
+          },
+          "codec": "rect",
+          "declaringClass": "ImageButton",
+          "name": "SliceCenter",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Rect2D",
+            "scriptType": "Rect"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "ImageButton",
+          "name": "SliceScale",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "allowed": [
+            "Custom",
+            "RobloxButton",
+            "RobloxButtonDefault",
+            "RobloxRoundButton",
+            "RobloxRoundDefaultButton",
+            "RobloxRoundDropdownButton"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ButtonStyle"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiButton",
+          "name": "Style",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ButtonStyle",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim2"
+          },
+          "codec": "udim2",
+          "declaringClass": "ImageButton",
+          "name": "TileSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim2",
+            "scriptType": "UDim2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Visible",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "ZIndex",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        }
+      ],
+      "source": "forbidden"
+    },
+    {
+      "creatable": true,
       "name": "ImageLabel",
       "properties": [
         {
@@ -2071,6 +4233,30 @@
         },
         {
           "catalogType": {
+            "category": "primitive",
+            "name": "ContentId"
+          },
+          "codec": "content",
+          "declaringClass": "ImageLabel",
+          "maximumUtf8Bytes": 4096,
+          "name": "Image",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "ContentId",
+            "scriptType": "string"
+          }
+        },
+        {
+          "catalogType": {
             "category": "datatype",
             "name": "Color3"
           },
@@ -2091,6 +4277,31 @@
             "engineType": "Color3",
             "scriptType": "Color3"
           }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Content"
+          },
+          "codec": "content",
+          "declaringClass": "ImageLabel",
+          "maximumUtf8Bytes": 4096,
+          "name": "ImageContent",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Content",
+            "scriptType": "Content"
+          },
+          "serialized": false
         },
         {
           "catalogType": {
@@ -4337,6 +6548,30 @@
         {
           "catalogType": {
             "category": "primitive",
+            "name": "ContentId"
+          },
+          "codec": "content",
+          "declaringClass": "ParticleEmitter",
+          "maximumUtf8Bytes": 4096,
+          "name": "Texture",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "ContentId",
+            "scriptType": "string"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
             "name": "float"
           },
           "codec": "number_f32",
@@ -5736,6 +7971,1252 @@
     },
     {
       "creatable": true,
+      "name": "ScrollingFrame",
+      "properties": [
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Active",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Vector2"
+          },
+          "codec": "vector2_f32",
+          "declaringClass": "GuiObject",
+          "maximum": 100,
+          "minimum": -100,
+          "name": "AnchorPoint",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Vector2",
+            "scriptType": "Vector2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "AutoLocalize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "None",
+            "X",
+            "XY",
+            "Y"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "AutomaticSize"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ScrollingFrame",
+          "name": "AutomaticCanvasSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "AutomaticSize",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "None",
+            "X",
+            "XY",
+            "Y"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "AutomaticSize"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "AutomaticSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "AutomaticSize",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Color3"
+          },
+          "codec": "color3_rgb8",
+          "declaringClass": "GuiObject",
+          "name": "BackgroundColor3",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Color3",
+            "scriptType": "Color3"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "GuiObject",
+          "maximum": 1,
+          "minimum": 0,
+          "name": "BackgroundTransparency",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Color3"
+          },
+          "codec": "color3_rgb8",
+          "declaringClass": "GuiObject",
+          "name": "BorderColor3",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Color3",
+            "scriptType": "Color3"
+          }
+        },
+        {
+          "allowed": [
+            "Inset",
+            "Middle",
+            "Outline"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "BorderMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "BorderMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "BorderMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "maximum": 1000,
+          "minimum": 0,
+          "name": "BorderSizePixel",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "ContentId"
+          },
+          "codec": "content",
+          "declaringClass": "ScrollingFrame",
+          "maximumUtf8Bytes": 4096,
+          "name": "BottomImage",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "ContentId",
+            "scriptType": "string"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Content"
+          },
+          "codec": "content",
+          "declaringClass": "ScrollingFrame",
+          "maximumUtf8Bytes": 4096,
+          "name": "BottomImageContent",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Content",
+            "scriptType": "Content"
+          },
+          "serialized": false
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Vector2"
+          },
+          "codec": "vector2_f32",
+          "declaringClass": "ScrollingFrame",
+          "name": "CanvasPosition",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Vector2",
+            "scriptType": "Vector2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim2"
+          },
+          "codec": "udim2",
+          "declaringClass": "ScrollingFrame",
+          "name": "CanvasSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim2",
+            "scriptType": "UDim2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "ClipsDescendants",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "Always",
+            "Never",
+            "WhenScrollable"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ElasticBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ScrollingFrame",
+          "name": "ElasticBehavior",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ElasticBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Always",
+            "None",
+            "ScrollBar"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ScrollBarInset"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ScrollingFrame",
+          "name": "HorizontalScrollBarInset",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ScrollBarInset",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Interactable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "LayoutOrder",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "ContentId"
+          },
+          "codec": "content",
+          "declaringClass": "ScrollingFrame",
+          "maximumUtf8Bytes": 4096,
+          "name": "MidImage",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "ContentId",
+            "scriptType": "string"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Content"
+          },
+          "codec": "content",
+          "declaringClass": "ScrollingFrame",
+          "maximumUtf8Bytes": 4096,
+          "name": "MidImageContent",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Content",
+            "scriptType": "Content"
+          },
+          "serialized": false
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim2"
+          },
+          "codec": "udim2",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "Position",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim2",
+            "scriptType": "UDim2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "LocalizationTable"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiBase2d",
+          "name": "RootLocalizationTable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "LocalizationTable",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "LocalizationTable",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "GuiObject",
+          "maximum": 360000,
+          "minimum": -360000,
+          "name": "Rotation",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Color3"
+          },
+          "codec": "color3_rgb8",
+          "declaringClass": "ScrollingFrame",
+          "name": "ScrollBarImageColor3",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Color3",
+            "scriptType": "Color3"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "ScrollingFrame",
+          "name": "ScrollBarImageTransparency",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "ScrollingFrame",
+          "name": "ScrollBarThickness",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "allowed": [
+            "X",
+            "XY",
+            "Y"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ScrollingDirection"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ScrollingFrame",
+          "name": "ScrollingDirection",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ScrollingDirection",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "ScrollingFrame",
+          "name": "ScrollingEnabled",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Selectable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionGroup",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "SelectionImageObject",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "name": "SelectionOrder",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim2"
+          },
+          "codec": "udim2",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "Size",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim2",
+            "scriptType": "UDim2"
+          }
+        },
+        {
+          "allowed": [
+            "RelativeXX",
+            "RelativeXY",
+            "RelativeYY"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SizeConstraint"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "SizeConstraint",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SizeConstraint",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "ContentId"
+          },
+          "codec": "content",
+          "declaringClass": "ScrollingFrame",
+          "maximumUtf8Bytes": 4096,
+          "name": "TopImage",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "ContentId",
+            "scriptType": "string"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Content"
+          },
+          "codec": "content",
+          "declaringClass": "ScrollingFrame",
+          "maximumUtf8Bytes": 4096,
+          "name": "TopImageContent",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Content",
+            "scriptType": "Content"
+          },
+          "serialized": false
+        },
+        {
+          "allowed": [
+            "Always",
+            "None",
+            "ScrollBar"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ScrollBarInset"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ScrollingFrame",
+          "name": "VerticalScrollBarInset",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ScrollBarInset",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Left",
+            "Right"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "VerticalScrollBarPosition"
+          },
+          "codec": "enum_name",
+          "declaringClass": "ScrollingFrame",
+          "name": "VerticalScrollBarPosition",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "VerticalScrollBarPosition",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Visible",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "ZIndex",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        }
+      ],
+      "source": "forbidden"
+    },
+    {
+      "creatable": true,
       "name": "Sound",
       "properties": [
         {
@@ -6009,6 +9490,30 @@
         {
           "catalogType": {
             "category": "primitive",
+            "name": "ContentId"
+          },
+          "codec": "content",
+          "declaringClass": "Sound",
+          "maximumUtf8Bytes": 4096,
+          "name": "SoundId",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "ContentId",
+            "scriptType": "string"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
             "name": "double"
           },
           "codec": "number_f64",
@@ -6273,6 +9778,585 @@
     },
     {
       "creatable": true,
+      "name": "SurfaceGui",
+      "properties": [
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "SurfaceGuiBase",
+          "name": "Active",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "Instance"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "SurfaceGuiBase",
+          "name": "Adornee",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "Instance",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "Instance",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "SurfaceGui",
+          "name": "AlwaysOnTop",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "AutoLocalize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "SurfaceGui",
+          "name": "Brightness",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Vector2"
+          },
+          "codec": "vector2_f32",
+          "declaringClass": "SurfaceGui",
+          "name": "CanvasSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Vector2",
+            "scriptType": "Vector2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "SurfaceGui",
+          "name": "ClipsDescendants",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "LayerCollector",
+          "name": "Enabled",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "Back",
+            "Bottom",
+            "Front",
+            "Left",
+            "Right",
+            "Top"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "NormalId"
+          },
+          "codec": "enum_name",
+          "declaringClass": "SurfaceGuiBase",
+          "name": "Face",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "NormalId",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "SurfaceGui",
+          "name": "LightInfluence",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "SurfaceGui",
+          "name": "MaxDistance",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "SurfaceGui",
+          "name": "PixelsPerStud",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "LayerCollector",
+          "name": "ResetOnSpawn",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "LocalizationTable"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiBase2d",
+          "name": "RootLocalizationTable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "LocalizationTable",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "LocalizationTable",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionGroup",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "FixedSize",
+            "PixelsPerStud"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SurfaceGuiSizingMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "SurfaceGui",
+          "name": "SizingMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SurfaceGuiSizingMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "SurfaceGui",
+          "name": "ToolPunchThroughDistance",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "allowed": [
+            "Global",
+            "Sibling"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ZIndexBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "LayerCollector",
+          "name": "ZIndexBehavior",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ZIndexBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "SurfaceGui",
+          "name": "ZOffset",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        }
+      ],
+      "source": "forbidden"
+    },
+    {
+      "creatable": true,
       "name": "SurfaceLight",
       "properties": [
         {
@@ -6449,6 +10533,1349 @@
           "reflection": {
             "engineType": "bool",
             "scriptType": "boolean"
+          }
+        }
+      ],
+      "source": "forbidden"
+    },
+    {
+      "creatable": true,
+      "name": "TextBox",
+      "properties": [
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Active",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Vector2"
+          },
+          "codec": "vector2_f32",
+          "declaringClass": "GuiObject",
+          "maximum": 100,
+          "minimum": -100,
+          "name": "AnchorPoint",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Vector2",
+            "scriptType": "Vector2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "AutoLocalize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "None",
+            "X",
+            "XY",
+            "Y"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "AutomaticSize"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "AutomaticSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "AutomaticSize",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Color3"
+          },
+          "codec": "color3_rgb8",
+          "declaringClass": "GuiObject",
+          "name": "BackgroundColor3",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Color3",
+            "scriptType": "Color3"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "GuiObject",
+          "maximum": 1,
+          "minimum": 0,
+          "name": "BackgroundTransparency",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Color3"
+          },
+          "codec": "color3_rgb8",
+          "declaringClass": "GuiObject",
+          "name": "BorderColor3",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Color3",
+            "scriptType": "Color3"
+          }
+        },
+        {
+          "allowed": [
+            "Inset",
+            "Middle",
+            "Outline"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "BorderMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "BorderMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "BorderMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "maximum": 1000,
+          "minimum": 0,
+          "name": "BorderSizePixel",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "TextBox",
+          "name": "ClearTextOnFocus",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "ClipsDescendants",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Font"
+          },
+          "codec": "font",
+          "declaringClass": "TextBox",
+          "name": "FontFace",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Font",
+            "scriptType": "Font"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Interactable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "LayoutOrder",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "TextBox",
+          "name": "LineHeight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "TextBox",
+          "name": "MaxVisibleGraphemes",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "TextBox",
+          "name": "MultiLine",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "NextSelectionUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "string"
+          },
+          "codec": "string_utf8",
+          "declaringClass": "TextBox",
+          "maximumUtf8Bytes": 4096,
+          "name": "OpenTypeFeatures",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "string",
+            "scriptType": "string"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Color3"
+          },
+          "codec": "color3_rgb8",
+          "declaringClass": "TextBox",
+          "name": "PlaceholderColor3",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Color3",
+            "scriptType": "Color3"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "string"
+          },
+          "codec": "string_utf8",
+          "declaringClass": "TextBox",
+          "maximumUtf8Bytes": 4096,
+          "name": "PlaceholderText",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "string",
+            "scriptType": "string"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim2"
+          },
+          "codec": "udim2",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "Position",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim2",
+            "scriptType": "UDim2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "TextBox",
+          "name": "RichText",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "LocalizationTable"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiBase2d",
+          "name": "RootLocalizationTable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "LocalizationTable",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "LocalizationTable",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "GuiObject",
+          "maximum": 360000,
+          "minimum": -360000,
+          "name": "Rotation",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Selectable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorDown",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Escape",
+            "Stop"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SelectionBehavior"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionBehaviorUp",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SelectionBehavior",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiBase2d",
+          "name": "SelectionGroup",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "class",
+            "name": "GuiObject"
+          },
+          "codec": "instance_ref",
+          "declaringClass": "GuiObject",
+          "name": "SelectionImageObject",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "referenceClass": "GuiObject",
+          "reflection": {
+            "engineType": "RefType",
+            "instanceType": "GuiObject",
+            "scriptType": "Instance"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "name": "SelectionOrder",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "TextBox",
+          "name": "ShowNativeInput",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim2"
+          },
+          "codec": "udim2",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "Size",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim2",
+            "scriptType": "UDim2"
+          }
+        },
+        {
+          "allowed": [
+            "RelativeXX",
+            "RelativeXY",
+            "RelativeYY"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SizeConstraint"
+          },
+          "codec": "enum_name",
+          "declaringClass": "GuiObject",
+          "name": "SizeConstraint",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SizeConstraint",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "string"
+          },
+          "codec": "string_utf8",
+          "declaringClass": "TextBox",
+          "maximumUtf8Bytes": 4096,
+          "name": "Text",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "string",
+            "scriptType": "string"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Color3"
+          },
+          "codec": "color3_rgb8",
+          "declaringClass": "TextBox",
+          "name": "TextColor3",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Color3",
+            "scriptType": "Color3"
+          }
+        },
+        {
+          "allowed": [
+            "Auto",
+            "LeftToRight",
+            "RightToLeft"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "TextDirection"
+          },
+          "codec": "enum_name",
+          "declaringClass": "TextBox",
+          "name": "TextDirection",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "TextDirection",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "TextBox",
+          "name": "TextEditable",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "TextBox",
+          "name": "TextScaled",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "TextBox",
+          "name": "TextSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Color3"
+          },
+          "codec": "color3_rgb8",
+          "declaringClass": "TextBox",
+          "name": "TextStrokeColor3",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Color3",
+            "scriptType": "Color3"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "TextBox",
+          "name": "TextStrokeTransparency",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "TextBox",
+          "name": "TextTransparency",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "allowed": [
+            "AtEnd",
+            "None",
+            "SplitWord"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "TextTruncate"
+          },
+          "codec": "enum_name",
+          "declaringClass": "TextBox",
+          "name": "TextTruncate",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "TextTruncate",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "TextBox",
+          "name": "TextWrapped",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "Center",
+            "Left",
+            "Right"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "TextXAlignment"
+          },
+          "codec": "enum_name",
+          "declaringClass": "TextBox",
+          "name": "TextXAlignment",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "TextXAlignment",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Bottom",
+            "Center",
+            "Top"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "TextYAlignment"
+          },
+          "codec": "enum_name",
+          "declaringClass": "TextBox",
+          "name": "TextYAlignment",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "TextYAlignment",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "GuiObject",
+          "name": "Visible",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "GuiObject",
+          "maximum": 100000,
+          "minimum": -100000,
+          "name": "ZIndex",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
           }
         }
       ],
@@ -6728,6 +12155,29 @@
           "reflection": {
             "engineType": "bool",
             "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Font"
+          },
+          "codec": "font",
+          "declaringClass": "TextButton",
+          "name": "FontFace",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Font",
+            "scriptType": "Font"
           }
         },
         {
@@ -8045,6 +13495,29 @@
           "reflection": {
             "engineType": "bool",
             "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Font"
+          },
+          "codec": "font",
+          "declaringClass": "TextLabel",
+          "name": "FontFace",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Font",
+            "scriptType": "Font"
           }
         },
         {
@@ -9560,6 +15033,30 @@
         {
           "catalogType": {
             "category": "primitive",
+            "name": "ContentId"
+          },
+          "codec": "content",
+          "declaringClass": "Trail",
+          "maximumUtf8Bytes": 4096,
+          "name": "Texture",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "ContentId",
+            "scriptType": "string"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
             "name": "float"
           },
           "codec": "number_f32",
@@ -9655,6 +15152,1260 @@
           "reflection": {
             "engineType": "NumberSequence",
             "scriptType": "NumberSequence"
+          }
+        }
+      ],
+      "source": "forbidden"
+    },
+    {
+      "creatable": true,
+      "name": "UIAspectRatioConstraint",
+      "properties": [
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "UIAspectRatioConstraint",
+          "name": "AspectRatio",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "allowed": [
+            "FitWithinMaxSize",
+            "ScaleWithParentSize"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "AspectType"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIAspectRatioConstraint",
+          "name": "AspectType",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "AspectType",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Height",
+            "Width"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "DominantAxis"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIAspectRatioConstraint",
+          "name": "DominantAxis",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "DominantAxis",
+            "scriptType": "EnumItem"
+          }
+        }
+      ],
+      "source": "forbidden"
+    },
+    {
+      "creatable": true,
+      "name": "UICorner",
+      "properties": [
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim"
+          },
+          "codec": "udim",
+          "declaringClass": "UICorner",
+          "name": "BottomLeftRadius",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim",
+            "scriptType": "UDim"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim"
+          },
+          "codec": "udim",
+          "declaringClass": "UICorner",
+          "name": "BottomRightRadius",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim",
+            "scriptType": "UDim"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim"
+          },
+          "codec": "udim",
+          "declaringClass": "UICorner",
+          "name": "CornerRadius",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim",
+            "scriptType": "UDim"
+          },
+          "serialized": false
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim"
+          },
+          "codec": "udim",
+          "declaringClass": "UICorner",
+          "name": "TopLeftRadius",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim",
+            "scriptType": "UDim"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim"
+          },
+          "codec": "udim",
+          "declaringClass": "UICorner",
+          "name": "TopRightRadius",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim",
+            "scriptType": "UDim"
+          }
+        }
+      ],
+      "source": "forbidden"
+    },
+    {
+      "creatable": true,
+      "name": "UIGradient",
+      "properties": [
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "ColorSequence"
+          },
+          "codec": "color_sequence",
+          "declaringClass": "UIGradient",
+          "maximumEntries": 20,
+          "name": "Color",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "ColorSequence",
+            "scriptType": "ColorSequence"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "UIGradient",
+          "name": "Enabled",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Vector2"
+          },
+          "codec": "vector2_f32",
+          "declaringClass": "UIGradient",
+          "name": "Offset",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Vector2",
+            "scriptType": "Vector2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "UIGradient",
+          "name": "Rotation",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "NumberSequence"
+          },
+          "codec": "number_sequence",
+          "declaringClass": "UIGradient",
+          "maximumEntries": 20,
+          "name": "Transparency",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "NumberSequence",
+            "scriptType": "NumberSequence"
+          }
+        }
+      ],
+      "source": "forbidden"
+    },
+    {
+      "creatable": true,
+      "name": "UIGridLayout",
+      "properties": [
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim2"
+          },
+          "codec": "udim2",
+          "declaringClass": "UIGridLayout",
+          "name": "CellPadding",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim2",
+            "scriptType": "UDim2"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim2"
+          },
+          "codec": "udim2",
+          "declaringClass": "UIGridLayout",
+          "name": "CellSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim2",
+            "scriptType": "UDim2"
+          }
+        },
+        {
+          "allowed": [
+            "Horizontal",
+            "Vertical"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "FillDirection"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIGridStyleLayout",
+          "name": "FillDirection",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "FillDirection",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "UIGridLayout",
+          "name": "FillDirectionMaxCells",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "allowed": [
+            "Center",
+            "Left",
+            "Right"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "HorizontalAlignment"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIGridStyleLayout",
+          "name": "HorizontalAlignment",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "HorizontalAlignment",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "LayoutOrder",
+            "Name"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SortOrder"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIGridStyleLayout",
+          "name": "SortOrder",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SortOrder",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "BottomLeft",
+            "BottomRight",
+            "TopLeft",
+            "TopRight"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "StartCorner"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIGridLayout",
+          "name": "StartCorner",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "StartCorner",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Bottom",
+            "Center",
+            "Top"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "VerticalAlignment"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIGridStyleLayout",
+          "name": "VerticalAlignment",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "VerticalAlignment",
+            "scriptType": "EnumItem"
+          }
+        }
+      ],
+      "source": "forbidden"
+    },
+    {
+      "creatable": true,
+      "name": "UIListLayout",
+      "properties": [
+        {
+          "allowed": [
+            "Horizontal",
+            "Vertical"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "FillDirection"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIGridStyleLayout",
+          "name": "FillDirection",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "FillDirection",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Center",
+            "Left",
+            "Right"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "HorizontalAlignment"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIGridStyleLayout",
+          "name": "HorizontalAlignment",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "HorizontalAlignment",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Fill",
+            "None",
+            "SpaceAround",
+            "SpaceBetween",
+            "SpaceEvenly"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "UIFlexAlignment"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIListLayout",
+          "name": "HorizontalFlex",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "UIFlexAlignment",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Automatic",
+            "Center",
+            "End",
+            "Start",
+            "Stretch"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ItemLineAlignment"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIListLayout",
+          "name": "ItemLineAlignment",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ItemLineAlignment",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim"
+          },
+          "codec": "udim",
+          "declaringClass": "UIListLayout",
+          "name": "Padding",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim",
+            "scriptType": "UDim"
+          }
+        },
+        {
+          "allowed": [
+            "LayoutOrder",
+            "Name"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "SortOrder"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIGridStyleLayout",
+          "name": "SortOrder",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "SortOrder",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Bottom",
+            "Center",
+            "Top"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "VerticalAlignment"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIGridStyleLayout",
+          "name": "VerticalAlignment",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "VerticalAlignment",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "Fill",
+            "None",
+            "SpaceAround",
+            "SpaceBetween",
+            "SpaceEvenly"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "UIFlexAlignment"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIListLayout",
+          "name": "VerticalFlex",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "UIFlexAlignment",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "UIListLayout",
+          "name": "Wraps",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        }
+      ],
+      "source": "forbidden"
+    },
+    {
+      "creatable": true,
+      "name": "UIPadding",
+      "properties": [
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim"
+          },
+          "codec": "udim",
+          "declaringClass": "UIPadding",
+          "name": "PaddingBottom",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim",
+            "scriptType": "UDim"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim"
+          },
+          "codec": "udim",
+          "declaringClass": "UIPadding",
+          "name": "PaddingLeft",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim",
+            "scriptType": "UDim"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim"
+          },
+          "codec": "udim",
+          "declaringClass": "UIPadding",
+          "name": "PaddingRight",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim",
+            "scriptType": "UDim"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim"
+          },
+          "codec": "udim",
+          "declaringClass": "UIPadding",
+          "name": "PaddingTop",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim",
+            "scriptType": "UDim"
+          }
+        }
+      ],
+      "source": "forbidden"
+    },
+    {
+      "creatable": true,
+      "name": "UIScale",
+      "properties": [
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "UIScale",
+          "name": "Scale",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        }
+      ],
+      "source": "forbidden"
+    },
+    {
+      "creatable": true,
+      "name": "UIStroke",
+      "properties": [
+        {
+          "allowed": [
+            "Border",
+            "Contextual"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "ApplyStrokeMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIStroke",
+          "name": "ApplyStrokeMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "ApplyStrokeMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "UDim"
+          },
+          "codec": "udim",
+          "declaringClass": "UIStroke",
+          "name": "BorderOffset",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "UDim",
+            "scriptType": "UDim"
+          }
+        },
+        {
+          "allowed": [
+            "Center",
+            "Inner",
+            "Outer"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "BorderStrokePosition"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIStroke",
+          "name": "BorderStrokePosition",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "BorderStrokePosition",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "datatype",
+            "name": "Color3"
+          },
+          "codec": "color3_rgb8",
+          "declaringClass": "UIStroke",
+          "name": "Color",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Color3",
+            "scriptType": "Color3"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "boolean"
+          },
+          "codec": "boolean",
+          "declaringClass": "UIStroke",
+          "name": "Enabled",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "bool",
+            "scriptType": "boolean"
+          }
+        },
+        {
+          "allowed": [
+            "Bevel",
+            "Miter",
+            "Round"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "LineJoinMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIStroke",
+          "name": "LineJoinMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "LineJoinMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "allowed": [
+            "FixedSize",
+            "ScaledSize"
+          ],
+          "catalogType": {
+            "category": "enum",
+            "name": "StrokeSizingMode"
+          },
+          "codec": "enum_name",
+          "declaringClass": "UIStroke",
+          "name": "StrokeSizingMode",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "Enum",
+            "enumType": "StrokeSizingMode",
+            "scriptType": "EnumItem"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "UIStroke",
+          "name": "Thickness",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "float"
+          },
+          "codec": "number_f32",
+          "declaringClass": "UIStroke",
+          "name": "Transparency",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "float",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "UIStroke",
+          "name": "ZIndex",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        }
+      ],
+      "source": "forbidden"
+    },
+    {
+      "creatable": true,
+      "name": "UITextSizeConstraint",
+      "properties": [
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "UITextSizeConstraint",
+          "name": "MaxTextSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
+          }
+        },
+        {
+          "catalogType": {
+            "category": "primitive",
+            "name": "int"
+          },
+          "codec": "int32",
+          "declaringClass": "UITextSizeConstraint",
+          "name": "MinTextSize",
+          "nullable": false,
+          "proof": [
+            "canonicalize",
+            "validate",
+            "preflight",
+            "write",
+            "read",
+            "project",
+            "compare"
+          ],
+          "reflection": {
+            "engineType": "int",
+            "scriptType": "number"
           }
         }
       ],
@@ -9776,7 +16527,7 @@
       "source": "forbidden"
     }
   ],
-  "evidenceContractHash": "4511a8879270d3972b7f84ea1b071df7057160c8ace090054ad21191830c28d4",
+  "evidenceContractHash": "98e9ee71a31c0a24da88d253b076e7c3dd48a7ef87229a8f26e9e9bfaccc9501",
   "kind": "StudioCapabilityManifest",
   "limits": {
     "maximumDiagnostics": 32,

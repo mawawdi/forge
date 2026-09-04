@@ -47,6 +47,93 @@ const CREATOR_SESSION = {
   hash: contentHash("creator_session_test"),
 } as const;
 
+test("a rejected well-formed batch preserves the complete assistant continuation and matching tool errors", async () => {
+  const host = completionRequiredToolHost();
+  let executions = 0;
+  const execute = host.execute;
+  host.execute = async (name, input) => {
+    executions++;
+    return execute(name, input);
+  };
+  const validate = host.validateBatch;
+  host.validateBatch = (calls, seen) =>
+    calls.some((call) => Object.hasOwn(call.arguments as object, "invalid"))
+      ? {
+          valid: false,
+          budgetExhausted: false,
+          feedback: calls.map((call) => ({
+            id: call.id,
+            name: call.name,
+            result: rejectedToolResult(
+              "TOOL_ARGUMENTS_INVALID",
+              "changes.0.name: expected a non-empty string",
+            ),
+          })),
+        }
+      : validate(calls, seen);
+  const payload = { reasoning: "opaque continuation retained for provider" };
+  const continuation = {
+    transport: "test",
+    payload,
+    hash: contentHash(stableJson(payload)),
+    bytes: Buffer.byteLength(stableJson(payload)),
+  };
+  const client = new ScriptedModelClient([
+    (request) => {
+      const result = assistant(
+        1,
+        [
+          { id: "invalid", name: "phase.seal", arguments: { invalid: true } },
+          { id: "valid-but-rejected", name: "phase.seal", arguments: {} },
+        ],
+        "I will publish the plan.",
+      )(request);
+      if (result.kind !== "assistant") throw new Error("Expected assistant");
+      result.message.continuation = continuation;
+      result.responseFacts.continuationHash = continuation.hash;
+      result.responseFacts.continuationBytes = continuation.bytes;
+      return result;
+    },
+    (request) => {
+      assert.equal(executions, 0, "Atomic rejection cannot execute the otherwise valid call");
+      const attempted = request.messages[1];
+      assert.equal(attempted?.role, "assistant");
+      if (attempted?.role !== "assistant") throw new Error("Missing attempted assistant call");
+      assert.deepEqual(attempted.continuation, continuation);
+      assert.equal(attempted.content, "I will publish the plan.");
+      assert.deepEqual(
+        request.messages
+          .slice(2)
+          .map((message) => (message.role === "tool" ? message.toolCallId : message.role)),
+        ["invalid", "valid-but-rejected"],
+      );
+      return assistant(2, [{ id: "fixed", name: "phase.seal", arguments: {} }])(request);
+    },
+  ]);
+  const root = await directory();
+  const result = await new ForgeNativeAgentRuntime(client).run({
+    systemPrompt: "Publish the result.",
+    prompt: "Exact request.",
+    orientation: await genericOrientation(),
+    tools: host,
+    budgets: DEFAULT_AGENT_BUDGETS,
+    model: "fake/model",
+    executionJournal: new AgentExecutionJournalStore(
+      new (await import("../packages/artifact-store/src/index.js")).ImmutableJsonArtifactStore(
+        root,
+      ),
+    ).sink("agent_execution_journal_rejected_continuation"),
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(result.turns.length, 2);
+  assert.equal(executions, 1);
+  assert.ok(result.turns[1]!.requestSizes.toolResults > result.turns[0]!.requestSizes.toolResults);
+  assert.equal(
+    result.turns[0]!.requestSizes.systemInstructions,
+    Buffer.byteLength("Publish the result."),
+  );
+});
+
 async function directory(): Promise<string> {
   return mkdtemp(join(tmpdir(), "forge-agent-runtime-"));
 }
@@ -177,7 +264,8 @@ class ScriptedModelClient implements ModelClient {
         toolNameEncoding: "openai_function_slug",
         maxRetries: 0,
         telemetry: false,
-        timeoutPolicy: "remaining_runtime_budget",
+        timeoutPolicy: "bounded_turn_and_remaining_runtime_budget",
+        maxDurationMsPerTurn: 1_200_000,
         maxOutputTokensPerTurn: 4096,
       },
       continuation: { maxBytes: 256 * 1024 },
@@ -201,7 +289,14 @@ function assistant(
     kind: "assistant",
     message: { role: "assistant", content, toolCalls },
     stopReason: toolCalls.length > 0 ? "tool_calls" : "end_turn",
-    usage: { inputTokens: 10, outputTokens: 5, costUsd: 0.001 },
+    usage: {
+      reasoningTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      inputTokens: 10,
+      outputTokens: 5,
+      costUsd: 0.001,
+    },
     requestHash: contentHash(stableJson({ sequence, messages: request.messages })),
     responseHash: contentHash(stableJson({ content, toolCalls })),
     responseFacts: {
@@ -502,7 +597,7 @@ test("native runtime requires an in-session repair when a model ends before seal
     model: "fake/model",
   });
   assert.equal(result.status, "completed");
-  assert.equal(result.turns.length, 3);
+  assert.equal(result.turns.length, 2);
   assert.equal(repairInstructionObserved, true);
   assert.equal(result.toolCalls[0]?.name, "phase.seal");
 });
@@ -615,8 +710,12 @@ test("an empty declared source root is visible before planning, supports creatio
     (request) => {
       const firstMessage = request.messages[0];
       assert.equal(firstMessage?.role, "user");
-      const initial = JSON.parse(firstMessage!.role === "user" ? firstMessage.content : "{}") as {
-        orientation: { content: { files: unknown[]; sourceRoots: string[] } };
+      const initial = {
+        orientation: JSON.parse(
+          firstMessage!.content
+            .split("<forge_project_orientation>\n")[1]!
+            .split("\n</forge_project_orientation>")[0]!,
+        ) as { content: { files: unknown[]; sourceRoots: string[] } },
       };
       assert.deepEqual(initial.orientation.content.files, []);
       assert.deepEqual(initial.orientation.content.sourceRoots, ["src/server"]);
@@ -1156,6 +1255,7 @@ test("repeating a semantically identical rejected batch terminates before the tu
     new ScriptedModelClient([
       assistant(1, [{ id: "first", name: "forge.missing", arguments: { target: "x" } }]),
       assistant(2, [{ id: "second", name: "forge.missing", arguments: { target: "x" } }]),
+      assistant(3, [{ id: "third", name: "forge.missing", arguments: { target: "x" } }]),
     ]),
   );
   const workspace = await CandidateWorkspace.create(
@@ -1186,10 +1286,10 @@ test("repeating a semantically identical rejected batch terminates before the tu
   assert.equal(result.status, "failed");
   assert.equal(result.failureKind, "model");
   assert.equal(result.failureCode, "REPEATED_REJECTED_TOOL_BATCH");
-  assert.equal(result.turns.length, 2);
+  assert.equal(result.turns.length, 3);
   assert.deepEqual(
     result.toolCalls.map((call) => call.result.error?.code),
-    ["TOOL_UNKNOWN", "TOOL_UNKNOWN"],
+    ["TOOL_UNKNOWN", "TOOL_UNKNOWN", "TOOL_UNKNOWN"],
   );
 });
 
@@ -1266,7 +1366,7 @@ test("rejected-batch repetition is scoped to one chronological host-state epoch"
   );
 });
 
-test("varied rejected tool batches remain repairable", async () => {
+test("changing arguments cannot evade the semantic rejection limit", async () => {
   const runtime = new ForgeNativeAgentRuntime(
     new ScriptedModelClient([
       assistant(1, [{ id: "first", name: "forge.missing", arguments: { target: "one" } }]),
@@ -1300,8 +1400,9 @@ test("varied rejected tool batches remain repairable", async () => {
     budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 6 },
     model: "fake/model",
   });
-  assert.equal(result.status, "completed");
-  assert.equal(result.turns.length, 4);
+  assert.equal(result.status, "failed");
+  assert.equal(result.failureCode, "REPEATED_REJECTED_TOOL_BATCH");
+  assert.equal(result.turns.length, 3);
   assert.deepEqual(
     result.toolCalls.map((call) => call.inputHash),
     [
@@ -1354,11 +1455,65 @@ test("varied executed failures remain repairable", async () => {
     model: "fake/model",
   });
   assert.equal(result.status, "completed");
-  assert.equal(result.turns.length, 5);
+  assert.equal(result.turns.length, 4);
   assert.deepEqual(
     result.toolCalls.map((call) => call.result.error?.code),
     ["TOOL_FAILURE", "TOOL_FAILURE", "TOOL_FAILURE", undefined],
   );
+});
+
+test("truncated or refused responses never execute even a syntactically valid tool call", async () => {
+  for (const stopReason of ["max_tokens", "refusal"] as const) {
+    const runtime = new ForgeNativeAgentRuntime(
+      new ScriptedModelClient([
+        (request) =>
+          ({
+            ...assistant(1, [{ id: "partial", name: "project.read", arguments: {} }])(request),
+            stopReason,
+          }) as ModelTurnResult,
+      ]),
+    );
+    const result = await runtime.run({
+      systemPrompt: "Test runtime",
+      prompt: CREATOR_PROMPT,
+      orientation: await genericOrientation(),
+      tools: recordlessRejectingToolHost(),
+      budgets: DEFAULT_AGENT_BUDGETS,
+      model: "fake/model",
+    });
+    assert.equal(result.status, "failed");
+    assert.equal(
+      result.failureCode,
+      stopReason === "max_tokens" ? "MODEL_RESPONSE_TRUNCATED" : "MODEL_RESPONSE_REFUSED",
+    );
+    assert.equal(result.toolCalls.length, 0);
+    assert.equal(result.turns.length, 1);
+  }
+});
+
+test("model responses allow twenty minutes while respecting the remaining run budget", async () => {
+  for (const maxDurationMs of [1_800_000, 90_000]) {
+    let observedTimeout = 0;
+    const runtime = new ForgeNativeAgentRuntime(
+      new ScriptedModelClient([
+        (request) => {
+          observedTimeout = request.timeoutMs;
+          return assistant(1, [], "Done.")(request);
+        },
+      ]),
+    );
+    const result = await runtime.run({
+      systemPrompt: "Test runtime",
+      prompt: CREATOR_PROMPT,
+      orientation: await genericOrientation(),
+      tools: recordlessRejectingToolHost(),
+      budgets: { ...DEFAULT_AGENT_BUDGETS, maxDurationMs },
+      model: "fake/model",
+    });
+    assert.equal(result.status, "completed");
+    if (maxDurationMs > 1_200_000) assert.equal(observedTimeout, 1_200_000);
+    else assert.ok(observedTimeout > 0 && observedTimeout <= maxDurationMs);
+  }
 });
 
 test("varied rejected tool batches remain bounded by the ordinary turn budget", async () => {
@@ -1404,6 +1559,7 @@ test("repeating an executed tool batch without semantic host progress terminates
     new ScriptedModelClient([
       assistant(1, [{ id: "inspect-first", name: "studio.inspect", arguments: {} }]),
       assistant(2, [{ id: "inspect-second", name: "studio.inspect", arguments: {} }]),
+      assistant(3, [{ id: "inspect-third", name: "studio.inspect", arguments: {} }]),
     ]),
   );
   const workspace = await CandidateWorkspace.create(
@@ -1433,7 +1589,7 @@ test("repeating an executed tool batch without semantic host progress terminates
   });
   assert.equal(result.status, "failed");
   assert.equal(result.failureCode, "REPEATED_NO_PROGRESS_TOOL_BATCH");
-  assert.equal(result.turns.length, 2);
+  assert.equal(result.turns.length, 3);
 });
 
 test("no-progress repetition is scoped to one accepted host-state epoch", async () => {
@@ -1500,7 +1656,7 @@ test("no-progress repetition is scoped to one accepted host-state epoch", async 
   );
 });
 
-test("a seal-ready host completes after the next read-only no-progress call", async () => {
+test("a seal-ready host completes immediately without another inference", async () => {
   let ready = false;
   const host: AgentToolHost = {
     definitions: () => [
@@ -1562,11 +1718,11 @@ test("a seal-ready host completes after the next read-only no-progress call", as
   });
 
   assert.equal(result.status, "completed");
-  assert.equal(result.turns.length, 2);
+  assert.equal(result.turns.length, 1);
   assert.equal(result.failureCode, undefined);
   assert.deepEqual(
     result.toolCalls.map((call) => call.name),
-    ["forge.verify", "studio.diff"],
+    ["forge.verify"],
   );
 });
 
@@ -1650,7 +1806,14 @@ test("provider failures and model budget exhaustion normalize to incomplete outc
       errorClass: "http_503",
       message: "unavailable",
       retryable: true,
-      usage: { inputTokens: null, outputTokens: null, costUsd: null },
+      usage: {
+        reasoningTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        inputTokens: null,
+        outputTokens: null,
+        costUsd: null,
+      },
       requestHash: contentHash(stableJson(request)),
       responseFacts: {
         requestedModel: request.model,
@@ -1692,7 +1855,14 @@ test("provider failures and model budget exhaustion normalize to incomplete outc
       kind: "invalid_model_response",
       errorClass: "unknown_tool",
       message: "invalid tool envelope",
-      usage: { inputTokens: 3, outputTokens: 2, costUsd: 0.0001 },
+      usage: {
+        reasoningTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        inputTokens: 3,
+        outputTokens: 2,
+        costUsd: 0.0001,
+      },
       requestHash: contentHash(stableJson(request)),
       responseFacts: {
         requestedModel: request.model,
@@ -1727,7 +1897,14 @@ test("provider failures and model budget exhaustion normalize to incomplete outc
       errorClass: "continuation_too_large",
       message: "bounded continuation exceeded",
       retryable: false,
-      usage: { inputTokens: 3, outputTokens: 2, costUsd: 0.0001 },
+      usage: {
+        reasoningTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        inputTokens: 3,
+        outputTokens: 2,
+        costUsd: 0.0001,
+      },
       requestHash: contentHash(stableJson(request)),
       responseFacts: {
         requestedModel: request.model,
@@ -1760,7 +1937,14 @@ test("provider failures and model budget exhaustion normalize to incomplete outc
       kind: "assistant",
       message: { role: "assistant", content: "", toolCalls: [] },
       stopReason: "max_tokens",
-      usage: { inputTokens: 1, outputTokens: 10, costUsd: 0 },
+      usage: {
+        reasoningTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        inputTokens: 1,
+        outputTokens: 10,
+        costUsd: 0,
+      },
       requestHash: contentHash(stableJson(request)),
       responseHash: contentHash("limit"),
       responseFacts: {
@@ -1787,7 +1971,7 @@ test("provider failures and model budget exhaustion normalize to incomplete outc
     traceDirectory: join(budgetDirectory, "traces"),
   });
   assert.equal(exhausted.status, "incomplete");
-  assert.equal(exhausted.classification, "budget_exhausted");
+  assert.equal(exhausted.classification, "agent_failure");
   assert.equal(exhausted.run.trialStarted, true);
 });
 
@@ -1809,7 +1993,14 @@ test("opaque model continuation is never persisted in AgentRun or BuildTrace", a
         },
       },
       stopReason: "end_turn",
-      usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 },
+      usage: {
+        reasoningTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        inputTokens: 1,
+        outputTokens: 1,
+        costUsd: 0,
+      },
       requestHash: contentHash(stableJson(request)),
       responseHash: contentHash(secretReasoning),
       responseFacts: {

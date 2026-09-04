@@ -39,7 +39,7 @@ no-fallback policy are represented; immutable planner/builder/repair journal
 slots and their interruption classifications are enforced; the local identity
 protocol and the Night Blueprint surface render their synthetic states. These
 tests do **not** establish that a provider received a request, that a selected
-provider/model produced a response, that a DataModel identity recording
+provider/model produced a response, that a Workspace identity recording
 committed, or that the conversation shell completed an end-to-end Studio
 workflow.
 

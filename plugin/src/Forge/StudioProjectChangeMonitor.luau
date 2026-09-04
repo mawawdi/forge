@@ -198,9 +198,21 @@ function StudioProjectChangeMonitor:attachInstance(instance: Instance)
 	end
 	local connected, result = pcall(function()
 		local connections = {} :: {RBXScriptConnection}
+		local isValue = instance:IsA("ValueBase")
 		table.insert(connections, instance.Changed:Connect(function(propertyName: any)
-			if StudioInstancePolicy.isWithinEvidenceRoot(instance) then self:emit("property", instance, propertyName) end
+			-- ValueBase.Changed carries the new value rather than a property name.
+			local field = if isValue then "Value" else propertyName
+			if StudioInstancePolicy.isWithinEvidenceRoot(instance) and StudioInstancePolicy.isIndexedProperty(instance.ClassName, field) then self:emit("property", instance, field) end
 		end))
+		-- ValueBase.Changed also omits ordinary property changes. Keep identity
+		-- and placement observable independently of its specialized value signal.
+		if isValue then
+			for _, field in { "Name", "Parent" } do
+				table.insert(connections, instance:GetPropertyChangedSignal(field):Connect(function()
+					if StudioInstancePolicy.isWithinEvidenceRoot(instance) then self:emit("property", instance, field) end
+				end))
+			end
+		end
 		table.insert(connections, instance.AttributeChanged:Connect(function(attributeName: any)
 			if StudioInstancePolicy.isWithinEvidenceRoot(instance) then self:emit("attribute", instance, attributeName) end
 		end))

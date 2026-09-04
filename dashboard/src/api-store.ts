@@ -2,6 +2,8 @@ import { useSyncExternalStore } from "react";
 import {
   assertCreatorDashboardState,
   assertCreatorWorkAdmission,
+  assertCreatorTurnRequest,
+  assertCreatorActionRequest,
 } from "../../packages/creator-conversation/src/contracts.js";
 import type {
   ActionDraft,
@@ -14,6 +16,9 @@ import type {
   CreatorWorkAdmission,
   DashboardSnapshot,
 } from "./types";
+import { browserStorage } from "./browser-preferences";
+
+const DRAFT_STORAGE_KEY = "forge.conversation-drafts.v1";
 
 const EMPTY_DRAFT: ConversationDraft = { text: "" };
 const EMPTY_ACTION_DRAFT: ActionDraft = { text: "" };
@@ -23,7 +28,7 @@ const INITIAL_SNAPSHOT: DashboardSnapshot = {
 };
 const JSON_HEADERS = { "Content-Type": "application/json", Accept: "application/json" };
 const AMBIGUOUS_REQUEST_MESSAGE =
-  "Forge could not confirm whether that request reached the local control plane. Its exact contents were retained, so retrying it will not create a second event.";
+  "Delivery wasn't confirmed. Your request is saved; retrying it won't send it twice.";
 
 let idempotencySequence = 0;
 
@@ -67,6 +72,85 @@ export class CreatorDashboardStore {
     string,
     RetainedAdmission<CreatorTurnRequest | CreatorActionRequest>
   >();
+
+  constructor(private readonly storage?: Storage) {
+    if (!storage) return;
+    try {
+      const saved: unknown = JSON.parse(storage.getItem(DRAFT_STORAGE_KEY) ?? "null");
+      if (saved === null) return;
+      if (
+        !isRecord(saved) ||
+        !isRecord(saved.drafts) ||
+        !isRecord(saved.actionDrafts) ||
+        !Array.isArray(saved.requests)
+      )
+        throw new Error("Invalid saved drafts");
+      const drafts = Object.fromEntries(
+        Object.entries(saved.drafts).map(([id, value]) => {
+          if (
+            !isRecord(value) ||
+            typeof value.text !== "string" ||
+            (value.modelId !== undefined && typeof value.modelId !== "string")
+          )
+            throw new Error("Invalid saved draft");
+          return [
+            id,
+            {
+              text: value.text,
+              ...(typeof value.modelId === "string" ? { modelId: value.modelId } : {}),
+            },
+          ];
+        }),
+      );
+      const actionDrafts = Object.fromEntries(
+        Object.entries(saved.actionDrafts).map(([id, value]) => {
+          if (
+            !isRecord(value) ||
+            typeof value.text !== "string" ||
+            (value.memoryCategory !== undefined &&
+              !["preference", "convention", "vocabulary", "goal", "unresolved"].includes(
+                String(value.memoryCategory),
+              ))
+          )
+            throw new Error("Invalid saved action draft");
+          return [id, value as unknown as ActionDraft];
+        }),
+      );
+      const admissions = saved.requests.map(
+        (body: unknown): RetainedAdmission<CreatorTurnRequest | CreatorActionRequest> => {
+          if (typeof body !== "string") throw new Error("Invalid saved request");
+          const request: unknown = JSON.parse(body);
+          if (!isRecord(request)) throw new Error("Invalid saved request");
+          if (request.kind === "CreatorTurnRequest") assertCreatorTurnRequest(request);
+          else assertCreatorActionRequest(request);
+          const { kind: _kind, idempotencyKey: _key, ...input } = request;
+          const kind = request.kind === "CreatorTurnRequest" ? "turn" : "action";
+          return {
+            kind,
+            endpoint: kind === "turn" ? "/api/control/turn" : "/api/control/action",
+            identity: admissionIdentity(kind, input),
+            request,
+            body,
+          };
+        },
+      );
+      for (const admission of admissions)
+        this.retainedAdmissions.set(admission.identity, admission);
+      this.snapshot = {
+        ...INITIAL_SNAPSHOT,
+        drafts,
+        actionDrafts,
+        unconfirmedTurns: admissions.flatMap((entry) =>
+          entry.request.kind === "CreatorTurnRequest" ? [entry.request] : [],
+        ),
+      };
+    } catch {
+      this.snapshot = {
+        ...INITIAL_SNAPSHOT,
+        draftStorageError: "Saved drafts couldn't be restored in this tab.",
+      };
+    }
+  }
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -134,6 +218,7 @@ export class CreatorDashboardStore {
     const page = this.snapshot.data?.eventPage;
     if (!page?.nextBeforeCursor || this.historyLoading.has(page.conversationId)) return;
     this.historyLoading.add(page.conversationId);
+    this.setSnapshot({ ...this.snapshot, loadingHistoryFor: page.conversationId });
     void this.fetchPreviousEvents(page.conversationId, page.nextBeforeCursor);
   };
 
@@ -187,6 +272,22 @@ export class CreatorDashboardStore {
     );
   };
 
+  renameWorkspace = async (
+    scope: "project" | "conversation",
+    conversationId: string,
+    name: string,
+  ): Promise<void> => {
+    const response = await fetch("/api/control/rename", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ scope, conversationId, name }),
+    });
+    const payload = await readJson(response);
+    if (!response.ok) throw new Error(readError(payload, response.status));
+    await this.refresh();
+  };
+
   private retainAdmission<T extends CreatorTurnRequest | CreatorActionRequest>(
     kind: AdmissionKind,
     endpoint: AdmissionEndpoint,
@@ -208,6 +309,7 @@ export class CreatorDashboardStore {
       body: serializeRequest(request),
     };
     this.retainedAdmissions.set(identity, admission);
+    this.persistDrafts();
     return admission;
   }
 
@@ -235,18 +337,21 @@ export class CreatorDashboardStore {
       }
       if (response.status !== 202)
         throw new Error(
-          `The control plane returned ${response.status}; Forge requires an exact 202 work admission.`,
+          `Forge couldn't confirm this request (response ${response.status}). Your draft is saved.`,
         );
       if (!isWorkAdmission(payload))
-        throw new Error("The control plane did not return a valid work admission.");
+        throw new Error("Forge returned an incomplete confirmation. Your draft is saved.");
       if (
         admission.request.kind === "CreatorTurnRequest" ||
         payload.conversationId !== admission.request.conversationId
       )
         this.selectedConversationId = payload.conversationId;
       this.retainedAdmissions.delete(admission.identity);
+      if (admission.request.kind === "CreatorTurnRequest")
+        this.clearSubmittedTurnDraft(admission.request);
+      this.persistDrafts();
       this.setSnapshot({
-        ...withoutPendingRequest(this.snapshot),
+        ...this.snapshot,
         phase: "ready",
         unconfirmedTurns: (this.snapshot.unconfirmedTurns ?? []).filter(
           (request) => request.idempotencyKey !== admission.request.idempotencyKey,
@@ -254,10 +359,20 @@ export class CreatorDashboardStore {
       });
       // The 202 proves only admission. The SSE remains the one source for the
       // durable event outcome, while this read catches a fast local transition.
-      void this.refresh();
+      // Keep action buttons pending until the first authoritative read so a
+      // second click cannot reuse the view from before admission.
+      await this.refresh();
+      this.setSnapshot(withoutPendingRequest(this.snapshot));
     } catch (error) {
       const message = responseReceived ? errorMessage(error) : AMBIGUOUS_REQUEST_MESSAGE;
-      const unconfirmedTurns = [...(this.snapshot.unconfirmedTurns ?? [])];
+      const unconfirmedTurns = (this.snapshot.unconfirmedTurns ?? []).filter(
+        (request) =>
+          !rejectionReceived || request.idempotencyKey !== admission.request.idempotencyKey,
+      );
+      if (rejectionReceived) {
+        this.retainedAdmissions.delete(admission.identity);
+        this.persistDrafts();
+      }
       if (
         !rejectionReceived &&
         admission.request.kind === "CreatorTurnRequest" &&
@@ -266,6 +381,9 @@ export class CreatorDashboardStore {
         )
       )
         unconfirmedTurns.push(admission.request);
+      // Rejections can mean the view changed during admission. Refresh the
+      // available actions without replaying a request against new authority.
+      if (rejectionReceived) await this.refresh();
       this.setSnapshot({
         ...withoutPendingRequest(this.snapshot),
         phase: "error",
@@ -297,9 +415,24 @@ export class CreatorDashboardStore {
       this.invalidations = 0;
       void this.refresh();
     });
-    // Native EventSource reconnects. The last durable snapshot stays visible
-    // rather than being replaced by a transient connection error.
-    this.eventSource.onerror = () => undefined;
+    // Retain the conversation while native EventSource reconnects, but mark
+    // its activity as stale until a fresh snapshot has arrived.
+    this.eventSource.onerror = () => {
+      this.setSnapshot({
+        ...this.snapshot,
+        connectionLost: true,
+        ...(this.eventSource?.readyState === 2
+          ? {
+              phase: "error" as const,
+              error:
+                "The connection was closed. Open the latest dashboard link from your Forge terminal to reconnect.",
+            }
+          : {}),
+      });
+    };
+    this.eventSource.onopen = () => {
+      if (this.snapshot.connectionLost) void this.refresh();
+    };
   }
 
   private async consumeInvalidations(): Promise<void> {
@@ -346,6 +479,7 @@ export class CreatorDashboardStore {
       this.setSnapshot({
         ...withoutError(this.snapshot),
         phase: "ready",
+        connectionLost: this.eventSource !== undefined && this.eventSource.readyState !== 1,
         data: this.mergeReadModel(payload, false),
       });
     } catch (error) {
@@ -381,7 +515,9 @@ export class CreatorDashboardStore {
       const current = this.snapshot.data;
       if (!current || current.selectedConversationId !== conversationId) return;
       if (!isEventPageForDashboard(current, payload))
-        throw new Error("The control plane returned an invalid conversation history page.");
+        throw new Error(
+          "Forge couldn't load the earlier messages. Your current conversation is still here.",
+        );
       this.setSnapshot({
         ...withoutError(this.snapshot),
         phase: "ready",
@@ -391,6 +527,8 @@ export class CreatorDashboardStore {
       this.setSnapshot({ ...this.snapshot, phase: "error", error: errorMessage(error) });
     } finally {
       this.historyLoading.delete(conversationId);
+      if (this.snapshot.loadingHistoryFor === conversationId)
+        this.setSnapshot({ ...this.snapshot, loadingHistoryFor: undefined });
     }
   }
 
@@ -421,8 +559,33 @@ export class CreatorDashboardStore {
   }
 
   private setSnapshot(value: DashboardSnapshot): void {
+    const draftsChanged =
+      value.drafts !== this.snapshot.drafts || value.actionDrafts !== this.snapshot.actionDrafts;
     this.snapshot = value;
+    if (draftsChanged) this.persistDrafts();
     for (const listener of this.listeners) listener();
+  }
+
+  private persistDrafts(): void {
+    if (!this.storage) return;
+    try {
+      this.storage.setItem(
+        DRAFT_STORAGE_KEY,
+        JSON.stringify({
+          drafts: this.snapshot.drafts,
+          actionDrafts: this.snapshot.actionDrafts ?? {},
+          requests: [...this.retainedAdmissions.values()].map((entry) => entry.body),
+        }),
+      );
+      const { draftStorageError: _storageError, ...savedSnapshot } = this.snapshot;
+      this.snapshot = savedSnapshot;
+    } catch {
+      this.snapshot = {
+        ...this.snapshot,
+        draftStorageError:
+          "This browser couldn't save your draft. Keep this tab open or copy your message before reloading.",
+      };
+    }
   }
 }
 
@@ -537,13 +700,17 @@ async function readJson(response: Response): Promise<unknown> {
 }
 
 function readError(value: unknown, status: number): string {
-  if (isRecord(value) && typeof value.message === "string") return value.message;
+  if (isRecord(value) && typeof value.message === "string") {
+    if (/became stale before durable (?:admission|action admission)/i.test(value.message))
+      return "This conversation changed while your request was being sent. Please try again.";
+    return value.message;
+  }
   if (typeof value === "string" && value.trim()) return value;
-  return `The control plane rejected this request (${status}).`;
+  return `Forge couldn't accept this request (${status}).`;
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "The control plane request failed.";
+  return error instanceof Error ? error.message : "Forge couldn't complete the request.";
 }
 
 function readCursor(data: string, lastEventId: string, fallback: number): number {
@@ -566,7 +733,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export const dashboardStore = new CreatorDashboardStore();
+export const dashboardStore = new CreatorDashboardStore(browserStorage("sessionStorage"));
 
 export function useDashboardSnapshot(): DashboardSnapshot {
   return useSyncExternalStore(

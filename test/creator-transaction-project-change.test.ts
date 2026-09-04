@@ -36,6 +36,12 @@ import type { StudioBridgeSession } from "../packages/studio-bridge/src/index.js
 import { createStudioProjectIdentityState } from "../packages/studio-protocol/src/index.js";
 
 interface DirtyConfirmationHarness {
+  awaitFinalizationGateClear(
+    sessionId: string,
+    paired: StudioBridgeSession,
+    authority: { projectId: string; epoch: number },
+  ): Promise<void>;
+  refreshProject(bundle: CreatorSessionBundle, execution: never): Promise<unknown>;
   artifactStore: ImmutableJsonArtifactStore;
   bundles: Map<string, CreatorSessionBundle>;
   pendingTransactionProjectChanges: Map<
@@ -217,7 +223,11 @@ function captureForChangeReview(
   });
 }
 
-function awaitingVerificationSession(revisionHash: string, projectCaptureHash: string) {
+function awaitingVerificationSession(
+  revisionHash: string,
+  projectCaptureHash: string,
+  targetStatus: "building" | "awaiting_verification" = "awaiting_verification",
+) {
   const observation: CreatorProjectIndexView = {
     project,
     revision: { hash: revisionHash } as CreatorProjectIndexView["revision"],
@@ -257,12 +267,15 @@ function awaitingVerificationSession(revisionHash: string, projectCaptureHash: s
     "preflighting",
     "applying",
     "awaiting_verification",
-  ] as const)
+  ] as const) {
     session = advanceSession(session, { status });
+    if (status === targetStatus) break;
+  }
   return { session, ownership };
 }
 
 async function fixture(input: {
+  readonly initialStatus?: "building";
   readonly observed?: StudioProjectIndexCapture;
   readonly fail?: Error;
 }) {
@@ -295,7 +308,11 @@ async function fixture(input: {
     },
   });
   const noticeArtifact = await store.write(notice);
-  const { session, ownership } = awaitingVerificationSession(expected.revision.hash, expected.hash);
+  const { session, ownership } = awaitingVerificationSession(
+    expected.revision.hash,
+    expected.hash,
+    input.initialStatus,
+  );
   const bundle = {
     session,
     creatorRequest: noticeArtifact,
@@ -350,6 +367,64 @@ test("a delayed Forge-origin notice clears only after a complete unchanged index
     assert.equal(coordinator.projectAuthorityEpochs.size, 0);
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("the commit owner confirms a delayed Apply notice instead of reporting a transport failure", async () => {
+  const { coordinator, bundle, directory } = await fixture({});
+  try {
+    coordinator.bundles.set(bundle.session.id, {
+      ...bundle,
+      session: advanceSession(bundle.session, { status: "committing" }),
+    });
+    await coordinator.awaitFinalizationGateClear(bundle.session.id, studio, {
+      projectId: studio.projectId,
+      epoch: 0,
+    });
+    const current = coordinator.bundles.get(bundle.session.id)!;
+    assert.equal(current.session.status, "committing");
+    assert.equal(current.projectChanges[0]?.confirmation?.record.outcome, "unchanged");
+    assert.equal(coordinator.pendingTransactionProjectChanges.has(bundle.session.id), false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("the commit owner waits for ingress evidence, and never finalizes drift or incomplete reads", async () => {
+  for (const variant of ["unchanged", "drift", "incomplete"] as const) {
+    const { coordinator, bundle, directory } = await fixture({
+      ...(variant === "drift" ? { observed: capture(true) } : {}),
+      ...(variant === "incomplete" ? { fail: new Error("Capture interrupted") } : {}),
+    });
+    try {
+      coordinator.pendingTransactionProjectChangeIngress.set(
+        bundle.session.id,
+        new Set(["queued"]),
+      );
+      let reads = 0;
+      const collect = coordinator.collectProjectIndex;
+      coordinator.collectProjectIndex = async (paired) => {
+        reads++;
+        return collect(paired);
+      };
+      const waiting = coordinator.awaitFinalizationGateClear(bundle.session.id, studio, {
+        projectId: studio.projectId,
+        epoch: 0,
+      });
+      assert.equal(reads, 0, "an unretained wire notice cannot be adjudicated");
+      coordinator.pendingTransactionProjectChangeIngress.delete(bundle.session.id);
+      if (variant === "unchanged") await waiting;
+      else await assert.rejects(waiting);
+      const current = coordinator.bundles.get(bundle.session.id)!;
+      assert.equal(reads, 1);
+      assert.equal(current.projectChanges[0]?.confirmation?.record.outcome, variant);
+      assert.equal(
+        current.session.status,
+        variant === "unchanged" ? "awaiting_verification" : "recovery_required",
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   }
 });
 
@@ -408,6 +483,56 @@ test("a later durable notice remains a finalization barrier until its own confir
     const second = await coordinator.confirmTransactionProjectChange(first, studio);
     assert.ok(second.projectChanges.every((change) => change.confirmation !== undefined));
     assert.equal(coordinator.pendingTransactionProjectChanges.has(bundle.session.id), false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("repeated property notices preserve the pre-refresh state and an unchanged refresh terminates", async () => {
+  const { coordinator, bundle, directory } = await fixture({ initialStatus: "building" });
+  try {
+    const { activeMutation: _mutation, ...idle } = bundle;
+    const building = { ...idle, projectChanges: [] };
+    // Start this scenario before any dirty notice; the production bundle map
+    // intentionally retains existing notice edges on replacement.
+    coordinator.bundles.delete(bundle.session.id);
+    coordinator.bundles.set(bundle.session.id, building);
+    coordinator.pendingTransactionProjectChanges.clear();
+    coordinator.emit = () => undefined;
+    Object.assign(coordinator, {
+      currentAttestedStudioSession: async () => studio,
+      captureForBundle: async () => capture(false),
+    });
+    for (const epoch of [8, 9, 10]) {
+      await coordinator.onPluginMessage(
+        {
+          kind: "StudioProtocolMessage",
+          direction: "plugin_to_backend",
+          type: "StudioProjectChangeDetected",
+          messageId: `refresh-${epoch}`,
+          sentAt: "2026-09-01T00:00:02.000Z",
+          payload: {
+            project,
+            connectorEpoch: capture(false).revision.connectorEpoch,
+            epoch,
+            observedAt: "2026-09-01T00:00:02.000Z",
+            sources: ["property"],
+          },
+        },
+        studio,
+      );
+    }
+    const dirty = coordinator.bundles.get(bundle.session.id)!;
+    assert.equal(dirty.session.status, "refresh_required");
+    assert.deepEqual(
+      dirty.projectChanges.map((change) => change.priorStatus),
+      ["building", "building", "building"],
+    );
+    await coordinator.refreshProject(dirty, undefined as never);
+    const refreshed = coordinator.bundles.get(bundle.session.id)!;
+    assert.equal(refreshed.session.status, "incomplete");
+    assert.equal(refreshed.session.failure?.code, "project_change_invalidated_agent_result");
+    assert.equal(refreshed.projectRefreshes.at(-1)?.refresh.outcome, "unchanged");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -872,6 +997,7 @@ test("dashboard renders a provisional create from its immutable pre-Apply index"
     );
     const changeSet = {
       kind: "CreatorChangeSet",
+      summary: "Updated the requested objects.",
       id: "creator_change_set_review_baseline",
       hash: "e".repeat(64),
       sessionId: initialSession.id,

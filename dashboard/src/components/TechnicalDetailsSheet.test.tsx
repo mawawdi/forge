@@ -92,7 +92,14 @@ describe("TechnicalDetailsSheet", () => {
           endedAt: "2026-09-03T00:00:01.000Z",
           durationMs: 1000,
         },
-        usage: { inputTokens: 10, outputTokens: 20, costUsd: 0 },
+        usage: {
+          reasoningTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          inputTokens: 10,
+          outputTokens: 20,
+          costUsd: 0,
+        },
         text: "The door remains anchored.",
         citations: [
           {
@@ -155,7 +162,14 @@ describe("TechnicalDetailsSheet", () => {
           endedAt: "2026-09-03T00:00:01.000Z",
           durationMs: 1000,
         },
-        usage: { inputTokens: 10, outputTokens: 20, costUsd: 0 },
+        usage: {
+          reasoningTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          inputTokens: 10,
+          outputTokens: 20,
+          costUsd: 0,
+        },
         text: "The airlock source is sealed.",
         citations: [
           {

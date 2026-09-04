@@ -25,6 +25,7 @@ try {
       join(root, "packages/luau-toolchain/roblox/globalTypes.d.luau"),
       "src/Forge/ConnectorPresentation.luau",
       "src/Forge/ConnectorView.luau",
+      "src/Forge/PlaytestContext.luau",
     ],
     options,
   );

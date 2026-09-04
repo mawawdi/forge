@@ -129,6 +129,7 @@ export type CreatorControlCoordinator = Pick<
   | "conversationEvents"
   | "submitTurn"
   | "submitAction"
+  | "renameWorkspace"
   | "readAuthorizedArtifact"
   | "replayVerification"
   | "replayMutation"
@@ -521,6 +522,14 @@ export class CreatorControlServer {
         this.assertSameOrigin(request);
         const body = await readJsonBody(request, "Creator action");
         return writeJson(response, 202, await this.options.coordinator.submitAction(body));
+      }
+      if (request.method === "POST" && url.pathname === "/api/control/rename") {
+        this.assertSameOrigin(request);
+        return writeJson(
+          response,
+          200,
+          await this.options.coordinator.renameWorkspace(await readJsonBody(request, "Rename")),
+        );
       }
       const artifact = /^\/api\/artifacts\/([a-f0-9]{64})$/.exec(url.pathname);
       if (request.method === "GET" && artifact?.[1])

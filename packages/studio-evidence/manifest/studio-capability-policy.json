@@ -24,7 +24,7 @@
     {"name": "remotes", "classes": ["RemoteEvent", "RemoteFunction"], "propertyMode": "structure_only"},
     {"name": "value_objects", "classes": ["BoolValue", "CFrameValue", "Color3Value", "IntValue", "NumberValue", "ObjectValue", "StringValue", "Vector3Value"], "propertyMode": "proof_closed_supported_types"},
     {"name": "three_dimensional", "classes": ["Attachment", "Part", "ProximityPrompt", "WeldConstraint"], "propertyMode": "proof_closed_supported_types"},
-    {"name": "ui", "classes": ["Frame", "ImageLabel", "ScreenGui", "TextButton", "TextLabel"], "propertyMode": "proof_closed_supported_types"},
+    {"name": "ui", "classes": ["CanvasGroup", "Frame", "ImageButton", "ImageLabel", "ScreenGui", "ScrollingFrame", "SurfaceGui", "TextBox", "TextButton", "TextLabel", "UIAspectRatioConstraint", "UICorner", "UIGradient", "UIGridLayout", "UIListLayout", "UIPadding", "UIScale", "UIStroke", "UITextSizeConstraint"], "propertyMode": "proof_closed_supported_types"},
     {"name": "effects_audio", "classes": ["Beam", "Decal", "ParticleEmitter", "PointLight", "Sound", "SpotLight", "SurfaceLight", "Texture", "Trail"], "propertyMode": "proof_closed_supported_types"}
   ],
   "codecByApiType": {
@@ -33,7 +33,10 @@
     "CFrame": "cframe_f32x12",
     "Color3": "color3_rgb8",
     "ColorSequence": "color_sequence",
+    "Content": "content",
+    "ContentId": "content",
     "Faces": "faces",
+    "Font": "font",
     "Instance": "instance_ref",
     "NumberRange": "number_range",
     "NumberSequence": "number_sequence",
@@ -57,10 +60,19 @@
     "maximumAbsoluteTranslation": 100000
   },
   "propertyExclusions": {
+    "Instance.Capabilities": {"reason": "engine_or_external_authority"},
     "Instance.Name": {"reason": "structure_managed"},
     "Instance.Parent": {"reason": "parent_policy_missing"}
   },
   "propertyOverrides": {
+    "ImageButton.HoverImageContent": {"serialized": false},
+    "ImageButton.ImageContent": {"serialized": false},
+    "ImageButton.PressedImageContent": {"serialized": false},
+    "ImageLabel.ImageContent": {"serialized": false},
+    "ScrollingFrame.BottomImageContent": {"serialized": false},
+    "ScrollingFrame.MidImageContent": {"serialized": false},
+    "ScrollingFrame.TopImageContent": {"serialized": false},
+    "SurfaceGuiBase.Adornee": {"referenceClass": "Instance"},
     "Attachment.Axis": {"maximum": 100000},
     "Attachment.CFrame": {"maximumAbsoluteTranslation": 100000},
     "Attachment.SecondaryAxis": {"maximum": 100000},

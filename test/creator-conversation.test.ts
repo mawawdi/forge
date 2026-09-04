@@ -40,6 +40,60 @@ const MODEL = "openai/gpt-5.6-luna";
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
 
+test("Apply, Play and finalization remain readable; invalid snapshots never publish a head", async () => {
+  await withConversationStore(async (root, store) => {
+    const first = await firstTurnInput(store, "creator_conversation_finalization");
+    await store.append(first);
+    for (const status of [
+      "awaiting_plan_decision",
+      "building",
+      "awaiting_change_decision",
+      "applying",
+      "awaiting_play",
+      "observing_play",
+      "finalizing",
+      "awaiting_review",
+    ] as const) {
+      const current = await store.load(first.conversation.id);
+      const sequence = current.head.sequence + 1;
+      const time = new Date(Date.parse(NOW) + sequence * 1000).toISOString();
+      const episode = sealCreatorWorkEpisode({
+        ...stripHash(current.episodes[0]!),
+        status,
+        updatedAt: time,
+      });
+      const conversation = sealCreatorProjectConversation({
+        ...stripHash(current.conversation),
+        latestEventSequence: sequence,
+        updatedAt: time,
+      });
+      const event = sealCreatorConversationEvent({
+        id: `creator_event_status_${sequence}`,
+        conversationId: conversation.id,
+        episodeId: episode.id,
+        sequence,
+        occurredAt: time,
+        projectRevisionHash: HASH_A,
+        authority: "forge",
+        attachments: [],
+        eventType: "source_sync",
+        data: { status: "awaiting", message: `Host boundary: ${status}` },
+      });
+      if (status === "finalizing") {
+        const invalid = sealCreatorWorkEpisode({ ...stripHash(episode), status: "applying" });
+        await assert.rejects(
+          store.append({ conversation, episode: invalid, event }),
+          /status order/,
+        );
+        assert.equal((await store.load(conversation.id)).head.sequence, current.head.sequence);
+      }
+      await store.append({ conversation, episode, event });
+      const restarted = await new CreatorConversationStore(root).load(conversation.id);
+      assert.equal(restarted.episodes[0]!.status, status);
+    }
+  });
+});
+
 test("conversation contracts expose closed browser-safe turn, action, and dashboard data", async () => {
   const registry = sealCreatorModelRegistry({
     id: "creator_model_registry_main",
@@ -308,6 +362,20 @@ test("interrupted publication leaves no visible history and can be retried exact
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("an inconsistent active-job reference is rejected before publishing the conversation head", async () => {
+  await withConversationStore(async (_root, store) => {
+    const input = await firstTurnInput(store, "creator_conversation_bad_active_job");
+    const episode = sealCreatorWorkEpisode({
+      ...stripHash(input.episode!),
+      activeJob: { id: "creator_job_unbound", hash: HASH_A },
+    });
+    await assert.rejects(store.append({ ...input, episode }), /active job is not an exact/);
+    assert.deepEqual(await store.enumerate(), { conversations: [], corrupt: [] });
+    await store.append(input);
+    assert.equal((await store.load(input.conversation.id)).head.sequence, 1);
+  });
 });
 
 test("enumeration isolates a tampered conversation without hiding healthy conversations", async () => {
@@ -645,7 +713,14 @@ test("memory and prior-evidence citations must bind host-retained conversation h
       responseModelId: MODEL,
       agentRunId: "agent_run_context_citations",
       timing: { startedAt: agentTime, endedAt: agentTime, durationMs: 0 },
-      usage: { inputTokens: 10, outputTokens: 8, costUsd: 0.001 },
+      usage: {
+        reasoningTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        inputTokens: 10,
+        outputTokens: 8,
+        costUsd: 0.001,
+      },
       citations: validCitations,
       createdAt: agentTime,
     });
@@ -884,7 +959,14 @@ async function agentTurnInput(
       endedAt: eventTime,
       durationMs: 0,
     },
-    usage: { inputTokens: 40, outputTokens: 12, costUsd: 0.001 },
+    usage: {
+      reasoningTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      inputTokens: 40,
+      outputTokens: 12,
+      costUsd: 0.001,
+    },
     projectRevisionHash: HASH_A,
     citations: [citation],
     createdAt: eventTime,

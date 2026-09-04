@@ -84,6 +84,14 @@ export function analyzeStudioSourcesWithRobloxLuau(input: {
 }): LuauAnalysisResult {
   const temporaryRoot = mkdtempSync(join(tmpdir(), "forge-studio-luau-analysis-"));
   try {
+    // Untyped candidate files otherwise use Luau's nonstrict default, which
+    // can erase an optional instance's type after a nil guard and miss a
+    // runtime error such as calling Vector3.Magnitude. This config changes
+    // analysis only; candidate source bytes and diagnostic lines stay exact.
+    writeFileSync(join(temporaryRoot, ".luaurc"), JSON.stringify({ languageMode: "strict" }), {
+      encoding: "utf8",
+      mode: 0o600,
+    });
     const sources = [...input.sources].sort(
       (left, right) =>
         left.studioPath.localeCompare(right.studioPath) || left.id.localeCompare(right.id),
@@ -451,7 +459,11 @@ function parseLspDiagnostics(output: string, root: string): VerificationIssue[] 
     const match = line.match(/^(.*?):(\d+)\.(\d+)(?:-(\d+)\.(\d+))?:\s*([^:]+):\s*(.*)$/);
     if (!match?.[1] || !match[2] || !match[3] || !match[6] || !match[7]) continue;
     const label = match[6].trim();
-    const message = match[7].trim();
+    const rawMessage = match[7].trim();
+    const message =
+      rawMessage === "Unknown require: unsupported path"
+        ? `${rawMessage}. The analyzer needs a statically resolvable instance path. Use inferred GetService/WaitForChild aliases without :: casts in the import chain, then require(module). Keep shared code in its ModuleScript; do not duplicate it. Dynamic imports remain unresolved.`
+        : rawMessage;
     const location = {
       line: Number(match[2]),
       column: Number(match[3]),
@@ -477,7 +489,7 @@ function parseLspDiagnostics(output: string, root: string): VerificationIssue[] 
         relativePath(root, match[1]),
         location,
         message,
-        `luau-lsp Roblox analysis reported ${label}: ${message}`,
+        `luau-lsp Roblox analysis reported ${label}: ${rawMessage}`,
       ),
     );
   }

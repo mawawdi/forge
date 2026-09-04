@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { shortHash } from "../derived";
+import { eventLabel, formatTimestamp, shortHash } from "../derived";
 import { TechnicalCatalogExplorer } from "./TechnicalCatalogExplorer";
 import { TechnicalReplay } from "./TechnicalReplay";
 import {
@@ -32,11 +32,16 @@ export default function TechnicalDetailsSheet({
   const sheetRef = useRef<HTMLElement>(null);
   const [selected, setSelected] = useState<CreatorConversationAttachment | undefined>();
   const [raw, setRaw] = useState<string | undefined>();
+  const [selectedEventId, setSelectedEventId] = useState<string | undefined>();
   const selectedConversationId = state?.selectedConversationId;
-  const detailEvent =
+  const initialEvent =
     event && (!selectedConversationId || event.conversationId === selectedConversationId)
       ? event
       : undefined;
+  const detailEvent =
+    selectedEventId === undefined
+      ? initialEvent
+      : state?.eventPage?.events.find((candidate) => candidate.id === selectedEventId);
   const attachments = uniqueAttachments([
     ...(detailEvent?.attachments ?? state?.controlView?.technicalAttachments ?? []),
     ...(detailEvent?.eventType === "activity"
@@ -69,6 +74,10 @@ export default function TechnicalDetailsSheet({
             : [],
         ) ?? [])
       : [];
+
+  useEffect(() => {
+    setSelectedEventId(undefined);
+  }, [open, selectedConversationId, event?.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -148,6 +157,21 @@ export default function TechnicalDetailsSheet({
           </button>
         </header>
         <div className="technical-details-sheet__body">
+          <label className="detail-event-picker">
+            Inspect
+            <select
+              value={detailEvent?.id ?? ""}
+              onChange={(change) => setSelectedEventId(change.target.value)}
+            >
+              <option value="">Project overview</option>
+              {state?.eventPage?.events.map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>
+                  {candidate.sequence}. {eventLabel(candidate)} —{" "}
+                  {formatTimestamp(candidate.occurredAt)}
+                </option>
+              ))}
+            </select>
+          </label>
           <section className="detail-section" aria-labelledby="evidence-chain-title">
             <h3 id="evidence-chain-title">Evidence chain</h3>
             {detailEvent ? (
@@ -272,6 +296,12 @@ export default function TechnicalDetailsSheet({
                     {formatUsage(detailEvent.data.usage.inputTokens, "input")} ·{" "}
                     {formatUsage(detailEvent.data.usage.outputTokens, "output")} ·{" "}
                     {formatCost(detailEvent.data.usage.costUsd)}
+                    {detailEvent.data.usage.reasoningTokens !== null
+                      ? ` · ${formatUsage(detailEvent.data.usage.reasoningTokens, "reasoning")}`
+                      : ""}
+                    {detailEvent.data.usage.cacheReadTokens !== null
+                      ? ` · ${formatUsage(detailEvent.data.usage.cacheReadTokens, "cached input")}`
+                      : ""}
                   </dd>
                 </div>
               </dl>
@@ -342,7 +372,10 @@ function formatDuration(durationMs: number): string {
   return `${new Intl.NumberFormat().format(durationMs)} ms`;
 }
 
-function formatUsage(tokens: number | null, kind: "input" | "output"): string {
+function formatUsage(
+  tokens: number | null,
+  kind: "input" | "output" | "reasoning" | "cached input",
+): string {
   return tokens === null ? `${kind} tokens not reported` : `${tokens} ${kind} tokens`;
 }
 

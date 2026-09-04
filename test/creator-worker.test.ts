@@ -109,7 +109,8 @@ function descriptor(): ModelClient["descriptor"] {
         toolNameEncoding: "openai_function_slug",
         maxRetries: 0,
         telemetry: false,
-        timeoutPolicy: "remaining_runtime_budget",
+        timeoutPolicy: "bounded_turn_and_remaining_runtime_budget",
+        maxDurationMsPerTurn: 1_200_000,
         maxOutputTokensPerTurn: 4_096,
       },
       continuation: { maxBytes: 256 * 1_024 },
@@ -155,7 +156,14 @@ class AnsweringModelClient implements ModelClient {
         toolCalls,
       },
       stopReason: toolCalls.length > 0 ? "tool_calls" : "end_turn",
-      usage: { inputTokens: 10, outputTokens: 5, costUsd: 0.001 },
+      usage: {
+        reasoningTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        inputTokens: 10,
+        outputTokens: 5,
+        costUsd: 0.001,
+      },
       requestHash: contentHash(stableJson(request)),
       responseHash: contentHash(stableJson({ sequence: this.calls, toolCalls })),
       responseFacts: {
@@ -190,7 +198,15 @@ function plannerInput(execution: ReturnType<typeof createAgentExecutionSlot>) {
 function emptyBoundaryState(): AgentExecutionBoundaryState {
   return {
     runtimeStartedAt: "2026-09-03T00:00:00.000Z",
-    usage: { turns: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    usage: {
+      reasoningTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      turns: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+    },
     trialStarted: false,
     remaining: {
       turns: DEFAULT_AGENT_BUDGETS.maxTurns,
@@ -294,15 +310,17 @@ test("creator worker persists the supplied AgentRun identity and its exact journ
     const result = await worker.plan(plannerInput(execution));
     assert.equal(result.status, "sealed");
     assert.equal(result.evidence.agentRunId, execution.agentRunId);
-    assert.equal(client.calls, 2);
+    assert.equal(client.calls, 1, "Publishing an answer must not buy another response");
     const firstUserMessage = client.requests[0]?.messages[0]?.content;
+    assert.match(client.requests[0]!.system, /creator-facing prose in GitHub-flavored Markdown/);
+    assert.match(client.requests[0]!.system, /tool arguments remain exact schema-valid JSON/);
     assert.equal(typeof firstUserMessage, "string");
-    const modelInput = JSON.parse(firstUserMessage!) as { creatorRequest: string };
-    assert.equal(
-      modelInput.creatorRequest,
-      `Host-authored conversation context.\n\nExact creator request: ${PROMPT}`,
+    assert.ok(
+      firstUserMessage!.startsWith(
+        `Host-authored conversation context.\n\nExact creator request: ${PROMPT}\n\n<forge_project_orientation>`,
+      ),
     );
-    assert.notEqual(modelInput.creatorRequest, PROMPT);
+    assert.equal(firstUserMessage!.split(PROMPT).length - 1, 1);
 
     const artifactStore = new ImmutableJsonArtifactStore(root);
     const persistedRun = await artifactStore.read(result.evidence.agentRun);

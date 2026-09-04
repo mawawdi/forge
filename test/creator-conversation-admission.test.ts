@@ -21,6 +21,7 @@ import {
   type CreatorConversationAttachment,
   type CreatorControlView,
   type CreatorWorkJob,
+  type CreatorWorkEpisode,
   type LoadedCreatorConversation,
 } from "../packages/creator-conversation/src/index.js";
 import {
@@ -39,6 +40,7 @@ import type {
 import { createStudioProjectIdentityState } from "../packages/studio-protocol/src/index.js";
 import {
   AgentExecutionJournalStore,
+  type AgentExecutionSlot,
   type LoadedAgentExecutionJournal,
 } from "../packages/agent-runtime/src/index.js";
 import {
@@ -53,6 +55,237 @@ const PROJECT_ID = "forge_project_0123456789abcdef0123456789abcdef";
 const SESSION_ID = "creator_session_admission";
 const REVISION_HASH = "a".repeat(64);
 
+test("a burst of transaction invalidations coalesces while retaining the final update", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "forge-sync-coalescing-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const control = coordinator(directory);
+  await control.initialize();
+  const internals = control as unknown as {
+    sessionEpisodes: Map<string, { conversationId: string; episodeId: string }>;
+    syncSession: (sessionId: string) => Promise<void>;
+    onTransactionInvalidated: () => void;
+  };
+  internals.sessionEpisodes.set("session", {
+    conversationId: "conversation",
+    episodeId: "episode",
+  });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let revision = "applying";
+  const observed: string[] = [];
+  internals.syncSession = async () => {
+    observed.push(revision);
+    if (observed.length === 1) await gate;
+  };
+  for (let i = 0; i < 100; i++) internals.onTransactionInvalidated();
+  await new Promise((resolve) => setImmediate(resolve));
+  revision = "completed";
+  for (let i = 0; i < 100; i++) internals.onTransactionInvalidated();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(observed, ["applying"], "Only one sync may be active for a session");
+  release();
+  await new Promise((resolve) => setImmediate(resolve));
+  await control.close();
+  assert.deepEqual(
+    observed,
+    ["applying", "completed"],
+    "One follow-up consumes the latest state instead of queuing every intermediate notification",
+  );
+});
+
+test("renaming the workspace changes display labels while retaining exact conversation authority", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "forge-conversation-names-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await seedPlanEpisode(directory, undefined, "completed");
+  const control = coordinator(directory);
+  await control.initialize();
+  const before = await control.dashboardState(CONVERSATION_ID);
+  await control.renameWorkspace({
+    scope: "project",
+    conversationId: CONVERSATION_ID,
+    name: "Orbital",
+  });
+  await control.renameWorkspace({
+    scope: "conversation",
+    conversationId: CONVERSATION_ID,
+    name: "Improve the HUD",
+  });
+  await assert.rejects(
+    control.renameWorkspace({ scope: "project", conversationId: "missing", name: "Lost" }),
+    /no longer available/,
+  );
+  await control.close();
+  const restarted = coordinator(directory);
+  await restarted.initialize();
+  t.after(() => restarted.close());
+  const after = await restarted.dashboardState(CONVERSATION_ID);
+  assert.equal(after.conversations[0]?.title, "Improve the HUD");
+  assert.equal(after.conversations[0]?.projectName, "Orbital");
+  assert.equal(after.conversations[0]?.hash, before.conversations[0]?.hash);
+  assert.deepEqual(after.conversations[0]?.project, before.conversations[0]?.project);
+  assert.deepEqual(after.eventPage, before.eventPage);
+  assert.deepEqual(after.episodes, before.episodes);
+});
+
+for (const turnKind of ["plan_refinement", "new_work"] as const) {
+  test(`${turnKind} preparation failures publish their cause once and survive restart without a provider journal`, async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), "forge-followup-preparation-"));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    await seedPlanEpisode(
+      directory,
+      undefined,
+      turnKind === "new_work" ? "completed" : "awaiting_plan_decision",
+    );
+    let bundle: CreatorSessionBundle;
+    let starts = 0;
+    const overrides = {
+      supersedeConversationCandidate: async () => undefined,
+      conversationSnapshot: async () => ({ bundle }),
+      action: async (input: {
+        creatorSessionId: string;
+        agentExecutions: AgentExecutionSlot[];
+      }) => {
+        starts++;
+        const execution = input.agentExecutions[0]!;
+        const failure = {
+          stage: "source_analysis" as const,
+          code: "source_analysis_failed",
+          detail: "Pinned Rojo sourcemap failed: Source is missing $className",
+        };
+        const diagnostic = await new ImmutableJsonArtifactStore(directory).write({
+          kind: "CreatorPreparationDiagnostic",
+          execution,
+          failure,
+        });
+        bundle = {
+          session: {
+            id: input.creatorSessionId,
+            hash: HASH_FOR_FAILURE,
+            status: "incomplete",
+            initialRevisionHash: REVISION_HASH,
+            currentRevisionHash: REVISION_HASH,
+            failure: { code: failure.code, detailHash: contentHash(failure.detail) },
+          },
+          preparationFailure: { execution, failure, diagnostic },
+          agentRuns: [],
+          projectIndices: [],
+          sourceConsultations: [],
+          approvals: [],
+          changeSets: [],
+          mutationAttempts: [],
+          verifications: [],
+          projectRefreshes: [],
+        } as unknown as CreatorSessionBundle;
+        return { creatorSessionId: input.creatorSessionId };
+      },
+    };
+    const configure = () => {
+      const control = coordinator(directory);
+      Object.assign(
+        (control as unknown as { options: { transaction: object } }).options.transaction,
+        overrides,
+      );
+      return control;
+    };
+    const control = configure();
+    await control.initialize();
+    const state = await control.dashboardState(CONVERSATION_ID);
+    const contract = state.controlView!.turnContract!;
+    const admission = await control.submitTurn({
+      kind: "CreatorTurnRequest",
+      conversationId: CONVERSATION_ID,
+      turnContractId: contract.id,
+      turnContractHash: contract.hash,
+      turnKind,
+      text: "Make the UI look better",
+      selectedModelId: MODEL,
+      idempotencyKey: "source-preparation-followup",
+    });
+    const store = new CreatorConversationStore(directory);
+    const deadline = Date.now() + 5000;
+    let loaded = await store.load(CONVERSATION_ID);
+    while (loaded.jobs.find((job) => job.id === admission.jobId)?.status !== "failed") {
+      assert.ok(Date.now() < deadline, "Follow-up must settle its local preparation failure");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      loaded = await store.load(CONVERSATION_ID);
+    }
+    const job = loaded.jobs.find((entry) => entry.id === admission.jobId)!;
+    assert.equal(job.phase, "preparation_failed", JSON.stringify(loaded.events.at(-1)));
+    assert.equal(job.failure?.code, "source_analysis_failed");
+    assert.equal(job.providerOutcome, "never_dispatched");
+    assert.equal(
+      await new AgentExecutionJournalStore(store.artifactStore).loadIfPresent(
+        job.agentExecutions[0]!.journalId,
+      ),
+      undefined,
+    );
+    const results = loaded.events.filter((event) => event.eventType === "terminal_output");
+    assert.equal(results.length, 1);
+    assert.match(results[0]!.data.message, /couldn't read the project's scripts/);
+    assert.ok(
+      results[0]!.attachments.some((attachment) => attachment.label === "Preparation error"),
+    );
+    await control.close();
+    const restarted = configure();
+    await restarted.initialize();
+    await restarted.dashboardState(CONVERSATION_ID);
+    const restored = await store.load(CONVERSATION_ID);
+    assert.equal(
+      restored.jobs.find((entry) => entry.id === job.id)?.failure?.code,
+      "source_analysis_failed",
+    );
+    assert.equal(
+      restored.events.filter((event) => event.eventType === "terminal_output").length,
+      1,
+    );
+    assert.equal(starts, 1);
+    await restarted.close();
+  });
+}
+
+const HASH_FOR_FAILURE = "f".repeat(64);
+
+test("built drafts offer corrections before Apply, without offering them during application", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "forge-change-review-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await seedPlanEpisode(directory);
+  for (const status of ["awaiting_change_approval", "awaiting_verification", "applying"] as const) {
+    const view: TransactionControlView = {
+      kind: "CreatorTransactionControlView",
+      id: "creator_transaction_review",
+      hash: "b".repeat(64),
+      creatorSessionId: SESSION_ID,
+      creatorSessionHash: "c".repeat(64),
+      status,
+      title: "Review changes",
+      detail: "Review this draft.",
+      actions:
+        status === "awaiting_change_approval"
+          ? [
+              { id: "transaction_approve_and_apply_changes", label: "Apply", intent: "primary" },
+              { id: "transaction_reject_changes", label: "Reject", intent: "secondary" },
+            ]
+          : [],
+      artifacts: {},
+    };
+    const control = coordinator(directory, view);
+    await control.initialize();
+    const state = await control.dashboardState(CONVERSATION_ID);
+    assert.equal(state.controlView!.status, status === "applying" ? "working" : "awaiting_creator");
+    assert.equal(state.conversations[0]!.status, state.controlView!.status);
+    const correction = state.controlView!.actions.find(
+      (action) => action.actionId === "revise_plan",
+    );
+    if (status === "awaiting_change_approval") {
+      assert.equal(correction?.label, "Request changes");
+      assert.equal(correction?.input.kind, "text");
+    } else assert.equal(correction, undefined);
+    await control.close();
+  }
+});
+
 test("turn admission publishes intent and queued idempotency record at one conversation head", async () => {
   const directory = await mkdtemp(join(tmpdir(), "forge-conversation-admission-"));
   try {
@@ -66,6 +299,7 @@ test("turn admission publishes intent and queued idempotency record at one conve
     });
     await faulting.initialize();
     const failedState = await faulting.dashboardState(CONVERSATION_ID);
+    assert.equal(failedState.controlView!.status, "awaiting_creator");
     const failedContract = failedState.controlView!.turnContract!;
     await assert.rejects(
       faulting.submitTurn({
@@ -330,6 +564,14 @@ test("new conversations retain project identity, isolate history, and are idempo
     assert.equal(state.conversations.length, 2);
     assert.deepEqual(state.selectedConversation!.project, first.selectedConversation!.project);
     assert.equal(state.episodes.length, 0);
+    const internals = control as unknown as { controlViews: Map<string, CreatorControlView> };
+    internals.controlViews.set(view.conversationId, { ...view, status: "working" });
+    const afterSwitch = await control.dashboardState(result.conversationId);
+    assert.notEqual(
+      afterSwitch.conversations.find((item) => item.id === view.conversationId)?.status,
+      "working",
+      "a stale cached control view must not keep a finished sibling conversation working",
+    );
     const store = new CreatorConversationStore(directory);
     const created = await store.load(result.conversationId);
     assert.equal(created.turns.length, 0);
@@ -520,6 +762,8 @@ test("journal activity fits the browser contract after long errors and multiling
       details: { paths: Array(40).fill("Workspace/Airlock/Part") },
       message: "Inspect the missing scene objects before proposing the plan.",
     });
+    let publicProgress = "Checking that reset cancels the door animation.";
+    const additionalCheckpoints: unknown[] = [];
     // Persistence/hash validation has its own journal suite. Here the real
     // coordinator projection must satisfy the exact browser consumer contract.
     t.mock.method(
@@ -527,28 +771,62 @@ test("journal activity fits the browser contract after long errors and multiling
       "loadIfPresent",
       async () =>
         ({
-          entries: [structuredError, "界😀".repeat(200), undefined].map((message, index) => ({
-            checkpoint: {
-              checkpointType: "tool_completed",
-              occurredAt: NOW,
-              toolCall: {
-                name: index === 2 ? "project.search" : "creator.propose_plan",
-                input: { query: "界😀".repeat(200) },
+          entries: [
+            {
+              checkpoint: {
+                checkpointType: "response_received",
+                occurredAt: NOW,
                 result: {
-                  ok: message === undefined,
-                  ...(message ? { error: { code: "PLAN_INVALID", message } } : {}),
+                  kind: "assistant",
+                  stopReason: "tool_calls",
+                  message: {
+                    content: "I’m connecting the controls, then checking reset cancellation.",
+                    toolCalls: [
+                      {
+                        id: "inspect",
+                        name: "project.inspect",
+                        arguments: { activity: publicProgress },
+                      },
+                    ],
+                    continuation: { payload: "PRIVATE_REASONING_MUST_NOT_APPEAR" },
+                  },
+                },
+                turn: {
+                  usage: {
+                    inputTokens: 10,
+                    outputTokens: 5,
+                    reasoningTokens: null,
+                    cacheReadTokens: null,
+                    cacheWriteTokens: null,
+                    costUsd: null,
+                  },
                 },
               },
             },
-          })),
+            ...[structuredError, "界😀".repeat(200), undefined].map((message, index) => ({
+              checkpoint: {
+                checkpointType: "tool_completed",
+                occurredAt: NOW,
+                toolCall: {
+                  name: index === 2 ? "project.search" : "creator.propose_plan",
+                  input: { query: "界😀".repeat(200) },
+                  result: {
+                    ok: message === undefined,
+                    ...(message ? { error: { code: "PLAN_INVALID", message } } : {}),
+                  },
+                },
+              },
+            })),
+            ...additionalCheckpoints,
+          ],
         }) as unknown as LoadedAgentExecutionJournal,
     );
     const projection = control as unknown as {
       readAgentActivity(
         conversation: LoadedCreatorConversation,
-      ): Promise<CreatorDashboardState["agentActivity"]>;
+      ): Promise<NonNullable<CreatorDashboardState["agentActivities"]>[number] | undefined>;
     };
-    const activity = await projection.readAgentActivity({
+    const working = {
       ...conversation,
       jobs: [
         {
@@ -566,9 +844,15 @@ test("journal activity fits the browser contract after long errors and multiling
           ],
         } as unknown as CreatorWorkJob,
       ],
-    });
+    };
+    const activity = await projection.readAgentActivity(working);
     assert.ok(activity);
     assert.equal(activity.steps.length, 3);
+    assert.deepEqual(activity.commentary, [
+      { sequence: 1, text: "I’m connecting the controls, then checking reset cancellation." },
+    ]);
+    assert.equal(activity.currentStep, "Checking that reset cancels the door animation.");
+    assert.doesNotMatch(JSON.stringify(activity), /PRIVATE_REASONING_MUST_NOT_APPEAR/);
     assert.equal(
       activity.steps[0]!.detail,
       "Inspect the missing scene objects before proposing the plan.",
@@ -579,7 +863,54 @@ test("journal activity fits the browser contract after long errors and multiling
         .slice(1)
         .every((step) => !step.detail.includes("�") && step.detail.endsWith("…")),
     );
-    assert.doesNotThrow(() => assertCreatorDashboardState({ ...state, agentActivity: activity }));
+    assert.doesNotThrow(() =>
+      assertCreatorDashboardState({ ...state, agentActivities: [activity] }),
+    );
+    publicProgress = "";
+    additionalCheckpoints.push({
+      checkpoint: {
+        checkpointType: "tool_completed",
+        occurredAt: NOW,
+        toolCall: {
+          name: "project.inspect",
+          input: { objectIds: ["door1", "door2"] },
+          result: {
+            ok: true,
+            value: {
+              instances: [
+                { objectId: "door1", path: "Workspace/Airlock/OuterDoor" },
+                { objectId: "door2", path: "Workspace/Airlock/InnerDoor" },
+              ],
+            },
+          },
+        },
+      },
+    });
+    const observed = await projection.readAgentActivity(working);
+    assert.equal(observed?.currentStep, "Planning your request");
+    assert.equal(observed?.steps.at(-1)?.detail, "OuterDoor, InnerDoor");
+    assert.equal(observed?.steps.at(-1)?.label, "Inspected OuterDoor, InnerDoor");
+    assert.doesNotMatch(JSON.stringify(observed), /PRIVATE_REASONING_MUST_NOT_APPEAR/);
+    assert.doesNotThrow(() =>
+      assertCreatorDashboardState({ ...state, agentActivities: [observed] }),
+    );
+    additionalCheckpoints.push({
+      checkpoint: {
+        checkpointType: "tool_completed",
+        occurredAt: NOW,
+        toolCall: {
+          name: "forge.verify",
+          input: {},
+          result: { ok: true, value: { status: "rejected", issues: [] } },
+        },
+      },
+    });
+    const rejected = await projection.readAgentActivity(working);
+    assert.equal(
+      rejected?.steps.at(-1)?.status,
+      "failed",
+      "A successful check call must not turn a rejected draft green",
+    );
   } finally {
     await control.close();
     await rm(directory, { recursive: true, force: true });
@@ -636,6 +967,7 @@ async function seedPlanEpisode(
     readonly plan: ReturnType<typeof identifiedBody>;
     readonly artifact: ArtifactReference;
   },
+  initialStatus: CreatorWorkEpisode["status"] = "awaiting_plan_decision",
 ): Promise<void> {
   const store = new CreatorConversationStore(new ImmutableJsonArtifactStore(directory));
   const sessionBody = { kind: "CreatorSessionEvidenceSnapshot", id: SESSION_ID };
@@ -655,7 +987,7 @@ async function seedPlanEpisode(
     id: "creator_episode_admission",
     conversationId: CONVERSATION_ID,
     ordinal: 1,
-    status: "awaiting_plan_decision",
+    status: initialStatus,
     selectedModelId: MODEL,
     initialProjectRevisionHash: REVISION_HASH,
     currentProjectRevisionHash: REVISION_HASH,

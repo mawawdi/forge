@@ -205,6 +205,7 @@ async function creatorServe(optionArgs: string[]): Promise<void> {
       directory,
       defaultModelId: defaultModel,
       modelCatalog,
+      compactConversation: (input) => runtime.compact(input),
       ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
     });
     await conversation.initialize();

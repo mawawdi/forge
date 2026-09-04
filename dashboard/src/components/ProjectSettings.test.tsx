@@ -44,13 +44,7 @@ describe("ProjectSettings memory controls", () => {
     }) as CreatorDashboardState;
 
     render(
-      <ProjectSettings
-        state={state}
-        open={true}
-        returnFocusTo={undefined}
-        onClose={vi.fn()}
-        onOpenDetails={vi.fn()}
-      />,
+      <ProjectSettings state={state} open={true} returnFocusTo={undefined} onClose={vi.fn()} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Pin" }));
 
@@ -99,13 +93,7 @@ describe("ProjectSettings memory controls", () => {
     }) as CreatorDashboardState;
 
     render(
-      <ProjectSettings
-        state={state}
-        open={true}
-        returnFocusTo={undefined}
-        onClose={vi.fn()}
-        onOpenDetails={vi.fn()}
-      />,
+      <ProjectSettings state={state} open={true} returnFocusTo={undefined} onClose={vi.fn()} />,
     );
 
     const memory = screen.getByLabelText("Add a preference");
@@ -134,13 +122,7 @@ describe("ProjectSettings memory controls", () => {
     }) as CreatorDashboardState;
 
     render(
-      <ProjectSettings
-        state={state}
-        open={true}
-        returnFocusTo={undefined}
-        onClose={vi.fn()}
-        onOpenDetails={vi.fn()}
-      />,
+      <ProjectSettings state={state} open={true} returnFocusTo={undefined} onClose={vi.fn()} />,
     );
 
     expect(screen.getByText("No preferences saved yet.")).toBeVisible();

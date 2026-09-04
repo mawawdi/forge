@@ -54,7 +54,8 @@ export const OPENROUTER_MODEL_CLIENT_DESCRIPTOR = {
       toolSchemaMode: "explicit_non_strict" as const,
       maxRetries: 0 as const,
       telemetry: false as const,
-      timeoutPolicy: "remaining_runtime_budget" as const,
+      timeoutPolicy: "bounded_turn_and_remaining_runtime_budget" as const,
+      maxDurationMsPerTurn: 1_200_000,
       maxOutputTokensPerTurn: 32_768,
     },
     continuation: { maxBytes: MODEL_CONTINUATION_MAX_BYTES },
@@ -260,6 +261,25 @@ export class OpenRouterModelClient implements ModelClient {
         );
       if (APICallError.isInstance(error)) {
         const status = error.statusCode ?? null;
+        if (status !== null && status >= 200 && status < 300) {
+          const data = error.data;
+          const code =
+            typeof data === "object" && data !== null && "code" in data ? String(data.code) : "";
+          const providerCode = /^[45][0-9]{2}$/.test(code) ? code : null;
+          const errorEnvelope = typeof data === "object" && data !== null && "message" in data;
+          return providerFailure(
+            errorEnvelope
+              ? `provider_response_error${providerCode ? `_${providerCode}` : ""}`
+              : "invalid_response_schema",
+            errorEnvelope
+              ? `OpenRouter returned an error response${providerCode ? ` (code ${providerCode})` : ""}.`
+              : "OpenRouter returned a response that could not be read.",
+            error.isRetryable,
+            requestHash,
+            emptyUsage(),
+            responseFacts(request.model, null, null, null, latencyMs, null),
+          );
+        }
         return providerFailure(
           status === null ? "provider_api" : `http_${status}`,
           status === null
@@ -451,7 +471,15 @@ function responseFacts(
 }
 
 function usageFrom(
-  usage: { inputTokens: number | undefined; outputTokens: number | undefined },
+  usage: {
+    inputTokens: number | undefined;
+    outputTokens: number | undefined;
+    inputTokenDetails?: {
+      cacheReadTokens?: number | undefined;
+      cacheWriteTokens?: number | undefined;
+    };
+    outputTokenDetails?: { reasoningTokens?: number | undefined };
+  },
   metadata: unknown,
 ): ModelUsage {
   const openrouter = openRouterMetadata(metadata);
@@ -459,6 +487,9 @@ function usageFrom(
   return {
     inputTokens: finiteOrNull(usage.inputTokens),
     outputTokens: finiteOrNull(usage.outputTokens),
+    reasoningTokens: finiteOrNull(usage.outputTokenDetails?.reasoningTokens),
+    cacheReadTokens: finiteOrNull(usage.inputTokenDetails?.cacheReadTokens),
+    cacheWriteTokens: finiteOrNull(usage.inputTokenDetails?.cacheWriteTokens),
     costUsd: finiteOrNull(accounting?.cost),
   };
 }
@@ -503,10 +534,10 @@ function normalizeStop(
   value: string,
   calls: number,
 ): Extract<ModelTurnResult, { kind: "assistant" }>["stopReason"] {
-  if (calls > 0 || value === "tool-calls") return "tool_calls";
-  if (value === "stop") return "end_turn";
   if (value === "length") return "max_tokens";
   if (value === "content-filter") return "refusal";
+  if (calls > 0 || value === "tool-calls") return "tool_calls";
+  if (value === "stop") return "end_turn";
   return "other";
 }
 
@@ -527,7 +558,14 @@ function isAbort(error: unknown): boolean {
 }
 
 function emptyUsage(): ModelUsage {
-  return { inputTokens: null, outputTokens: null, costUsd: null };
+  return {
+    reasoningTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    inputTokens: null,
+    outputTokens: null,
+    costUsd: null,
+  };
 }
 function finiteOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;

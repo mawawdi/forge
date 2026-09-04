@@ -28,7 +28,15 @@ const MODEL = "openai/test-model";
 function emptyBoundaryState(): AgentExecutionBoundaryState {
   return {
     runtimeStartedAt: "2026-09-03T00:00:00.000Z",
-    usage: { turns: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    usage: {
+      reasoningTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      turns: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+    },
     trialStarted: false,
     remaining: {
       turns: 32,
@@ -77,7 +85,8 @@ function descriptor(): ModelClient["descriptor"] {
         toolNameEncoding: "openai_function_slug",
         maxRetries: 0,
         telemetry: false,
-        timeoutPolicy: "remaining_runtime_budget",
+        timeoutPolicy: "bounded_turn_and_remaining_runtime_budget",
+        maxDurationMsPerTurn: 1_200_000,
         maxOutputTokensPerTurn: 4_096,
       },
       continuation: { maxBytes: 256 * 1_024 },
@@ -148,7 +157,14 @@ test("runtime journals every provider and tool boundary without opaque continuat
           requestHash: contentHash(stableJson(request)),
           responseHash: contentHash("response-1"),
           responseFacts: responseFacts(request, 1),
-          usage: { inputTokens: 10, outputTokens: 5, costUsd: 0.001 },
+          usage: {
+            reasoningTokens: null,
+            cacheReadTokens: null,
+            cacheWriteTokens: null,
+            inputTokens: 10,
+            outputTokens: 5,
+            costUsd: 0.001,
+          },
         };
       }
       return {
@@ -158,7 +174,14 @@ test("runtime journals every provider and tool boundary without opaque continuat
         requestHash: contentHash(stableJson(request)),
         responseHash: contentHash("response-2"),
         responseFacts: responseFacts(request, 2),
-        usage: { inputTokens: 10, outputTokens: 5, costUsd: 0.001 },
+        usage: {
+          reasoningTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          inputTokens: 10,
+          outputTokens: 5,
+          costUsd: 0.001,
+        },
       };
     },
   };
@@ -343,14 +366,30 @@ test("a durable opaque response has a provider-neutral resume plan", async () =>
           continuationHash,
           continuationBytes: 18,
         },
-        usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 },
+        usage: {
+          reasoningTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          inputTokens: 1,
+          outputTokens: 1,
+          costUsd: 0.001,
+        },
       },
       state: {
         ...emptyBoundaryState(),
-        usage: { turns: 1, inputTokens: 1, outputTokens: 1, costUsd: 0.001 },
+        usage: {
+          reasoningTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          turns: 1,
+          inputTokens: 1,
+          outputTokens: 1,
+          costUsd: 0.001,
+        },
         trialStarted: true,
       },
       turn: {
+        requestSizes: { systemInstructions: 0, conversation: 0, toolSchemas: 0, toolResults: 0 },
         sequence: 1,
         startedAt: "2026-09-03T00:00:00.000Z",
         endedAt: "2026-09-03T00:00:01.000Z",
@@ -365,7 +404,14 @@ test("a durable opaque response has a provider-neutral resume plan", async () =>
           continuationBytes: 18,
         },
         toolCallIds: [],
-        usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 },
+        usage: {
+          reasoningTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          inputTokens: 1,
+          outputTokens: 1,
+          costUsd: 0.001,
+        },
       },
     }),
   );
@@ -443,7 +489,14 @@ for (const crashAfter of [
               continuationHash: continuation.hash,
               continuationBytes: continuation.bytes,
             },
-            usage: { inputTokens: 10, outputTokens: 5, costUsd: 0.001 },
+            usage: {
+              reasoningTokens: null,
+              cacheReadTokens: null,
+              cacheWriteTokens: null,
+              inputTokens: 10,
+              outputTokens: 5,
+              costUsd: 0.001,
+            },
           };
         }
         return {
@@ -453,7 +506,14 @@ for (const crashAfter of [
           requestHash: contentHash(stableJson(request)),
           responseHash: contentHash("resume-response-2"),
           responseFacts: responseFacts(request, 2),
-          usage: { inputTokens: 10, outputTokens: 5, costUsd: 0.001 },
+          usage: {
+            reasoningTokens: null,
+            cacheReadTokens: null,
+            cacheWriteTokens: null,
+            inputTokens: 10,
+            outputTokens: 5,
+            costUsd: 0.001,
+          },
         };
       },
     };
@@ -555,7 +615,14 @@ test("explicit response resume preserves active duration budget across service d
             continuationHash: null,
             continuationBytes: null,
           },
-          usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 },
+          usage: {
+            reasoningTokens: null,
+            cacheReadTokens: null,
+            cacheWriteTokens: null,
+            inputTokens: 1,
+            outputTokens: 1,
+            costUsd: 0.001,
+          },
         };
       }
       return {
@@ -565,7 +632,14 @@ test("explicit response resume preserves active duration budget across service d
         requestHash: contentHash(stableJson(request)),
         responseHash: contentHash("response-after-downtime"),
         responseFacts: responseFacts(request, 2),
-        usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 },
+        usage: {
+          reasoningTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          inputTokens: 1,
+          outputTokens: 1,
+          costUsd: 0.001,
+        },
       };
     },
   };
@@ -664,7 +738,14 @@ test("a durable tool intent without completion exposes the exact safe creator ac
           continuationHash: null,
           continuationBytes: null,
         },
-        usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 },
+        usage: {
+          reasoningTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          inputTokens: 1,
+          outputTokens: 1,
+          costUsd: 0.001,
+        },
       };
     },
   });

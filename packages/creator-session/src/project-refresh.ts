@@ -45,8 +45,10 @@ export interface CreatorProjectChangeNotice {
   readonly connectorEpoch: string;
   readonly detectorEpoch: number;
   readonly detectedAt: string;
-  readonly origin: "studio" | "control_process_restart";
-  readonly reasons: readonly (StudioProjectChangeSource | "control_process_restart")[];
+  readonly origin: "studio" | "control_process_restart" | "build_preparation";
+  readonly reasons: readonly (
+    StudioProjectChangeSource | "control_process_restart" | "build_authority_changed"
+  )[];
 }
 
 export interface CreatorProjectDelta {
@@ -479,6 +481,32 @@ export function createCreatorRestartChangeNotice(input: {
   };
 }
 
+export function createCreatorBuildAuthorityChangeNotice(input: {
+  readonly projectId: string;
+  readonly connectorEpoch: string;
+  readonly detectedAt: string;
+}): CreatorProjectChangeNotice {
+  if (
+    !nonEmpty(input.projectId) ||
+    !nonEmpty(input.connectorEpoch) ||
+    Number.isNaN(Date.parse(input.detectedAt))
+  )
+    fail("Build authority-change notice binding");
+  const payload = {
+    ...input,
+    detectorEpoch: 0,
+    origin: "build_preparation" as const,
+    reasons: ["build_authority_changed" as const],
+  };
+  const hash = contentHash(stableJson(payload));
+  return {
+    kind: "CreatorProjectChangeNotice",
+    id: `creator_project_change_notice_${hash.slice(0, 24)}`,
+    hash,
+    ...payload,
+  };
+}
+
 export function createCreatorProjectDelta(
   before: StudioProjectIndexCapture,
   after: StudioProjectIndexCapture,
@@ -508,6 +536,7 @@ export function createCreatorProjectDelta(
     afterRevisionHash: after.revision.hash,
     changed:
       before.revision.merkleRoot !== after.revision.merkleRoot ||
+      before.revision.manifestHash !== after.revision.manifestHash ||
       before.revision.connectorEpoch !== after.revision.connectorEpoch,
     addedShardHashes,
     removedShardHashes,
@@ -590,6 +619,16 @@ export function createCreatorTransactionProjectChangeConfirmation(
 export function assertCreatorProjectChangeNotice(
   value: unknown,
 ): asserts value is CreatorProjectChangeNotice {
+  if (record(value) && value.origin === "build_preparation") {
+    assertRecreated(value, "CreatorProjectChangeNotice", (entry) =>
+      createCreatorBuildAuthorityChangeNotice({
+        projectId: entry.projectId as string,
+        connectorEpoch: entry.connectorEpoch as string,
+        detectedAt: entry.detectedAt as string,
+      }),
+    );
+    return;
+  }
   if (record(value) && value.origin === "control_process_restart") {
     assertRecreated(value, "CreatorProjectChangeNotice", (entry) =>
       createCreatorRestartChangeNotice({

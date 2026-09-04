@@ -17,6 +17,11 @@ This index separates research rationale and evidence from normative documentatio
 
 ## Retention rules
 
+The [compact planning acceptance ledger](research/compact-planning-acceptance.md)
+preserves the September 4 contract-construction incident, clean-reset archives,
+and measured Gemini, Luna, and Spark planning runs. It separates planning
+performance evidence from the pending live game acceptance boundary.
+
 - Keep research focused on a current boundary or unique evidence; remove reports whose useful conclusions are fully represented elsewhere.
 - Preserve exact run identities, hashes, and failure classifications when consolidating evidence. Do not claim raw artifacts remain recoverable after an explicitly authorized local-store purge.
 - Update rationale reports when implementation decisions become current, and label predecessor evidence explicitly rather than presenting it as active behavior.

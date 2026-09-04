@@ -137,9 +137,10 @@ export type PinnedSourceAnalysisOutcome =
 const LSP_REQUEST_TIMEOUT_MS = 5_000;
 const LSP_SESSION_TIMEOUT_MS = 30_000;
 const LSP_MAX_MESSAGE_BYTES = 1_048_576;
-const LSP_MAX_SYMBOLS = 200;
-const LSP_MAX_REFERENCES_PER_SYMBOL = 200;
-const LSP_MAX_REFERENCE_ROWS = 1_024;
+// Whole-project collection bounds are separate from 200-row query pages.
+const LSP_MAX_SYMBOLS = 16_384;
+const LSP_MAX_REFERENCES_PER_SYMBOL = 4_096;
+const LSP_MAX_REFERENCE_ROWS = 65_536;
 
 /**
  * Hard host-side admission limits. These are intentionally tighter than the
@@ -397,7 +398,7 @@ export class PinnedSourceAnalysisHost {
         return {
           status: "incomplete",
           code: "source_analysis_failed",
-          reason: `Pinned Rojo sourcemap failed (exit ${rojoRun.exitCode})`,
+          reason: `Pinned Rojo sourcemap failed (exit ${rojoRun.exitCode}): ${rojoRun.stderr.toString("utf8").split(temporaryRoot).join("<private-source-workspace>").trim()}`,
         };
       // Rojo's source map can contain the private temporary workspace path.
       // Persist a stable redacted representation, never that host-local path.
@@ -850,6 +851,7 @@ async function collectBoundedLuauLspSemantics(
     }
 
     const symbols: StudioSourceSymbol[] = [];
+    const symbolIds = new Set<string>();
     const symbolQueries: Array<{
       readonly symbol: StudioSourceSymbol;
       readonly uri: string;
@@ -861,8 +863,6 @@ async function collectBoundedLuauLspSemantics(
         textDocument: { uri },
       });
       for (const raw of flattenLspDocumentSymbols(response)) {
-        if (symbols.length >= LSP_MAX_SYMBOLS)
-          throw new Error(`Luau LSP exceeded the ${LSP_MAX_SYMBOLS}-symbol collection bound`);
         const sourceLocation = sourceLocationFromLsp(
           entry.source,
           raw.selectionRange,
@@ -883,8 +883,11 @@ async function collectBoundedLuauLspSemantics(
           kind,
           location: sourceLocation,
         };
-        if (!symbols.some((candidate) => candidate.id === symbol.id)) {
+        if (!symbolIds.has(symbol.id)) {
+          if (symbols.length >= LSP_MAX_SYMBOLS)
+            throw new SourceAnalysisResourceExhausted("symbol_rows_exceeded");
           symbols.push(symbol);
+          symbolIds.add(symbol.id);
           // Keep the exact LSP UTF-16 position. Reconstructing it from our
           // user-facing code-point column would be wrong before non-BMP text.
           symbolQueries.push({
@@ -897,6 +900,7 @@ async function collectBoundedLuauLspSemantics(
     }
 
     const references: SourceReference[] = [];
+    const referenceIds = new Set<string>();
     for (const query of symbolQueries) {
       const response = await session.request("textDocument/references", {
         textDocument: { uri: query.uri },
@@ -907,19 +911,13 @@ async function collectBoundedLuauLspSemantics(
         throw new Error("Luau LSP returned a nonconforming references response");
       const locations = response ?? [];
       if (locations.length > LSP_MAX_REFERENCES_PER_SYMBOL)
-        throw new Error(
-          `Luau LSP exceeded the ${LSP_MAX_REFERENCES_PER_SYMBOL}-reference bound for ${query.symbol.name}`,
-        );
+        throw new SourceAnalysisResourceExhausted("symbol_references_exceeded");
       for (const raw of locations) {
         const location = parseLspLocation(raw);
         const target = byUri.get(location.uri);
         // References outside this private staged source snapshot are neither
         // exposed nor persisted as project facts.
         if (!target) continue;
-        if (references.length >= LSP_MAX_REFERENCE_ROWS)
-          throw new Error(
-            `Luau LSP exceeded the ${LSP_MAX_REFERENCE_ROWS}-reference collection bound`,
-          );
         const sourceLocation = sourceLocationFromLsp(
           target.source,
           location.range,
@@ -947,8 +945,12 @@ async function collectBoundedLuauLspSemantics(
           role,
           location: sourceLocation,
         };
-        if (!references.some((candidate) => candidate.id === reference.id))
+        if (!referenceIds.has(reference.id)) {
+          if (references.length >= LSP_MAX_REFERENCE_ROWS)
+            throw new SourceAnalysisResourceExhausted("reference_rows_exceeded");
           references.push(reference);
+          referenceIds.add(reference.id);
+        }
       }
     }
     await session.shutdown();
@@ -1283,7 +1285,10 @@ class SourceAnalysisResourceExhausted extends Error {
     reason:
       | "document_count_exceeded"
       | "document_source_bytes_exceeded"
-      | "aggregate_source_bytes_exceeded",
+      | "aggregate_source_bytes_exceeded"
+      | "symbol_rows_exceeded"
+      | "symbol_references_exceeded"
+      | "reference_rows_exceeded",
   ) {
     super(`source_analysis_resource_exhausted: ${reason}`);
     this.name = "SourceAnalysisResourceExhausted";
@@ -1497,7 +1502,8 @@ function stageTreeNode(tree: Record<string, unknown>, sourcePath: string, file: 
       (typeof existing !== "object" || existing === null || Array.isArray(existing))
     )
       throw new Error(`Pinned source analysis staging has a conflicting path at ${sourcePath}`);
-    const node = (existing as Record<string, unknown> | undefined) ?? {};
+    const node =
+      (existing as Record<string, unknown> | undefined) ?? (leaf ? {} : { $className: "Folder" });
     if (leaf) {
       if ("$path" in node)
         throw new Error(

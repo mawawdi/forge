@@ -6,6 +6,7 @@ export interface DashboardApi {
   state: CreatorDashboardState;
   readonly turns: unknown[];
   readonly actions: unknown[];
+  readonly renames: { scope: "project" | "conversation"; conversationId: string; name: string }[];
   readonly replays: { readonly kind: "verification" | "mutation"; readonly id: string }[];
   historyFailure?: { readonly status: number; readonly detail: string };
   turnGate?: Promise<void>;
@@ -50,7 +51,14 @@ export function conversationState(overrides: Record<string, unknown> = {}): Crea
         endedAt: "2026-09-03T00:00:01.000Z",
         durationMs: 1000,
       },
-      usage: { inputTokens: 10, outputTokens: 20, costUsd: 0 },
+      usage: {
+        reasoningTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        inputTokens: 10,
+        outputTokens: 20,
+        costUsd: 0,
+      },
       citations: [
         {
           kind: "CreatorCitation",
@@ -89,7 +97,7 @@ export function conversationState(overrides: Record<string, unknown> = {}): Crea
       },
       revision: 1,
       summary:
-        "Add an authority-checked prompt, keep the existing alarm path, and verify the bounded Studio facts.",
+        "1. Add an interaction to the airlock console.\n\n2. Validate requests on the server and preserve the existing alarm.\n\nChecks\n- Check Luau syntax and the new prompt.\n\nYour review\n- Try the interaction and review the warning light in Studio.",
     },
     attachments: [
       {
@@ -150,7 +158,7 @@ export function conversationState(overrides: Record<string, unknown> = {}): Crea
         {
           actionInstanceId: "action_build",
           actionId: "build_plan",
-          label: "Build this",
+          label: "Accept plan",
           intent: "primary",
           controlViewId: "control_01",
           authorizingEventId: "event_plan",
@@ -179,7 +187,7 @@ export function conversationState(overrides: Record<string, unknown> = {}): Crea
         {
           actionInstanceId: "action_reject",
           actionId: "reject_plan",
-          label: "Don’t build this",
+          label: "Reject plan",
           intent: "danger",
           controlViewId: "control_01",
           authorizingEventId: "event_plan",
@@ -194,13 +202,33 @@ export function conversationState(overrides: Record<string, unknown> = {}): Crea
 }
 
 export function createDashboardApi(state = conversationState()): DashboardApi {
-  return { state, turns: [], actions: [], replays: [] };
+  return { state, turns: [], actions: [], renames: [], replays: [] };
 }
 
 /** All browser coverage uses this local response double; no call reaches Studio or a model provider. */
 export async function installDashboardApi(page: Page, api: DashboardApi): Promise<void> {
-  await page.route("**/api/control/events**", async (route) => {
-    await route.fulfill({ status: 204, body: "" });
+  await page.addInitScript(() => {
+    class FixtureEventSource extends EventTarget {
+      readyState = 1;
+      onopen: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      constructor(_url: string) {
+        super();
+        window.addEventListener("fixture-update", () => {
+          this.onmessage?.(new MessageEvent("message", { data: "{}" }));
+        });
+        window.addEventListener("fixture-disconnect", () => {
+          this.readyState = 0;
+          this.onerror?.();
+        });
+        window.addEventListener("fixture-reconnect", () => {
+          this.readyState = 1;
+          this.onopen?.();
+        });
+      }
+    }
+    Object.defineProperty(window, "EventSource", { value: FixtureEventSource });
   });
   await page.route("**/api/control/state**", async (route) => {
     await route.fulfill(json(api.state));
@@ -221,6 +249,24 @@ export async function installDashboardApi(page: Page, api: DashboardApi): Promis
         complete: true,
       }),
     );
+  });
+  await page.route("**/api/control/rename", async (route) => {
+    const request = route.request().postDataJSON() as DashboardApi["renames"][number];
+    api.renames.push(request);
+    const project = api.state.conversations.find(
+      (item) => item.id === request.conversationId,
+    )?.project;
+    api.state = {
+      ...api.state,
+      conversations: api.state.conversations.map((item) =>
+        request.scope === "project" && JSON.stringify(item.project) === JSON.stringify(project)
+          ? { ...item, projectName: request.name }
+          : request.scope === "conversation" && item.id === request.conversationId
+            ? { ...item, title: request.name }
+            : item,
+      ),
+    };
+    await route.fulfill(json({ name: request.name }));
   });
   await page.route("**/api/control/turn", async (route) => {
     api.turns.push(route.request().postDataJSON());

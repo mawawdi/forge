@@ -1,0 +1,21 @@
+{
+  "action": "commit",
+  "projectionHash": "47cd15650f6c0c3a499ee2e98f8cb8afba6ccc71ee5fcb4778f1be317fe02cb9",
+  "beforeProjectRevisionHash": "057b5c0edc6bed5bf7d8cbd3b2d1a4e3aca6bd619d852f91e2f6df591707c01f",
+  "afterProjectRevisionHash": "64189cf0bdc694d8432f4cf56145c43e6430852ca7fe4a2ed9ae154f6bbcea40",
+  "changeSetHash": "cb84914a9ca0d2e5b8a5e652f27b21e4715881c5afe9a15f57862ed92f04e3a9",
+  "expectedCurrentProjectIndexManifestId": "studio_project_index_manifest_37f8bb789dfb8371304a6ed1",
+  "beforeProjectDetectorEpoch": 0,
+  "creatorSessionId": "creator_session_ac5f8fde-6a9a-40ab-a0de-756ee0126232",
+  "changeSetId": "creator_change_set_cb84914a9ca0d2e5b8a5e652",
+  "projectionId": "creator_mutation_mutation_direct_readback_cb84914a9ca0d2e5b8a5e652",
+  "recordingId": "recording_10292999107301636253",
+  "beforeProjectIndexManifestId": "studio_project_index_manifest_9001e1cbffe9e11290814869",
+  "expectedCurrentProjectDetectorEpoch": 0,
+  "afterProjectIndexManifestId": "studio_project_index_manifest_37f8bb789dfb8371304a6ed1",
+  "expectedCurrentProjectRevisionHash": "64189cf0bdc694d8432f4cf56145c43e6430852ca7fe4a2ed9ae154f6bbcea40",
+  "status": "committed",
+  "manifestHash": "e145a9818afc436b7ebb18d1cb467049dcfbb06878fcb71e906491f2aad781d8",
+  "finalizationKind": "ordinary",
+  "afterProjectDetectorEpoch": 0
+}

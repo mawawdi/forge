@@ -1,4 +1,5 @@
 import type { ArtifactReference } from "../../artifact-store/src/index.js";
+import type { ModelUsage, ModelRequestSizes } from "../../model-client/src/contracts.js";
 
 /** Browser-safe reservation shape; lower runtime validates the same closed algebra. */
 export interface CreatorAgentExecutionSlot {
@@ -22,12 +23,15 @@ export type CreatorWorkEpisodeStatus =
   | "applying"
   | "awaiting_play"
   | "observing_play"
+  | "finalizing"
   | "awaiting_verification_retry"
   | "awaiting_review"
   | "refresh_required"
+  | "refreshing"
   | "recovery_required"
   | "awaiting_source_sync"
   | "accepted"
+  | "completed"
   | "rejected"
   | "superseded"
   | "incomplete";
@@ -140,11 +144,7 @@ export interface AgentTurn {
     readonly endedAt: string;
     readonly durationMs: number;
   };
-  readonly usage: {
-    readonly inputTokens: number | null;
-    readonly outputTokens: number | null;
-    readonly costUsd: number | null;
-  };
+  readonly usage: ModelUsage;
   readonly projectRevisionHash?: string;
   readonly citations: readonly CreatorCitation[];
   readonly createdAt: string;
@@ -538,9 +538,9 @@ export type CreatorConversationEvent =
     })
   | (CreatorConversationEventBase & {
       readonly eventType: "terminal_output";
-      readonly authority: "forge";
+      readonly authority: "forge" | "agent";
       readonly data: {
-        readonly outcome: "accepted" | "rejected" | "superseded" | "incomplete";
+        readonly outcome: "completed" | "accepted" | "rejected" | "superseded" | "incomplete";
         readonly message: string;
         readonly studioHasAcceptedResult: boolean;
       };
@@ -591,6 +591,7 @@ export type CreatorControlActionId =
   | "resume_work"
   | "retry_work"
   | "build_plan"
+  | "retry_build"
   | "revise_plan"
   | "reject_plan"
   | "apply_changes"
@@ -739,21 +740,29 @@ export interface CreatorDashboardState {
     readonly transactionStatus: "clear" | "pending" | "blocked" | "unavailable";
   };
   readonly serverTime: string;
-  readonly agentActivity?: {
+  readonly agentActivities?: readonly {
     readonly jobId: string;
-    readonly agentRunId: string;
+    /** Position after the admitting creator event; wall clocks do not determine message order. */
+    readonly afterEventSequence: number;
+    /** Absent during host-owned Studio work; no provider execution is implied. */
+    readonly agentRunId?: string;
     readonly running: boolean;
     readonly startedAt: string;
     readonly updatedAt: string;
     readonly currentStep: string;
+    /** Public assistant commentary only; provider continuations are never presentation data. */
+    readonly commentary: readonly { readonly sequence: number; readonly text: string }[];
     readonly modelTurns: number;
+    readonly usage: ModelUsage | null;
+    readonly requestSizes: ModelRequestSizes | null;
     readonly steps: readonly {
       readonly sequence: number;
+      readonly toolName?: string;
       readonly label: string;
       readonly detail: string;
       readonly status: "complete" | "failed";
     }[];
-  };
+  }[];
 }
 
 export interface CreatorTurnRequest {
@@ -1352,13 +1361,17 @@ export function assertCreatorConversationEvent(
       }
       break;
     case "terminal_output":
-      requireAuthority(record.authority, "forge", record.eventType);
+      requireAuthority(
+        record.authority,
+        data.outcome === "completed" ? "agent" : "forge",
+        record.eventType,
+      );
       assertOneOf(
         data.outcome,
-        ["accepted", "rejected", "superseded", "incomplete"],
+        ["completed", "accepted", "rejected", "superseded", "incomplete"],
         "terminal outcome",
       );
-      assertBoundedText(data.message, "terminal message", 1, 4096);
+      assertBoundedText(data.message, "terminal message", 1, 8192);
       if (typeof data.studioHasAcceptedResult !== "boolean")
         throw new Error("Invalid terminal Studio state");
       break;
@@ -1522,15 +1535,30 @@ export function assertCreatorDashboardState(
       throw new Error("Dashboard control view binding mismatch");
   }
   assertPairedStudio(record.pairedStudio);
-  if (record.agentActivity !== undefined) {
-    const activity = assertRecord(record.agentActivity, "agent activity");
+  if (record.agentActivities !== undefined && !Array.isArray(record.agentActivities))
+    throw new Error("Invalid agent activities");
+  for (const value of (record.agentActivities as unknown[] | undefined) ?? []) {
+    const activity = assertRecord(value, "agent activity");
     assertId(activity.jobId, "agent activity job");
-    assertId(activity.agentRunId, "agent activity run");
+    assertNonNegativeInteger(activity.afterEventSequence, "agent activity event position");
+    if (activity.agentRunId !== undefined) assertId(activity.agentRunId, "agent activity run");
     if (typeof activity.running !== "boolean") throw new Error("Invalid agent activity status");
     assertCanonicalIso(activity.startedAt, "agent activity start");
     assertCanonicalIso(activity.updatedAt, "agent activity update");
     assertBoundedText(activity.currentStep, "agent activity step", 1, 4096);
+    if (!Array.isArray(activity.commentary)) throw new Error("Invalid agent commentary");
+    for (const value of activity.commentary) {
+      const message = assertRecord(value, "agent commentary");
+      assertPositiveInteger(message.sequence, "agent commentary sequence");
+      assertBoundedText(message.text, "agent commentary text", 1, 256 * 1024);
+    }
     assertNonNegativeInteger(activity.modelTurns, "agent activity turns");
+    if (activity.usage !== null) assertModelUsage(activity.usage, "agent activity usage");
+    if (activity.requestSizes !== null) {
+      const sizes = assertRecord(activity.requestSizes, "agent request sizes");
+      for (const field of ["systemInstructions", "conversation", "toolSchemas", "toolResults"])
+        assertNonNegativeInteger(sizes[field], field);
+    }
     if (!Array.isArray(activity.steps) || activity.steps.length > 80)
       throw new Error("Invalid agent activity steps");
     for (const value of activity.steps) {
@@ -1538,6 +1566,7 @@ export function assertCreatorDashboardState(
       assertPositiveInteger(step.sequence, "agent step sequence");
       assertBoundedText(step.label, "agent step label", 1, 256);
       assertBoundedText(step.detail, "agent step detail", 0, AGENT_ACTIVITY_DETAIL_MAX_BYTES);
+      if (step.toolName !== undefined) assertBoundedText(step.toolName, "agent tool name", 1, 128);
       assertOneOf(step.status, ["complete", "failed"], "agent step status");
     }
   }
@@ -1942,12 +1971,25 @@ function assertInterval(value: unknown, label: string): void {
 
 function assertModelUsage(value: unknown, label: string): void {
   const record = assertRecord(value, label);
-  for (const field of ["inputTokens", "outputTokens", "costUsd"] as const) {
+  for (const field of [
+    "inputTokens",
+    "outputTokens",
+    "reasoningTokens",
+    "cacheReadTokens",
+    "cacheWriteTokens",
+    "costUsd",
+  ] as const) {
     const amount = record[field];
     if (amount !== null && (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0))
       throw new Error(`Invalid ${label} ${field}`);
   }
-  for (const field of ["inputTokens", "outputTokens"] as const) {
+  for (const field of [
+    "inputTokens",
+    "outputTokens",
+    "reasoningTokens",
+    "cacheReadTokens",
+    "cacheWriteTokens",
+  ] as const) {
     const amount = record[field];
     if (typeof amount === "number" && !Number.isSafeInteger(amount))
       throw new Error(`Invalid ${label} ${field}`);
@@ -2071,12 +2113,15 @@ const EPISODE_STATUSES = [
   "applying",
   "awaiting_play",
   "observing_play",
+  "finalizing",
   "awaiting_verification_retry",
   "awaiting_review",
   "refresh_required",
+  "refreshing",
   "recovery_required",
   "awaiting_source_sync",
   "accepted",
+  "completed",
   "rejected",
   "superseded",
   "incomplete",
@@ -2107,6 +2152,7 @@ const CONTROL_ACTIONS = [
   "resume_work",
   "retry_work",
   "build_plan",
+  "retry_build",
   "revise_plan",
   "reject_plan",
   "apply_changes",
@@ -2125,3 +2171,23 @@ const CONTROL_ACTIONS = [
   "unpin_memory",
   "forget_memory",
 ] as const;
+/** A terminal message belongs to its outcome, not later receipt-cleanup revisions. */
+export function creatorTerminalOutputKey(
+  event: Pick<
+    Extract<CreatorConversationEvent, { eventType: "terminal_output" }>,
+    "episodeId" | "binding" | "projectRevisionHash" | "data"
+  >,
+): string {
+  return JSON.stringify([
+    event.episodeId,
+    event.binding?.sessionId,
+    event.projectRevisionHash,
+    event.data.outcome,
+    // Copy changes must not republish the same failure after restart. A genuinely
+    // different failed attempt has a different immutable session hash.
+    event.data.outcome === "incomplete" && event.binding?.sessionHash
+      ? event.binding.sessionHash
+      : event.data.message,
+    event.data.studioHasAcceptedResult,
+  ]);
+}

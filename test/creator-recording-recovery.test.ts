@@ -5,6 +5,15 @@ import { join } from "node:path";
 import test from "node:test";
 import { contentHash, stableJson } from "../packages/contracts/src/index.js";
 import { CreatorSessionCoordinator } from "../packages/creator-session/src/coordinator.js";
+import { ImmutableJsonArtifactStore } from "../packages/artifact-store/src/index.js";
+import {
+  advanceSession,
+  closeInterruptedCreatorRecording,
+  createCreatorSession,
+  createStudioOwnershipMap,
+  type CreatorSessionBundle,
+} from "../packages/creator-session/src/index.js";
+import { writeCreatorProjectIndexArtifacts } from "../packages/creator-session/src/project-refresh.js";
 import {
   CREATOR_DEFAULT_RESOURCE_POLICY,
   STUDIO_CAPABILITY_MANIFEST_HASH,
@@ -12,6 +21,7 @@ import {
   createStudioProjectEvidenceShard,
   createStudioProjectIndexCapture,
   createStudioProjectIndexProjection,
+  studioProjectIndexMetadataView,
 } from "../packages/studio-evidence/src/index.js";
 import { createStudioProjectIdentityState } from "../packages/studio-protocol/src/index.js";
 import type {
@@ -61,6 +71,117 @@ const session: StudioBridgeSession = {
   sessionToken: "studio_session_token_recovery",
   connectedAt: sentAt,
 };
+
+test("a matching closed-recording proof releases only its live cursor and survives persistence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "forge-closed-recording-"));
+  try {
+    const store = new ImmutableJsonArtifactStore(root);
+    const capture = recoveryProjectIndex();
+    const index = await writeCreatorProjectIndexArtifacts(store, capture);
+    const ownership = createStudioOwnershipMap({
+      projectId: session.projectId,
+      revisionHash: capture.revision.hash,
+      projectIndex: studioProjectIndexMetadataView(capture),
+    });
+    let creator = createCreatorSession({
+      prompt: "Polish the HUD",
+      projectId: session.projectId,
+      revisionHash: capture.revision.hash,
+      projectCaptureHash: capture.hash,
+      ownership,
+    });
+    for (const status of [
+      "planning",
+      "awaiting_plan_approval",
+      "building",
+      "awaiting_change_approval",
+      "preflighting",
+      "applying",
+      "recovery_required",
+    ] as const)
+      creator = advanceSession(creator, { status });
+    const cursor = {
+      changeSetId: "change_set_closed",
+      changeSetHash: "c".repeat(64),
+      projectionId: "projection_closed",
+      projectionHash: "d".repeat(64),
+      manifest: { hash: STUDIO_CAPABILITY_MANIFEST_HASH },
+      recordingId: "recording_closed",
+      beforeIndexCapture: index,
+    };
+    const bundle = { session: creator, activeMutation: cursor } as unknown as CreatorSessionBundle;
+    const payload = {
+      creatorSessionId: creator.id,
+      changeSetId: cursor.changeSetId,
+      changeSetHash: cursor.changeSetHash,
+      projectionId: cursor.projectionId,
+      projectionHash: cursor.projectionHash,
+      manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
+      recordingId: cursor.recordingId,
+      beforeProjectIndexManifestId: capture.indexManifest.id,
+      beforeProjectRevisionHash: capture.revision.hash,
+      beforeProjectDetectorEpoch: capture.detectorEpoch,
+      recoveryProjectIndexManifestId: capture.indexManifest.id,
+      recoveryProjectRevisionHash: capture.revision.hash,
+      recoveryProjectDetectorEpoch: capture.detectorEpoch,
+    };
+    const recovery = await store.write({
+      kind: "CreatorRecordingRecoveryRecord",
+      studioSessionId: session.sessionId,
+      projectId: session.projectId,
+      payload: { ...payload, recordingState: "not_open" },
+      projectIndex: index,
+    });
+    const receipt = {
+      kind: "CreatorClosedRecordingAcknowledgement",
+      studioSessionId: session.sessionId,
+      projectId: session.projectId,
+      recovery,
+      payload: { ...payload, status: "closed_cursor_cleared" },
+    };
+    const acknowledgement = await store.write(receipt);
+    const closed = await closeInterruptedCreatorRecording(bundle, acknowledgement, store);
+    assert.equal(closed.session.status, "incomplete");
+    assert.equal(closed.session.failure?.code, "interrupted_recording_not_open");
+    assert.equal(closed.activeMutation, undefined);
+    assert.deepEqual(closed.closedMutation, { cursor, acknowledgement });
+    assert.equal(bundle.session.status, "recovery_required");
+    assert.deepEqual(await store.read(await store.write(closed)), closed);
+    for (const changed of [
+      { recordingId: "unrelated_recording" },
+      { manifestHash: "e".repeat(64) },
+      { changeSetHash: "f".repeat(64) },
+      { recoveryProjectDetectorEpoch: 5 },
+      { beforeProjectRevisionHash: "f".repeat(64) },
+    ]) {
+      const tampered = await store.write({
+        ...receipt,
+        payload: { ...receipt.payload, ...changed },
+      });
+      await assert.rejects(
+        closeInterruptedCreatorRecording(bundle, tampered, store),
+        /does not match/,
+      );
+    }
+    const stillOpen = await store.write({
+      kind: "CreatorRecordingRecoveryRecord",
+      studioSessionId: session.sessionId,
+      projectId: session.projectId,
+      payload: { ...payload, recordingState: "open" },
+      projectIndex: index,
+    });
+    await assert.rejects(
+      closeInterruptedCreatorRecording(
+        bundle,
+        await store.write({ ...receipt, recovery: stillOpen }),
+        store,
+      ),
+      /not-open recovery proof/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 function recoveryProjectIndex() {
   const connectorEpoch = createStudioConnectorEpoch({

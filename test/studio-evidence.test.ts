@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
 import {
@@ -10,6 +13,7 @@ import {
   STUDIO_CAPABILITY_MANIFEST_HASH,
   STUDIO_CREATOR_MUTATION_BINDING_SCHEMA,
   STUDIO_EVIDENCE_VECTORS,
+  STUDIO_CODECS,
   getRobloxApiCatalogLookupEntry,
   lookupRobloxApiCatalog,
   assertEvidenceAgainstProjection,
@@ -43,6 +47,100 @@ const interval = {
   startedAt: "2026-01-01T00:00:00.000Z",
   endedAt: "2026-01-01T00:00:01.000Z",
 };
+
+test("generation rejects missing codec mappings before any model or Studio run", async () => {
+  const sandbox = await mkdtemp(resolve(tmpdir(), "forge-codec-coverage-"));
+  const files = [
+    "scripts/generate-studio-evidence.mjs",
+    "packages/studio-evidence/catalog/roblox-api-catalog.json",
+    "packages/studio-evidence/src/index.ts",
+    "packages/studio-evidence/src/project-index.ts",
+    "packages/studio-evidence/src/project-authority.ts",
+  ];
+  const policyPath = "packages/studio-evidence/manifest/studio-capability-policy.json";
+  const policy = JSON.parse(readFileSync(resolve(policyPath), "utf8"));
+  try {
+    for (const file of files) {
+      await mkdir(resolve(sandbox, file, ".."), { recursive: true });
+      await cp(resolve(file), resolve(sandbox, file));
+    }
+    await mkdir(resolve(sandbox, policyPath, ".."), { recursive: true });
+    for (const [type, diagnostic] of [
+      ["Font", /codec has no API-type mapping: font/],
+      ["ContentId", /Uncovered authoring property .* \(ContentId\)/],
+    ] as const) {
+      const missing = structuredClone(policy);
+      delete missing.codecByApiType[type];
+      await writeFile(resolve(sandbox, policyPath), JSON.stringify(missing));
+      const result = spawnSync(
+        process.execPath,
+        ["scripts/generate-studio-evidence.mjs", "--check"],
+        {
+          cwd: sandbox,
+          encoding: "utf8",
+        },
+      );
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, diagnostic);
+    }
+  } finally {
+    await rm(sandbox, { recursive: true, force: true });
+  }
+});
+
+test("every enabled public property has a codec or an explicit authority exclusion", () => {
+  assert.deepEqual(
+    [
+      ...new Set(
+        STUDIO_EVIDENCE_VECTORS.map(({ value }) => value.kind).filter((kind) => kind !== "nil"),
+      ),
+    ].sort(),
+    [...STUDIO_CODECS].sort(),
+  );
+  assert.deepEqual(
+    STUDIO_CAPABILITY_COVERAGE_REPORT.entries.filter(
+      (entry) => entry.authoringGroup && entry.reason === "unsupported_codec",
+    ),
+    [],
+  );
+  for (const className of [
+    "ImageLabel",
+    "ImageButton",
+    "Sound",
+    "Beam",
+    "Trail",
+    "ParticleEmitter",
+  ]) {
+    const definition = STUDIO_CAPABILITY_MANIFEST.classes.find((entry) => entry.name === className);
+    assert.ok(
+      definition?.properties.some((property) => property.codec === "content"),
+      className,
+    );
+  }
+  assert.deepEqual(canonicalStudioValue({ kind: "content", value: "" }), {
+    kind: "content",
+    value: "",
+  });
+});
+
+test("content reflection matches the complete live Studio 0.737 attestation", () => {
+  const properties = STUDIO_CAPABILITY_MANIFEST.classes.flatMap((entry) =>
+    entry.properties.map((property) => ({ className: entry.name, ...property })),
+  );
+  const contentIds = properties.filter((property) => property.catalogType.name === "ContentId");
+  assert.equal(contentIds.length, 11);
+  for (const property of contentIds) {
+    assert.deepEqual(property.reflection, { engineType: "ContentId", scriptType: "string" });
+  }
+  const content = properties.filter((property) => property.catalogType.name === "Content");
+  assert.equal(content.length, 7);
+  for (const property of content) {
+    assert.deepEqual(property.reflection, { engineType: "Content", scriptType: "Content" });
+    // ReflectionService reports these URI/object views as non-serialized,
+    // independently of the documentation catalog's canSave flag.
+    assert.equal(property.serialized, false, `${property.className}.${property.name}`);
+  }
+});
 
 test("generated Studio evidence manifest is closed and canonical", () => {
   assertStudioCapabilityManifest(STUDIO_CAPABILITY_MANIFEST);

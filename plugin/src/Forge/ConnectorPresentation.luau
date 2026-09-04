@@ -42,7 +42,7 @@ define({ "CHECK RETURNED" }, "Check results sent", "Review the results and any n
 define({ "APPLYING CHANGES" }, "Applying the changes", "Forge is applying the changes you approved. Keep Studio open.", "accent", true, true)
 define({ "CHANGES APPLIED" }, "Apply results sent", "Return to Forge to see what changed and what to do next.", "accent", false, true)
 define({ "FINALIZING CHANGES" }, "Finishing the change", "Forge is completing the decision you made in the dashboard.", "accent", true, true)
-define({ "CHANGES FINALIZED" }, "Change results sent", "Review the result in Forge. Save your place in Studio when you’re ready.", "success", false, true)
+define({ "CHANGES FINALIZED" }, "Changes applied", "Continue your conversation in Forge. Play whenever you’re ready.", "success", false, true)
 define({ "CONNECTING PROJECT" }, "Connecting this project", "Forge is recording the project connection you approved.", "accent", true, true)
 define({ "PROJECT CONNECTED" }, "Project connection checked", "Return to Forge to review the result and continue your conversation.", "success", false, true)
 

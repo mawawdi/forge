@@ -24,4 +24,14 @@ function StudioInstancePolicy.shouldHaveStableIdentity(instance): boolean
 		and StudioInstancePolicy.isEvidenceRelevant(instance)
 end
 
+-- Invalidate the same facts that the project index actually captures. Camera
+-- navigation and engine-derived UI geometry are not authoring changes.
+function StudioInstancePolicy.isIndexedProperty(className: string, propertyName: any): boolean
+	if propertyName == "Name" or propertyName == "Parent" or propertyName == "Source" or propertyName == "Tags" then return true end
+	for _, property in ipairs(Generated.projectPropertyMetadata(className)) do
+		if property.name == propertyName then return true end
+	end
+	return false
+end
+
 return StudioInstancePolicy

@@ -30,6 +30,31 @@ import {
 
 const snapshotHash = contentHash("source-intelligence-fixture");
 
+test("real pinned tools index nonempty projects beyond one query page without dropping scripts", async () => {
+  const host = await PinnedSourceAnalysisHost.create({ root: process.cwd() });
+  const source = Array.from(
+    { length: 80 },
+    (_, i) => `local function entry${i}() return ${i} end\nentry${i}()`,
+  ).join("\n");
+  const documents = [
+    document("studio:server", "ServerScriptService/Main", "Script", source),
+    document("studio:client", "StarterPlayer/StarterPlayerScripts/Main", "LocalScript", source),
+    document("studio:module", "ReplicatedStorage/Module", "ModuleScript", source),
+    document("studio:duplicate", "ReplicatedStorage/Module", "ModuleScript", "return {}"),
+    document("studio:empty", "ReplicatedStorage/Empty", "ModuleScript", ""),
+  ];
+  const outcome = await host.analyze({ snapshotHash, ...productionSourceInput(documents) });
+  if (outcome.status !== "complete") assert.fail(outcome.reason);
+  assert.equal(outcome.index.documents.length, documents.length);
+  assert.ok(outcome.index.symbols.length >= 240);
+  assert.ok(outcome.index.references.length >= 240);
+  for (const original of documents)
+    assert.equal(
+      outcome.index.documents.find((entry) => entry.documentId === original.documentId)?.sourceHash,
+      original.sourceHash,
+    );
+});
+
 function document(
   documentId: string,
   path: string,
@@ -612,7 +637,11 @@ test("source search, document listing, and reads are bounded and cursor-bound", 
         contextUtf8Bytes: 32,
         cursor: searchCursor,
       }),
-    /cursor is invalid/i,
+    /cursor is invalid.*Omit cursor to restart.*same tool/s,
+  );
+  assert.throws(
+    () => searchStudioSource(index, resolver, { query: "marker", cursor: "START" }),
+    /Omit cursor for the first page.*copy nextCursor/s,
   );
   const tampered = `${firstSearch.nextCursor!.slice(0, -1)}A`;
   assert.throws(

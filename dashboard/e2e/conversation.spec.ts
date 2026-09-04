@@ -81,6 +81,24 @@ function stateWithEvents(
 }
 
 test.describe("Forge workspace project conversation", () => {
+  test("preserves the conversation and draft while reconnecting live updates", async ({ page }) => {
+    const api = createDashboardApi();
+    await installDashboardApi(page, api);
+    await page.goto("/");
+    const composer = page.getByRole("textbox", { name: "Message Forge" });
+    await composer.fill("Keep this draft.");
+    await page.evaluate(() => window.dispatchEvent(new Event("fixture-disconnect")));
+    await expect(page.getByText("Reconnecting to Forge…", { exact: true })).toBeVisible();
+    await expect(page.getByText("Studio ready", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+    await expect(page.getByRole("heading", { name: "Suggested plan" })).toBeVisible();
+    await expect(composer).toHaveValue("Keep this draft.");
+    await page.evaluate(() => window.dispatchEvent(new Event("fixture-reconnect")));
+    await expect(page.getByText("Reconnecting to Forge…", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Studio ready", { exact: true })).toHaveCount(1);
+    await expect(composer).toHaveValue("Keep this draft.");
+  });
+
   test("opens project preferences on demand and keeps separate chats under their project", async ({
     page,
   }, testInfo) => {
@@ -144,7 +162,7 @@ test.describe("Forge workspace project conversation", () => {
     await expect(
       page
         .getByRole("list", { name: "Conversations in Orbital Freight Airlock" })
-        .getByRole("button"),
+        .locator(".project-row"),
     ).toHaveCount(2);
 
     await page.route("**/api/control/action", async (route) => {
@@ -225,42 +243,70 @@ test.describe("Forge workspace project conversation", () => {
           actions: [],
           turnContract: undefined,
         },
-        agentActivity: {
-          jobId: "job_01",
-          agentRunId: "agent_run_01",
-          running: true,
-          startedAt: "2026-09-03T00:00:00.000Z",
-          updatedAt: "2026-09-03T00:00:37.000Z",
-          currentStep: "Inspecting project objects",
-          modelTurns: 2,
-          steps: [
-            {
-              sequence: 1,
-              label: "Exploring the project",
-              detail: "Workspace",
-              status: "complete",
-            },
-            {
-              sequence: 2,
-              label: "Searching the project",
-              detail: "AirlockController",
-              status: "complete",
-            },
-            {
-              sequence: 3,
-              label: "Reading source code",
-              detail: "ServerScriptService/AirlockController",
-              status: "complete",
-            },
-          ],
-        },
+        agentActivities: [
+          {
+            commentary: [],
+            usage: null,
+            requestSizes: null,
+            jobId: "job_01",
+            afterEventSequence: 1,
+            agentRunId: "agent_run_01",
+            running: true,
+            startedAt: "2026-09-03T00:00:00.000Z",
+            updatedAt: "2026-09-03T00:00:37.000Z",
+            currentStep: "Checking that reset cancels the door animation",
+            modelTurns: 2,
+            steps: [
+              {
+                sequence: 1,
+                label: "Explored Workspace",
+                detail: "Workspace",
+                status: "complete",
+              },
+              {
+                sequence: 2,
+                label: "Searched for AirlockController",
+                detail: "AirlockController",
+                status: "complete",
+              },
+              {
+                sequence: 3,
+                label: "Read AirlockController",
+                detail: "ServerScriptService/AirlockController",
+                status: "complete",
+              },
+            ],
+          },
+        ],
       }),
     );
     await installDashboardApi(page, api);
     await page.goto("/");
     const activity = page.getByRole("region", { name: "Agent activity" });
-    await expect(activity.getByText("Inspecting project objects")).toBeVisible();
-    await expect(activity.getByText("ServerScriptService/AirlockController")).toBeVisible();
+    await expect(
+      activity.getByText("Checking that reset cancels the door animation"),
+    ).toBeVisible();
+    await expect(activity.locator(".agent-progress-text")).toHaveCSS(
+      "animation-name",
+      "progress-scan",
+    );
+    await expect(
+      page.getByRole("list", { name: "Messages" }).getByRole("region", { name: "Agent activity" }),
+    ).toHaveCount(1);
+    await expect(activity.getByText("ServerScriptService.AirlockController")).toBeHidden();
+    await activity.locator(".agent-activity__heading").click();
+    await expect(activity.getByText("ServerScriptService.AirlockController")).toBeHidden();
+    await activity.locator(".agent-step > summary").last().click();
+    await expect(
+      activity.locator(".agent-activity__panel").getByText("ServerScriptService.AirlockController"),
+    ).toBeVisible();
+    await expect(activity.getByRole("listitem").first()).toContainText("Explored Workspace");
+    await expect(activity.getByRole("listitem").last()).toContainText("Read AirlockController");
+    await expect(page.locator("main")).toHaveScreenshot(
+      `forge-activity-expanded-${testInfo.project.name}.png`,
+    );
+    await page.keyboard.press("Escape");
+    await expect(activity.getByText("ServerScriptService.AirlockController")).toBeHidden();
     await page
       .getByRole("textbox", { name: "Message Forge" })
       .fill("Keep the original warning light.");
@@ -270,8 +316,12 @@ test.describe("Forge workspace project conversation", () => {
     );
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     expect(api.turns).toHaveLength(0);
-    await activity.getByRole("button", { name: "View run details" }).click();
+    await expect(page.getByRole("button", { name: "Open details", exact: true })).toHaveCount(1);
+    await page.getByRole("button", { name: "Open details", exact: true }).click();
     const details = page.getByRole("dialog", { name: /Technical details/ });
+    await details
+      .getByRole("combobox", { name: "Inspect", exact: true })
+      .selectOption("event_activity_4");
     await expect(details.getByText("Work record", { exact: true })).toBeVisible();
     await expect(details.getByText("Reading the saved project context.")).toBeVisible();
   });
@@ -284,7 +334,7 @@ test.describe("Forge workspace project conversation", () => {
     await page.goto("/");
 
     await expect(page.getByRole("heading", { name: "Suggested plan" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Build this", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Accept plan", exact: true })).toBeVisible();
     await expect(page.getByRole("textbox", { name: "Message Forge" })).toBeVisible();
     await expect(page.locator("main")).toHaveScreenshot(
       `forge-workspace-${testInfo.project.name}.png`,
@@ -299,7 +349,9 @@ test.describe("Forge workspace project conversation", () => {
       .evaluateAll((elements) =>
         elements.flatMap((element) => {
           const rectangle = element.getBoundingClientRect();
-          return rectangle.width < 44 || rectangle.height < 44
+          // Dense pointer controls; larger touch targets on coarse-pointer devices.
+          const minimum = matchMedia("(pointer: coarse)").matches ? 44 : 24;
+          return rectangle.width < minimum || rectangle.height < minimum
             ? [
                 {
                   label:
@@ -351,14 +403,14 @@ test.describe("Forge workspace project conversation", () => {
     await installDashboardApi(page, api);
     await page.goto("/");
 
-    await expect(page.getByRole("heading", { name: "What do you want to make?" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Link this project" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "What do you want to make?" })).toHaveCount(0);
     await page.getByRole("button", { name: "Link project" }).click();
     expect(api.actions).toHaveLength(1);
     expect(api.actions[0]).toMatchObject({ actionInstanceId: "action_link" });
   });
 
-  test("covers refine, apply, Play, final review, and follow-up as event-anchored work", async ({
+  test("accepts a plan once, completes with model Markdown, and continues the same conversation", async ({
     page,
   }, testInfo) => {
     test.skip(testInfo.project.name !== "desktop", "One end-to-end authority proof is sufficient.");
@@ -366,122 +418,54 @@ test.describe("Forge workspace project conversation", () => {
     await installDashboardApi(page, api);
     await page.goto("/");
 
-    await page.locator("summary").filter({ hasText: "Change the plan" }).click();
+    await page.getByRole("button", { name: "Change plan", exact: true }).click();
+    await expect(page.getByRole("combobox", { name: "Model", exact: true })).toHaveCount(1);
+    await expect(
+      page.getByRole("button", { name: "Accept plan", exact: true }).locator("svg"),
+    ).toHaveCount(1);
+    await expect(
+      page.getByRole("button", { name: "Reject plan", exact: true }).locator("svg"),
+    ).toHaveCount(1);
     await page.getByLabel("What should change?").fill("Keep the warning light amber.");
-    await page.getByRole("button", { name: "Change the plan" }).click();
+    await page.getByRole("button", { name: "Update plan" }).click();
     expect(api.actions.at(-1)).toMatchObject({
       actionInstanceId: "action_revise",
       input: { text: "Keep the warning light amber." },
     });
 
-    const change = conversationEvent(4, "change_set", "agent", {
-      changeSet: {
-        id: "change_set_01",
-        hash: "d".repeat(64),
-        artifact: {
-          locator: `artifacts/${"d".repeat(64)}.json`,
-          artifactHash: "d".repeat(64),
-          bytes: 90,
-        },
-      },
-      creates: 2,
-      updates: 1,
-      moves: 0,
-      deletes: 0,
-      sourceEdits: 1,
-      summary: "Add the guarded prompt and update the existing server authority module.",
-    });
-    api.state = stateWithEvents(
-      [change],
-      [
-        actionFor(change, "apply_changes", "Apply changes"),
-        actionFor(change, "reject_changes", "Don’t apply", "danger"),
-      ],
-      "Review exact changes",
-    );
     await page.reload();
-    await expect(page.getByRole("heading", { name: "Exact changes are ready" })).toBeVisible();
-    await page.getByRole("button", { name: "Apply changes" }).click();
-    expect(api.actions.at(-1)).toMatchObject({ actionInstanceId: "action_apply_changes" });
-
-    const mutation = conversationEvent(5, "mutation", "studio", {
+    await page.getByRole("button", { name: "Accept plan", exact: true }).click();
+    expect(api.actions.at(-1)).toMatchObject({ actionInstanceId: "action_build" });
+    const mutation = conversationEvent(4, "mutation", "studio", {
       attemptId: "mutation_attempt_01",
       attemptHash: "e".repeat(64),
-      status: "matched",
+      status: "committed",
       message: "Studio readback matched the exact approved change.",
     });
-    const play = conversationEvent(6, "playtest", "studio", {
-      state: "complete",
-      message: "Play stopped and Forge sealed the bounded runtime observations.",
-      machineChecks: ["Door position series was captured."],
-      creatorChecks: ["Confirm the hinge motion looks natural."],
+    const terminal = conversationEvent(5, "terminal_output", "agent", {
+      outcome: "completed",
+      message:
+        "Built the **airlock controls**.\n\n- Server validates each request.\n- Try the controls whenever you are ready.",
+      studioHasAcceptedResult: false,
     });
-    const verification = conversationEvent(7, "verification", "forge", {
-      verification: {
-        id: "verification_02",
-        hash: "1".repeat(64),
-        artifact: {
-          locator: `artifacts/${"1".repeat(64)}.json`,
-          artifactHash: "1".repeat(64),
-          bytes: 90,
-        },
-      },
-      status: "passed",
-      failureFacts: [],
-    });
-    const review = conversationEvent(8, "final_review", "forge", {
-      state: "requested",
-      message: "Tell Forge what you observed before keeping or undoing the change.",
-    });
-    const reportInput: CreatorControlInputRequirement = {
-      kind: "text",
-      field: "report",
-      label: "What did you observe?",
-      minimumBytes: 1,
-      maximumBytes: 4096,
-      multiline: true,
-    };
-    api.state = stateWithEvents(
-      [change, mutation, play, verification, review],
-      [
-        actionFor(review, "keep_changes", "Keep changes", "primary", reportInput),
-        actionFor(review, "undo_changes", "Undo changes", "danger", reportInput),
-      ],
-      "Review the Studio result",
-    );
+    api.state = stateWithEvents([mutation, terminal], [], "Finished", "terminal");
     await page.reload();
+    await expect(page.locator("strong").filter({ hasText: "airlock controls" })).toBeVisible();
     await expect(
-      page.getByText("Studio readback matched the exact approved change."),
-    ).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Checks complete" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Checks passed" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "How did it feel?" })).toBeVisible();
-    await page.getByLabel("What did you observe?").first().fill("The airlock behaved correctly.");
-    await page.getByRole("button", { name: "Keep changes" }).click();
-    expect(api.actions.at(-1)).toMatchObject({
-      actionInstanceId: "action_keep_changes",
-      input: { report: "The airlock behaved correctly." },
-    });
-
-    const terminal = conversationEvent(9, "terminal_output", "forge", {
-      outcome: "accepted",
-      message: "Changes are committed in Studio. Use File → Save to File to export a new .rbxlx.",
-      studioHasAcceptedResult: true,
-    });
-    api.state = stateWithEvents(
-      [change, mutation, play, verification, review, terminal],
-      [],
-      "Changes kept",
-      "terminal",
+      page.getByRole("button", { name: /Apply changes|Keep changes|Try the test again/ }),
+    ).toHaveCount(0);
+    await expect(page.getByText("Studio readback matched the exact approved change.")).toHaveCount(
+      0,
     );
-    await page.reload();
-    await expect(page.getByText(/File → Save to File/)).toBeVisible();
+    await expect(
+      page.getByText(/Waiting for Play|Watching your test|What did you observe/),
+    ).toHaveCount(0);
     await page.getByRole("textbox", { name: "Message Forge" }).fill("Now explain the alarm path.");
     await page.getByRole("button", { name: "Send" }).click();
     expect(api.turns.at(-1)).toMatchObject({ text: "Now explain the alarm path." });
   });
 
-  test("presents project refresh, incomplete Play, recovery, and source-sync authority", async ({
+  test("presents project refresh, recovery, and source-sync authority", async ({
     page,
   }, testInfo) => {
     test.skip(testInfo.project.name !== "desktop", "One blocked-state proof is sufficient.");
@@ -501,28 +485,6 @@ test.describe("Forge workspace project conversation", () => {
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "Forge noticed a project edit" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Refresh project" })).toBeVisible();
-
-    const incompletePlay = conversationEvent(4, "playtest", "studio", {
-      state: "incomplete",
-      message: "Play stopped, but one engine read was unavailable.",
-      machineChecks: [],
-      creatorChecks: ["No gameplay claim was produced."],
-    });
-    api.state = stateWithEvents(
-      [incompletePlay],
-      [
-        actionFor(incompletePlay, "retry_play", "Try the test again"),
-        actionFor(incompletePlay, "cancel_changes", "Undo changes", "danger"),
-      ],
-      "Play evidence needs attention",
-      "blocked",
-    );
-    await page.reload();
-    await expect(
-      page.getByText("Play stopped, but one engine read was unavailable."),
-    ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Try the test again" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Undo changes" })).toBeVisible();
 
     const recovery = conversationEvent(4, "recovery", "forge", {
       state: "available",
@@ -592,7 +554,7 @@ test.describe("Forge workspace project conversation", () => {
     await installDashboardApi(page, createDashboardApi());
     await page.goto("/");
 
-    const trigger = page.getByRole("button", { name: "Details", exact: true }).last();
+    const trigger = page.getByRole("button", { name: "Open details", exact: true });
     await trigger.click();
     const dialog = page.getByRole("dialog", { name: /technical details/i });
     await expect(dialog).toBeVisible();
@@ -616,8 +578,11 @@ test.describe("Forge workspace project conversation", () => {
     await installDashboardApi(page, api);
     await page.goto("/");
 
-    await page.getByRole("button", { name: "1 citation" }).click();
+    await page.getByRole("button", { name: "Open details", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: /technical details/i });
+    await dialog
+      .getByRole("combobox", { name: "Inspect", exact: true })
+      .selectOption("event_answer");
     await dialog.getByRole("button", { name: "Replay verification" }).click();
     await expect(dialog.getByText(/"status": "exact"/)).toBeVisible();
     await dialog.getByRole("button", { name: "List project source" }).click();
@@ -673,7 +638,7 @@ test.describe("Forge workspace project conversation", () => {
     await installDashboardApi(page, api);
     await page.goto("/");
 
-    const action = page.getByRole("button", { name: "Build this", exact: true });
+    const action = page.getByRole("button", { name: "Accept plan", exact: true });
     await action.click();
     await expect(page.locator(".event-actions button").first()).toBeDisabled();
     expect(api.actions).toHaveLength(1);
@@ -691,23 +656,29 @@ test.describe("Forge workspace project conversation", () => {
     test.skip(testInfo.project.name !== "desktop", "Zoom proof uses the desktop baseline.");
     await page.clock.setFixedTime(new Date("2026-09-03T00:00:38.000Z"));
     const state = conversationState({
-      agentActivity: {
-        jobId: "job_01",
-        agentRunId: "agent_run_01",
-        running: true,
-        startedAt: "2026-09-03T00:00:00.000Z",
-        updatedAt: "2026-09-03T00:00:01.000Z",
-        currentStep: "Reading the project",
-        modelTurns: 1,
-        steps: [
-          {
-            sequence: 1,
-            label: "Inspecting objects",
-            detail: "Workspace/Airlock",
-            status: "complete",
-          },
-        ],
-      },
+      agentActivities: [
+        {
+          commentary: [],
+          usage: null,
+          requestSizes: null,
+          jobId: "job_01",
+          afterEventSequence: 1,
+          agentRunId: "agent_run_01",
+          running: true,
+          startedAt: "2026-09-03T00:00:00.000Z",
+          updatedAt: "2026-09-03T00:00:01.000Z",
+          currentStep: "Reading the project",
+          modelTurns: 1,
+          steps: [
+            {
+              sequence: 1,
+              label: "Inspected Airlock",
+              detail: "Workspace/Airlock",
+              status: "complete",
+            },
+          ],
+        },
+      ],
       eventPage: {
         ...conversationState().eventPage,
         events: [
@@ -740,7 +711,7 @@ test.describe("Forge workspace project conversation", () => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await installDashboardApi(page, createDashboardApi(state));
     await page.goto("/");
-    await expect(page.locator(".activity-indicator")).toHaveCSS("animation-name", "none");
+    await expect(page.locator(".agent-progress-text")).toHaveCSS("animation-name", "none");
 
     // A 720px CSS viewport is the effective viewport of a 1440px desktop at
     // 200% browser zoom. It verifies actual reflow rather than device pixels.

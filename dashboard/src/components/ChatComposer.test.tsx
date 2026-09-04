@@ -1,12 +1,22 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { dashboardStore } from "../api-store";
 import { ChatComposer } from "./ChatComposer";
 import type { CreatorDashboardState, CreatorTurnRequest, DashboardSnapshot } from "../types";
 import { dashboardState } from "../test/fixtures";
 
 describe("ChatComposer", () => {
+  beforeEach(() =>
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    ),
+  );
   afterEach(() => {
+    vi.unstubAllGlobals();
     cleanup();
     vi.restoreAllMocks();
     dashboardStore.updateDraft("conversation_01", { text: "" });
@@ -24,6 +34,9 @@ describe("ChatComposer", () => {
     fireEvent.submit(screen.getByRole("form", { name: "Message Forge" }));
     expect(dashboardStore.draftFor("conversation_01").text).toBe("And keep the door color.");
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    expect(
+      screen.queryByText("Enter to send", { selector: ".composer-keyboard-hint" }),
+    ).not.toBeInTheDocument();
     expect(submit).not.toHaveBeenCalled();
   });
 
