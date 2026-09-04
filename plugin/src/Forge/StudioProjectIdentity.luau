@@ -625,7 +625,6 @@ end
 
 function StudioProjectIdentity.observeForTest(root: any): any return observe(root) end
 function StudioProjectIdentity.canonicalOperationForTest(value: any): any return canonicalOperation(value) end
-function StudioProjectIdentity.canonicalReceiptForTest(value: any): any return canonicalReceipt(value) end
 function StudioProjectIdentity.boundedFailureDetailForTest(value: any): string return boundedFailureDetail(value) end
 function StudioProjectIdentity.settingKeyForTest(): string return TRANSACTION_SETTING end
 

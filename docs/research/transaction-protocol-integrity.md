@@ -1,5 +1,11 @@
 # Transaction protocol integrity
 
+This is a historical research record. Implementation descriptions, commands,
+counts, and pending actions refer to the recorded builds, not the current product.
+Use [Architecture](../ARCHITECTURE.md) for current behavior and
+[Roadmap](../ROADMAP.md) for remaining work. Retained IDs and failure classifications
+are evidence, not instructions to replay or resume a run.
+
 This note records the rationale for Forge's creator-mutation transport and the
 failure evidence that forced its current contract. It is research context, not
 an alternate protocol specification; current schemas and state transitions are

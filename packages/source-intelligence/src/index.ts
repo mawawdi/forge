@@ -73,7 +73,7 @@ export interface HashVerifiedSourceChunk {
  * byte ranges so normal source tools never concatenate the whole project.
  */
 export interface VerifiedSourceResolver {
-  readonly authority: "verified_source_blob" | "test_fixture_source";
+  readonly authority: "verified_source_blob";
   readRange(
     document: SourceDocumentLocator,
     range: { readonly startByte: number; readonly endByte: number },
@@ -1323,35 +1323,6 @@ function normalizeDocument(input: SourceDocumentInput): SourceDocumentForIndexin
   };
 }
 
-/** Test-only in-memory source authority. Production must bind blob chunks instead. */
-export function createTestFixtureSourceResolver(
-  inputs: readonly SourceDocumentInput[],
-): VerifiedSourceResolver {
-  const documents = inputs.map(normalizeDocument);
-  const values = new Map(documents.map((document) => [document.documentId, document]));
-  return {
-    authority: "test_fixture_source",
-    read(document): string {
-      const source = values.get(document.documentId);
-      if (!source || !sameSourceLocator(source, document))
-        fail(`Fixture source resolver has no verified body for ${document.documentId}`);
-      return source.source;
-    },
-    readRange(document, requested): VerifiedSourceRange {
-      const source = values.get(document.documentId);
-      if (!source || !sameSourceLocator(source, document))
-        fail(`Fixture source resolver has no verified body for ${document.documentId}`);
-      const range = normalizeSourceRange(requested, source.utf8Bytes);
-      const selected = utf8Window(source.source, range.startByte, range.endByte - range.startByte);
-      return {
-        startByte: range.startByte,
-        endByte: range.startByte + utf8Bytes(selected),
-        source: selected,
-      };
-    },
-  };
-}
-
 /**
  * Build a lazy source resolver from independently chunked source bodies.
  * Continuity and the source hash are verified on the first access to each
@@ -1430,8 +1401,7 @@ function readVerifiedSourceRange(
 ): VerifiedSourceRange {
   if (
     !resolver ||
-    (resolver.authority !== "verified_source_blob" &&
-      resolver.authority !== "test_fixture_source") ||
+    resolver.authority !== "verified_source_blob" ||
     typeof resolver.readRange !== "function"
   )
     fail("Source navigation requires a verified source resolver");
@@ -2593,34 +2563,6 @@ function utf8Bytes(value: string): number {
 }
 function lineCount(value: string): number {
   return value.length === 0 ? 1 : (value.match(/\n/gu) ?? []).length + 1;
-}
-
-function utf8Window(source: string, startByte: number, maximumBytes: number): string {
-  if (startByte < 0 || maximumBytes <= 0) fail("Invalid UTF-8 source window");
-  let skipped = 0;
-  let start = 0;
-  while (start < source.length && skipped < startByte) {
-    const codePoint = source.codePointAt(start);
-    if (codePoint === undefined) break;
-    const character = String.fromCodePoint(codePoint);
-    const bytes = utf8Bytes(character);
-    if (skipped + bytes > startByte) fail("Source cursor is not aligned to a UTF-8 boundary");
-    skipped += bytes;
-    start += character.length;
-  }
-  if (skipped !== startByte) fail("Source cursor is outside the source body");
-  let end = start;
-  let used = 0;
-  while (end < source.length) {
-    const codePoint = source.codePointAt(end);
-    if (codePoint === undefined) break;
-    const character = String.fromCodePoint(codePoint);
-    const bytes = utf8Bytes(character);
-    if (used + bytes > maximumBytes) break;
-    used += bytes;
-    end += character.length;
-  }
-  return source.slice(start, end);
 }
 
 function locator(document: StudioSourceDocument): SourceDocumentLocator {

@@ -2,10 +2,10 @@
 
 Keep this file operational. Documentation authority is split deliberately:
 
-- `docs/ARCHITECTURE.md` defines current and target architecture.
+- `docs/ARCHITECTURE.md` defines the implemented architecture.
 - `docs/FORGE.md` defines product thesis and invariants.
 - `docs/EVALS.md` defines evaluation policy and claim semantics.
-- `docs/ROADMAP.md` defines demonstrated status and next work.
+- `docs/ROADMAP.md` defines future work and its acceptance criteria.
 - `docs/RESEARCH.md` indexes foundational rationale and historical evidence.
 
 - Make clean breaks. Delete superseded schemas, commands, packages, and storage paths; do not add compatibility readers, migrations, deprecated aliases, or old/new fallbacks.

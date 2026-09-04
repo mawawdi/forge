@@ -343,8 +343,6 @@ function RuntimeCapabilityExecutor.new(plugin: Plugin, send, state)
 	return setmetatable({ plugin = plugin, send = send, state = state, active = nil, blocked = false }, RuntimeCapabilityExecutor)
 end
 
-function RuntimeCapabilityExecutor:isActive(): boolean return self.active ~= nil end
-
 function RuntimeCapabilityExecutor:abort()
 	if not self.active then return end
 	self.active.closed = true

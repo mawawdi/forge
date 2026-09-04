@@ -239,22 +239,6 @@ function StudioProjectChangeMonitor:attachTree(instance: Instance, cooperate: ((
 	return true
 end
 
-function StudioProjectChangeMonitor:detachTree(instance: Instance, cooperate: (() -> ())?): boolean
-	-- DescendantRemoving fires while the object still has its old ancestry, so
-	-- policy membership is decidable before listeners are detached. Never mark
-	-- an unrelated service/tool change as a project-index dirty event.
-	if not StudioInstancePolicy.isWithinEvidenceRoot(instance) then return false end
-	local stack = { instance }
-	while #stack > 0 do
-		local current = table.remove(stack)
-		self:detachInstance(current)
-		local children = current:GetChildren()
-		for index = #children, 1, -1 do table.insert(stack, children[index]); if cooperate then cooperate() end end
-		if cooperate then cooperate() end
-	end
-	return true
-end
-
 function StudioProjectChangeMonitor:start(cooperate: (() -> ())?)
 	if self.started or self.starting then return end
 	self.starting = true

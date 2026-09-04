@@ -537,20 +537,20 @@ async function repairingClient(withFeedback: boolean): Promise<ModelClient> {
 
 test("one default agent budget supports every bounded agent purpose", () => {
   assert.deepEqual(DEFAULT_AGENT_BUDGETS, {
-    maxTurns: 32,
-    maxToolCalls: 256,
-    maxWrites: 128,
-    maxVerifierCalls: 16,
-    maxChangedFiles: 32,
-    maxAddedLines: 5_000,
-    maxRemovedLines: 2_000,
-    maxBytesPerFile: 128_000,
-    maxChangedSourceBytes: 1_048_576,
-    maxToolResultBytes: 4_194_304,
-    maxDurationMs: 1_800_000,
-    maxBudgetUsd: 10,
-    maxInputTokens: 1_000_000,
-    maxOutputTokens: 128_000,
+    maxTurns: 10_000,
+    maxToolCalls: 100_000,
+    maxWrites: 100_000,
+    maxVerifierCalls: 10_000,
+    maxChangedFiles: 100_000,
+    maxAddedLines: 10_000_000,
+    maxRemovedLines: 10_000_000,
+    maxBytesPerFile: 16_777_216,
+    maxChangedSourceBytes: 536_870_912,
+    maxToolResultBytes: 536_870_912,
+    maxDurationMs: 604_800_000,
+    maxBudgetUsd: 1_000,
+    maxInputTokens: 1_000_000_000_000,
+    maxOutputTokens: 100_000_000_000,
   });
 });
 
@@ -2246,7 +2246,6 @@ test("generic packages do not import deleted mechanics, adapters, fixtures, or S
     "packages/proofs/src/index.ts",
     "packages/proofs/src/runtime.ts",
     "packages/semantic-authority/src/index.ts",
-    "packages/semantic-authority/src/policies.ts",
     "packages/semantic-map/src/index.ts",
     "packages/studio-bridge/src/index.ts",
     "packages/studio-capabilities/src/index.ts",

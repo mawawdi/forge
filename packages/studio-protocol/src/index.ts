@@ -127,8 +127,6 @@ export type StudioCapability =
   | "project_identity"
   | "http_polling";
 
-export const STUDIO_PROJECT_IDENTITY_ATTRIBUTE = "_forgeProjectId";
-
 export type StudioProjectIdentityAttributeState =
   | { readonly status: "absent" }
   | { readonly status: "observed"; readonly forgeProjectId: string }

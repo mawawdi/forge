@@ -44,12 +44,10 @@ export type {
   RobloxDatatypeMember,
   RobloxGlobalMemberKind,
   RobloxLibraryMemberKind,
-  StudioAuthoringGroupPolicy,
   StudioCapabilityCoverageEntry,
   StudioCapabilityCoverageReport,
   StudioCapabilityCoverageSummary,
   StudioCapabilityDisposition,
-  StudioCapabilityPolicy,
   StudioCapabilityReason,
   StudioInstanceReference,
 } from "./catalog.js";
@@ -57,13 +55,7 @@ export {
   ROBLOX_API_CATALOG,
   ROBLOX_API_CATALOG_HASH,
   getRobloxApiClass,
-  getRobloxApiDatatype,
-  getRobloxApiEnum,
-  getRobloxApiGlobalMembers,
-  getRobloxApiLibrary,
   isRobloxClassAssignableTo,
-  loadRobloxApiCatalog,
-  resolveRobloxClassMember,
   resolveRobloxClassMembers,
   validateRobloxApiCatalog,
 } from "./catalog-runtime.js";
@@ -1219,17 +1211,6 @@ export function gradeStudioCapabilityAttestation(
     findings: Object.freeze(findings),
     detail,
   });
-}
-
-/** Fail-closed convenience wrapper used by pairing and replay callers. */
-export function assertStudioCapabilityAttestation(
-  manifest: StudioCapabilityManifest,
-  manifestHash: string,
-  projection: StudioEvidenceProjection,
-  envelope: StudioEvidenceEnvelope,
-): void {
-  const grade = gradeStudioCapabilityAttestation(manifest, manifestHash, projection, envelope);
-  if (grade.status !== "verified") fail(grade.detail);
 }
 
 function reflectionTypeFindings(
@@ -2788,19 +2769,6 @@ export function runtimeResultsFromEvidence(
 
 export function serializeStudioEvidenceProjection(value: StudioEvidenceProjection): string {
   assertStudioEvidenceProjection(value);
-  return stableCanonicalJson(value);
-}
-export function serializeStudioEvidenceEnvelope(
-  value: StudioEvidenceEnvelope,
-  projection?: StudioEvidenceProjection,
-): string {
-  assertStudioEvidenceEnvelope(value, projection);
-  return stableCanonicalJson(value);
-}
-export function serializeStudioCapabilityManifest(
-  value: StudioCapabilityManifest = STUDIO_CAPABILITY_MANIFEST,
-): string {
-  assertStudioCapabilityManifest(value);
   return stableCanonicalJson(value);
 }
 

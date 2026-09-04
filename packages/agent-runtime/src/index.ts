@@ -103,20 +103,21 @@ export interface BudgetPolicy {
 }
 
 export const DEFAULT_AGENT_BUDGETS: BudgetPolicy = Object.freeze({
-  maxTurns: 32,
-  maxToolCalls: 256,
-  maxWrites: 128,
-  maxVerifierCalls: 16,
-  maxChangedFiles: 32,
-  maxAddedLines: 5_000,
-  maxRemovedLines: 2_000,
-  maxBytesPerFile: 128_000,
-  maxChangedSourceBytes: 1024 * 1024,
-  maxToolResultBytes: 4 * 1024 * 1024,
-  maxDurationMs: 30 * 60_000,
-  maxBudgetUsd: 10,
-  maxInputTokens: 1_000_000,
-  maxOutputTokens: 128_000,
+  // Remote finite guardrails for malformed or runaway execution, not product quotas.
+  maxTurns: 10_000,
+  maxToolCalls: 100_000,
+  maxWrites: 100_000,
+  maxVerifierCalls: 10_000,
+  maxChangedFiles: 100_000,
+  maxAddedLines: 10_000_000,
+  maxRemovedLines: 10_000_000,
+  maxBytesPerFile: 16 * 1024 * 1024,
+  maxChangedSourceBytes: 512 * 1024 * 1024,
+  maxToolResultBytes: 512 * 1024 * 1024,
+  maxDurationMs: 7 * 24 * 60 * 60_000,
+  maxBudgetUsd: 1_000,
+  maxInputTokens: 1_000_000_000_000,
+  maxOutputTokens: 100_000_000_000,
 });
 
 export interface HarnessConfigurationInput {
@@ -689,15 +690,9 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
           }),
         );
       }
-      if (exceedsModelBudgets(input.budgets, usage))
-        return finish(
-          runtimeBudgetResult(
-            "Provider usage exceeded a post-step budget",
-            usage,
-            turns,
-            trialStarted,
-          ),
-        );
+      const modelBudgetFailure = modelUsageBudgetFailure(input.budgets, usage);
+      if (modelBudgetFailure !== undefined)
+        return finish(runtimeBudgetResult(modelBudgetFailure, usage, turns, trialStarted));
       if (result.kind === "provider_error")
         return finish({
           status: "failed",
@@ -3504,11 +3499,27 @@ function addUsage(current: RuntimeUsage, next: ModelUsage): RuntimeUsage {
 function addNullable(left: number | null, right: number | null): number | null {
   return left === null || right === null ? null : left + right;
 }
-function exceedsModelBudgets(policy: BudgetPolicy, usage: RuntimeUsage): boolean {
+export function modelUsageBudgetFailure(
+  policy: BudgetPolicy,
+  usage: Pick<RuntimeUsage, "inputTokens" | "outputTokens" | "costUsd">,
+): string | undefined {
+  const limits = [
+    ["cumulative input-token", usage.inputTokens, policy.maxInputTokens],
+    ["cumulative output-token", usage.outputTokens, policy.maxOutputTokens],
+    ["reported cost in USD", usage.costUsd, policy.maxBudgetUsd],
+  ] as const;
+  const exceeded = limits
+    .filter(([, used, allowed]) => used !== null && used > allowed)
+    .map(
+      ([label, used, allowed]) =>
+        `${label}: ${used!.toLocaleString("en-US", { maximumFractionDigits: 20 })} used / ${allowed.toLocaleString("en-US", { maximumFractionDigits: 20 })} allowed`,
+    );
+  if (exceeded.length === 0) return undefined;
   return (
-    (usage.inputTokens !== null && usage.inputTokens > policy.maxInputTokens) ||
-    (usage.outputTokens !== null && usage.outputTokens > policy.maxOutputTokens) ||
-    (usage.costUsd !== null && usage.costUsd > policy.maxBudgetUsd)
+    `Forge run limit exceeded (${exceeded.join("; ")}).` +
+    (usage.inputTokens !== null && usage.inputTokens > policy.maxInputTokens
+      ? " Input tokens add up across requests, including cached input."
+      : "")
   );
 }
 function exhaustedBudgets(policy: BudgetPolicy, used: BudgetConsumption): string[] {

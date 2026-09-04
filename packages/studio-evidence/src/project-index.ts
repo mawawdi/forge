@@ -1286,15 +1286,6 @@ export function assertStudioProjectIndexCapture(
     fail("project index capture identity");
 }
 
-export function assertStudioIdentityEnrollment(
-  value: unknown,
-): asserts value is StudioIdentityEnrollment {
-  if (!isRecord(value) || !hasOnly(value, ["identity", "stableId"]) || !isId(value.stableId))
-    fail("Studio identity enrollment");
-  assertStudioObjectIdentity(value.identity);
-  if (value.identity.kind !== "studio_ephemeral") fail("Studio identity enrollment target");
-}
-
 export function studioProjectIndexSourceDocuments(
   capture: StudioProjectIndexCapture,
   manifest: StudioCapabilityManifest = STUDIO_CAPABILITY_MANIFEST,

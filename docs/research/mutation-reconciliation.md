@@ -1,5 +1,11 @@
 # Mutation Reconciliation: Closing the Writer/Observer Gap
 
+This is a historical research record. Implementation descriptions, commands,
+counts, and pending actions refer to the recorded builds, not the current product.
+Use [Architecture](../ARCHITECTURE.md) for current behavior and
+[Roadmap](../ROADMAP.md) for remaining work. Retained IDs and failure classifications
+are evidence, not instructions to replay or resume a run.
+
 Forge treats a Studio edit as a transaction whose result must be proven, not as
 an RPC whose successful return is sufficient. This note records the rationale
 for the current capability manifest, explicit evidence algebra, provisional

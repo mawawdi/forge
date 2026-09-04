@@ -1,11 +1,17 @@
 # Studio capability completeness
 
+This is a historical research record. Implementation descriptions, commands,
+counts, and pending actions refer to the recorded builds, not the current product.
+Use [Architecture](../ARCHITECTURE.md) for current behavior and
+[Roadmap](../ROADMAP.md) for remaining work. Retained IDs and failure classifications
+are evidence, not instructions to replay or resume a run.
+
 Date: 2026-09-01
 
 This note records the rationale and official-source pin behind Forge's exhaustive
 Roblox capability accounting. It is research context, not schema authority;
-current contracts live in `packages/studio-evidence`, and demonstrated status
-lives in `docs/ROADMAP.md`.
+current contracts live in `packages/studio-evidence`, and current implementation
+lives in [Architecture](../ARCHITECTURE.md).
 
 ## Official source pin
 

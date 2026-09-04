@@ -173,10 +173,6 @@ export function assertArtifactReference(value: unknown): asserts value is Artifa
   }
 }
 
-export function isSafeArtifactLocator(value: string): boolean {
-  return isSafeLocator(value);
-}
-
 /** Exact UTF-8 artifact representation, including its terminating newline. */
 export function serializeCanonicalJson(value: unknown): string {
   const json = stableJson(value);
@@ -389,7 +385,7 @@ function isAlreadyExists(error: unknown): boolean {
   return isNodeError(error, "EEXIST");
 }
 
-function isNodeError(error: unknown, code: string): boolean {
+export function isNodeError(error: unknown, code: string): boolean {
   return (
     typeof error === "object" &&
     error !== null &&

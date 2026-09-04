@@ -19,11 +19,6 @@ function StudioInstancePolicy.isWithinEvidenceRoot(instance): boolean
 	return cursor.Parent == game and Generated.isAllowedRoot(cursor.Name)
 end
 
-function StudioInstancePolicy.shouldHaveStableIdentity(instance): boolean
-	return StudioInstancePolicy.isWithinEvidenceRoot(instance)
-		and StudioInstancePolicy.isEvidenceRelevant(instance)
-end
-
 -- Invalidate the same facts that the project index actually captures. Camera
 -- navigation and engine-derived UI geometry are not authoring changes.
 function StudioInstancePolicy.isIndexedProperty(className: string, propertyName: any): boolean

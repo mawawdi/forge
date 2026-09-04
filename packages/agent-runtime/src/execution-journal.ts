@@ -1,3 +1,4 @@
+import { isNodeError } from "../../artifact-store/src/index.js";
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
@@ -1562,15 +1563,6 @@ async function syncDirectory(path: string): Promise<void> {
   } finally {
     await descriptor.close();
   }
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === code
-  );
 }
 
 export function measureRequestSizes(request: ModelTurnRequest): ModelRequestSizes {

@@ -1,3 +1,4 @@
+import { isNodeError } from "../../artifact-store/src/index.js";
 /**
  * Project authority is deliberately independent of the creator coordinator and
  * Studio protocol. It proves who owns a source path, makes only guarded
@@ -1157,34 +1158,6 @@ export function replayRojoMutation(input: {
   };
 }
 
-export function assertRojoMutationReplay(value: unknown): asserts value is RojoMutationReplay {
-  if (
-    !isRecord(value) ||
-    value.kind !== "RojoMutationReplay" ||
-    !isId(value.id) ||
-    !isHash(value.hash) ||
-    !["exact_match", "mismatch", "incomplete"].includes(String(value.status)) ||
-    !isId(value.attemptId) ||
-    !isHash(value.attemptHash) ||
-    !["synced", "reverted"].includes(String(value.finalization)) ||
-    !Array.isArray(value.failureFacts) ||
-    !value.failureFacts.every(isRojoSyncFailureFact) ||
-    (value.proofId !== undefined && !isId(value.proofId)) ||
-    (value.proofHash !== undefined && !isHash(value.proofHash))
-  )
-    fail("Invalid RojoMutationReplay");
-  const payload = {
-    status: value.status,
-    attemptId: value.attemptId,
-    attemptHash: value.attemptHash,
-    finalization: value.finalization,
-    ...(value.proofId === undefined ? {} : { proofId: value.proofId }),
-    ...(value.proofHash === undefined ? {} : { proofHash: value.proofHash }),
-    failureFacts: value.failureFacts,
-  };
-  assertContentIdentity(value, "rojo_mutation_replay", payload, "RojoMutationReplay");
-}
-
 export async function revertRojoSourceMutation(
   input: RevertRojoSourceMutationInput,
 ): Promise<RojoSourceRevert> {
@@ -1997,14 +1970,6 @@ async function pathExists(path: string): Promise<boolean> {
     if (isNodeError(error, "ENOENT")) return false;
     throw error;
   }
-}
-function isNodeError(error: unknown, code: string): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === code
-  );
 }
 function fail(message: string): never {
   throw new Error(message);

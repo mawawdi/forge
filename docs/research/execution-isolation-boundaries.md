@@ -1,5 +1,11 @@
 # Execution Isolation Boundaries
 
+This is a historical research record. Implementation descriptions, commands,
+counts, and pending actions refer to the recorded builds, not the current product.
+Use [Architecture](../ARCHITECTURE.md) for current behavior and
+[Roadmap](../ROADMAP.md) for remaining work. Retained IDs and failure classifications
+are evidence, not instructions to replay or resume a run.
+
 Forge needs two distinct execution boundaries, because they answer different questions.
 
 ## Agent and generated-code isolation

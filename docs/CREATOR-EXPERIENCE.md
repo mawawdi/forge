@@ -1,1013 +1,127 @@
 # Forge Creator Experience
 
-Status: current Creator Conversation presentation milestone and longer-horizon
-experience specification, grounded in the current existing-project, evidence,
-transaction, verification, and recovery contracts.
+This guide describes the current dashboard and Studio plugin. It is an interaction
+reference, not a second architecture specification. Start with the [README](../README.md)
+for installation and [Product principles](FORGE.md) for authority boundaries.
 
-This document defines how Forge should feel, speak, and organize creator work
-over the long horizon. It is subordinate to
-[ARCHITECTURE.md](ARCHITECTURE.md), [FORGE.md](FORGE.md), and
-[EVALS.md](EVALS.md). Those documents define workflow legality, semantic
-authority, evidence completeness, and Studio safety. This document does not
-weaken those rules to make the interface appear simpler.
+## Open a project
 
-The evidence workbench has been clean-replaced by the Creator Conversation
-shell. It is a persistent, project-aware local conversation whose immutable
-history, current action legality, source citations, project context, and
-technical evidence are presented together. Exact plans, source, diffs,
-evidence, replay, and recovery remain an audit layer behind that conversation.
+Start the local Forge service and open its one-time dashboard link. The plugin
+pairs the open Studio place. Wait for **Studio ready** before sending work.
+An unpublished place without an ID offers **Link project**. Save the place after
+linking so its `Workspace` project ID persists.
 
-This presentation milestone is not a new Studio verdict. Its automated tests
-exercise contracts, immutable history reconstruction, coordination boundaries,
-and browser rendering with synthetic data. They make no provider request and
-perform no Studio operation. A creator-run Studio canary remains required before
-claiming that this shell has carried a live project through indexing, mutation,
-Play, and review.
+The sidebar groups conversations by project identity. A filename is only a label;
+two different places may have the same name. Renaming a project or conversation
+changes its display name without changing the place file or history. An unused
+entry created by background pairing disappears from the workspace when another
+project is opened. Explicitly linked or used projects remain.
 
-## Current conversation flow
+A saved copy retains the original project ID. Use the explicit Fork action in
+project settings when the copy should become a separate project. Publishing a
+local place offers a continuity choice; Forge does not infer one from its name.
 
-A read-only plan offers **Accept plan**, **Change plan**, and **Reject**. Acceptance
-starts Build and Apply together. Each job stays in the conversation beside its
-own result, with public model commentary and a compact chronological disclosure.
-While running, the goal summary shimmers; completed work collapses to its duration.
-Activity expands in the document flow without covering messages or closing when
-the user starts drafting. Plan actions share one icon row attached to the plan;
-changes open an inline editor. Machine checks and transaction
-records stay in Details. A successfully committed build ends with the model's
-Markdown result. The user can immediately continue the same conversation.
+## Have a conversation
 
-Optional Play sessions quietly add bounded server diagnostics to a later request.
-They never create waiting paragraphs, require a final report, or restart the agent.
-Long histories automatically compact into durable model-written handoffs while
-recent messages and the original stored transcript remain intact. Compaction is
-an internal continuity step; summaries do not acquire creator authority.
-
-## North star
-
-Forge should feel like returning to a Roblox collaborator who knows the project,
-remembers the decisions that matter, can inspect the current place before
-speaking, and never pretends that an unobserved result is true.
-
-The product promise is:
-
-> Open any valid Roblox place, tell Forge what you want, work through it with an
-> agent that knows the project, test the result in Studio, and keep a durable
-> record of every decision and proof.
-
-The desired ease is Lemonade-like: prompt first, clear agent presence, inline
-plans and approvals, ordinary Play as the test boundary, and a conversation that
-continues after one build finishes. Forge's distinct value is that this simple
-surface is backed by complete existing-project indexing, source intelligence,
-transactional mutation, explicit evidence, provider-free replay, and visible
-recovery.
-
-This is inspiration, not imitation. Forge does not copy Lemonade's brand,
-layout, voice, or visual identity.
-
-## What “an agent you know” means
-
-The agent relationship is built from durable, inspectable continuity—not a
-claim of human memory.
-
-The agent should retain:
-
-- the project's accepted goals, vocabulary, architecture, and conventions;
-- creator-stated preferences that were explicitly saved;
-- accepted and rejected changes, including the creator's final reports;
-- source areas and dependency closures previously consulted;
-- unresolved questions, deferred work, and known evidence gaps;
-- the latest complete Studio revision and later creator-edit notifications.
-
-The agent must distinguish:
-
-- **current project fact:** read from the latest complete Studio index;
-- **static-analysis result:** derived from hash-verified source;
-- **prior decision:** preserved in an accepted or rejected work episode;
-- **creator preference:** explicitly stated or corrected by the creator;
-- **agent inference:** a hypothesis that may be wrong;
-- **machine observation:** produced by a complete bound evidence envelope;
-- **creator observation:** written in the creator's report.
-
-Memory is creator authority. A `CreatorMemoryRevision` is an immutable,
-creator-authored revision with a category, active/forgotten state, and optional
-pin; later revisions name the prior revision. The host may include only active
-memory revisions in the bounded next-turn context. Memory is neither a current
-Studio fact nor a way to carry hidden evaluator material. It cannot overrule a
-newer complete revision, turn a rejected proposal into project truth, or create
-mutation authority. The current shell renders available memory and its sealed
-history and exposes hash-bound creator controls for remember, correct, pin,
-unpin, and forget. Those controls append revisions; forgetting changes future
-context without rewriting immutable conversation history.
-
-## Experience principles
-
-1. **Conversation is the product.** Requests, project exploration, plans,
-   revisions, progress, decisions, playtest guidance, results, and recovery form
-   one chronological project conversation.
-2. **The open Studio place is the source of project truth.** Forge reads the
-   complete current place and current Script Editor contents before planning.
-3. **The agent explains what it learned.** Important source and project facts
-   appear as concise citations, not an unexplained assertion of understanding.
-4. **Authority appears at the decision.** Approvals and destructive actions are
-   embedded in the exact conversation card they authorize.
-5. **The useful answer leads; proof remains one step away.** Plans, changed
-   objects, source diffs, failed checks, and next actions come before hashes,
-   projections, receipts, and raw JSON.
-6. **Manual creator work is respected.** A creator edit makes stale work visible
-   and offers refresh-and-replan. Forge never silently merges or overwrites it.
-7. **Mismatch and missing evidence are different experiences.** Complete facts
-   that prove a behavior wrong are failed checks. Missing or unreadable required
-   facts are incomplete evidence.
-8. **The happy path is calm.** A successful build does not feel like monitoring
-   a distributed system. Technical complexity becomes prominent only when it
-   changes a decision or recovery path.
-9. **Recovery is explicit.** Restart and transport loss never trigger an
-   implicit provider retry, Apply, commit, cancel, rollback, or Play re-arm.
-10. **The creator chooses the engine.** The selected model is visible before a
-    turn begins, remains fixed for that turn, and never changes through a silent
-    fallback.
-11. **One product path.** The conversation shell replaces the evidence
-    workbench as the primary route. The old workbench is not preserved as a
-    second mode.
-
-## Current foundation and target boundary
-
-The codebase already provides the safety and evidence foundation for the final
-experience:
-
-- loopback Studio bridge and separate creator control server;
-- one-time dashboard launch grant and host-only session cookie;
-- complete sharded project indexing with content-addressed source blobs;
-- opaque identities for pre-existing and duplicate-named Studio objects;
-- current Script Editor source reads and hash-guarded source edits;
-- source search, paged reads, symbols, references, and dependency traversal;
-- immutable source-consultation evidence;
-- dirty-project detection and explicit refresh with predecessor/successor
-  sessions;
-- exact plan and change approval;
-- detached preflight, provisional Apply, direct readback, state-delta
-  reconciliation, and guarded finalization;
-- silent arming of ordinary Studio Play, direct observation, explicit retry,
-  and creator review;
-- optional single-writer Rojo source authority and Studio sync proof;
-- immutable artifacts and provider-free mutation/verification replay;
-- restart-safe recording recovery.
-
-The current dashboard is the conversation shell: `ProjectRail`,
-`ConversationTimeline`, `ChatComposer`, `ProjectSettings`, the journal-derived
-`AgentActivity`, and a lazy `TechnicalDetailsSheet`. It consumes one
-coordinator-produced conversation control read model; the browser does not
-derive workflow legality from status text. One module-level store owns the
-current snapshot, drafts, event-history paging, and a single SSE invalidation
-stream.
-Conversation search opens with Command/Control K, supports keyboard selection,
-and searches both project names and conversation titles. Browser-local pins keep
-frequent conversations first. The sidebar can be hidden, and each conversation
-retains its reading position while the page stays open. A jump-to-latest control
-appears when the creator is reading earlier messages. History paging reports its
-loading state and preserves the reading position when older events arrive.
-
-Conversation and review drafts survive reloads in the same browser tab through
-session storage. Unconfirmed requests are stored with their original JSON bytes
-and idempotency keys, so an explicit retry after reload remains the same request;
-restoration never sends anything automatically. Storage failures leave writing
-available and explain that the tab must remain open. Browser preferences such as
-pins, sidebar visibility, and Enter-to-send behavior are separate from project
-memory and never become agent instructions.
-
-The composer supports expansion, reversible draft clearing, Command/Control Enter
-to send, and Shift Enter for a new line. Typing a new draft while an earlier send
-is awaiting acknowledgement never lets that acknowledgement erase the new text.
-Agent replies and plan prose render GitHub-flavored Markdown, including lists,
-tables, inline code, and copyable code blocks. Raw HTML and remote image loading
-are disabled. Creator messages remain verbatim. Planner, builder, and repair
-instructions request Markdown only in prose fields; typed tool arguments and
-staged source retain their exact required formats.
-
-On a temporary connection failure it leaves the last durable conversation on
-screen. If an action response is ambiguous, it performs one read-only reload
-and never replays the state-changing request automatically. An explicit retry
-resends the retained byte-identical request body with the same idempotency key;
-it does not construct a new mutation request.
-
-The durable conversation store is a clean break from session-history UI. Every
-append writes the immutable conversation snapshot, event, optional episode,
-turn, citation, memory, plan revision, and job artifacts before it atomically
-replaces the private per-conversation head. Each commit names the exact
-previous commit artifact and hash. Loading walks that chain backwards from the
-head to sequence one, verifies canonical bytes, content identities, sequence,
-snapshot progression, and every cross-artifact binding, then reconstructs the
-chronological read model. A failed publication leaves unreferenced immutable
-artifacts but no visible history; corrupt heads are reported separately. There
-is no legacy conversation reader, migration, or old workbench route.
-
-The current turn boundary is real but deliberately bounded. The creator may
-start new work or a follow-up when the current hash-bound turn contract allows
-it; clarification and plan refinement are allowed only in the matching active
-episode. A refinement supersedes the transaction candidate before requesting a
-new agent outcome, and the resulting plan revision records its predecessor.
-Structured approvals, rejection, refresh, retry, recovery, and rollback remain
-actions from the current `CreatorControlView`, never free-form text.
-
-The following work is intentionally not claimed as implemented by this
-presentation milestone:
-
-- durable execution after the local creator service exits;
-- automatic resumption or retry of a foreground provider or Studio action;
-- live collaborative merging or concurrent writers;
-- a filesystem output before the creator explicitly uses Studio's Save to File
-  flow.
-
-## Final information architecture
-
-Projects represent Studio places (including local `.rbxlx` files), identified by
-the explicit linked or published identity. Each project contains independent
-conversations. A conversation contains its own turns, decisions, evidence, and
-work episodes. The sidebar groups conversation titles under project filenames.
-
-```text
-┌────────────────┬──────────────────────────────────────────────┐
-│ Forge          │ game.rbxlx / conversation   Details  Settings │
-├────────────────┼──────────────────────────────────────────────┤
-│ Projects       │                                              │
-│ New conversation│           You / Forge messages              │
-│ game.rbxlx     │           Plans and decisions                 │
-│   Airlock fix  │           Actual agent steps                  │
-│   HUD layout   │                                              │
-│                ├──────────────────────────────────────────────┤
-│                │ Message Forge…                 Model   Send  │
-└────────────────┴──────────────────────────────────────────────┘
-                    Settings and details open only on demand.
-```
-
-- **New conversation** creates a separate durable chat under the same project.
-  It makes no Studio identity mutation and invokes no model. The action is
-  hash-bound and idempotent.
-- The **chat** has its own context. Only explicit project preferences are shared
-  across chats; other conversations' messages and evidence are excluded.
-- **Project settings** is a one-click, focus-managed modal with Preferences,
-  Connection, and Advanced tabs. Escape, the close button, or the backdrop
-  dismisses it. Memory forms never appear in the conversation timeline.
-- The **composer** is anchored below the independently scrolling chat. The
-  coordinator chooses the permitted turn kind; the UI has no New work,
-  Follow-up, or Message type selector. Enter sends and Shift+Enter adds a line.
-  The textarea grows with the draft, keeps the selected model after sending,
-  and accepts a draft while the agent works without admitting a second turn.
-- **Agent activity** reports the exact reserved execution journal's completed
-  tools, elapsed time, and present step. A single service invalidation interval
-  updates the existing SSE/store path while work runs. It invents no reasoning,
-  completion percentage, or tool result.
-- **Details** retains event authority, exact model IDs, hashes, citations,
-  traces, source inspection, artifacts, and replay in a lazy sheet.
-- A different chat with unfinished project work blocks new provider admission.
-  The existing lower coordinator remains the final single-writer authority.
-
-The project sidebar collapses into a drawer below 900 px. Settings is hidden
-by default at every width, and the composer remains reachable on small screens.
-Navigation, dialogs, and messages use short transitions; reduced-motion users
-receive the same state changes without animation. Keyboard focus stays inside
-open dialogs and returns to the invoking control when they close.
-
-## The conversational model
-
-The final conversation must be reconstructed from durable project and session
-evidence. React may not fabricate a transcript from current status strings.
-
-The product model has five distinct objects:
-
-| Object               | Purpose                                                       |
-| -------------------- | ------------------------------------------------------------- |
-| project conversation | long-lived relationship around one Studio project identity    |
-| conversation turn    | immutable creator or agent communication                      |
-| work episode         | one bounded plan/build/apply/verify/review transaction        |
-| conversation event   | durable status, decision, refresh, evidence, or recovery fact |
-| project memory item  | explicit, inspectable continuity across work episodes         |
-
-A conversation event binds to the exact project revision and, where relevant,
-the exact creator session, plan, change set, evidence artifact, or control-view
-hash. Ephemeral typing and animation may disappear after restart; durable
-conversation history may not.
-
-### Durable chronology, context, and foreground work
-
-`CreatorConversationStore` keeps one append-only commit chain per conversation.
-The mutable head is only a private pointer to the latest immutable commit; it
-is not a transcript cache and cannot skip an event. A commit binds the current
-conversation snapshot, one exact event, and the optional record introduced or
-updated at that event. The head and every predecessor are revalidated on load.
-This lets the shell rebuild history after a normal service restart without
-inventing a card from current status strings.
-
-The model does not compose the durable context or mint citations. Before an
-agent turn, the host seals a `CreatorConversationContext` artifact containing
-the selected model, current project identity/revision, active memory revisions,
-the latest 20 durable turns, the latest 20 creator decisions, and the exact
-current turn. It is capped at 128 KiB and explicitly labels quoted history as
-creator context, not evaluator authority. The model can select only citation
-handles issued by the host for that exact AgentRun. Project and source tools
-issue current-fact and hash-verified source-range handles; the bounded
-conversation context issues handles for the exact memory revisions and prior
-evidence attachments it includes. Forge resolves only those issued handles
-into immutable conversation citations and records their revision/hash
-provenance with the agent turn. The model cannot mint an unbound claim by
-spelling a handle-shaped string.
-
-Admitted work is foreground-only. Before a planner, builder, or repair phase
-can call a provider, its `CreatorWorkJob` reserves an immutable
-`AgentExecutionSlot` for one AgentRun and the journal ID derived from that run.
-The append-only `AgentExecutionJournal` seals `request_intent`,
-`response_received`, `batch_validated`, `tool_completed`, and `terminal`
-boundaries with the exact host state. The coordinator runs that job only in the
-live local creator service. There is no worker daemon, detached queue, or
-automatic restart execution.
-
-On restart, Forge reads—not synthesizes—the journal. No head is
-`never_dispatched` and exposes **Resume work**, which creates a fresh job,
-AgentRun, and journal slot. A `request_intent` without a persisted response, or
-a `tool_execution_intent` without matching `tool_completed`, remains
-`outcome_unknown` and exposes **Retry work** with a fresh slot rather than an
-ambiguous resend. A fully persisted response with all completed tool records
-and no pending execution intent exposes **Resume work** instead: only explicit
-creator authorization consumes that exact response/tool-completion boundary in
-the same reserved AgentRun and journal, without re-dispatching the response.
-Forge does not reconstruct opaque provider continuation. A terminal journal may
-only publish already-persisted deterministic local output; it never dispatches
-the provider again. Neither recovery path inherits Studio mutation authority.
-The UI says to keep Forge running while activity is active; closing the browser
-is harmless, but service exit stops work and is never represented as background
-completion.
-
-The public `CreatorControlView` remains the sole action-legality contract. A
-conversation card can render only the bounded action descriptors present in
-that view. `CreatorTransactionControlView` and its primary/secondary actions
-belong to the lower transaction coordinator; they are not a second public
-control surface. Changing a label or moving an action into a conversational
-card does not permit React to infer that the action is legal.
-
-### Turn semantics
-
-The final product supports four kinds of creator turn:
-
-- **new work:** begins a new work episode from the latest complete revision;
-- **clarification:** supplies requested information before a plan is published;
-- **plan refinement:** invalidates the prior candidate and requests a new
-  immutable plan revision without Studio mutation;
-- **follow-up:** begins later work in the same project conversation after a
-  terminal decision.
-
-A free-form message never substitutes for a structured approval, rejection,
-refresh, retry, recovery, or rollback action. Those remain explicit controls.
-
-### Agent presence
-
-Forge speaks as one consistent collaborator:
-
-- concise and direct during routine work;
-- specific about what it read and what remains uncertain;
-- willing to recommend a direction and explain tradeoffs;
-- calm during technical failure;
-- never celebratory before the corresponding durable result;
-- never personifying background work that is not actually running.
-
-The agent should use first person sparingly and naturally: “I found the airlock
-state machine in these three scripts” is useful when backed by citations. “I
-remember everything about your game” is not.
-
-### Model selection
-
-Forge is the stable project agent; the selected model is the engine used for a
-specific turn or work episode. Changing the engine must not create a second
-persona, discard project memory, or rewrite which model made an earlier
-decision.
-
-The composer includes a compact **Model** selector with these initial choices:
-
-| Display name      | Exact model ID                    |
-| ----------------- | --------------------------------- |
-| Muse Spark 1.3    | `meta/muse-spark-1.3-contributor` |
-| GLM 5.3 Flash     | `z-ai/glm-5.3-flash`              |
-| DeepSeek V4 Flash | `deepseek/deepseek-v4-flash-0731` |
-| GPT-5.6 Luna      | `openai/gpt-5.6-luna`             |
-| Gemini 3.8 Flash  | `google/gemini-3.8-flash`         |
-
-`openai/gpt-5.6-luna` is the initial default. This is an exact five-entry,
-host-owned allowlist, not a suggestion list. The list is not hardcoded inside a
-React component: the control server serves a sealed ordered registry with the
-stable labels, default, required `tools` capability, and availability state.
-An OpenRouter catalog probe can establish `available` or `unavailable`; an
-absent, malformed, duplicated, or incomplete catalog result is `unknown` in
-the dashboard and is not selectable there.
-
-Selection rules:
-
-- the selected model is visible before the creator sends a message or starts a
-  work episode;
-- selection becomes immutable for the resulting AgentRun and is recorded in
-  its trace and conversation event;
-- changing the selector while no agent turn is active applies to the next turn;
-- an in-flight planner, builder, or repair is never restarted or transferred
-  because the selector changed;
-- a plan refinement may use a newly selected model, but its new plan revision
-  records that model explicitly;
-- planner and builder use the selected work-episode model unless a future
-  reviewed policy explicitly exposes separate role choices;
-- model unavailability produces a directed error and preserves the unsent
-  message; the registry, model client, and agent attribution all disable model
-  and provider fallback;
-- every model receives the same authority-bounded context for its role.
-  Selecting a model never expands source access, tool access, Studio authority,
-  budgets, or hidden evaluator access;
-- conversation continuity and project memory belong to Forge's durable host
-  state, not to a provider session.
-
-The CLI has the same bound refinement choice:
-`forge creator act <conversation-id> <action-instance-id> --model
-<registered-model-id>`. `--model` is accepted only by the current **Change the
-plan** action; omitting it selects the current sealed registry default. It
-cannot replace the model sealed into an already approved plan's builder or
-repair run, and it never falls back to another model/provider.
-
-The collapsed selector shows the friendly display name. The menu shows both the
-display name and exact provider/model ID so a technical creator can distinguish
-similarly named releases. An agent outcome is accepted only when the persisted
-response reports the requested model and an exact serving provider; the durable
-agent turn records both. Technical details records the resulting agent run and
-its attached trace when the coordinator has sealed them.
-
-## End-to-end conversation
-
-### 1. Open and connect a project
-
-The creator starts `forge creator serve`, opens the one-time dashboard URL, and
-opens the Forge connector beside any platform-valid Studio place.
-
-The header communicates the ordinary state in creator language:
-
-- **Studio ready** when project, connector, manifest, attestation, and durable
-  transaction inventory are compatible;
-- **Connecting to Studio** while those checks are pending;
-- **Studio connector needs an update** when build or manifest identities differ;
-- **Studio needs attention** when a retained recording or finalization receipt
-  requires exact recovery.
-
-Pairing is not mutation consent.
-
-### Studio connector presentation
-
-The native plugin uses the dashboard's charcoal surfaces, lavender accent,
-rounded controls, and plain language. Its main view contains the place name,
-connection state, current Studio activity, and up to three recent steps. Actual
-command boundaries drive activity; receiving a result never implies that a
-test passed. Full conversation progress remains in the dashboard.
-
-**Settings** opens a dismissible popup with **Connection** and **Details** tabs.
-The service address, disconnect control, motion preference, and copyable raw
-diagnostics live there. Project preferences remain in dashboard project settings.
-The plugin toolbar toggles the panel without disconnecting it. Narrow panels
-scroll, controls have at least 44-pixel targets, and motion follows the system's
-accessibility preference or an explicit reduced-motion choice.
-
-The plugin only shows **Run approved test** when the existing runtime authority
-permits it. A creator-driven Play check continues to ask the creator to use
-Studio's Play and Stop controls. Retained recovery state stays visible across
-connection changes; invalid saved test data has an explicit discard action.
-
-### Project continuity is explicit
-
-Published and local places have different authority keys. A published place is
-the exact `(universeId, placeId)` pair. A local place has no platform identity
-and cannot start a durable conversation until it carries an observed reserved
-Workspace attribute, `_forgeProjectId`. The dedicated identity protocol is
-separate from the generated authoring manifest and permits only two
-host-issued, exact-state operations for a local place:
-
-- **Link** writes a fresh Forge project ID only when the attribute is absent.
-- **Fork** writes a different fresh Forge project ID only when an observed
-  local ID already exists.
-
-Both operations bind the connector epoch and complete before/after identity
-observations, use their own visible ChangeHistory recording, directly read back
-the Workspace attribute, persist a finalization receipt, and require an exact
-host acknowledgement. An opening/open/finalizing identity cursor is recovery,
-not permission to repeat the operation. Identity work cannot overlap a creator
-recording or an unknown Studio recording.
-
-Consequently, **File → Save As** of a linked local place preserves the copied
-local ID until the creator explicitly forks it; it is not silently treated as a
-new project. Publishing is a clean continuity decision in the other direction:
-platform identity becomes authoritative and an embedded local ID remains
-observable only. Forge does not silently bind a published place to that local
-conversation, and the local identity protocol cannot mutate a published place.
-The current coordinator exposes **Link project** for an absent local identity
-and **Fork project** for an observed local identity. Published places carrying
-an embedded local identity receive the explicit **Continue this conversation**
-or **Start a new project conversation** choice. None of these identity outcomes
-is inferred from a filename.
-
-### 2. Ask for a change
-
-The empty conversation asks:
-
-> What do you want to make?
->
-> Describe a feature, fix, or change for the open Studio project.
-
-The creator's message is preserved exactly. Forge collects a complete project
-index before the planner proposes anything. During a long collection, one
-activity event explains that Forge is reading the project; the interface does
-not append polling chatter or invent a percentage.
-
-Before sending, the creator may choose the model for this work episode from the
-composer. The resulting request event shows that choice as quiet metadata so
-later history accurately attributes the plan and build.
-
-### 3. Explore the existing project
-
-The agent can search and read hash-verified source, inspect symbols and
-references, and traverse static dependencies before choosing what should
-change. The conversation shows only the important result:
-
-> I found the server authority in `AirlockService`, the shared state contract in
-> `AirlockTypes`, and the client display in `AirlockController`.
-
-Each cited path opens the exact indexed source range and source hash in
-Technical details. Dynamic or unresolved dependencies remain visibly
-unresolved; Forge does not guess.
-
-Static analysis is labeled as code understanding, never machine-observed
-gameplay.
-
-### 4. Review and refine the plan
-
-The plan card answers:
-
-1. What will change?
-2. Why these parts of the project?
-3. How will Forge check the result?
-4. What will still require creator judgment?
-
-The collapsed view stays concise. **View full plan** opens exact paths,
-initialization commitments, source consultation, output-check coverage, and
-charter clauses.
-
-Target actions are:
-
-- **Build this**;
-- **Change the plan**;
-- **Don't build this**.
-
-**Change the plan** requires a new durable plan-revision contract. It cannot be
-implemented as a cosmetic relabeling of current rejection.
-
-### 5. Build and review the exact change
-
-One activity card updates in place while the builder works. When ready, the
-change card groups operations in creator language:
-
-- add a server script;
-- update two existing modules;
-- add interaction prompts;
-- change three properties;
-- preserve the scenery subtree.
-
-Affected scripts open directly into a focused source diff. The creator should
-not have to copy an operation ID into a technical form.
-
-The detailed view retains exact opaque target identities, display paths,
-properties, UTF-8 edits, hashes, local-gate status, mutation authority, and
-projected readback obligations.
-
-Target actions are **Apply changes**, **Request changes**, and **Don't apply**.
-Requesting changes opens a feedback field and starts a new plan after revoking
-the old draft's authority. The successor needs new approvals; an already
-applying or applied change cannot use this refinement path.
-
-### 6. Handle creator edits
-
-If the creator changes Studio while Forge is planning or waiting for approval,
-the conversation receives one **Project changed** event. It explains what is
-stale and offers **Refresh project**.
-
-An unchanged complete Merkle root clears the advisory notice. A changed root
-records the delta and starts a successor work episode with the same creator
-goal but no inherited plan, consultation, approval, change set, or action
-authority. The technical session boundary is visible in history without
-splitting the creator's project conversation.
-
-Activity during a possible Forge recording enters recovery instead of refresh.
-
-### 7. Apply provisionally
-
-The successful path is one approved operation from the creator's perspective:
-
-1. Forge rechecks the exact project revision.
-2. Studio performs detached capability preflight.
-3. Studio opens one ChangeHistory recording.
-4. The approved change is applied provisionally.
-5. Forge persists direct readback and a complete post-apply project index.
-6. Pure reconciliation proves whether the approved delta matched.
-
-The conversation shows one activity event, followed by **Changes applied** only
-after complete matched evidence. Mismatch and incomplete evidence produce
-different cards and never commit.
-
-### 8. Test with ordinary Play
-
-After matched provisional Apply, Forge silently arms the next ordinary Studio
-Play session. The creator presses Play, performs the interaction, and presses
-Stop.
-
-The Play card has four truthful moments:
-
-- **Ready to test:** the provisional mutation matched and the next Play is armed;
-- **Waiting for Play:** Studio has not reported runtime start;
-- **Watching your test:** the exact runtime-start lifecycle message arrived;
-- **Checks complete:** Stop sealed a pass, behavioral failure, or incomplete
-  technical result.
-
-Forge does not show invented live fact progress. Creator-only checks are labeled
-**Check this yourself**. Visual quality, client-only behavior, causal experience,
-and unsupported interaction claims remain creator judgment.
-
-Outcomes:
-
-- complete pass advances to commit;
-- complete behavioral failure follows the bounded cancellation-and-repair path;
-- incomplete technical evidence preserves the provisional recording and offers
-  **Try the test again** and **Undo changes**;
-- uncertain recording state enters visible recovery.
-
-Retry is explicit. Forge never silently re-arms after an incomplete Play.
-
-### 9. Review and decide
-
-After exact commit acknowledgement and matching post-commit state, the final
-card asks:
-
-> How did it feel?
-
-The creator writes a required 1–4096-byte report. Approved creator-review
-prompts appear as suggestions, not machine assertions.
-
-Target actions are **Keep changes** and **Undo changes**. The same report is
-required for both. The report is creator-authority evidence and is never parsed
-into machine-observed claims.
-
-### 10. Continue the relationship
-
-After the decision, the composer remains available for a follow-up in the same
-project conversation:
-
-- “Make the warning lights less intense.”
-- “Now add a second airlock using the same server state machine.”
-- “Explain why you put this module in ReplicatedStorage.”
-- “I changed the controls myself—read the project again.”
-
-Each new work episode starts from a fresh complete index. Prior context helps the
-agent orient itself, but current project evidence wins over memory.
-
-### 11. Export the place
-
-An accepted Studio transaction is not yet a host filesystem output. The
-terminal card says:
-
-> The accepted result is in Studio. Use **File → Save to File**, choose a new
-> destination, and save as `.rbxlx`.
-
-Forge does not claim a place file exists until the creator performs that Studio
-action.
-
-## Optional Rojo source conversation
-
-The default `studio_document` authority treats the open place as the writer,
-regardless of its origin.
-
-When the creator explicitly launches Forge with a verified
-`--project-authority` manifest, mapped Luau source may use `rojo_source`.
-Generic instance/property work remains Studio-owned, and one work episode has
-exactly one mutation authority.
-
-After a guarded filesystem write, the conversation shows **Waiting for Studio
-sync** rather than claiming success. It offers **Check Studio sync** and, only
-when exact post-write hashes permit it, **Revert source changes**. Forge never
-starts Rojo live sync or presents mixed Studio/filesystem work as atomic.
-
-## Conversation cards
-
-### Creator message
-
-Preserve the creator's authored line breaks. Show its time and project-revision
-boundary on demand, not as noisy default metadata.
-
-### Agent exploration
-
-Summarize what Forge inspected and why it matters. Source citations open exact
-immutable ranges. Do not dump tool transcripts into the conversation.
-
-### Plan
-
-Lead with the outcome, changed systems, check strategy, and creator-review
-boundary. Full charter and consultation details are secondary.
-
-### Changes
-
-Summarize creates, edits, moves, deletes, and source changes. Show affected
-scripts and risk-relevant properties. Exact operations and proof obligations
-remain inspectable.
-
-### Activity
-
-One card updates in place for indexing, planning, building, preflight, Apply,
-Play observation, repair, cancellation, commit, refresh, or source sync. It may
-show elapsed time when useful but never synthetic completion percentage.
-
-### Playtest
-
-Show what to try, when Play actually starts, what Stop sealed, which checks were
-machine-observed, and which remain creator-reviewed.
-
-### Project changed
-
-Explain that Forge noticed an edit, what work became stale, and what explicit
-refresh will do. Show predecessor, delta, and successor in Technical details.
-
-### Final review
-
-Collect the required report beside the exact keep/undo decision. Preserve the
-approved creator-review prompts as writing aids.
-
-### Recovery
-
-State:
-
-1. what Forge knows;
-2. what remains uncertain;
-3. whether Studio might contain an open provisional change;
-4. the one exact legal action, if any.
-
-Only a freshly proven exact open recording may expose **Undo interrupted
-changes**.
-
-## Target terminology
-
-Internal names remain valid in code and Technical details. The primary
-conversation uses creator language.
-
-| Internal concept            | Conversation term                       |
-| --------------------------- | --------------------------------------- |
-| complete project index      | project read / current project revision |
-| source consultation         | code Forge inspected                    |
-| plan approval               | Build this                              |
-| change approval             | Apply changes                           |
-| mutation projection         | exact changes Studio must prove         |
-| preflight                   | checking Studio compatibility           |
-| provisional mutation        | changes applied, not final yet          |
-| matched reconciliation      | Studio matches the approved changes     |
-| creator verification arm    | ready to test                           |
-| runtime lifecycle started   | watching your test                      |
-| incomplete runtime evidence | Forge couldn't confirm everything       |
-| refresh successor           | refreshed work episode                  |
-| `awaiting_source_sync`      | waiting for Studio sync                 |
-| creator review report       | what you observed                       |
-| provider-free replay        | recheck saved evidence                  |
-| recovery cancellation       | undo interrupted changes                |
-
-Technical words such as artifact, attestation, manifest, projection, mutation,
-reconciliation, receipt, binding, hash, and replay belong in Technical details
-unless the technical distinction itself changes the creator's decision.
-
-Action labels are coordinator-produced and included in the control-view hash.
-The final conversational labels must therefore be implemented in the
-coordinator contract, not translated opportunistically in React.
-
-## Technical details
-
-Technical details is a lazy, focus-managed modal sheet. It displays the
-selected event's sequence, authority, hashes, revision/control-view bindings,
-host-issued citation targets, and the event/control-view attachments. A creator
-may load raw JSON only for an attachment the coordinator sealed and authorized;
-the sheet does not manufacture missing source, coverage, diff, timing, or replay
-data. Escape and backdrop close it, focus returns to the triggering control,
-and keyboard focus remains within the open sheet.
-
-The attached evidence can retain Forge's full auditability:
-
-- complete project-index identity, health, roots, counts, bytes, and artifacts;
-- current editor-source hashes and chunk manifests;
-- source search, reads, symbols, references, and dependencies;
-- exact source consultation and unresolved edges;
-- full plan, charter, build contract, and output-check coverage;
-- exact operation list and source edits;
-- Studio manifest, connector build, capability coverage, and attestation;
-- preflight, direct readback, before/after delta, and reconciliation;
-- runtime plan, facts, diagnostics, and creator-only claim boundary;
-- agent runs, provider turns, tool calls, timings, and build traces;
-- finalization, checkpoint, creator report, and recovery receipts;
-- mutation and verification replay.
-
-Raw JSON is lazy-loaded. Monospace is reserved for source, paths, hashes,
-timings, identities, and compact data. Every technical view links back to the
-conversation event it supports.
-
-The removed `SourceExplorer` and `CapabilityExplorer` are not parallel routes.
-A richer source/API browser can be added inside this sheet only when it remains
-bound to the same sealed attachments and does not become alternate workflow
-authority.
-
-## Truth and evidence boundaries
-
-| Evidence                          | May support                                                                    | May not claim                                          |
-| --------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| project index                     | indexed structure, covered properties, attributes, tags, current source hashes | unsupported property preservation or gameplay behavior |
-| source analysis                   | facts about hash-verified text, symbols, references, and static dependencies   | code execution or runtime correctness                  |
-| local gate                        | syntax, static policy, and bounded host checks                                 | Studio mutation or Play success                        |
-| direct readback and project delta | exact provisional mutation postconditions                                      | player-visible experience                              |
-| runtime evidence                  | sealed, projection-bound Play Server facts and diagnostics                     | client-only visuals or creator intent                  |
-| creator report                    | what the creator says they observed and decided                                | machine or Studio facts                                |
-| project memory                    | prior accepted decisions and explicit preferences                              | current facts contradicted by a newer revision         |
-
-Complete evidence that disagrees with the expected result is a replayable
-failure. Missing, duplicated, extra, unavailable, read-error, invalidly ordered,
-stale, or tampered required evidence is incomplete and cannot receive an
-invented verdict.
-
-## Failure and recovery writing
-
-Every failure card answers, in order:
-
-1. What stopped?
-2. Did Studio remain unchanged, stay provisional, commit, or become uncertain?
-3. What can the creator do now?
-4. Where is the exact technical evidence?
-
-Use a human consequence before a technical code:
-
-- **Forge couldn't finish the plan**, then the precise planner boundary;
-- **These changes did not pass the local checks**, then the rejected gate;
-- **Forge couldn't confirm everything**, then missing or unreadable Play facts;
-- **Studio connector needs an update**, then the build/manifest mismatch;
-- **Reconnect Studio to safely finish this change**, then the retained
-  transaction detail.
-
-Do not apologize, celebrate prematurely, hide a meaningful failure behind
-“Something went wrong,” or place an unbounded stack trace in the primary card.
-
-## Visual system: focused workspace
-
-The visual hierarchy follows the requested Codex-like workflow: a quiet
-project sidebar, a readable chat, restrained decision cards, and an anchored
-composer. The grid background, permanent context column, and decorative
-evidence seam are removed.
-
-| Token     | Value     | Use                            |
-| --------- | --------- | ------------------------------ |
-| Canvas    | `#202126` | conversation background        |
-| Sidebar   | `#191A1E` | project navigation             |
-| Text      | `#EEEFF3` | primary text                   |
-| Muted     | `#A1A6B2` | secondary text                 |
-| Focus     | `#A6B7FF` | keyboard focus and active work |
-| Confirmed | `#7EC9B0` | connection and completed steps |
-
-Spline Sans carries the interface; IBM Plex Mono is confined to code and
-technical evidence. Main text is left aligned within an 820 px maximum
-column. Creator messages have a subdued inset background; agent messages
-remain open text. Only decisions need bordered cards. The active work dot
-has a restrained pulse, removed under reduced motion.
-
-## Accessibility and responsive behavior
-
-- Preserve visible focus on every control, citation, disclosure, and source
-  body.
-- Use semantic buttons, headings, lists, forms, dialogs, and status regions.
-- Announce one bounded durable event without rereading the full conversation.
-- Do not rely on color, motion, or position alone.
-- Return focus to the originating event when Technical details closes.
-- Keep touch targets at least 44 px in both dimensions.
-- Support browser zoom, long prompts, long paths, and long reports without
-  clipped actions or horizontal page scrolling.
-- Keep final actions reachable without covering the creator report.
-- Preserve the last durable conversation when the control API is temporarily
-  unavailable.
-
-## Frontend data and event rules
-
-The current module-level store, `useSyncExternalStore`, single SSE invalidation
-source, and one-refetch-per-invalidation behavior remain. The redesign must not
-open one event stream per card.
-
-The coordinator produces the durable conversation read model. It includes:
-
-- project conversation identity and current Studio project identity;
-- ordered immutable turns and workflow events;
-- exact project revision at each event;
-- work-episode and predecessor/successor relationships;
-- evidence attachments and source citations;
-- current activity;
-- inspectable project memory;
-- ordered available models, current next-turn selection, and immutable model
-  attribution on every agent-authored event;
-- the current canonical `CreatorControlView`.
-
-The read model is presentation data, not alternate workflow authority. The UI
-may render history and memory from it, but may render a state-changing action
-only from the exact current control view.
-
-## Completed component cutover
-
-| Removed workbench component | Conversation responsibility                                                                                          |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `PromptComposer`            | `ChatComposer` with model selection and hash-bound new-work, clarification, refinement, and follow-up turn contracts |
-| `SessionHistory`            | `ProjectRail` with places and independent conversations                                                              |
-| `EvidenceSpine`             | Event details and journal-derived activity                                                                           |
-| `ArtifactWorkbench`         | inline plan/change/Play/review cards plus `TechnicalDetailsSheet`                                                    |
-| `StudioConsentDock`         | `ProjectSettings` modal and inline hash-bound decisions                                                              |
-| `SourceExplorer`            | host-issued citation target and sealed technical attachment                                                          |
-| `CapabilityExplorer`        | sealed technical attachment; no primary-route explorer                                                               |
-| `DashboardNotice`           | bounded connection notice and durable incomplete/recovery event                                                      |
-
-This is a clean replacement. Do not retain the old evidence dashboard as a
-parallel route or introduce old/new conversation schemas.
-
-## Next implementation sequence
-
-1. **Identity canary.** Creator-run Link, Save to File, close/reopen, pair, and
-   then Fork/published-continuity choices must prove that explicit identity
-   receipts survive the documented place-file boundary without filename
-   inference.
-2. **Conversation canary.** Run one selected-model turn, refine its plan,
-   build, Apply, Play/Stop, report, and keep/undo through the conversation
-   surface while the foreground service stays running. Record exact journals,
-   artifacts, and claim boundaries.
-3. **Evidence-native expansion.** Add source/diff/API views inside Technical
-   details only from sealed attachments; do not recreate a workbench route.
-4. **Long-running continuity.** A daemon/background executor remains deferred.
-   It needs a separately designed and proven authority model before any claim
-   that work survives `creator serve` exit; the current exact-journal/fresh-run
-   recovery rule remains in force.
-5. **Studio canary ledger.** Preserve the resulting user-run evidence before
-   promoting this shell from presentation-ready to Studio-demonstrated.
-
-Each phase replaces its superseded surface outright. No compatibility reader,
-dual UI path, or status-derived action logic is added.
-
-## Acceptance criteria
-
-The long-horizon creator experience is complete only when:
-
-- a creator can return after days or weeks and understand what happened, what
-  the agent remembers, and what the project currently contains;
-- any platform-valid open place can enter the conversation without prior Forge
-  metadata;
-- the agent can inspect unfamiliar source before proposing a plan and cite what
-  it consulted;
-- the creator can select any available initial model, see the choice before
-  sending, and recover an unsent message if that model is unavailable;
-- every AgentRun and agent-authored conversation event records the exact model,
-  with no silent fallback or in-flight model change;
-- plan refinement is real, immutable, revision-bound, and does not mutate
-  Studio;
-- creator edits produce an understandable refresh event rather than stale
-  overwrite or silent merge;
-- every displayed state-changing action comes from the exact hash-bound
-  `CreatorControlView`;
-- the happy path reads as ask → plan → apply → Play → review → continue;
-- complete failure and incomplete evidence remain visibly different;
-- machine checks, static analysis, prior memory, and creator observations retain
-  separate authority;
-- recovery never implies an automatic Studio mutation;
-- the full plan, source, diff, evidence, diagnostics, timings, hashes, and replay
-  remain accessible without dominating the conversation;
-- the creator can inspect, correct, pin, and forget remembered preferences;
-- the terminal view explains the Studio `.rbxlx` Save to File boundary;
-- loading, empty, unpaired, active, incomplete, recovery, terminal, and API
-  error states work by keyboard, under reduced motion, at narrow widths, and
-  with long content;
-- the old workbench is removed rather than retained as a second route.
-
-## Non-goals
-
-- copying Lemonade's brand or exact interaction design;
-- presenting different models as separate project agents or silently routing a
-  turn to an unselected fallback;
-- pretending the current immutable single-request session is already a durable
-  multi-turn conversation;
-- turning remembered inference into project fact;
-- executing project source to understand it;
-- presenting static analysis as runtime proof;
-- silently merging creator edits into approved work;
-- inferring Rojo authority from an opened place;
-- claiming mixed Studio/filesystem mutations are atomic;
-- moving creator workflow controls back into the Studio plugin;
-- automatically pressing Play, Stop, Save to File, commit, cancel, or rollback;
-- hiding evidence incompleteness or recovery for a smoother-looking path;
-- making the Roblox API catalog the creator's primary workspace.
-
-## Related rationale and references
-
-- [Existing-project intelligence and refresh](research/existing-project-intelligence.md)
-- [Execution isolation boundaries](research/execution-isolation-boundaries.md)
-- [Mutation reconciliation](research/mutation-reconciliation.md)
-- [Studio capability completeness](research/studio-capability-completeness.md)
-- [Durable Creator Conversation](research/durable-creator-conversation.md)
-- [Lemonade](https://lemonade.gg/)
-- [Lemonade Roblox Developer Forum walkthrough](https://devforum.roblox.com/t/ai-gameday-with-lemonade-day-1-herding-cats/4083155)
+Each conversation has its own context. Send a goal, a question, or a follow-up in
+the same chat. Forge reads the current project as needed and keeps prior decisions
+and creator preferences distinct from current observations. Long chats automatically
+compact older history into a durable handoff while retaining the transcript.
+
+The composer starts small, grows as text is entered, and scrolls internally after
+its height cap. The model selector stays available beside Send. Send behavior is
+configurable in project settings; the interface displays the relevant shortcut.
+Drafts survive ordinary navigation and reconnects in the same browser tab.
+
+Search finds conversations, and pins keep selected chats easy to reach. Sidebar
+collapse and keyboard shortcuts make room for the chat. Renaming is inline:
+Enter saves and Escape cancels.
+
+## Watch the work
+
+Public agent commentary appears as Markdown in the conversation. A quiet activity
+row summarizes the current goal and shimmers while work is active. It expands
+inline into chronological tool steps; individual steps reveal the tool and target
+or error details. Completed activity collapses into a compact elapsed-time summary.
+
+Activity reports actual model/tool or host work. A pending Studio operation does
+not imply another model request. Private provider reasoning and opaque continuation
+are not presented as chat messages. Request count and reported usage remain
+available in activity details.
+
+The chat follows new content while the reader is at the end. Scrolling up or
+expanding earlier activity preserves the reading position. Jump-to-latest and a
+successful message send return to current work. Message timestamps show the time
+for today and the date for older messages.
+
+## Review a plan
+
+Planning does not edit the place. The proposed plan shows concise steps and
+optional guidance for what to inspect in Studio. Generated structural checks,
+source evidence, and typed contracts are retained in Details instead of occupying
+the main plan card.
+
+Choose one of the available actions:
+
+- **Accept plan:** build, check, and automatically apply changes within its bounds.
+- **Change plan:** explain the adjustment in the conversation.
+- **Reject plan:** end that proposal without editing the project.
+
+The builder may inspect its approved context and stage changes virtually. A
+completed build is not shown as applied until the host receives the required
+Studio transaction evidence. The conversation presents one final Markdown result.
+Source diffs and typed changes remain inspectable in Details.
+
+## Test and continue
+
+Save the edited place from Studio. Press ordinary Play whenever you want, exercise
+the behavior, and press Stop. The plugin quietly records bounded server diagnostics
+for a later follow-up. Play is optional and does not hold the conversation open,
+produce repeated waiting messages, or automatically start repair.
+
+Describe any issue in the same conversation. Report what you actually observed;
+Forge keeps that judgment distinct from static analysis and captured engine facts.
+A successful edit does not establish that the generated UI fits every screen or
+that gameplay is correct.
+
+## Settings and details
+
+**Project settings** contains editable preferences, conventions, and project
+controls. Preferences are creator context, not current Studio facts. Cosmetic names
+are independent from this memory and from the saved project identity.
+
+**Details** is the technical inspection surface for exact changes, source diffs,
+checks, citations, artifacts, traces, usage, and recovery diagnostics. These remain
+available without repeating internal identifiers and status transitions throughout
+the conversation.
+
+The plugin shows connection health and the current Studio action. It keeps the
+same restrained visual direction as the dashboard while leaving conversation,
+planning, and technical investigation in the browser.
+
+## Errors and recovery
+
+Show one readable explanation of the original failed boundary and the next valid
+action. Keep the full diagnostic in Details. Do not replace a preparation failure
+with a generic missing-outcome error or append duplicate failures during refresh.
+
+A browser disconnect preserves the draft and history. If the response to an action
+was lost, observe state before offering its explicit retry. Restarting the service
+never silently repeats a provider request, Apply, commit, or cancellation.
+
+Studio uncertainty blocks new work until the exact recording and receipt state
+is known. Only currently authorized recovery controls are actionable. Opening a
+different project leaves historical conversations readable but does not grant
+write authority over the new place.
+
+## Accessibility and presentation
+
+Use labeled SVG icons, visible keyboard focus, readable contrast, and accessible
+names for compact controls. Desktop density must not remove usable touch targets.
+Drawers and dialogs support keyboard closure and focus restoration. Reduced-motion
+preferences replace shimmer and animated transitions with a static presentation.
+
+Keep project navigation, transcript, and composer visually distinct. Technical
+controls belong in their dedicated surfaces, not repeated buttons on every event.
+Avoid exposing internal terms such as execution slots, evidence journals, or
+control-plane projections in ordinary progress prose.

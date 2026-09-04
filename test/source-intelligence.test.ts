@@ -1,3 +1,4 @@
+import { createTestFixtureSourceResolver } from "./helpers/source-fixtures.js";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -12,7 +13,6 @@ import {
   assertCreatorSourceConsultation,
   assertPinnedSourceAnalysisToolchain,
   createHashVerifiedChunkSourceResolver,
-  createTestFixtureSourceResolver,
   createStudioSourceIndex,
   findStudioSourceReferences,
   findStudioSourceSymbols,

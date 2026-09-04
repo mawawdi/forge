@@ -16527,7 +16527,7 @@
       "source": "forbidden"
     }
   ],
-  "evidenceContractHash": "98e9ee71a31c0a24da88d253b076e7c3dd48a7ef87229a8f26e9e9bfaccc9501",
+  "evidenceContractHash": "5545e051c13ea1c170246d305ec91ea7f03c2cc8e32bb49116843a784057d29e",
   "kind": "StudioCapabilityManifest",
   "limits": {
     "maximumDiagnostics": 32,

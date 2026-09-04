@@ -4501,7 +4501,10 @@ type AppendEventWithoutConversation = AppendEventInput extends infer Event
     : never
   : never;
 
-interface AgentRunView extends Pick<AgentRun, "creatorPhaseOutcome" | "error" | "toolCalls"> {
+interface AgentRunView extends Pick<
+  AgentRun,
+  "creatorPhaseOutcome" | "error" | "toolCalls" | "budgets"
+> {
   readonly kind: "AgentRun";
   readonly id: string;
   readonly model: { readonly name: string; readonly transport: string };

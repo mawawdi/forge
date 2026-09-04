@@ -1,3 +1,4 @@
+import { createTestFixtureSourceResolver } from "./helpers/source-fixtures.js";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -41,7 +42,6 @@ import type { ProjectAuthorityManifest } from "../packages/project-authority/src
 import {
   SourceConsultationRecorder,
   createPinnedLuauLspSourceIndex,
-  createTestFixtureSourceResolver,
   type SourceDocumentInput,
 } from "../packages/source-intelligence/src/index.js";
 import {

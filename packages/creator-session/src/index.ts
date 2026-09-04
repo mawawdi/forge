@@ -6635,7 +6635,7 @@ const BUILDER_DEFINITIONS: AgentToolDefinition[] = [
   ),
   definition(
     "studio.patch_properties",
-    "Edit named properties in an already staged create or update while preserving every other property, attribute, source and structural binding. Copy operationHash from the latest stage/patch receipt, or hash from studio.diff, into expectedOperationHash. Uses the same natural property shapes as studio.stage, including Color3 channels in 0..1. Each supplied property replaces that entire property's value; omitted properties remain unchanged. A stale hash or invalid property changes nothing.",
+    "Edit named properties in an already staged create or update while preserving every other property, attribute, source and structural binding. Copy operationHash from the latest stage/patch receipt, or hash from studio.diff, into expectedOperationHash. Uses the same natural property shapes as studio.stage, including Color3 channels in 0..1. Each supplied property replaces that entire property's value; omitted properties remain unchanged. Issue independent patches to different planChangeIds together in one response, using their observed hashes; patches to the same operation must wait for the preceding receipt. A stale hash or invalid property changes nothing.",
     {
       planChangeId: z.string().min(1),
       expectedOperationHash: z.string().regex(/^[0-9a-f]{64}$/),
@@ -9313,6 +9313,7 @@ export const CREATOR_BUILDER_SYSTEM_PROMPT = `You are Forge's Studio builder. Th
 WORKFLOW
 - Inspect the explicit inspectionPaths in one studio.inspect call; source.read is limited to the approved consultation closure.
 - Stage the approved implementation in one studio.stage call with {changes:[{planChangeId,...creativePayload},...]}. Include related scripts and property edits together. The whole batch succeeds or changes nothing, and returns one combined diagnostic review.
+- Send changes as a JSON array, never a string containing JSON. If a batch is rejected for its encoding, correct that encoding and resubmit the ready changes together. For repairs, issue independent patch calls to different planChangeIds in one response; wait between dependent edits to the same operation so its hash stays current.
 - Review your implementation against the request before staging. When the complete staging review has no errors, call forge.verify with your final Markdown summary next. Do not purchase more tool round trips to rediscover the unchanged draft you just authored; read_draft and patch tools are for specific diagnostics or missing code context.
 - New scripts use complete source. Existing edit_source changes use sourceEdits:[{startByte,endByte,replacement}] against the consulted UTF-8 source; never send source for an existing script. The host derives structure, verifies hashes and source bounds. Finish your implementation and security review before staging; do not use tool round trips as a scratchpad for each thought or line.
 - Stage/patch receipts automatically include strict diagnostics once every change is staged. Read those before making more changes. Group ALL related corrections to a script in one studio.patch_source call using the same sourceHash and original 1-based line ranges. Use studio.read_draft for code outside the supplied excerpts; never guess the current text or line numbers.

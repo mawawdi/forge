@@ -1,29 +1,27 @@
 # Forge Research Index
 
-This index separates research rationale and evidence from normative documentation. [ARCHITECTURE.md](ARCHITECTURE.md), [FORGE.md](FORGE.md), [EVALS.md](EVALS.md), and [ROADMAP.md](ROADMAP.md) define the current system. The smaller research set below retains only material that still explains a current architectural boundary or preserves unique runtime evidence.
+Research preserves design rationale and exact observations from recorded builds.
+It does not define the current system. Use [Architecture](ARCHITECTURE.md) for
+contracts, [Evaluation policy](EVALS.md) for claims, and [Roadmap](ROADMAP.md) for
+future work.
 
-| Document                                                                               | Classification                                         | Current relevance                                                                                                                                                                                                                                                                                                                                                            |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Deep research report](deep-research-report.md)                                        | Foundational transformation rationale                  | Source of truth for the move from mechanic compilation toward an observable Roblox agent harness and evaluation system.                                                                                                                                                                                                                                                      |
-| [Agent runtime report](agent-runtime-report.md)                                        | Current architectural rationale                        | Explains why Forge owns the native agent loop and keeps model providers behind a one-turn boundary. Provider comparisons remain dated research rather than current identity.                                                                                                                                                                                                 |
-| [Semantic-authority audit](research/semantic-authority-audit.md)                       | Current research rationale                             | Captures the failure patterns and authority rules behind the implemented provenance, visibility, enforcement, and leakage boundary.                                                                                                                                                                                                                                          |
-| [Studio capability evidence](research/studio-capability-evidence.md)                   | Runtime evidence ledger                                | Preserves earlier connector observations; they do not establish current authoring readiness.                                                                                                                                                                                                                                                                                 |
-| [Mutation reconciliation](research/mutation-reconciliation.md)                         | Current architectural rationale and evidence history   | Derives the closed capability manifest, explicit evidence presence, provisional transaction, provider-free replay, and model-checked recovery rules from the consumed Door Control observer failure, then records the later accepted replayable Door Control proof.                                                                                                          |
-| [Execution isolation boundaries](research/execution-isolation-boundaries.md)           | Current architectural rationale                        | Separates future microVM isolation for agent-generated code from authoritative Roblox Studio Play Solo evidence, and records what public Fly/Lemonade material does and does not establish.                                                                                                                                                                                  |
-| [Studio capability completeness](research/studio-capability-completeness.md)           | Implemented architectural rationale and source pin     | Records the 9,685-entry exhaustive class/datatype/enum/global/library account, 33-class/364-property-application proof-closed manifest, bounded source lookup, inherited and enum coverage, explicit property-level nullability plus typed Instance references, bounded runtime evidence, and immutable-manifest replay invariant against the pinned official Roblox source. |
-| [Existing-project intelligence and refresh](research/existing-project-intelligence.md) | Current architectural rationale                        | Defines the Studio-document authority boundary, current Script Editor truth, ephemeral identity and enrollment, sharded complete revisions, stable-cut versus immutable-transport authority, source consultation, explicit refresh successors, and per-change-set selection of the optional Rojo source adapter.                                                             |
-| [Durable Creator Conversation](research/durable-creator-conversation.md)               | Current architectural rationale and milestone boundary | Explains the clean-break immutable conversation chain/head, host-issued context/citations, exact planner/builder/repair journals and fresh-run-only restart recovery, fixed no-fallback model registry, explicit local/published identity continuity, creator memory authority, and the separation between local tests and the required Studio canary.                       |
-| [Transaction protocol integrity](research/transaction-protocol-integrity.md)           | Current architectural rationale and failure ledger     | Derives closed cross-language bindings, acknowledged at-least-once delivery, transaction epochs, phase-specific failures, and durable recording/finalization intent from the consumed post-approval Prepare rejection.                                                                                                                                                       |
+| Record                                                                       | Purpose                                                                                  |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| [Validation evidence](research/validation-evidence.md)                       | Unique run identities and classifications consolidated from former root-document ledgers |
+| [Conversation evidence](research/durable-creator-conversation.md)            | Conversation, identity, recovery, and UI observations from recorded builds               |
+| [Planning and Build measurements](research/compact-planning-acceptance.md)   | Exact model runs, usage, archived artifacts, and live acceptance limits                  |
+| [Mutation reconciliation](research/mutation-reconciliation.md)               | Why writes require independent readback and complete state comparison                    |
+| [Transaction protocol integrity](research/transaction-protocol-integrity.md) | Delivery, execution, and durable recording boundaries                                    |
+| [Capability completeness](research/studio-capability-completeness.md)        | Catalog accounting, codec closure, and reflection rationale                              |
+| [Execution isolation](research/execution-isolation-boundaries.md)            | Separation of agent execution from authoritative Studio observation                      |
 
-## Retention rules
+Historical workflow descriptions, old commands, counts, and pending actions apply
+only to their recorded builds. They are not alternate supported interfaces or
+current tasks. A written identifier does not guarantee its raw artifacts remain
+available after a store reset; external archives are evidence locations, not
+portable repository fixtures.
 
-The [compact planning acceptance ledger](research/compact-planning-acceptance.md)
-preserves the September 4 contract-construction incident, clean-reset archives,
-and measured Gemini, Luna, and Spark planning runs. It separates planning
-performance evidence from the pending live game acceptance boundary.
-
-- Keep research focused on a current boundary or unique evidence; remove reports whose useful conclusions are fully represented elsewhere.
-- Preserve exact run identities, hashes, and failure classifications when consolidating evidence. Do not claim raw artifacts remain recoverable after an explicitly authorized local-store purge.
-- Update rationale reports when implementation decisions become current, and label predecessor evidence explicitly rather than presenting it as active behavior.
-- Never use research as authority for a current schema, CLI command, protocol union, package dependency, or candidate verdict.
-- Keep secrets, pairing grants, credentials, raw private traces, and hidden evaluator bodies outside the repository.
+Keep only unique evidence or rationale not already explained by the primary docs.
+When consolidating records, preserve exact run identities, hashes, failure
+classifications, and claim limits. Keep credentials, pairing grants, private
+traces, and hidden evaluator material outside the repository.

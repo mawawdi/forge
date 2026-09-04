@@ -1,3 +1,4 @@
+import { isNodeError } from "../../artifact-store/src/index.js";
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { link, lstat, mkdir, open, unlink } from "node:fs/promises";
@@ -362,13 +363,4 @@ async function syncDirectory(directory: string): Promise<void> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { readonly code?: unknown }).code === code
-  );
 }

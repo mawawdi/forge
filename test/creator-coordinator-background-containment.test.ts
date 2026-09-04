@@ -34,9 +34,10 @@ import {
 const project = { name: "Deferred coordinator follow-up", placeId: 901, universeId: 902 };
 
 test("concurrent and retried finalization acknowledgements keep the exact command identity", async () => {
-  const receipt = JSON.parse(
-    await readFile("test/fixtures/creator-finalization-incident.json", "utf8"),
-  );
+  const receipt = {
+    ...JSON.parse(await readFile("test/fixtures/creator-finalization-incident.json", "utf8")),
+    manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
+  };
   const sent: BackendToPluginMessage[] = [];
   let rejectFirst = true;
   const coordinator = Object.assign(Object.create(CreatorSessionCoordinator.prototype), {

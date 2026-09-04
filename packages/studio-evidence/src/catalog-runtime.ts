@@ -4,10 +4,6 @@ import type {
   RobloxApiCatalog,
   RobloxApiCatalogCounts,
   RobloxApiClass,
-  RobloxApiDatatype,
-  RobloxApiEnum,
-  RobloxApiGlobalMember,
-  RobloxApiLibrary,
   RobloxClassMember,
   RobloxClassMemberKind,
   RobloxDatatypeMemberKind,
@@ -48,29 +44,10 @@ const DATATYPE_MEMBER_KINDS = [
 const SOURCE_DIRECTORIES = ["classes", "datatypes", "enums", "globals", "libraries"] as const;
 
 const classesByName = new Map(ROBLOX_API_CATALOG.classes.map((entry) => [entry.name, entry]));
-const datatypesByName = new Map(ROBLOX_API_CATALOG.datatypes.map((entry) => [entry.name, entry]));
-const enumsByName = new Map(ROBLOX_API_CATALOG.enums.map((entry) => [entry.name, entry]));
-const librariesByName = new Map(ROBLOX_API_CATALOG.libraries.map((entry) => [entry.name, entry]));
 
 /** Returns a class from the pinned catalog; it never consults the network. */
 export function getRobloxApiClass(name: string): RobloxApiClass | undefined {
   return classesByName.get(name);
-}
-/** Returns a datatype from the pinned catalog; it never consults the network. */
-export function getRobloxApiDatatype(name: string): RobloxApiDatatype | undefined {
-  return datatypesByName.get(name);
-}
-/** Returns an enum from the pinned catalog; it never consults the network. */
-export function getRobloxApiEnum(name: string): RobloxApiEnum | undefined {
-  return enumsByName.get(name);
-}
-/** Returns a standard Luau/Roblox library from the pinned catalog. */
-export function getRobloxApiLibrary(name: string): RobloxApiLibrary | undefined {
-  return librariesByName.get(name);
-}
-/** Returns every same-named documented global occurrence across official global scopes. */
-export function getRobloxApiGlobalMembers(name: string): readonly RobloxApiGlobalMember[] {
-  return ROBLOX_API_CATALOG.globalMembers.filter((entry) => entry.name === name);
 }
 
 /**
@@ -86,26 +63,6 @@ export function isRobloxClassAssignableTo(className: string, expectedClass: stri
     current = current.superclass === undefined ? undefined : getRobloxApiClass(current.superclass);
   }
   return false;
-}
-
-/**
- * Resolves a documented member using normal class inheritance. The returned
- * member stays attached to its declaring class, preserving source provenance.
- */
-export function resolveRobloxClassMember(
-  className: string,
-  kind: RobloxClassMemberKind,
-  name: string,
-): RobloxClassMember | undefined {
-  const visited = new Set<string>();
-  let current = getRobloxApiClass(className);
-  while (current !== undefined && !visited.has(current.name)) {
-    visited.add(current.name);
-    const member = current.members.find((entry) => entry.kind === kind && entry.name === name);
-    if (member !== undefined) return member;
-    current = current.superclass === undefined ? undefined : getRobloxApiClass(current.superclass);
-  }
-  return undefined;
 }
 
 /** Returns the effective member surface, with child declarations shadowing ancestors. */
@@ -208,12 +165,6 @@ export function validateRobloxApiCatalog(value: unknown): asserts value is Roblo
     counts: catalog.counts,
   };
   if (contentHash(stableJson(material)) !== catalog.contentHash) fail("catalog content hash");
-}
-
-/** Safe runtime boundary for JSON supplied by a local compiler or test fixture. */
-export function loadRobloxApiCatalog(value: unknown): RobloxApiCatalog {
-  validateRobloxApiCatalog(value);
-  return value;
 }
 
 function validateSource(value: unknown): void {

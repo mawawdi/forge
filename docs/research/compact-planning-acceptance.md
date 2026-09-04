@@ -1,5 +1,11 @@
 # Compact planning acceptance — 2026-09-04
 
+This is a historical research record. Implementation descriptions, commands,
+counts, and pending actions refer to the recorded builds, not the current product.
+Use [Architecture](../ARCHITECTURE.md) for current behavior and
+[Roadmap](../ROADMAP.md) for remaining work. Retained IDs and failure classifications
+are evidence, not instructions to replay or resume a run.
+
 ## Continued HUD work and closed-recording recovery
 
 The subsequent title-only follow-up kept the same project and conversation.

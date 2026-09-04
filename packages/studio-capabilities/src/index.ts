@@ -22,7 +22,6 @@ export type { StudioProjectIdentity } from "../../studio-evidence/src/index.js";
 export { STUDIO_RESOLVABLE_CLASSES } from "../../studio-evidence/src/index.js";
 export const STUDIO_INSTANCE_RESOLUTION_ROOTS = STUDIO_AUTHORING_ROOTS;
 export type StudioResolvableClass = (typeof STUDIO_RESOLVABLE_CLASSES)[number] | "BasePart";
-export type StudioInstanceResolutionRoot = (typeof STUDIO_INSTANCE_RESOLUTION_ROOTS)[number];
 export type RuntimeVector3 = { x: number; y: number; z: number };
 
 export type StudioCapabilityName =

@@ -16,8 +16,6 @@ import {
   identityRejectionProvesNoEffect,
   type BackendToPluginMessage,
   type StudioCommandSettledPayload,
-  type StudioProjectIdentityFinalizationReceipt,
-  type StudioProjectIdentityOperation,
 } from "../../studio-protocol/src/index.js";
 import { assertCreatorActionRequest } from "./contracts.js";
 import { creatorWorkRequestHash } from "./store.js";
@@ -785,8 +783,3 @@ const EXECUTION_MODES: readonly CreatorProjectIdentityJob["executionMode"][] = [
   "finalize_receipt",
   "host_finalize",
 ];
-
-// Keep the imported protocol types attached to this module's public contract;
-// it prevents a structurally similar non-protocol artifact being substituted.
-export type CreatorProjectIdentityOperationEvidence = StudioProjectIdentityOperation;
-export type CreatorProjectIdentityReceiptEvidence = StudioProjectIdentityFinalizationReceipt;

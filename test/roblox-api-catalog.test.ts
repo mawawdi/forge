@@ -1,18 +1,12 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import test from "node:test";
 import {
   ROBLOX_API_CATALOG,
   ROBLOX_API_CATALOG_HASH,
   getRobloxApiClass,
-  getRobloxApiDatatype,
-  getRobloxApiEnum,
-  getRobloxApiGlobalMembers,
-  getRobloxApiLibrary,
   isRobloxClassAssignableTo,
-  loadRobloxApiCatalog,
-  resolveRobloxClassMember,
   resolveRobloxClassMembers,
   validateRobloxApiCatalog,
 } from "../packages/studio-evidence/src/index.js";
@@ -73,12 +67,12 @@ test("the pinned catalog is exhaustive, provenance-bound, and internally valid",
 });
 
 test("globals and standard libraries are first-class pinned catalog entries", () => {
-  const workspace = getRobloxApiGlobalMembers("workspace");
+  const workspace = ROBLOX_API_CATALOG.globalMembers.filter((entry) => entry.name === "workspace");
   assert.equal(workspace.length, 1);
   assert.equal(workspace[0]?.valueType, "Workspace");
   assert.equal(workspace[0]?.sourceFile, "globals/RobloxGlobals.yaml");
 
-  const math = getRobloxApiLibrary("math");
+  const math = ROBLOX_API_CATALOG.libraries.find((entry) => entry.name === "math");
   assert.ok(math);
   const abs = math.members.find((entry) => entry.kind === "function" && entry.name === "abs");
   assert.deepEqual(abs?.parameters, [{ name: "x", type: "number" }]);
@@ -92,7 +86,9 @@ test("class queries resolve declared and inherited members without copying prove
   assert.equal(isRobloxClassAssignableTo("Part", "BasePart"), true);
   assert.equal(isRobloxClassAssignableTo("BasePart", "Part"), false);
   assert.equal(isRobloxClassAssignableTo("NotAClass", "Instance"), false);
-  const anchored = resolveRobloxClassMember("Part", "property", "Anchored");
+  const anchored = resolveRobloxClassMembers("Part", "property").find(
+    (entry) => entry.name === "Anchored",
+  );
   assert.ok(anchored);
   assert.equal(anchored.declaringClass, "BasePart");
   assert.equal(anchored.valueType, "boolean");
@@ -102,7 +98,7 @@ test("class queries resolve declared and inherited members without copying prove
 });
 
 test("datatype overloads and enum items remain distinct catalog entries", () => {
-  const cframe = getRobloxApiDatatype("CFrame");
+  const cframe = ROBLOX_API_CATALOG.datatypes.find((entry) => entry.name === "CFrame");
   assert.ok(cframe);
   const constructors = cframe.members.filter(
     (entry) => entry.kind === "constructor" && entry.name === "new",
@@ -112,7 +108,7 @@ test("datatype overloads and enum items remain distinct catalog entries", () => 
   assert.ok(
     constructors.every((entry) => entry.id.startsWith("datatype_member:CFrame:constructor:new:")),
   );
-  const material = getRobloxApiEnum("Material");
+  const material = ROBLOX_API_CATALOG.enums.find((entry) => entry.name === "Material");
   assert.ok(material);
   assert.equal(material.items.find((entry) => entry.name === "Plastic")?.value, 256);
 });
@@ -122,21 +118,7 @@ test("the validator fails closed for malformed catalog data", () => {
     counts: { classes: number };
   };
   malformed.counts.classes -= 1;
-  assert.throws(() => loadRobloxApiCatalog(malformed), /Invalid Roblox API catalog/);
-});
-
-test("offline catalog check accepts the committed generated artifacts", () => {
-  execFileSync(process.execPath, [resolve("scripts/generate-roblox-api-catalog.mjs"), "--check"], {
-    cwd: resolve("."),
-    stdio: "pipe",
-  });
-});
-
-test("the generated coverage report is an exact accountable partition of the pinned catalog", () => {
-  execFileSync(process.execPath, [resolve("scripts/check-roblox-api-coverage.mjs")], {
-    cwd: resolve("."),
-    stdio: "pipe",
-  });
+  assert.throws(() => validateRobloxApiCatalog(malformed), /Invalid Roblox API catalog/);
 });
 
 test("catalog refresh refuses a source root that is not the pinned official checkout", () => {

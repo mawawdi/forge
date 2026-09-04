@@ -1,9 +1,12 @@
-# Door control creator-session fixture
+# Door control Studio seed
 
-This is a solution-free Studio seed for the dashboard creator workflow. Build it to a temporary place, open that place in Studio, and do not keep Rojo connected: Studio is the creator session's sole writer.
+This is a solution-free Studio seed for the dashboard creator workflow. Build it to a temporary place, open that place in Studio, and do not keep Rojo connected: Studio is the writer for this workflow.
 
-Use this exact prompt:
+Suggested prompt:
 
-> Add a ProximityPrompt to Workspace/DoorAssembly/ControlPanel labeled “Toggle Door”. Each time a player uses it, move Workspace/DoorAssembly/Door straight up 8 studs to open or back to its starting position to close. Use server-authoritative code, keep the door anchored, and preserve Workspace/PreservedScenery.
+> Add a ProximityPrompt to Workspace.DoorAssembly.ControlPanel labeled “Toggle Door”. Each time a player uses it, move Workspace.DoorAssembly.Door straight up 8 studs to open or back to its starting position to close. Use server-authoritative code, keep the door anchored, and preserve Workspace.PreservedScenery.
 
-The approved plan must expose checks for prompt and script existence, Luau syntax, bounded Play Solo diagnostics, preservation of `Workspace/PreservedScenery`, and creator review of the interaction. During the approved Play Solo check, trigger the prompt twice and record the observed open/close behavior in the required final report. Interaction behavior is creator-authority evidence unless it is covered by an explicit Studio observation clause.
+Review the plan, then accept it to build and apply. Generated structural and Luau
+checks remain available in Details. In ordinary Play, trigger the prompt twice and
+observe the open/close behavior. Play is optional; describe any issues in the same
+conversation. Captured diagnostics do not prove that the interaction works.

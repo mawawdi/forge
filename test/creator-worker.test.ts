@@ -1,3 +1,4 @@
+import { createTestFixtureSourceResolver } from "./helpers/source-fixtures.js";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -27,10 +28,7 @@ import type {
   ModelTurnRequest,
   ModelTurnResult,
 } from "../packages/model-client/src/contracts.js";
-import {
-  createPinnedLuauLspSourceIndex,
-  createTestFixtureSourceResolver,
-} from "../packages/source-intelligence/src/index.js";
+import { createPinnedLuauLspSourceIndex } from "../packages/source-intelligence/src/index.js";
 
 const MODEL = "fake/model";
 const PROMPT = "Explain the current project.";

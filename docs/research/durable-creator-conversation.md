@@ -1,5 +1,11 @@
 # Durable Creator Conversation
 
+This is a historical research record. Implementation descriptions, commands,
+counts, and pending actions refer to the recorded builds, not the current product.
+Use [Architecture](../ARCHITECTURE.md) for current behavior and
+[Roadmap](../ROADMAP.md) for remaining work. Retained IDs and failure classifications
+are evidence, not instructions to replay or resume a run.
+
 ## Dashboard quality-of-life follow-up, 2026-09-04
 
 This follow-up adds keyboard conversation search and pins, a hideable sidebar,
@@ -839,10 +845,8 @@ The next smallest evidence-producing task belongs to the creator:
    separate conversation. Return the new run/trace IDs and visible result
    before making a claim about plan completion, Apply, Play, or gameplay.
 
-Reviewed screenshots are in
-[`dashboard/e2e/conversation.spec.ts-snapshots`](../../dashboard/e2e/conversation.spec.ts-snapshots/forge-workspace-desktop-desktop-darwin.png).
-
-Status: current architectural rationale and presentation-milestone boundary.
+The reviewed screenshot baselines were intentionally replaced during the later
+dashboard redesign; this record does not retain a stale image link.
 Normative workflow and claim semantics remain in
 [ARCHITECTURE.md](../ARCHITECTURE.md), [FORGE.md](../FORGE.md), and
 [EVALS.md](../EVALS.md). Demonstrated run status is in
@@ -1076,7 +1080,7 @@ new accepted creator run.
 ## Existing accepted baseline
 
 The accepted Orbital Freight Airlock run remains the predecessor baseline in
-[ROADMAP.md](../ROADMAP.md#accepted-orbital-freight-airlock-baseline-ledger):
+[ROADMAP.md](validation-evidence.md):
 session `creator_session_de3157de-700e-4c95-871d-2ad94e111102`, mutation
 attempt `creator_mutation_attempt_ce9de277302ca309fa688836_1`, verification
 `creator_verification_624d0d509a58ab3d1443efcc`, checkpoint

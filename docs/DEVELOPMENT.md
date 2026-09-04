@@ -1,39 +1,13 @@
-# Forge Development Guide
+# Forge Development
 
-This guide defines the repository workflow. Product and evidence semantics remain authoritative in [Architecture](ARCHITECTURE.md), [Forge invariants](FORGE.md), and [Evaluation policy](EVALS.md).
+Use this guide for repository setup and verification. [Architecture](ARCHITECTURE.md),
+[Product principles](FORGE.md), and [Evaluation policy](EVALS.md) own system behavior.
 
-## Required toolchain
+## Toolchain
 
-- Node.js 22 or newer and npm
-- Java 11 or newer for TLC
-- Rojo, Lune, `luau-compile`, and `luau-lsp`
-- the pinned source-analysis and TLA tools installed by the setup commands in the root README
-
-## Working rules
-
-- Make schema and protocol changes as clean replacements. Do not retain legacy readers, aliases, or migrations.
-- Preserve unrelated work in the dirty tree. Use `apply_patch` for authored source changes.
-- Keep provider-specific types inside provider adapters. Native runtime and public contracts remain provider-independent.
-- Keep indexed project facts distinct from typed mutation authority. An unsupported class may be inventoried without becoming writable.
-- Treat generated files as build products. Change their source manifest or generator, then regenerate them.
-- Do not invoke a model or operate Roblox Studio from automated validation. Studio evidence is produced only by the user-run flow.
-
-## Generated and pinned files
-
-Do not hand-edit these paths:
-
-- `packages/studio-evidence/src/generated.ts`
-- `packages/studio-evidence/src/roblox-api-catalog.generated.ts`
-- `plugin/src/Forge/GeneratedStudioEvidence.luau`
-- `packages/studio-evidence/catalog/`
-- `packages/studio-evidence/manifest/studio-capability-manifest.json`
-- `packages/luau-toolchain/roblox/`
-
-The capability policy and generation scripts are the authored inputs. `npm run studio-evidence:check` and `npm run roblox-api-catalog:check` reject stale output, while `npm run roblox-api-coverage:check` independently proves that every pinned API row appears exactly once with a valid disposition and no restricted enum leaks into direct authoring.
-
-## Quality workflow
-
-Before changing code:
+Install Node.js 22+, npm, Java 11+, Rojo, Lune, `luau-compile`, and `luau-lsp`.
+The setup commands install verified pinned analysis and TLA+ assets in `.forge/tooling`.
+Studio is required for manual acceptance, not automated tests.
 
 ```sh
 npm install
@@ -42,22 +16,77 @@ npm run formal:setup
 npm run source-analysis:setup
 ```
 
-During development:
+`source-analysis:setup` prepares the pinned Rojo/Luau LSP tools. The creator service
+also prepares a missing cache at startup. Existing cache content is verified rather
+than silently overwritten. `formal:setup` prepares the pinned official TLC JAR;
+`formal:check` uses it offline.
+
+## Make changes
+
+- Read the applicable `AGENTS.md` and implementation before changing contracts.
+- Preserve unrelated uncommitted work. Use `apply_patch` for authored edits.
+- Replace superseded formats outright; do not add migration or compatibility readers.
+- Keep provider types at the transport boundary and evaluator material out of builders.
+- Keep typed mutation authority separate from broad project inventory.
+- Preserve a checksum-verified external snapshot before an authorized store purge.
+- Keep scratch scripts, logs, generated places, and private traces out of the repository.
+
+`dashboard` is the browser app; there is no `apps` directory. Backend code lives in
+`packages`, plugin code in `plugin`, and isolated test fixtures in `test` and `examples`.
+
+## Generated files
+
+Edit the policy or generator, then regenerate. Do not hand-edit:
+
+- `packages/studio-evidence/src/generated.ts`
+- `packages/studio-evidence/src/roblox-api-catalog.generated.ts`
+- `plugin/src/Forge/GeneratedStudioEvidence.luau`
+- `packages/studio-evidence/catalog/`
+- `packages/studio-evidence/manifest/studio-capability-manifest.json`
+- `packages/luau-toolchain/roblox/`
+
+The authored capability policy is
+`packages/studio-evidence/manifest/studio-capability-policy.json`.
+`roblox-api-catalog:refresh` is the explicit networked update path for the pinned
+Roblox source; ordinary builds do not fetch Roblox documentation. Catalog,
+capability, coverage, and runtime-build checks reject stale or inconsistent output.
+
+## Required verification
 
 ```sh
-npm run format
-npm run lint
-npm run build
-```
-
-Before handoff:
-
-```sh
+npm run format && npm run lint
+npm run build && npm run plugin:build
 npm test
-npm run plugin:build
 git diff --check
 ```
 
-`npm test` is check-only. It verifies formatting, lint, generated output, documentation and Mermaid links, TypeScript, the dashboard, Node tests, Luau parsing and analysis, plugin module tests, temporary Rojo builds, runtime-build identity, and every TLC model. `npm run format` is the explicit mutating formatter command.
+`npm run format` applies the pinned formatter. `npm test` checks formatting and lint,
+validates pinned/generated data and documentation links, renders Mermaid diagrams,
+builds TypeScript and the dashboard, runs Node and dashboard tests, exercises browser
+accessibility/interaction tests, checks plugin parsing/types/modules/codecs, builds
+all Rojo fixtures in a temporary directory, and checks the formal models with TLC.
+These tests make no model requests and do not operate Studio.
 
-When a gate fails, fix the authored source rather than weakening the gate or editing generated output. Report every command actually run and whether any model or Studio action occurred.
+Tests create isolated temporary stores. Do not weaken a gate or delete a useful
+regression to obtain a pass. When a UI change intentionally changes a screenshot,
+review the new image before replacing its baseline. Keep behavior and accessibility
+assertions alongside visual coverage.
+
+`build:all` is the convenience build/setup path. `plugin:build` always installs the
+connector directly at `~/Documents/Roblox/Plugins/ForgeStudioPlugin.rbxmx`.
+Temporary Rojo output is verification material, not the installed plugin.
+
+## Manual acceptance
+
+Restart Studio after each plugin rebuild, then reopen the intended saved place.
+Start `creator serve` and use its one-time dashboard link. Follow the creator flow
+in [Creator experience](CREATOR-EXPERIENCE.md). Use the current project's existing
+conversation for follow-ups; do not reset `.forge` to work around a recoverable issue.
+
+Recover any possibly open transaction with its exact connector build before changing
+contracts. Keep model selection, reasoning, and response deadlines explicit in live
+measurements. Preserve exact run identities, artifacts, and failure classifications.
+
+At handoff, report changed/deleted files, commands and actual results, model/Studio
+calls made, unresolved claims, and the next smallest manual check. Automated success
+alone does not establish a clean generated game.

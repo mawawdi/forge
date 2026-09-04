@@ -1,7 +1,4 @@
-import {
-  PROJECT_IDENTITY_AUTHORITY_RECIPE,
-  PROJECT_IDENTITY_AUTHORITY_VECTORS,
-} from "./generated.js";
+import { PROJECT_IDENTITY_AUTHORITY_RECIPE } from "./generated.js";
 import { contentHash } from "../../contracts/src/index.js";
 import { createStudioConnectorEpoch } from "./project-index.js";
 
@@ -93,10 +90,6 @@ export function adoptStudioProjectIdentityAuthority(
   const authority = deriveStudioProjectIdentityAuthority(input);
   return { ...authority, authorityChanged: input.currentProjectId !== authority.projectId };
 }
-
-/** Shared generator-owned vectors for host and Luau authority implementations. */
-export type StudioProjectIdentityAuthorityVector =
-  (typeof PROJECT_IDENTITY_AUTHORITY_VECTORS)[number];
 
 function assertIdentity(value: StudioProjectIdentityAuthorityState): void {
   if (!value || typeof value !== "object")

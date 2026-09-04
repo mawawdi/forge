@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentRun, ToolCallRecord } from "../packages/agent-runtime/src/index.js";
+import {
+  DEFAULT_AGENT_BUDGETS,
+  type AgentRun,
+  type ToolCallRecord,
+} from "../packages/agent-runtime/src/index.js";
 import {
   agentFailureMessage,
   agentRunFailure,
@@ -31,7 +35,7 @@ test("failed planner publication and journal activity preserve the actual stoppi
       error: "maxInputTokens",
       toolCalls: [],
     }),
-    "This run reached its usage limit before the work was ready. Start another attempt to continue.",
+    "This run reached a Forge safety limit before the work was ready. maxInputTokens Start a new attempt to continue.",
   );
   // Reproduce the observed failure boundary, without invoking a model or Studio.
   const toolCall: ToolCallRecord = {
@@ -58,7 +62,7 @@ test("failed planner publication and journal activity preserve the actual stoppi
       },
     },
   };
-  const failure: Pick<AgentRun, "creatorPhaseOutcome" | "error" | "toolCalls"> = {
+  const failure: Pick<AgentRun, "creatorPhaseOutcome" | "error" | "toolCalls" | "budgets"> = {
     creatorPhaseOutcome: {
       status: "unsealed",
       intendedArtifactKind: "creator_outcome",
@@ -70,6 +74,25 @@ test("failed planner publication and journal activity preserve the actual stoppi
     error:
       "Model repeated an identical tool batch within the same accepted host state; no progress was possible.",
     toolCalls: [toolCall],
+    budgets: {
+      policy: DEFAULT_AGENT_BUDGETS,
+      consumed: {
+        turns: 1,
+        toolCalls: 1,
+        writes: 0,
+        verifierCalls: 0,
+        changedFiles: 0,
+        addedLines: 0,
+        removedLines: 0,
+        changedSourceBytes: 0,
+        toolResultBytes: 100,
+        durationMs: 1,
+        costUsd: 0,
+        inputTokens: 10,
+        outputTokens: 5,
+      },
+      exhausted: [],
+    },
   };
   const before = structuredClone(failure);
   const published = agentRunFailure(failure);
@@ -98,7 +121,12 @@ test("failed planner publication and journal activity preserve the actual stoppi
     "Provider request timed out.",
   );
   assert.ok(
-    Buffer.byteLength(agentRunFailure({ toolCalls: [], error: "界".repeat(20_000) }).message) <
-      4096,
+    Buffer.byteLength(
+      agentRunFailure({
+        toolCalls: [],
+        error: "界".repeat(20_000),
+        budgets: failure.budgets,
+      }).message,
+    ) < 4096,
   );
 });

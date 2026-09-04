@@ -1,4 +1,8 @@
-import type { AgentRun, ToolCallRecord } from "../../agent-runtime/src/index.js";
+import {
+  modelUsageBudgetFailure,
+  type AgentRun,
+  type ToolCallRecord,
+} from "../../agent-runtime/src/index.js";
 import { failedActivityDetail } from "./agent-activity.js";
 import type { CreatorSessionBundle } from "../../creator-session/src/index.js";
 
@@ -39,7 +43,11 @@ export function agentFailureMessage(input: {
     );
   }
   if (input.failureCode === "RUNTIME_BUDGET_EXHAUSTED")
-    return "This run reached its usage limit before the work was ready. Start another attempt to continue.";
+    return (
+      "This run reached a Forge safety limit before the work was ready." +
+      (input.error ? ` ${failedActivityDetail(input.error)}` : "") +
+      " Start a new attempt to continue."
+    );
   return (
     input.error?.slice(0, 1200) ||
     "The agent stopped before it could produce a response. Open Details to inspect the saved result."
@@ -47,18 +55,22 @@ export function agentFailureMessage(input: {
 }
 
 export function agentRunFailure(
-  run: Pick<AgentRun, "creatorPhaseOutcome" | "error" | "toolCalls"> | undefined,
+  run: Pick<AgentRun, "creatorPhaseOutcome" | "error" | "toolCalls" | "budgets"> | undefined,
 ): {
   message: string;
   failureCode: string;
 } {
   const phase = run?.creatorPhaseOutcome;
   const failureCode = phase?.status === "unsealed" ? phase.failureCode : "agent_outcome_missing";
+  const error =
+    run && failureCode === "RUNTIME_BUDGET_EXHAUSTED"
+      ? (modelUsageBudgetFailure(run.budgets.policy, run.budgets.consumed) ?? run.error)
+      : run?.error;
   return {
     failureCode,
     message: agentFailureMessage({
       failureCode,
-      ...(run?.error ? { error: run.error } : {}),
+      ...(error ? { error } : {}),
       toolCalls: run?.toolCalls ?? [],
     }),
   };

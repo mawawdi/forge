@@ -1,3 +1,4 @@
+import { isNodeError } from "../../artifact-store/src/index.js";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, readdir } from "node:fs/promises";
 import { CreatorPlaytestContextStore } from "./playtest-context.js";
@@ -8528,14 +8529,6 @@ function restoredIncompleteDetail(bundle: CreatorSessionBundle): string {
       : `Mutation attempt ${latestAttempt.id} has settled mutation evidence.`
     : "A durable mutation cursor remains bound to this session.";
   return `This attempt ended incomplete: ${reason}. ${attemptDetail} Forge makes no unproven verification claim. Inspect the preserved mutation evidence, then start a new request if you want to retry.`;
-}
-function isNodeError(error: unknown, code: string): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === code
-  );
 }
 function activeChangeSet(bundle: CreatorSessionBundle): CreatorChangeSet | undefined {
   const reference = bundle.session.changeSet;

@@ -1,7 +1,5 @@
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 
-export { EVALUATOR_ISOLATION_POLICY, EVALUATOR_ISOLATION_POLICY_HASH } from "./policies.js";
-
 export type RequirementSource =
   | "creator"
   | "project_observation"

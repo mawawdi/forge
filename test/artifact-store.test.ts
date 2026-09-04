@@ -16,7 +16,6 @@ import { createHash } from "node:crypto";
 import {
   ImmutableJsonArtifactStore,
   assertArtifactReference,
-  isSafeArtifactLocator,
   type ArtifactReference,
 } from "../packages/artifact-store/src/index.js";
 import { stableJson } from "../packages/contracts/src/index.js";
@@ -110,7 +109,6 @@ test("rejects unsafe locators and all symlink path components", async () => {
       "artifacts//double.json",
       "./artifact.json",
     ]) {
-      assert.equal(isSafeArtifactLocator(locator), false, locator);
       assert.throws(() => assertArtifactReference({ ...reference, locator }), /ArtifactReference/);
     }
     assert.throws(

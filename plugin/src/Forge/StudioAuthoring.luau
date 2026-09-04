@@ -2242,16 +2242,6 @@ function StudioAuthoring:rollback(payload: any, currentProjectRevisionHash: stri
 	return committed
 end
 
-function StudioAuthoring.validatePayloadForTest(input: any): boolean
-	if typeof(input) ~= "table" or typeof(input.className) ~= "string" then error("invalid validation test payload") end
-	if not Generated.classMetadata(input.className) then error("class is not in generated manifest") end
-	validateProperties(input.className, input.properties or {}, nil, false)
-	Generated.validateAttributes(input.attributes or {})
-	validateRemovedAttributes(input.removedAttributes or {}, input.attributes or {})
-	Generated.validateSource(input.source, input.sourceRequired == true)
-	return true
-end
-
 function StudioAuthoring.applySourceEditsForTest(source: string, edits: any, resolveBlob: (any) -> string): string
 	return applySourceEdits(source, edits, resolveBlob)
 end
@@ -2282,10 +2272,6 @@ end
 
 function StudioAuthoring.completePrepareTransferMaterialForTest(capture: any, payload: any): string
 	return completePrepareTransferMaterial(capture, payload)
-end
-
-function StudioAuthoring.authoringContainerClassForTest(path: any): string?
-	return Generated.authoringContainerClass(path)
 end
 
 function StudioAuthoring.validateAuthoringContainerClassForTest(path: any, observedClass: any): boolean
@@ -2364,10 +2350,6 @@ function StudioAuthoring.finalizationRecoveryStateForTest(binding: any): string
 	if cursor.phase == "finalization_intent" then return "finalizing" end
 	if cursor.phase == "finalization_finished" then return "not_open" end
 	return cursor.phase == "open" and "open" or "unknown"
-end
-
-function StudioAuthoring.acknowledgeClosedRecordingForTest(plugin: any, payload: any, recordingState: string): any
-	return acknowledgeClosedRecording(plugin, payload, recordingState)
 end
 
 function StudioAuthoring.settingKeysForTest()
