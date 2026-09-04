@@ -417,6 +417,13 @@ export class CreatorSessionCoordinator {
     }
   >();
   private readonly inFlight = new Set<string>();
+  /**
+   * Studio authority is serialized per project, while independent
+   * conversations may retain their own nonterminal planning/build state.
+   * Unlike a session lock, this is a queue: starting another conversation
+   * while a short Studio boundary is in flight must wait instead of failing.
+   */
+  private readonly projectOperationQueues = new Map<string, Promise<void>>();
   private readonly automaticVerifications = new Set<string>();
   /** One creator-job-owned repair reservation retained across passive Play. */
   private readonly pendingRepairExecutions = new Map<string, AgentExecutionSlot>();
@@ -552,6 +559,7 @@ export class CreatorSessionCoordinator {
     this.finalizedTransactionProjectChangeCaptures.clear();
     this.transactionProjectConfirmationRequestedAfterLockRelease.clear();
     this.bundlePersistQueues.clear();
+    this.projectOperationQueues.clear();
     this.pendingRepairExecutions.clear();
   }
 
@@ -660,16 +668,6 @@ export class CreatorSessionCoordinator {
       }
       await this.rehydrateTransactionProjectChangeBarriers(bundle);
       this.bundles.set(bundle.session.id, bundle);
-    }
-    const activeByProject = new Map<string, string>();
-    for (const bundle of this.bundles.values()) {
-      if (isTerminalStatus(bundle.session.status)) continue;
-      const existing = activeByProject.get(bundle.session.projectId);
-      if (existing)
-        throw new Error(
-          `Studio project has multiple nonterminal creator sessions: ${existing}, ${bundle.session.id}`,
-        );
-      activeByProject.set(bundle.session.projectId, bundle.session.id);
     }
   }
 
@@ -2975,18 +2973,12 @@ export class CreatorSessionCoordinator {
       throw new Error("The paired Studio connector has no verified capability attestation");
     const pluginMessageFailure = this.pluginMessageFailures.get(studio.sessionId)?.detail;
     if (pluginMessageFailure) throw new Error(pluginMessageFailure);
-    await this.requireClearRecordingInventory(studio);
-    return this.lock(`project:${studio.projectId}`, async () => {
+    if (this.bundles.has(creatorSessionId))
+      throw new Error("Preassigned creator session identity was already consumed");
+    const captured = await this.lockProject(studio.projectId, async () => {
+      await this.requireClearRecordingInventory(studio);
       if (this.bundles.has(creatorSessionId))
         throw new Error("Preassigned creator session identity was already consumed");
-      const active = [...this.bundles.values()].find(
-        (bundle) =>
-          bundle.session.projectId === studio.projectId && !isTerminalStatus(bundle.session.status),
-      );
-      if (active)
-        throw new Error(
-          `Studio project already has a nonterminal creator session: ${active.session.id}`,
-        );
       const projectIndex = await this.collectProjectIndex(studio);
       const projectIndexBinding = await this.persistProjectIndex(projectIndex);
       const projectView = studioProjectIndexMetadataView(projectIndex);
@@ -3016,119 +3008,107 @@ export class CreatorSessionCoordinator {
                 ? { projectAuthority: this.input.projectAuthority.manifest }
                 : {}),
             });
-      let session = createCreatorSession({
-        id: creatorSessionId,
-        prompt: canonicalCreatorText,
-        projectId: studio.projectId,
-        revisionHash: projectIndex.revision.hash,
-        projectCaptureHash: projectIndex.hash,
+      return {
+        projectIndex,
+        projectIndexBinding,
+        freshState,
+        projectAuthorityState,
         ownership,
-        model,
-      });
-      const creatorRequest = await this.artifactStore.write({
-        kind: "CreatorRequest",
-        sessionId: session.id,
-        promptHash: session.promptHash,
-        creatorText: canonicalCreatorText,
-        agentPrompt: canonicalAgentPrompt,
-        contextCitations: structuredClone(contextCitations),
-      });
-      let bundle: CreatorSessionBundle = {
+      };
+    });
+    const { projectIndex, projectIndexBinding, freshState, projectAuthorityState, ownership } =
+      captured;
+    let session = createCreatorSession({
+      id: creatorSessionId,
+      prompt: canonicalCreatorText,
+      projectId: studio.projectId,
+      revisionHash: projectIndex.revision.hash,
+      projectCaptureHash: projectIndex.hash,
+      ownership,
+      model,
+    });
+    const creatorRequest = await this.artifactStore.write({
+      kind: "CreatorRequest",
+      sessionId: session.id,
+      promptHash: session.promptHash,
+      creatorText: canonicalCreatorText,
+      agentPrompt: canonicalAgentPrompt,
+      contextCitations: structuredClone(contextCitations),
+    });
+    let bundle: CreatorSessionBundle = {
+      session,
+      creatorRequest,
+      projectIndices: [projectIndexBinding],
+      projectChanges: [],
+      projectRefreshes: [],
+      ownership,
+      ...(projectAuthorityState ? { projectAuthority: projectAuthorityState.binding } : {}),
+      rojoSourceMutations: [],
+      sourceIndices: [],
+      sourceConsultations: [],
+      sourceWriteBlobs: [],
+      buildContracts: [],
+      approvals: [],
+      changeSets: [],
+      mutationAttempts: [],
+      verifications: [],
+      agentRuns: [],
+    };
+    this.bundles.set(session.id, bundle);
+    await this.persist(bundle);
+    await this.publishView(
+      bundle,
+      "Indexing current Script Editor source with the pinned analysis toolchain. Studio is read-only.",
+    );
+    try {
+      const analyzed = await this.analyzeProjectSources(projectIndex);
+      session = advanceSession(session, { status: "planning" });
+      bundle = {
+        ...bundle,
         session,
-        creatorRequest,
-        projectIndices: [projectIndexBinding],
-        projectChanges: [],
-        projectRefreshes: [],
-        ownership,
-        ...(projectAuthorityState ? { projectAuthority: projectAuthorityState.binding } : {}),
-        rojoSourceMutations: [],
-        sourceIndices: [],
-        sourceConsultations: [],
-        sourceWriteBlobs: [],
-        buildContracts: [],
-        approvals: [],
-        changeSets: [],
-        mutationAttempts: [],
-        verifications: [],
-        agentRuns: [],
+        sourceIndices: [
+          {
+            id: analyzed.index.id,
+            hash: analyzed.index.hash,
+            artifact: analyzed.indexArtifact,
+            analysis: {
+              id: analyzed.analysis.id,
+              hash: analyzed.analysis.hash,
+              artifact: analyzed.analysisArtifact,
+            },
+          },
+        ],
       };
       this.bundles.set(session.id, bundle);
       await this.persist(bundle);
       await this.publishView(
         bundle,
-        "Indexing current Script Editor source with the pinned analysis toolchain. Studio is read-only.",
+        "Generating a visible plan and verification charter from the verified source index. Studio is read-only.",
       );
-      try {
-        const analyzed = await this.analyzeProjectSources(projectIndex);
-        session = advanceSession(session, { status: "planning" });
-        bundle = {
-          ...bundle,
-          session,
-          sourceIndices: [
-            {
-              id: analyzed.index.id,
-              hash: analyzed.index.hash,
-              artifact: analyzed.indexArtifact,
-              analysis: {
-                id: analyzed.analysis.id,
-                hash: analyzed.analysis.hash,
-                artifact: analyzed.analysisArtifact,
-              },
-            },
-          ],
-        };
-        this.bundles.set(session.id, bundle);
-        await this.persist(bundle);
-        await this.publishView(
-          bundle,
-          "Generating a visible plan and verification charter from the verified source index. Studio is read-only.",
-        );
-        const planned = await this.input.worker.plan({
-          session,
-          ownership,
-          projectIndex: freshState,
-          sourceIndex: analyzed.index,
-          sourceResolver: analyzed.resolver,
-          creatorPrompt: canonicalCreatorText,
-          agentPrompt: canonicalAgentPrompt,
-          contextCitations,
-          budgets: DEFAULT_AGENT_BUDGETS,
-          execution,
-        });
-        if (
-          planned.source.index.id !== analyzed.index.id ||
-          planned.source.index.hash !== analyzed.index.hash
-        )
-          throw new Error("Planner returned a source index outside the pinned analysis binding");
-        const liveAfterPlanning = this.bundles.get(session.id);
-        if (liveAfterPlanning?.session.status === "refresh_required") {
-          const staleResultBundle: CreatorSessionBundle = {
-            ...liveAfterPlanning,
-            agentRuns: [...liveAfterPlanning.agentRuns, planned.evidence],
-            sourceConsultations: [
-              ...liveAfterPlanning.sourceConsultations,
-              {
-                id: planned.source.consultation.id,
-                hash: planned.source.consultation.hash,
-                indexId: planned.source.consultation.indexId,
-                indexHash: planned.source.consultation.indexHash,
-                artifact: planned.source.consultationArtifact,
-              },
-            ],
-          };
-          this.bundles.set(session.id, staleResultBundle);
-          await this.persist(staleResultBundle);
-          await this.publishView(
-            staleResultBundle,
-            "The planner AgentRun was preserved as evidence, but its candidate was discarded because Studio changed. Refresh explicitly to establish a complete current index; stale output will not be revived.",
-          );
-          return summary(staleResultBundle);
-        }
-        bundle = {
-          ...bundle,
-          agentRuns: [...bundle.agentRuns, planned.evidence],
+      const planned = await this.input.worker.plan({
+        session,
+        ownership,
+        projectIndex: freshState,
+        sourceIndex: analyzed.index,
+        sourceResolver: analyzed.resolver,
+        creatorPrompt: canonicalCreatorText,
+        agentPrompt: canonicalAgentPrompt,
+        contextCitations,
+        budgets: DEFAULT_AGENT_BUDGETS,
+        execution,
+      });
+      if (
+        planned.source.index.id !== analyzed.index.id ||
+        planned.source.index.hash !== analyzed.index.hash
+      )
+        throw new Error("Planner returned a source index outside the pinned analysis binding");
+      const liveAfterPlanning = this.bundles.get(session.id);
+      if (liveAfterPlanning?.session.status === "refresh_required") {
+        const staleResultBundle: CreatorSessionBundle = {
+          ...liveAfterPlanning,
+          agentRuns: [...liveAfterPlanning.agentRuns, planned.evidence],
           sourceConsultations: [
-            ...bundle.sourceConsultations,
+            ...liveAfterPlanning.sourceConsultations,
             {
               id: planned.source.consultation.id,
               hash: planned.source.consultation.hash,
@@ -3138,89 +3118,110 @@ export class CreatorSessionCoordinator {
             },
           ],
         };
-        if (planned.status === "unsealed") {
-          session = advanceSession(session, {
-            status: "incomplete",
-            failure: {
-              code: planned.failure.code,
-              detail: planned.failure.detail,
-            },
-          });
-          bundle = { ...bundle, session };
-          return this.finish(bundle, `Planner stopped: ${planned.failure.detail}`);
-        }
-        const outcomeArtifact = await this.artifactStore.write(planned.outcome);
-        bundle = {
-          ...bundle,
-          agentOutcome: { outcome: planned.outcome, artifact: outcomeArtifact },
-        };
-        if (planned.outcome.kind === "answer") {
-          session = advanceSession(session, { status: "answered" });
-          bundle = { ...bundle, session };
-          this.bundles.set(session.id, bundle);
-          await this.persist(bundle);
-          await this.publishView(bundle, planned.outcome.text);
-          return summary(bundle);
-        }
-        if (planned.outcome.kind === "clarification_requested") {
-          session = advanceSession(session, { status: "awaiting_clarification" });
-          bundle = { ...bundle, session };
-          this.bundles.set(session.id, bundle);
-          await this.persist(bundle);
-          await this.publishView(bundle, planned.outcome.question);
-          return summary(bundle);
-        }
-        const plan = planned.outcome.plan;
-        session = advanceSession(session, {
-          status: "awaiting_plan_approval",
-          plan,
-        });
-        bundle = { ...bundle, session, plan };
-        this.bundles.set(session.id, bundle);
-        await this.persist(bundle);
+        this.bundles.set(session.id, staleResultBundle);
+        await this.persist(staleResultBundle);
         await this.publishView(
-          bundle,
-          "Review the exact plan, typed changes, and generated machine-check thresholds before approving.",
+          staleResultBundle,
+          "The planner AgentRun was preserved as evidence, but its candidate was discarded because Studio changed. Refresh explicitly to establish a complete current index; stale output will not be revived.",
         );
-        return summary(bundle);
-      } catch (error) {
-        const liveAfterFailure = this.bundles.get(session.id);
-        if (liveAfterFailure?.session.status === "refresh_required") {
-          await this.publishView(
-            liveAfterFailure,
-            "Studio changed while planning. The failed/stale worker completion granted no authority; refresh explicitly.",
-          );
-          return summary(liveAfterFailure);
-        }
-        const detail = error instanceof Error ? error.message : String(error);
-        const journal = await new AgentExecutionJournalStore(this.artifactStore).loadIfPresent(
-          execution.journalId,
-        );
-        if (!journal)
-          return this.recordPreparationFailure(bundle, execution, {
-            stage: bundle.sourceIndices.length === 0 ? "source_analysis" : "preparation",
-            code: detail.startsWith("source_analysis_resource_exhausted:")
-              ? "source_analysis_resource_exhausted"
-              : detail.startsWith("source_analysis_failed:")
-                ? "source_analysis_failed"
-                : "PLANNER_PREPARATION_FAILED",
-            detail,
-          });
+        return summary(staleResultBundle);
+      }
+      bundle = {
+        ...bundle,
+        agentRuns: [...bundle.agentRuns, planned.evidence],
+        sourceConsultations: [
+          ...bundle.sourceConsultations,
+          {
+            id: planned.source.consultation.id,
+            hash: planned.source.consultation.hash,
+            indexId: planned.source.consultation.indexId,
+            indexHash: planned.source.consultation.indexHash,
+            artifact: planned.source.consultationArtifact,
+          },
+        ],
+      };
+      if (planned.status === "unsealed") {
         session = advanceSession(session, {
           status: "incomplete",
           failure: {
-            code: detail.startsWith("source_analysis_resource_exhausted:")
-              ? "source_analysis_resource_exhausted"
-              : detail.startsWith("source_analysis_failed:")
-                ? "source_analysis_failed"
-                : "planner_failure",
-            detail,
+            code: planned.failure.code,
+            detail: planned.failure.detail,
           },
         });
         bundle = { ...bundle, session };
-        return this.finish(bundle, detail);
+        return this.finish(bundle, `Planner stopped: ${planned.failure.detail}`);
       }
-    });
+      const outcomeArtifact = await this.artifactStore.write(planned.outcome);
+      bundle = {
+        ...bundle,
+        agentOutcome: { outcome: planned.outcome, artifact: outcomeArtifact },
+      };
+      if (planned.outcome.kind === "answer") {
+        session = advanceSession(session, { status: "answered" });
+        bundle = { ...bundle, session };
+        this.bundles.set(session.id, bundle);
+        await this.persist(bundle);
+        await this.publishView(bundle, planned.outcome.text);
+        return summary(bundle);
+      }
+      if (planned.outcome.kind === "clarification_requested") {
+        session = advanceSession(session, { status: "awaiting_clarification" });
+        bundle = { ...bundle, session };
+        this.bundles.set(session.id, bundle);
+        await this.persist(bundle);
+        await this.publishView(bundle, planned.outcome.question);
+        return summary(bundle);
+      }
+      const plan = planned.outcome.plan;
+      session = advanceSession(session, {
+        status: "awaiting_plan_approval",
+        plan,
+      });
+      bundle = { ...bundle, session, plan };
+      this.bundles.set(session.id, bundle);
+      await this.persist(bundle);
+      await this.publishView(
+        bundle,
+        "Review the exact plan, typed changes, and generated machine-check thresholds before approving.",
+      );
+      return summary(bundle);
+    } catch (error) {
+      const liveAfterFailure = this.bundles.get(session.id);
+      if (liveAfterFailure?.session.status === "refresh_required") {
+        await this.publishView(
+          liveAfterFailure,
+          "Studio changed while planning. The failed/stale worker completion granted no authority; refresh explicitly.",
+        );
+        return summary(liveAfterFailure);
+      }
+      const detail = error instanceof Error ? error.message : String(error);
+      const journal = await new AgentExecutionJournalStore(this.artifactStore).loadIfPresent(
+        execution.journalId,
+      );
+      if (!journal)
+        return this.recordPreparationFailure(bundle, execution, {
+          stage: bundle.sourceIndices.length === 0 ? "source_analysis" : "preparation",
+          code: detail.startsWith("source_analysis_resource_exhausted:")
+            ? "source_analysis_resource_exhausted"
+            : detail.startsWith("source_analysis_failed:")
+              ? "source_analysis_failed"
+              : "PLANNER_PREPARATION_FAILED",
+          detail,
+        });
+      session = advanceSession(session, {
+        status: "incomplete",
+        failure: {
+          code: detail.startsWith("source_analysis_resource_exhausted:")
+            ? "source_analysis_resource_exhausted"
+            : detail.startsWith("source_analysis_failed:")
+              ? "source_analysis_failed"
+              : "planner_failure",
+          detail,
+        },
+      });
+      bundle = { ...bundle, session };
+      return this.finish(bundle, detail);
+    }
   }
 
   /**
@@ -3958,7 +3959,11 @@ export class CreatorSessionCoordinator {
     await this.persist(bundle);
     if (decision === "approved") {
       try {
-        return await this.apply(bundle);
+        return await this.lockProject(bundle.session.projectId, async () => {
+          const current = this.bundles.get(bundle.session.id) ?? bundle;
+          if (current.session.status !== "preflighting") return summary(current);
+          return this.apply(current);
+        });
       } catch (error) {
         const current = this.bundles.get(bundle.session.id) ?? bundle;
         if (error instanceof ProjectAuthorityRevokedError) return summary(current);
@@ -7846,6 +7851,24 @@ export class CreatorSessionCoordinator {
         this.transactionProjectConfirmationRequestedAfterLockRelease.add(key);
         this.scheduleTransactionProjectChangeConfirmation(key);
       }
+    }
+  }
+
+  private async lockProject<T>(projectId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.projectOperationQueues.get(projectId) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = previous.catch(() => undefined).then(() => gate);
+    this.projectOperationQueues.set(projectId, tail);
+    await previous.catch(() => undefined);
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.projectOperationQueues.get(projectId) === tail)
+        this.projectOperationQueues.delete(projectId);
     }
   }
 

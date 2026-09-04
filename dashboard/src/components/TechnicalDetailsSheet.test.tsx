@@ -40,7 +40,7 @@ describe("TechnicalDetailsSheet", () => {
       />,
     );
 
-    const dialog = screen.getByRole("dialog", { name: /creator turn/i });
+    const dialog = screen.getByRole("dialog", { name: /creator message/i });
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(screen.getByRole("button", { name: "View raw JSON" })).toBeVisible();
     const focusable = Array.from(
@@ -270,7 +270,7 @@ describe("TechnicalDetailsSheet", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "Immutable job activity" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Run history" })).toBeVisible();
     expect(screen.getByText("Forge is reading the project index.")).toBeVisible();
     expect(screen.getByText("Forge is producing the plan.")).toBeVisible();
   });

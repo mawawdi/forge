@@ -175,8 +175,8 @@ test("TypeScript Prepare projections are accepted by the production generated Lu
               engineContainer: { path: container.path, className: container.className },
               attributes: {},
               tags: [],
-              coveredProperties: {},
-              coveredPropertyNames: [],
+              coveredProperties: completeProjectProperties(container.className),
+              coveredPropertyNames: completeProjectPropertyNames(container.className),
             })),
           ...(root === "Workspace"
             ? [
@@ -1803,8 +1803,8 @@ test("host Prepare parent/collision validation is keyed by captured parent ident
               engineContainer: { path: "Workspace", className: "Workspace" },
               attributes: {},
               tags: [],
-              coveredProperties: {},
-              coveredPropertyNames: [],
+              coveredProperties: completeProjectProperties("Workspace"),
+              coveredPropertyNames: completeProjectPropertyNames("Workspace"),
             },
             {
               identity: parentA,

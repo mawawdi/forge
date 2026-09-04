@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { eventLabel, formatTimestamp, shortHash } from "../derived";
 import { TechnicalCatalogExplorer } from "./TechnicalCatalogExplorer";
 import { TechnicalReplay } from "./TechnicalReplay";
+import { Icon } from "./Icon";
 import {
   TechnicalSourceExplorer,
   type TechnicalSourceEvidenceAnchor,
@@ -146,14 +147,14 @@ export default function TechnicalDetailsSheet({
       >
         <header className="technical-details-sheet__heading">
           <div>
-            <span>Technical details</span>
+            <span>Details</span>
             <h2 id="technical-details-title">
-              Technical details:{" "}
-              {detailEvent ? detailEvent.eventType.replaceAll("_", " ") : "Project context"}
+              <span className="sr-only">Technical details: </span>
+              {detailEvent ? eventLabel(detailEvent) : "Project context"}
             </h2>
           </div>
-          <button type="button" onClick={onClose}>
-            Close details
+          <button type="button" onClick={onClose} aria-label="Close details" title="Close details">
+            <Icon name="close" size={18} />
           </button>
         </header>
         <div className="technical-details-sheet__body">
@@ -173,7 +174,7 @@ export default function TechnicalDetailsSheet({
             </select>
           </label>
           <section className="detail-section" aria-labelledby="evidence-chain-title">
-            <h3 id="evidence-chain-title">Evidence chain</h3>
+            <h3 id="evidence-chain-title">Event details</h3>
             {detailEvent ? (
               <dl className="detail-facts">
                 <div>
@@ -218,17 +219,15 @@ export default function TechnicalDetailsSheet({
                 ) : null}
               </dl>
             ) : (
-              <p>
-                No event is selected. This sheet still exposes the current control-view evidence.
-              </p>
+              <p>Choose an event above, or browse the saved project details below.</p>
             )}
           </section>
           {detailEvent?.eventType === "activity" && activityHistory.length > 0 ? (
             <section className="detail-section" aria-labelledby="activity-history-title">
-              <h3 id="activity-history-title">Immutable job activity</h3>
+              <h3 id="activity-history-title">Run history</h3>
               <p>
-                The conversation folds this job into its latest phase. Every durable boundary is
-                retained here in event order.
+                The conversation groups this run into its latest phase. Every saved step remains
+                available here in order.
               </p>
               <ol className="activity-history">
                 {activityHistory.map((activity) => (
@@ -308,7 +307,7 @@ export default function TechnicalDetailsSheet({
             </section>
           ) : null}
           <section className="detail-section" aria-labelledby="attachments-title">
-            <h3 id="attachments-title">Evidence, plans, diffs, and replay</h3>
+            <h3 id="attachments-title">Saved details</h3>
             {attachments.length ? (
               <ul className="attachment-list">
                 {attachments.map((attachment) => (
@@ -324,7 +323,7 @@ export default function TechnicalDetailsSheet({
                 ))}
               </ul>
             ) : (
-              <p>No additional sealed artifacts are attached to this event.</p>
+              <p>No additional details are attached to this event.</p>
             )}
             {selected ? (
               <div className="raw-artifact" aria-live="polite">

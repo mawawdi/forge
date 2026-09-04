@@ -186,6 +186,13 @@ alone does not authorize a write. The authored policy and generator produce one
 `StudioCapabilityManifest` shared by TypeScript and Luau. The generated report and
 `forge studio capabilities` provide current counts and exact scope.
 
+The manifest distinguishes creatable instances from update-only engine objects.
+Planning can create only classes marked `creatable`; observed services and engine
+roots can expose proof-closed properties without granting `Instance.new` authority.
+Builder tools derive an exact JSON schema for each approved class and property from
+the sealed manifest, including compound values and references to observed or
+same-Build objects. The model never reconstructs the internal tagged value format.
+
 A property is authorable only when validation, canonicalization, detached
 preflight, writing, direct readback, projection, and comparison are all implemented.
 Structural Name/Parent rules are separate. Reflection attestation compares declaring

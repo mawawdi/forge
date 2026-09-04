@@ -246,7 +246,12 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
     await executionJournalResume(journalStore, input.execution, false);
     try {
       const prepared = new CreatorBuilderToolHost(input);
-      creatorBuilderSystemPrompt(input.plan, prepared.contract, input.verificationFeedback);
+      creatorBuilderSystemPrompt(
+        input.plan,
+        prepared.contract,
+        input.projectIndex,
+        input.verificationFeedback,
+      );
     } catch (error) {
       const failure = {
         stage: "preparation" as const,

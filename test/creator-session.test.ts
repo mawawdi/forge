@@ -50,7 +50,8 @@ import {
 } from "../packages/creator-session/src/coordinator.js";
 import { CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS } from "../packages/studio-capabilities/src/index.js";
 import {
-  STUDIO_WRITABLE_CLASSES,
+  STUDIO_CAPABILITY_MANIFEST,
+  STUDIO_RESOLVABLE_CLASSES,
   studioObjectIdentityKey,
   type StudioObjectIdentity,
 } from "../packages/studio-evidence/src/index.js";
@@ -158,9 +159,11 @@ test("draft line patches are hash-bound, atomic, unambiguous and Unicode-safe", 
   assert.equal(page.sourceHash, contentHash(repeated));
 });
 
-test("build preparation covers every writable class and operation across stable and ephemeral identities", () => {
+test("build preparation covers every creatable class and operation across stable and ephemeral identities", () => {
   for (const identityKind of ["forge_attribute", "studio_ephemeral"] as const) {
-    for (const className of STUDIO_WRITABLE_CLASSES) {
+    for (const { name: className } of STUDIO_CAPABILITY_MANIFEST.classes.filter(
+      (classDefinition) => classDefinition.creatable,
+    )) {
       const identity = (name: string): StudioObjectIdentity =>
         identityKind === "forge_attribute"
           ? { kind: identityKind, stableId: name }
@@ -267,14 +270,14 @@ test("build preparation covers every writable class and operation across stable 
                 kind: "studio_check",
                 check: "instance_exists",
                 path: "Workspace/Created",
-                expectedClass: className,
+                expectedClass: className as (typeof STUDIO_RESOLVABLE_CLASSES)[number],
               },
               {
                 id: "moved",
                 kind: "studio_check",
                 check: "instance_exists",
                 path: "Workspace/Moved",
-                expectedClass: className,
+                expectedClass: className as (typeof STUDIO_RESOLVABLE_CLASSES)[number],
               },
               { id: "syntax", kind: "local_check", check: "luau_syntax" },
               {
@@ -344,6 +347,39 @@ test("a built draft can be refined before application, but an applying change ca
     status: "applying",
   });
   assert.throws(() => advanceSession(applying, { status: "refining_plan" }), /transition/i);
+});
+
+test("engine settings are writable only through observed update targets", () => {
+  const updateOnly = STUDIO_CAPABILITY_MANIFEST.classes
+    .filter((classDefinition) => !classDefinition.creatable)
+    .map((classDefinition) => classDefinition.name);
+  assert.deepEqual(updateOnly, [
+    "Lighting",
+    "MaterialService",
+    "SoundService",
+    "StarterGui",
+    "StarterPlayer",
+    "Terrain",
+    "TextChatService",
+    "Workspace",
+  ]);
+  const ownership = createStudioOwnershipMap({
+    projectId: "engine-settings",
+    revisionHash,
+    projectIndex: observation,
+  });
+  const session = createCreatorSession({
+    prompt: "Adjust the lighting.",
+    projectId: ownership.projectId,
+    revisionHash,
+    projectCaptureHash,
+    ownership,
+  });
+  const orientation = creatorOrientation({ session, ownership, projectIndex: observation });
+  assert.equal(orientation.content.mode, "creator_session");
+  if (orientation.content.mode !== "creator_session") return;
+  const allowed = new Set(orientation.content.studioAuthoring.allowedClasses);
+  for (const className of updateOnly) assert.equal(allowed.has(className), false, className);
 });
 
 test("compact planning uses inspected handles, rejects stale authority and generates structural checks", async () => {
@@ -460,28 +496,30 @@ test("compact planning uses inspected handles, rejects stale authority and gener
     ...sources,
     sourceConsultation: host.getSourceConsultation(),
   });
-  const draftDefinition = builder.definitions().find((tool) => tool.name === "studio.read_draft")!;
+  const draftDefinition = builder.definitions().find((tool) => tool.name === "studio.read_drafts")!;
   const draftSchema = draftDefinition.schema as {
-    properties: { planChangeId: { enum: string[] } };
+    properties: { drafts: { items: { properties: { planChangeId: { enum: string[] } } } } };
   };
-  assert.deepEqual(draftSchema.properties.planChangeId.enum, ["edit"]);
+  assert.deepEqual(draftSchema.properties.drafts.items.properties.planChangeId.enum, ["edit"]);
   assert.equal(
-    builder.definitions().some((tool) => tool.name === "studio.patch_properties"),
+    builder.definitions().some((tool) => tool.name === "studio.inspect"),
     false,
   );
   assert.equal(
-    (await builder.execute("studio.read_draft", { planChangeId: "panel" })).error?.code,
+    (await builder.execute("studio.read_drafts", { drafts: [{ planChangeId: "panel" }] })).error
+      ?.code,
     "TOOL_ARGUMENTS_INVALID",
     "Non-script handles are excluded from the model-facing draft interface",
   );
-  const sourceShapeError = await builder.execute("studio.stage", {
+  const sourceShapeError = await builder.execute("studio.build", {
     changes: [{ planChangeId: "edit", source: "print('new')\n" }],
+    summary: "Updated the script.",
   });
-  assert.equal(sourceShapeError.error?.code, "STAGE_PAYLOAD_INVALID");
+  assert.equal(sourceShapeError.error?.code, "TOOL_ARGUMENTS_INVALID");
   const stagedSource = "print('new')\n";
   assert.equal(
     (
-      await builder.execute("studio.stage", {
+      await builder.execute("studio.build", {
         changes: [
           {
             planChangeId: "edit",
@@ -490,18 +528,27 @@ test("compact planning uses inspected handles, rejects stale authority and gener
             ],
           },
         ],
+        summary: "Updated the script.",
       })
     ).ok,
     true,
   );
-  const patched = await builder.execute("studio.patch_source", {
-    planChangeId: "edit",
-    expectedSourceHash: contentHash(stagedSource),
-    edits: [{ startLine: 1, deleteCount: 1, replacement: "print('repaired')\n" }],
+  const patched = await builder.execute("studio.repair", {
+    repairs: [
+      {
+        kind: "source",
+        planChangeId: "edit",
+        expectedSourceHash: contentHash(stagedSource),
+        edits: [{ startLine: 1, deleteCount: 1, replacement: "print('repaired')\n" }],
+      },
+    ],
+    summary: "Repaired the script.",
   });
   assert.equal(patched.ok, true, JSON.stringify(patched.error));
+  const repairedOperation = builder.stagedOperations()[0];
+  assert.equal(repairedOperation?.kind, "edit_source");
   assert.equal(
-    (patched.value as { sourceHash: string }).sourceHash,
+    repairedOperation?.kind === "edit_source" ? repairedOperation.finalSourceHash : "",
     contentHash("print('repaired')\n"),
   );
 });
@@ -1939,7 +1986,7 @@ test("engine-owned authoring containers are valid parents without entering mutab
       creatorPlanSummary({ ...plan, steps: [{ ...plan.steps[0]!, statement: "界".repeat(6000) }] }),
     /16,384 UTF-8 bytes/,
   );
-  const builderPrompt = creatorBuilderSystemPrompt(plan, contract);
+  const builderPrompt = creatorBuilderSystemPrompt(plan, contract, platformObservation);
   assert.match(builderPrompt, /creator-facing prose in GitHub-flavored Markdown/);
   assert.match(builderPrompt, /tool arguments remain exact schema-valid JSON/);
   const context = JSON.parse(
@@ -1953,11 +2000,13 @@ test("engine-owned authoring containers are valid parents without entering mutab
     const policy = context.propertyPolicies[change.propertyPolicyIndex];
     assert.deepEqual(
       {
-        attributes: policy.attributes,
+        attributes: "primitive",
         source: policy.source,
         allowedProperties: Object.entries(policy.properties).map(([name, index]) => ({
           name,
-          ...context.propertyRules[index as number],
+          valueKinds: [context.propertyRules[index as number].type],
+          nullable: context.propertyRules[index as number].nullable ?? false,
+          constraints: context.propertyRules[index as number].constraints,
         })),
       },
       contract.changes.find((entry) => entry.planChangeId === change.planChangeId)!.propertyPolicy,
@@ -1965,13 +2014,16 @@ test("engine-owned authoring containers are valid parents without entering mutab
   }
   assert.deepEqual(context.steps, plan.steps);
   assert.deepEqual(
-    context.checks,
-    plan.charter.clauses.map((clause) => {
-      if (clause.kind === "creator_review") return clause;
-      const { statement: _statement, ...check } = clause;
-      return check;
-    }),
+    context.qualityRequirements,
+    plan.charter.clauses
+      .filter(
+        (clause) =>
+          clause.kind === "creator_review" ||
+          (clause.kind === "studio_check" && clause.check !== "instance_exists"),
+      )
+      .map((clause) => clause.statement),
   );
+  assert.deepEqual(context.observedObjects, []);
   assert.ok(
     builderPrompt.length < stableJson(plan).length + stableJson(contract).length,
     "unused and repeated class policies must not inflate every model turn",
@@ -2142,8 +2194,9 @@ test("indexed non-authorable classes remain exact structural parents without gai
     sourceResolver: sources.sourceResolver,
     sourceConsultation: sources.sourceConsultation,
   });
-  const staged = await host.execute("studio.stage", {
+  const staged = await host.execute("studio.build", {
     changes: [{ planChangeId: "camera-child", properties: {}, attributes: {} }],
+    summary: "Created the approved child.",
   });
   assert.equal(staged.ok, true);
   assert.equal(host.stagedOperations()[0]?.kind, "create");
@@ -2322,107 +2375,104 @@ test("creator verification keeps staged source repair and rejects invalid Luau",
   });
 
   const beforeBatch = host.progressToken();
-  const rejectedBatch = await host.execute("studio.stage", {
+  const incompleteBatch = await host.execute("studio.build", {
     changes: [
       { planChangeId: "protocol", source: "return {}\n" },
-      { planChangeId: "panel", properties: { InventedProperty: true } },
+      { planChangeId: "panel", properties: {} },
     ],
+    summary: "Built the airlock implementation.",
   });
-  assert.equal(rejectedBatch.ok, false);
+  assert.equal(incompleteBatch.error?.code, "TOOL_ARGUMENTS_INVALID");
   assert.equal(host.progressToken(), beforeBatch);
   assert.equal(host.stagedOperations().length, 0);
   assert.equal(host.stagedSourceWriteBlobs().length, 0);
-  const duplicate = await host.execute("studio.stage", {
+  const rejectedBatch = await host.execute("studio.build", {
     changes: [
-      { planChangeId: "panel", properties: {} },
-      { planChangeId: "panel", properties: {} },
-    ],
-  });
-  assert.equal(duplicate.ok, false);
-  assert.equal(host.progressToken(), beforeBatch);
-
-  const stagedPanel = await host.execute("studio.stage", {
-    changes: [
-      {
-        planChangeId: "panel",
-        properties: { Transparency: 0.2, Reflectance: 0.1 },
-        attributes: { Purpose: "status" },
-      },
-    ],
-  });
-  assert.equal(stagedPanel.ok, true);
-  const protocol = await host.execute("studio.stage", {
-    changes: [
-      {
-        planChangeId: "protocol",
-        source: "return { Enabled = true }\n",
-      },
-    ],
-  });
-  assert.equal(protocol.ok, true);
-  const combined = await host.execute("studio.stage", {
-    changes: [
-      {
-        planChangeId: "panel",
-        properties: { Transparency: 0.2, Reflectance: 0.1 },
-        attributes: { Purpose: "status" },
-      },
       { planChangeId: "protocol", source: "return { Enabled = true }\n" },
-    ],
-  });
-  assert.equal(combined.ok, true);
-  assert.equal((combined.value as { changes: unknown[] }).changes.length, 2);
-  assert.equal(host.stagedOperations().length, 2);
-  const oversizedError = await host.execute("studio.stage", {
-    changes: [
       {
-        planChangeId: "server",
-        properties: { InventedProperty: true },
-        source: `-- private body ${"x".repeat(8000)}\n`,
+        planChangeId: "panel",
+        properties: {
+          CFrame: {
+            X: 0,
+            Y: 4,
+            Z: 0,
+            R00: 1,
+            R01: 0,
+            R02: 0,
+            R10: 0,
+            R11: 1,
+            R12: 0,
+            R20: 0,
+            R21: 0,
+            R22: 1,
+          },
+        },
       },
-    ],
-  });
-  assert.equal(oversizedError.ok, false);
-  assert.ok(Buffer.byteLength(oversizedError.error!.message, "utf8") < 2048);
-  assert.doesNotMatch(
-    oversizedError.error!.message,
-    /private body|contractChange|allowedProperties/,
-  );
-  const invalidServer = await host.execute("studio.stage", {
-    changes: [
       {
         planChangeId: "server",
         source: "--!strict\nlocal impossible: string = 1\nprint(impossible)\n",
       },
     ],
+    summary: "Built the airlock implementation.",
   });
-  assert.equal(invalidServer.ok, true);
-  const automaticReview = (invalidServer.value as { review: { status: string; drafts: unknown[] } })
-    .review;
+  assert.equal(rejectedBatch.ok, false);
+  assert.equal(host.progressToken(), beforeBatch);
+  assert.equal(host.stagedOperations().length, 0, "an invalid complete batch is atomic");
+
+  const built = await host.execute("studio.build", {
+    changes: [
+      { planChangeId: "protocol", source: "return { Enabled = true }\n" },
+      {
+        planChangeId: "panel",
+        properties: {
+          CFrame: { position: { x: 0, y: 4, z: 0 } },
+          Transparency: 0.2,
+          Reflectance: 0.1,
+        },
+        attributes: { Purpose: "status" },
+      },
+      {
+        planChangeId: "server",
+        source: "--!strict\nlocal impossible: string = 1\nprint(impossible)\n",
+      },
+    ],
+    summary: "Built the requested server behavior.",
+  });
+  assert.equal(built.ok, true, JSON.stringify(built.error));
+  assert.equal(host.stagedOperations().length, 3);
+  const automaticReview = (
+    built.value as {
+      review: {
+        status: string;
+        drafts: unknown[];
+        issues: Array<{ count: number; locations?: unknown[] }>;
+      };
+    }
+  ).review;
   assert.equal(
     automaticReview.status,
     "rejected",
-    "the write receipt should diagnose the complete draft without a model round trip",
+    "the one build receipt should diagnose the complete draft without another model request",
   );
   assert.ok(automaticReview.drafts.length);
+  assert.ok(automaticReview.issues.every((issue) => issue.count >= 1));
   assert.equal(host.completionStatus().ready, false);
-  const rejected = await host.execute("forge.verify", {
-    summary: "Built the requested server behavior.",
+  assert.doesNotMatch(JSON.stringify(automaticReview), /forge-studio-luau-analysis|\/var\/folders/);
+
+  const draft = await host.execute("studio.read_drafts", {
+    drafts: [{ planChangeId: "server", startLine: 1, lineCount: 3 }],
   });
-  assert.equal(rejected.ok, true);
-  const rejectedValue = rejected.value as {
-    status: string;
-    issues: Array<{
-      planChangeId?: string;
-      path?: string;
-      message?: string;
-      location?: { line: number; column: number };
-    }>;
-  };
-  assert.equal(rejectedValue.status, "rejected");
-  assert.equal(host.completionStatus().ready, false);
-  assert.ok(rejectedValue.issues.length > 0);
-  assert.doesNotMatch(JSON.stringify(rejectedValue), /forge-studio-luau-analysis|\/var\/folders/);
+  assert.equal(draft.ok, true);
+  const serverDraft = (
+    draft.value as {
+      drafts: Array<{ sourceHash: string; lines: unknown[] }>;
+    }
+  ).drafts[0]!;
+  assert.deepEqual(serverDraft.lines, [
+    { line: 1, text: "--!strict\n" },
+    { line: 2, text: "local impossible: string = 1\n" },
+    { line: 3, text: "print(impossible)\n" },
+  ]);
 
   const replacementSource = [
     'local ReplicatedStorage = game:GetService("ReplicatedStorage")',
@@ -2431,77 +2481,26 @@ test("creator verification keeps staged source repair and rejects invalid Luau",
     "assert(protocol.Enabled)",
     "",
   ].join("\n");
-  const replacement = await host.execute("studio.stage", {
-    changes: [{ planChangeId: "server", source: replacementSource }],
-  });
-  assert.equal(replacement.ok, true);
-  assert.equal((replacement.value as { review: { status: string } }).review.status, "eligible");
-  assert.equal(
-    host.completionStatus().ready,
-    false,
-    "automatic diagnostics must never seal a build before final review",
-  );
-  const draft = await host.execute("studio.read_draft", {
-    planChangeId: "server",
-    startLine: 2,
-    lineCount: 2,
-  });
-  assert.equal(draft.ok, true);
-  assert.deepEqual((draft.value as { lines: unknown[] }).lines, [
-    { line: 2, text: 'local system = ReplicatedStorage:WaitForChild("AirlockSystem")\n' },
-    { line: 3, text: 'local protocol = require(system:WaitForChild("Protocol"))\n' },
-  ]);
-  assert.equal((draft.value as { sourceHash: string }).sourceHash, contentHash(replacementSource));
-  assert.equal(
-    (replacement.value as { changes: Array<{ replaced: boolean }> }).changes[0]?.replaced,
-    true,
-  );
-  assert.equal(host.stagedOperations().length, 3);
-  const stagedServer = host
-    .stagedOperations()
-    .find((operation) => operation.planChangeId === "server");
-  assert.ok(stagedServer && stagedServer.kind === "create" && stagedServer.sourceBlob);
-  assert.equal(stagedServer.sourceBlob.sourceHash, contentHash(replacementSource));
-  assert.equal(stagedServer.sourceBlob.utf8Bytes, Buffer.byteLength(replacementSource, "utf8"));
-  const rejectedReplacement = await host.execute("studio.stage", {
-    changes: [{ planChangeId: "server" }],
-  });
-  assert.equal(rejectedReplacement.ok, false);
-  const preservedServer = host
-    .stagedOperations()
-    .find((operation) => operation.planChangeId === "server");
-  assert.ok(preservedServer && preservedServer.kind === "create" && preservedServer.sourceBlob);
-  assert.equal(preservedServer.sourceBlob.sourceHash, contentHash(replacementSource));
-
-  const patched = await host.execute("studio.patch_source", {
-    planChangeId: "server",
-    expectedSourceHash: contentHash(replacementSource),
-    edits: [{ startLine: 4, deleteCount: 1, replacement: "print(protocol.Enabled)\n" }],
-  });
-  assert.equal(patched.ok, true);
-  const patchedHash = contentHash(
-    replacementSource.replace("assert(protocol.Enabled)", "print(protocol.Enabled)"),
-  );
-  assert.equal((patched.value as { sourceHash: string }).sourceHash, patchedHash);
-  const stalePatch = await host.execute("studio.patch_source", {
-    planChangeId: "server",
-    expectedSourceHash: contentHash(replacementSource),
-    edits: [{ startLine: 4, deleteCount: 1, replacement: "error('bad')\n" }],
-  });
-  assert.equal(stalePatch.ok, false);
-  const afterPatch = host
-    .stagedOperations()
-    .find((operation) => operation.planChangeId === "server");
-  assert.ok(afterPatch?.kind === "create" && afterPatch.sourceBlob?.sourceHash === patchedHash);
-
   const panel = host.stagedOperations().find((item) => item.planChangeId === "panel")!;
-  const propertyPatch = {
-    planChangeId: "panel",
-    expectedOperationHash: contentHash(stableJson(panel)),
-    properties: { Reflectance: 0.2 },
-  };
-  const adjusted = await host.execute("studio.patch_properties", propertyPatch);
-  assert.equal(adjusted.ok, true, JSON.stringify(adjusted));
+  const repaired = await host.execute("studio.repair", {
+    repairs: [
+      {
+        kind: "source",
+        planChangeId: "server",
+        expectedSourceHash: serverDraft.sourceHash,
+        edits: [{ startLine: 1, deleteCount: 3, replacement: replacementSource }],
+      },
+      {
+        kind: "properties",
+        planChangeId: "panel",
+        expectedOperationHash: contentHash(stableJson(panel)),
+        properties: { Reflectance: 0.2 },
+      },
+    ],
+    summary: "Built the requested server behavior.",
+  });
+  assert.equal(repaired.ok, true, JSON.stringify(repaired.error));
+  assert.equal((repaired.value as { review: { status: string } }).review.status, "eligible");
   const adjustedPanel = host.stagedOperations().find((item) => item.planChangeId === "panel");
   assert.ok(adjustedPanel?.kind === "create" && panel.kind === "create");
   assert.deepEqual(adjustedPanel.attributes, panel.attributes);
@@ -2509,30 +2508,25 @@ test("creator verification keeps staged source repair and rejects invalid Luau",
     ...panel.properties,
     Reflectance: { kind: "number_f32", value: Math.fround(0.2) },
   });
-  assert.equal((await host.execute("studio.patch_properties", propertyPatch)).ok, false);
-  const invalidProperty = await host.execute("studio.patch_properties", {
-    ...propertyPatch,
-    expectedOperationHash: contentHash(stableJson(adjustedPanel)),
-    properties: { InventedProperty: true },
+  const repairedServer = host
+    .stagedOperations()
+    .find((operation) => operation.planChangeId === "server");
+  assert.ok(repairedServer?.kind === "create" && repairedServer.sourceBlob);
+  assert.equal(repairedServer.sourceBlob.sourceHash, contentHash(replacementSource));
+  const repairedState = host.progressToken();
+  const staleRepair = await host.execute("studio.repair", {
+    repairs: [
+      {
+        kind: "source",
+        planChangeId: "server",
+        expectedSourceHash: serverDraft.sourceHash,
+        edits: [{ startLine: 1, deleteCount: 1, replacement: "error('stale')\n" }],
+      },
+    ],
+    summary: "This stale repair must not replace the accepted draft.",
   });
-  assert.equal(invalidProperty.ok, false);
-  assert.deepEqual(
-    host.stagedOperations().find((item) => item.planChangeId === "panel"),
-    adjustedPanel,
-  );
-  assert.deepEqual(
-    host.stagedOperations().find((item) => item.planChangeId === "server"),
-    afterPatch,
-  );
-
-  const incomplete = await host.execute("forge.verify", {
-    summary: "Built the requested server behavior.",
-  });
-  const repeated = await host.execute("forge.verify", {
-    summary: "Built the requested server behavior.",
-  });
-  assert.equal((incomplete.value as { status: string }).status, "eligible");
-  assert.deepEqual(repeated.value, incomplete.value);
+  assert.equal(staleRepair.ok, false);
+  assert.equal(host.progressToken(), repairedState, "a stale atomic repair changes nothing");
   assert.equal(host.completionStatus().ready, true);
   const sealed = host.seal();
   assert.equal(sealed.summary, "Built the requested server behavior.");
@@ -2713,7 +2707,7 @@ test("creator verification retains unchanged ModuleScript source and passes vali
     sourceResolver: sources.sourceResolver,
     sourceConsultation: sources.sourceConsultation,
   });
-  const staged = await host.execute("studio.stage", {
+  const staged = await host.execute("studio.build", {
     changes: [
       {
         planChangeId: "server",
@@ -2726,16 +2720,13 @@ test("creator verification retains unchanged ModuleScript source and passes vali
         ].join("\n"),
       },
     ],
-  });
-  assert.equal(staged.ok, true);
-  const verified = await host.execute("forge.verify", {
     summary: "Built the requested server behavior.",
   });
-  assert.equal(verified.ok, true);
+  assert.equal(staged.ok, true);
   assert.equal(
-    (verified.value as { status: string }).status,
+    (staged.value as { review: { status: string } }).review.status,
     "eligible",
-    JSON.stringify(verified.value),
+    JSON.stringify(staged.value),
   );
   assert.equal(host.completionStatus().ready, true);
 });
@@ -3047,6 +3038,7 @@ test("creator property inputs reach every proof-closed manifest codec", () => {
       { position: { x: 1, y: 2, z: 3 }, rotation: { x: 0, y: 90, z: 0 } },
       "cframe_f32x12",
     ],
+    ["Part", "CFrame", { position: { x: 0, y: 4, z: -24 } }, "cframe_f32x12"],
     ["Attachment", "Visible", false, "boolean"],
     [
       "Beam",
@@ -3088,6 +3080,7 @@ test("creator property inputs reach every proof-closed manifest codec", () => {
     ["NumberValue", "Value", Math.PI, "number_f64"],
     ["Part", "CollisionGroup", "Default", "string_utf8"],
     ["Part", "Material", "Plastic", "enum_name"],
+    ["Lighting", "TimeOfDay", "21:30:00", "string_utf8"],
     ["ParticleEmitter", "Lifetime", { min: 0.5, max: 2 }, "number_range"],
   ] as const;
 
@@ -3096,8 +3089,11 @@ test("creator property inputs reach every proof-closed manifest codec", () => {
       className,
       propertyName,
       value,
-      resolveReference: (objectId) => ({
-        identity: { kind: "forge_attribute", stableId: objectId },
+      resolveReference: (reference) => ({
+        identity: {
+          kind: "forge_attribute",
+          stableId: "objectId" in reference ? reference.objectId : reference.changeId,
+        },
         path: "Workspace/AttachmentA",
         className: "Attachment",
       }),
@@ -3123,6 +3119,22 @@ test("creator property inputs reach every proof-closed manifest codec", () => {
       value: null,
     }),
     { kind: "nil", expectedCodec: "physical_properties" },
+  );
+  assert.equal(
+    canonicalizeCreatorPropertyInput({
+      className: "Beam",
+      propertyName: "Attachment0",
+      value: { changeId: "new-attachment" },
+      resolveReference: (reference) => ({
+        identity: {
+          kind: "forge_attribute",
+          stableId: "changeId" in reference ? reference.changeId : reference.objectId,
+        },
+        path: "Workspace/BeamAttachment",
+        className: "Attachment",
+      }),
+    }).kind,
+    "instance_ref",
   );
   assert.throws(
     () =>

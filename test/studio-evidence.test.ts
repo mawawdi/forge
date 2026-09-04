@@ -128,18 +128,22 @@ test("content reflection matches the complete live Studio 0.737 attestation", ()
     entry.properties.map((property) => ({ className: entry.name, ...property })),
   );
   const contentIds = properties.filter((property) => property.catalogType.name === "ContentId");
-  assert.equal(contentIds.length, 11);
+  assert.equal(contentIds.length, 30);
   for (const property of contentIds) {
     assert.deepEqual(property.reflection, { engineType: "ContentId", scriptType: "string" });
   }
   const content = properties.filter((property) => property.catalogType.name === "Content");
-  assert.equal(content.length, 7);
+  assert.equal(content.length, 26);
   for (const property of content) {
     assert.deepEqual(property.reflection, { engineType: "Content", scriptType: "Content" });
     // ReflectionService reports these URI/object views as non-serialized,
     // independently of the documentation catalog's canSave flag.
     assert.equal(property.serialized, false, `${property.className}.${property.name}`);
   }
+  const timeOfDay = properties.find(
+    (property) => property.className === "Lighting" && property.name === "TimeOfDay",
+  );
+  assert.deepEqual(timeOfDay?.reflection, { engineType: "string", scriptType: "string" });
 });
 
 test("generated Studio evidence manifest is closed and canonical", () => {

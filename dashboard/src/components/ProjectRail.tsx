@@ -149,7 +149,6 @@ export function ProjectRail({
                   <Icon name={collapsed.has(key) ? "chevronRight" : "chevronDown"} size={14} />
                   <Icon name="folder" size={16} />
                   <strong>{chats[0]!.projectName}</strong>
-                  <small>{chats.length}</small>
                 </button>
                 <button
                   type="button"

@@ -12,6 +12,13 @@ import { Icon } from "./components/Icon";
 import type { CreatorConversationEvent } from "./types";
 
 const TechnicalDetailsSheet = lazy(() => import("./components/TechnicalDetailsSheet"));
+const LATEST_BUTTON_THRESHOLD_PX = 72;
+
+function isMeaningfullyAwayFromLatest(scroller: HTMLElement): boolean {
+  return (
+    scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight >= LATEST_BUTTON_THRESHOLD_PX
+  );
+}
 
 export function App(): React.JSX.Element {
   const snapshot = useDashboardSnapshot();
@@ -88,7 +95,7 @@ export function App(): React.JSX.Element {
       const position = id ? scrollPositions.current.get(id) : undefined;
       followingLatest.current = position?.following ?? true;
       scroller.scrollTop = followingLatest.current ? scroller.scrollHeight : (position?.top ?? 0);
-      setAwayFromLatest(!followingLatest.current);
+      setAwayFromLatest(!followingLatest.current && isMeaningfullyAwayFromLatest(scroller));
       setNewUpdates(false);
       historyAnchor.current = undefined;
     } else if (
@@ -119,10 +126,7 @@ export function App(): React.JSX.Element {
         scroller.scrollTop = scroller.scrollHeight;
         lastScrollTop.current = scroller.scrollTop;
       }
-      setAwayFromLatest(
-        !followingLatest.current &&
-          scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 2,
-      );
+      setAwayFromLatest(!followingLatest.current && isMeaningfullyAwayFromLatest(scroller));
     });
     observer.observe(scroller);
     for (const child of scroller.children) observer.observe(child);
@@ -216,7 +220,7 @@ export function App(): React.JSX.Element {
   function pauseFollowing(): void {
     followingLatest.current = false;
     const node = scrollRef.current;
-    setAwayFromLatest(Boolean(node && node.scrollHeight - node.scrollTop - node.clientHeight > 2));
+    setAwayFromLatest(Boolean(node && isMeaningfullyAwayFromLatest(node)));
   }
 
   return (
@@ -274,7 +278,11 @@ export function App(): React.JSX.Element {
             projectReturnFocus.current?.focus();
           }}
         />
-        <section className="conversation-canvas" aria-label="Forge project conversation">
+        <section
+          className="conversation-canvas"
+          aria-label="Forge project conversation"
+          aria-busy={state?.agentActivities?.some((activity) => activity.running) ?? false}
+        >
           <div
             className="conversation-scroll"
             ref={scrollRef}
@@ -313,10 +321,7 @@ export function App(): React.JSX.Element {
               if (delta > 0 && node.scrollHeight - node.scrollTop - node.clientHeight <= 2)
                 followingLatest.current = true;
               lastScrollTop.current = node.scrollTop;
-              setAwayFromLatest(
-                !followingLatest.current &&
-                  node.scrollHeight - node.scrollTop - node.clientHeight > 2,
-              );
+              setAwayFromLatest(!followingLatest.current && isMeaningfullyAwayFromLatest(node));
               if (followingLatest.current) setNewUpdates(false);
               if (state?.selectedConversationId)
                 scrollPositions.current.set(state.selectedConversationId, {

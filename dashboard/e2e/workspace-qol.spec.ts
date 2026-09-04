@@ -59,6 +59,8 @@ test("expanding activity and scrolling slightly upward keeps the reader in place
     .poll(() => scroller.evaluate((n) => n.scrollHeight - n.clientHeight - n.scrollTop))
     .toBeLessThan(3);
   await scroller.hover();
+  await page.mouse.wheel(0, -12);
+  await expect(page.getByRole("button", { name: /Jump to latest|New updates/ })).toHaveCount(0);
   await page.mouse.wheel(0, -100);
   await expect(page.getByRole("button", { name: /Jump to latest|New updates/ })).toBeVisible();
   const top = await scroller.evaluate((n) => n.scrollTop);
@@ -232,6 +234,46 @@ test("grows the compact composer to a cap, shrinks again, and keeps shortcut set
   await composer.press("Control+Enter");
   await expect.poll(() => api.turns.length).toBe(1);
   await expect(composer).toHaveValue("");
+});
+
+test("chooses a model from the compact keyboard-accessible picker", async ({ page }) => {
+  const base = conversationState();
+  const api = createDashboardApi(
+    conversationState({
+      modelRegistry: {
+        ...base.modelRegistry,
+        models: [
+          ...base.modelRegistry.models,
+          {
+            id: "z-ai/glm-5.3-flash",
+            displayName: "GLM 5.3 Flash",
+            availability: "available",
+            requiredCapabilities: ["tools"],
+            providerFallback: "disabled",
+          },
+        ],
+      },
+    }),
+  );
+  await installDashboardApi(page, api);
+  await page.goto("/");
+
+  const trigger = page.getByRole("combobox", { name: "Model", exact: true });
+  await trigger.click();
+  const picker = page.getByRole("listbox", { name: "Choose a model" });
+  await expect(picker).toBeVisible();
+  await expect(picker.getByRole("option")).toHaveCount(2);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+  await picker.getByRole("option", { name: /GLM 5\.3 Flash/ }).click();
+  await expect(trigger).toContainText("GLM 5.3 Flash");
+  await expect(picker).toHaveCount(0);
+
+  await trigger.press("ArrowDown");
+  await expect(picker).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(picker).toHaveCount(0);
+  await expect(trigger).toBeFocused();
 });
 
 test("keeps older messages in place and provides a way back to the latest update", async ({

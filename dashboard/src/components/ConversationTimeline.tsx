@@ -57,7 +57,7 @@ export function ConversationTimeline({
     >
       {snapshot.loadingHistoryFor === state.selectedConversationId
         ? "Loading earlier messages…"
-        : "Load earlier conversation"}
+        : "Earlier messages"}
     </button>
   ) : null;
   if (visibleEvents.length === 0)
@@ -341,7 +341,12 @@ function EventCard({
     >
       <header className="conversation-event__heading">
         <div>
-          <h2 id={`event-${event.id}`}>{eventTitle(event)}</h2>
+          <h2
+            id={`event-${event.id}`}
+            className={event.eventType === "creator_turn" ? "sr-only" : undefined}
+          >
+            {eventTitle(event)}
+          </h2>
         </div>
         <time dateTime={event.occurredAt} title={new Date(event.occurredAt).toLocaleString()}>
           {formatTimestamp(event.occurredAt)}
@@ -394,11 +399,10 @@ function MessageText({
 }
 
 function PlanText({ text }: { readonly text: string }): React.JSX.Element {
-  // Machine-generated structural checks remain in Details. They are not part
-  // of the creator-facing plan or review prompt.
+  // Verification checks and creator-review guidance remain in Details and the
+  // execution contract. The plan card presents only the work being proposed.
   const visible = text.replace(/\n\nChecks\n[\s\S]*?(?=\n\nYour review\n|$)/, "");
-  const [work = "", ...sections] = visible.split(/\n\n(?=Your review\n)/);
-  const reviews = sections.filter((section) => section.startsWith("Your review\n"));
+  const [work = ""] = visible.split(/\n\n(?=Your review\n)/);
   const [expanded, setExpanded] = useState(false);
   const steps = work.split(/\n\n(?=\d+\. )/);
   const long = work.length > 2200 && steps.length > 2;
@@ -425,23 +429,6 @@ function PlanText({ text }: { readonly text: string }): React.JSX.Element {
             <Icon name={expanded ? "arrowUp" : "arrowDown"} size={16} />
           </button>
         ) : null}
-        {reviews.map((section) => {
-          const [title, ...items] = section.split("\n");
-          return (
-            <details className="plan-checks" key={title}>
-              <summary>
-                Try it in Studio <span>({items.length})</span>
-              </summary>
-              <ul>
-                {items.map((item, index) => (
-                  <li key={index}>
-                    <RichText text={item.replace(/^- /, "").replace(/^Creator review:\s*/i, "")} />
-                  </li>
-                ))}
-              </ul>
-            </details>
-          );
-        })}
       </>
     );
   return <MessageText text={work} markdown />;
@@ -493,7 +480,10 @@ function EventBody({ event }: Pick<EventCardProps, "event">): React.JSX.Element 
         <BlueprintBody>
           <p>{event.data.message}</p>
           <details className="playtest-guide">
-            <summary>What to try</summary>
+            <summary>
+              <Icon name="chevronRight" size={14} />
+              <span>What to try</span>
+            </summary>
             <CheckList label="Try it in Studio" values={event.data.creatorChecks} />
           </details>
         </BlueprintBody>
@@ -878,7 +868,7 @@ function CheckList({
 function eventTitle(event: CreatorConversationEvent): string {
   switch (event.eventType) {
     case "creator_turn":
-      return "You";
+      return "Your message";
     case "agent_turn":
       return "Forge";
     case "activity":

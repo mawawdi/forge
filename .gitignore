@@ -13,3 +13,5 @@ target/
 reference-plugin/
 dashboard/test-results/
 dashboard/playwright-report/
+.agents/
+**.png

@@ -120,10 +120,23 @@ export const CREATOR_MAX_CHANGES = STUDIO_CAPABILITY_MANIFEST.limits.maximumOper
 
 export type StudioWritableClass = (typeof STUDIO_WRITABLE_CLASSES)[number];
 export type StudioScriptClass = (typeof STUDIO_SCRIPT_CLASSES)[number];
+const STUDIO_CREATABLE_CLASSES = STUDIO_CAPABILITY_MANIFEST.classes
+  .filter((classDefinition) => classDefinition.creatable)
+  .map((classDefinition) => classDefinition.name) as [
+  StudioWritableClass,
+  ...StudioWritableClass[],
+];
 export const STUDIO_NON_SCRIPT_WRITABLE_CLASSES = STUDIO_WRITABLE_CLASSES.filter(
   (className): className is Exclude<StudioWritableClass, StudioScriptClass> =>
     !STUDIO_SCRIPT_CLASSES.includes(className as StudioScriptClass),
 );
+const STUDIO_NON_SCRIPT_CREATABLE_CLASSES = STUDIO_CREATABLE_CLASSES.filter(
+  (className): className is Exclude<StudioWritableClass, StudioScriptClass> =>
+    !STUDIO_SCRIPT_CLASSES.includes(className as StudioScriptClass),
+) as [
+  Exclude<StudioWritableClass, StudioScriptClass>,
+  ...Exclude<StudioWritableClass, StudioScriptClass>[],
+];
 export type StudioNonScriptWritableClass = Exclude<StudioWritableClass, StudioScriptClass>;
 /** The only in-memory Studio observation shape accepted by creator logic. */
 export type CreatorProjectIndexView = StudioProjectIndexMetadataView;
@@ -358,7 +371,8 @@ export type CreatorPropertyInput =
   | { r: number; g: number; b: number }
   | {
       position: { x: number; y: number; z: number };
-      rotation: { x: number; y: number; z: number };
+      /** Euler angles in degrees. Omitted means no rotation. */
+      rotation?: { x: number; y: number; z: number } | undefined;
     }
   | { scale: number; offset: number }
   | {
@@ -376,7 +390,6 @@ export type CreatorPropertyInput =
         color: { r: number; g: number; b: number };
       }[];
     }
-  | { name: string }
   | { family: string; weight: string; style: string }
   | {
       density: number;
@@ -400,9 +413,13 @@ export type CreatorPropertyInput =
     }
   | {
       objectId: string;
+    }
+  | {
+      /** Reference an object created by another approved change in this build. */
+      changeId: string;
     };
 
-type CreatorReferenceResolver = (objectId: string) => {
+type CreatorReferenceResolver = (reference: { objectId: string } | { changeId: string }) => {
   identity: StudioObjectIdentity;
   path: string;
   className: string;
@@ -2473,7 +2490,7 @@ export function creatorOrientation(bundle: {
     projectId: bundle.session.projectId,
     availableAuthorities: bundle.ownership.availableAuthorities,
     ownership: new Map(bundle.ownership.entries.map((entry) => [entry.objectId, entry.owner])),
-    allowedClasses: STUDIO_WRITABLE_CLASSES,
+    allowedClasses: STUDIO_CREATABLE_CLASSES,
     resolvableClasses: STUDIO_RESOLVABLE_CLASSES,
   });
 }
@@ -2510,7 +2527,8 @@ function formatZodIssues(
   ].join("; ");
 }
 
-const CREATOR_WRITE_TOOLS = ["studio.stage", "studio.patch_source", "studio.patch_properties"];
+const CREATOR_WRITE_TOOLS = ["studio.build", "studio.repair"];
+const CREATOR_VERIFIER_TOOLS = ["studio.build", "studio.repair"];
 
 abstract class BaseCreatorToolHost implements AgentToolHost {
   private executedCalls = 0;
@@ -2529,7 +2547,8 @@ abstract class BaseCreatorToolHost implements AgentToolHost {
         this.executedWrites +
         calls.filter((call) => CREATOR_WRITE_TOOLS.includes(call.name)).length,
       verifierCalls:
-        this.executedVerifierCalls + calls.filter((call) => call.name === "forge.verify").length,
+        this.executedVerifierCalls +
+        calls.filter((call) => CREATOR_VERIFIER_TOOLS.includes(call.name)).length,
     };
     if (
       projected.toolCalls > this.budgets.maxToolCalls ||
@@ -2590,7 +2609,8 @@ abstract class BaseCreatorToolHost implements AgentToolHost {
     if (
       this.executedCalls >= this.budgets.maxToolCalls ||
       (CREATOR_WRITE_TOOLS.includes(name) && this.executedWrites >= this.budgets.maxWrites) ||
-      (name === "forge.verify" && this.executedVerifierCalls >= this.budgets.maxVerifierCalls) ||
+      (CREATOR_VERIFIER_TOOLS.includes(name) &&
+        this.executedVerifierCalls >= this.budgets.maxVerifierCalls) ||
       this.totalResultBytes >= this.budgets.maxToolResultBytes
     ) {
       const result = failed(
@@ -2627,7 +2647,7 @@ abstract class BaseCreatorToolHost implements AgentToolHost {
   private record(name: string, result: ToolResult): void {
     this.executedCalls += 1;
     if (CREATOR_WRITE_TOOLS.includes(name)) this.executedWrites += 1;
-    if (name === "forge.verify") this.executedVerifierCalls += 1;
+    if (CREATOR_VERIFIER_TOOLS.includes(name)) this.executedVerifierCalls += 1;
     this.totalResultBytes += result.bytes;
   }
   protected abstract dispatch(name: string, input: unknown): Promise<unknown>;
@@ -3619,6 +3639,7 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
     status: "incomplete",
     issueHashes: [],
   };
+  private latestModelCheckpoint?: string;
   readonly contract: CreatorBuildContract;
   constructor(
     private readonly input: {
@@ -3655,37 +3676,88 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
             ["Script", "LocalScript", "ModuleScript"].includes(change.className)),
       )
       .map((change) => change.id);
-    const properties = this.input.plan.changes
-      .filter((change) => change.kind === "create" || change.kind === "update")
-      .map((change) => change.id);
+    const propertyChanges = this.contract.changes.filter(
+      (change) => change.kind === "create" || change.kind === "update" || change.kind === "move",
+    );
+    const properties = propertyChanges.map((change) => change.planChangeId);
+    const sourceDocumentIds = this.approvedSourceDocumentIds();
+    const referencesFor = (rule: CreatorPropertyRule) => this.modelPropertyReferences(rule);
     return BUILDER_DEFINITIONS.flatMap((tool) => {
-      if (tool.name === "studio.stage") {
+      if (tool.name === "source.read") {
+        if (sourceDocumentIds.length === 0) return [];
         return [
           definition(tool.name, tool.description, {
-            ...tool.inputShape,
-            changes: z
-              .array(STAGE_PAYLOAD_SCHEMA.extend({ planChangeId: z.enum(ids) }))
+            reads: z
+              .array(
+                z
+                  .object({
+                    documentId: z.enum(sourceDocumentIds),
+                    maximumUtf8Bytes: z
+                      .number()
+                      .int()
+                      .min(1)
+                      .max(16 * 1024)
+                      .optional(),
+                    cursor: SOURCE_QUERY_CURSOR_SCHEMA,
+                  })
+                  .strict(),
+              )
               .min(1)
-              .max(CREATOR_MAX_CHANGES)
-              .describe(
-                "A JSON array of approved change objects. Never stringify the array. Stage all ready edits together.",
-              ),
+              .max(3),
           }),
         ];
       }
-      const allowed = ["studio.read_draft", "studio.patch_source"].includes(tool.name)
-        ? scripts
-        : tool.name === "studio.patch_properties"
-          ? properties
-          : undefined;
-      if (allowed === undefined) return [tool];
-      if (allowed.length === 0) return [];
-      return [
-        definition(tool.name, tool.description, {
-          ...tool.inputShape,
-          planChangeId: z.enum(allowed),
-        }),
-      ];
+      if (tool.name === "studio.build") {
+        const payload = groupedModelStagePayloadSchema(this.contract.changes, referencesFor);
+        return [
+          definition(tool.name, tool.description, {
+            changes: z
+              .array(payload)
+              .length(ids.length)
+              .refine(
+                (changes) =>
+                  new Set(changes.map((change) => change.planChangeId)).size === ids.length,
+                "Include every approved planChangeId exactly once",
+              )
+              .describe(
+                "The complete approved change array. Send it as an array, never as JSON inside a string.",
+              ),
+            summary: BUILDER_SUMMARY_SCHEMA,
+          }),
+        ];
+      }
+      if (tool.name === "studio.read_drafts") {
+        if (scripts.length === 0) return [];
+        return [
+          definition(tool.name, tool.description, {
+            drafts: z
+              .array(MODEL_DRAFT_READ_SCHEMA.extend({ planChangeId: z.enum(scripts) }))
+              .min(1)
+              .max(scripts.length),
+          }),
+        ];
+      }
+      if (tool.name === "studio.repair") {
+        if (scripts.length === 0 && properties.length === 0) return [];
+        const repair = combineModelSchemas<unknown>([
+          ...(scripts.length > 0
+            ? [MODEL_SOURCE_REPAIR_SCHEMA.extend({ planChangeId: z.enum(scripts) })]
+            : []),
+          ...(propertyChanges.length > 0
+            ? [groupedModelPropertyRepairSchema(propertyChanges, referencesFor)!]
+            : []),
+        ])!;
+        return [
+          definition(tool.name, tool.description, {
+            repairs: z
+              .array(repair)
+              .min(1)
+              .max(scripts.length + properties.length),
+            summary: BUILDER_SUMMARY_SCHEMA,
+          }),
+        ];
+      }
+      return [tool];
     });
   }
   stagedOperations(): StudioChangeOperation[] {
@@ -3739,6 +3811,9 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
       }),
     );
   }
+  contextCheckpoint(): string | undefined {
+    return this.latestModelCheckpoint;
+  }
   completionStatus(): AgentToolCompletionStatus {
     if (this.operations.length === 0)
       return {
@@ -3759,7 +3834,13 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
       return {
         ready: false,
         code: "BUILDER_LOCAL_GATE_NOT_ELIGIBLE",
-        message: `Creator builder ended before forge.verify established an eligible local gate (current: ${this.localGate.status})`,
+        message: `Creator builder ended before the complete draft passed local review (current: ${this.localGate.status})`,
+      };
+    if (this.summary.length === 0)
+      return {
+        ready: false,
+        code: "BUILDER_SUMMARY_MISSING",
+        message: "Creator builder passed local review without its final Markdown summary",
       };
     return { ready: true };
   }
@@ -3796,215 +3877,334 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
     return changeSet;
   }
   protected override async dispatch(name: string, input: unknown): Promise<unknown> {
-    if (name === "studio.api_lookup")
-      return creatorRobloxApiLookup(input as z.infer<z.ZodObject<typeof ROBLOX_API_LOOKUP_SHAPE>>);
-    if (name === "studio.inspect") return this.inspect((input as { paths: string[] }).paths);
-    if (name === "studio.read_draft") {
-      const request = input as { planChangeId: string; startLine?: number; lineCount?: number };
-      const draft = this.draftSource(request.planChangeId);
-      return {
-        planChangeId: request.planChangeId,
-        ...creatorDraftPage(draft, request.startLine ?? 1, request.lineCount ?? 120),
-      };
-    }
-    if (name === "studio.patch_properties") {
-      const patch = input as {
-        planChangeId: string;
-        expectedOperationHash: string;
-        properties: Record<string, CreatorPropertyInput>;
-      };
-      const operation = this.operations.find((item) => item.planChangeId === patch.planChangeId);
-      if (!operation || (operation.kind !== "create" && operation.kind !== "update"))
-        throw new ToolFailure(
-          "DRAFT_PROPERTIES_MISSING",
-          "Stage this create or update before editing its properties.",
-        );
-      if (contentHash(stableJson(operation)) !== patch.expectedOperationHash)
-        throw new ToolFailure(
-          "DRAFT_PROPERTIES_STALE",
-          "The draft changed. Copy its current operation hash from studio.diff before editing.",
-        );
-      const contractChange = this.contract.changes.find(
-        (item) => item.planChangeId === patch.planChangeId,
-      )!;
-      const derived = deriveStudioOperation(
-        contractChange,
-        {
-          planChangeId: patch.planChangeId,
-          properties: patch.properties,
-          ...(operation.kind === "create" && operation.sourceBlob
-            ? { source: this.sourceWriteText(operation.sourceBlob) }
-            : {}),
-        },
-        this.input.sourceIndex,
-        this.input.sourceResolver,
-        (source) => this.sourceWriteBlob(source),
-        (binding) => this.sourceWriteText(binding),
-        (objectId) => {
-          const target = this.input.projectIndex.instances.find(
-            (item) =>
-              item.objectId === objectId &&
-              this.contract.initialInspectionPaths.includes(item.path),
-          );
-          if (!target)
-            throw new ToolFailure(
-              "PROPERTY_REFERENCE_NOT_APPROVED",
-              "Use an objectId from the approved inspection scope.",
-            );
-          return target;
-        },
+    let result: unknown;
+    if (name === "studio.api_lookup") {
+      result = creatorRobloxApiLookup(
+        input as z.infer<z.ZodObject<typeof ROBLOX_API_LOOKUP_SHAPE>>,
       );
-      if (derived.kind !== "create" && derived.kind !== "update")
+    } else if (name === "source.read") {
+      const reads = (
+        input as {
+          reads: Array<{ documentId: string; maximumUtf8Bytes?: number; cursor?: string }>;
+        }
+      ).reads;
+      if (new Set(reads.map((read) => read.documentId)).size !== reads.length)
         throw new ToolFailure(
-          "DRAFT_PROPERTIES_MISSING",
-          "This operation has no editable properties.",
+          "DUPLICATE_SOURCE_READ",
+          "Read each source document at most once per batch.",
         );
-      const updated = {
-        ...operation,
-        properties: { ...operation.properties, ...derived.properties },
+      result = {
+        sources: reads.map((read) => ({
+          documentId: read.documentId,
+          result: this.readApprovedSource({
+            ...read,
+            maximumUtf8Bytes: read.maximumUtf8Bytes ?? 8 * 1024,
+          }),
+        })),
       };
-      const operations = this.operations.map((item) => (item === operation ? updated : item));
+    } else if (name === "studio.read_drafts") {
+      const requests = (
+        input as {
+          drafts: Array<{ planChangeId: string; startLine?: number; lineCount?: number }>;
+        }
+      ).drafts;
+      if (new Set(requests.map((request) => request.planChangeId)).size !== requests.length)
+        throw new ToolFailure("DUPLICATE_DRAFT_READ", "Read each staged script at most once.");
+      result = {
+        drafts: requests.map((request) => ({
+          planChangeId: request.planChangeId,
+          ...creatorDraftPage(
+            this.draftSource(request.planChangeId),
+            request.startLine ?? 1,
+            request.lineCount ?? 120,
+          ),
+        })),
+      };
+    } else if (name === "studio.build") {
+      const request = input as { changes: CreatorStagePayload[]; summary: string };
+      result = this.stageChanges(request.changes);
+      if (this.localGate.status === "eligible") this.summary = request.summary;
+    } else if (name === "studio.repair") {
+      const request = input as {
+        repairs: Array<
+          | {
+              kind: "source";
+              planChangeId: string;
+              expectedSourceHash: string;
+              edits: CreatorDraftLineEdit[];
+            }
+          | {
+              kind: "properties";
+              planChangeId: string;
+              expectedOperationHash: string;
+              properties: Record<string, CreatorPropertyInput>;
+            }
+        >;
+        summary: string;
+      };
+      result = this.repairDrafts(request.repairs);
+      if (this.localGate.status === "eligible") this.summary = request.summary;
+    } else {
+      throw new ToolFailure("TOOL_UNKNOWN", `Unknown builder tool ${name}`);
+    }
+    this.latestModelCheckpoint = stableJson({
+      instruction:
+        "Continue from this complete current Build state. Do not repeat accepted work or reconstruct earlier tool output.",
+      operations: this.operationReceipts(),
+      localGate: this.gate(),
+      latestResult: result,
+    });
+    return result;
+  }
+
+  private repairDrafts(
+    repairs: Array<
+      | {
+          kind: "source";
+          planChangeId: string;
+          expectedSourceHash: string;
+          edits: CreatorDraftLineEdit[];
+        }
+      | {
+          kind: "properties";
+          planChangeId: string;
+          expectedOperationHash: string;
+          properties: Record<string, CreatorPropertyInput>;
+        }
+    >,
+  ) {
+    if (new Set(repairs.map((repair) => repair.planChangeId)).size !== repairs.length)
+      throw new ToolFailure(
+        "DUPLICATE_REPAIR_TARGET",
+        "Combine all corrections for a planChangeId into one repair entry.",
+      );
+    const operations = this.operations.map(cloneOperation);
+    const blobs = new Map(this.sourceWriteBlobs);
+    const gate = this.gate();
+    const verificationCache = this.verificationCache
+      ? structuredClone(this.verificationCache)
+      : undefined;
+    try {
+      const changes = repairs.map((repair) =>
+        repair.kind === "source"
+          ? this.patchSourceDraft(repair)
+          : this.patchPropertiesDraft(repair),
+      );
+      const review = this.verify();
+      return { repaired: true, changes, review };
+    } catch (error) {
+      this.operations.splice(0, this.operations.length, ...operations);
+      this.sourceWriteBlobs.clear();
+      for (const [hash, blob] of blobs) this.sourceWriteBlobs.set(hash, blob);
+      this.localGate = gate;
+      if (verificationCache) this.verificationCache = verificationCache;
+      else delete this.verificationCache;
+      throw error;
+    }
+  }
+
+  private patchPropertiesDraft(patch: {
+    planChangeId: string;
+    expectedOperationHash: string;
+    properties: Record<string, CreatorPropertyInput>;
+  }) {
+    const operation = this.operations.find((item) => item.planChangeId === patch.planChangeId);
+    if (
+      !operation ||
+      (operation.kind !== "create" && operation.kind !== "update" && operation.kind !== "move")
+    )
+      throw new ToolFailure(
+        "DRAFT_PROPERTIES_MISSING",
+        "Build this create, update, or move before repairing its properties.",
+      );
+    if (contentHash(stableJson(operation)) !== patch.expectedOperationHash)
+      throw new ToolFailure(
+        "DRAFT_PROPERTIES_STALE",
+        "The property draft changed. Use the latest operationHash from the Build checkpoint.",
+      );
+    const contractChange = this.contract.changes.find(
+      (item) => item.planChangeId === patch.planChangeId,
+    )!;
+    const derived = deriveStudioOperation(
+      contractChange,
+      {
+        planChangeId: patch.planChangeId,
+        properties: patch.properties,
+        ...(operation.kind === "create" && operation.sourceBlob
+          ? { source: this.sourceWriteText(operation.sourceBlob) }
+          : {}),
+      },
+      this.input.sourceIndex,
+      this.input.sourceResolver,
+      (source) => this.sourceWriteBlob(source),
+      (binding) => this.sourceWriteText(binding),
+      (reference) => this.approvedPropertyReference(reference),
+    );
+    if (derived.kind !== "create" && derived.kind !== "update" && derived.kind !== "move")
+      throw new ToolFailure("DRAFT_PROPERTIES_MISSING", "This operation has no properties.");
+    const updated = {
+      ...operation,
+      properties: { ...operation.properties, ...derived.properties },
+    };
+    const next = this.operations.map((item) => (item === operation ? updated : item));
+    assertStudioChangeOperation(
+      updated,
+      this.input.projectIndex,
+      this.input.ownership,
+      this.contract.mutationAuthority,
+      next,
+    );
+    this.operations[this.operations.indexOf(operation)] = cloneOperation(updated);
+    this.localGate = { status: "incomplete", issueHashes: [] };
+    return {
+      planChangeId: patch.planChangeId,
+      operationId: updated.id,
+      operationHash: contentHash(stableJson(updated)),
+      previousOperationHash: patch.expectedOperationHash,
+    };
+  }
+
+  private patchSourceDraft(patch: {
+    planChangeId: string;
+    expectedSourceHash: string;
+    edits: CreatorDraftLineEdit[];
+  }) {
+    const operation = this.operations.find((item) => item.planChangeId === patch.planChangeId);
+    if (
+      !operation ||
+      !(operation.kind === "edit_source" || (operation.kind === "create" && operation.sourceBlob))
+    )
+      throw new ToolFailure(
+        "DRAFT_SOURCE_MISSING",
+        "Build this approved script before repairing its source.",
+      );
+    const source =
+      operation.kind === "edit_source"
+        ? materializeEditedSource(
+            operation,
+            this.input.sourceIndex,
+            this.input.sourceResolver,
+            (binding) => this.sourceWriteText(binding),
+          )
+        : this.sourceWriteText(operation.sourceBlob!);
+    const patched = patchCreatorDraftSource(source, patch.expectedSourceHash, patch.edits);
+    if (operation.kind === "create") {
+      const bytes = Buffer.byteLength(patched, "utf8");
+      const total = this.operations.reduce(
+        (sum, item) =>
+          sum +
+          (item === operation
+            ? 0
+            : item.kind === "create"
+              ? (item.sourceBlob?.utf8Bytes ?? 0)
+              : item.kind === "edit_source"
+                ? item.edits.reduce((n, edit) => n + edit.replacementBlob.utf8Bytes, 0)
+                : 0),
+        bytes,
+      );
+      if (bytes > this.budgets.maxBytesPerFile || total > this.budgets.maxChangedSourceBytes)
+        throw new ToolFailure(
+          "SOURCE_BUDGET_EXHAUSTED",
+          "The repaired source exceeds the active source byte budget.",
+        );
+      assertRequiredStudioSourceText(patched);
+      const updated = { ...operation, sourceBlob: this.sourceWriteBlob(patched) };
+      const next = this.operations.map((item) => (item === operation ? updated : item));
       assertStudioChangeOperation(
         updated,
         this.input.projectIndex,
         this.input.ownership,
         this.contract.mutationAuthority,
-        operations,
+        next,
       );
       this.operations[this.operations.indexOf(operation)] = cloneOperation(updated);
       this.localGate = { status: "incomplete", issueHashes: [] };
       return {
-        staged: true,
-        replaced: true,
+        planChangeId: patch.planChangeId,
         operationId: updated.id,
         operationHash: contentHash(stableJson(updated)),
-        previousOperationHash: patch.expectedOperationHash,
-        review: this.draftReview(),
+        previousOperationHash: contentHash(stableJson(operation)),
+        sourceHash: updated.sourceBlob.sourceHash,
+        sourceBytes: bytes,
       };
     }
-    if (name === "studio.patch_source") {
-      const patch = input as {
-        planChangeId: string;
-        expectedSourceHash: string;
-        edits: CreatorDraftLineEdit[];
-      };
-      const operation = this.operations.find((item) => item.planChangeId === patch.planChangeId);
-      if (
-        !operation ||
-        !(operation.kind === "edit_source" || (operation.kind === "create" && operation.sourceBlob))
-      )
-        throw new ToolFailure(
-          "DRAFT_SOURCE_MISSING",
-          "Stage the approved script before patching its draft.",
-        );
-      const source =
-        operation.kind === "edit_source"
-          ? materializeEditedSource(
-              operation,
-              this.input.sourceIndex,
-              this.input.sourceResolver,
-              (binding) => this.sourceWriteText(binding),
-            )
-          : this.sourceWriteText(operation.sourceBlob!);
-      const patched = patchCreatorDraftSource(source, patch.expectedSourceHash, patch.edits);
-      if (operation.kind === "create") {
-        const bytes = Buffer.byteLength(patched, "utf8");
-        const total = this.operations.reduce(
-          (sum, item) =>
-            sum +
-            (item === operation
-              ? 0
-              : item.kind === "create"
-                ? (item.sourceBlob?.utf8Bytes ?? 0)
-                : item.kind === "edit_source"
-                  ? item.edits.reduce((n, edit) => n + edit.replacementBlob.utf8Bytes, 0)
-                  : 0),
-          bytes,
-        );
-        if (bytes > this.budgets.maxBytesPerFile || total > this.budgets.maxChangedSourceBytes)
-          throw new ToolFailure(
-            "SOURCE_BUDGET_EXHAUSTED",
-            "The patched source exceeds the active source byte budget.",
-          );
-        assertRequiredStudioSourceText(patched);
-        const updated = { ...operation, sourceBlob: this.sourceWriteBlob(patched) };
-        const operations = this.operations.map((item) => (item === operation ? updated : item));
-        assertStudioChangeOperation(
-          updated,
-          this.input.projectIndex,
-          this.input.ownership,
-          this.contract.mutationAuthority,
-          operations,
-        );
-        this.operations[this.operations.indexOf(operation)] = cloneOperation(updated);
-        this.localGate = { status: "incomplete", issueHashes: [] };
-        return {
-          staged: true,
-          replaced: true,
-          operationId: updated.id,
-          operationHash: contentHash(stableJson(updated)),
-          previousOperationHash: contentHash(stableJson(operation)),
-          sourceHash: updated.sourceBlob.sourceHash,
-          sourceBytes: bytes,
-          review: this.draftReview(),
-        };
-      }
-      const document = this.input.sourceIndex.documents.find(
-        (item) => item.documentId === studioObjectIdentityKey(operation.target.identity),
+    const document = this.input.sourceIndex.documents.find(
+      (item) => item.documentId === studioObjectIdentityKey(operation.target.identity),
+    );
+    if (!document)
+      throw new ToolFailure("SOURCE_PRECONDITION_MISMATCH", "The approved source is absent.");
+    const bytes = Buffer.byteLength(patched, "utf8");
+    if (bytes > this.budgets.maxBytesPerFile)
+      throw new ToolFailure(
+        "SOURCE_BUDGET_EXHAUSTED",
+        "The repaired source exceeds the active per-source byte budget.",
       );
-      if (!document)
-        throw new ToolFailure(
-          "SOURCE_PRECONDITION_MISMATCH",
-          "The approved source document is absent.",
-        );
-      const staged = this.stageChanges([
-        {
-          planChangeId: patch.planChangeId,
-          sourceEdits: [{ startByte: 0, endByte: document.utf8Bytes, replacement: patched }],
-        },
-      ]);
-      return { staged: true, ...staged.changes[0], review: staged.review };
-    }
-    if (name === "source.read")
-      return this.readApprovedSource(
-        input as {
-          documentId: string;
-          maximumUtf8Bytes?: number;
-          cursor?: string;
-        },
+    const contractChange = this.contract.changes.find(
+      (item) => item.planChangeId === patch.planChangeId,
+    )!;
+    const updated = deriveStudioOperation(
+      contractChange,
+      {
+        planChangeId: patch.planChangeId,
+        sourceEdits: [{ startByte: 0, endByte: document.utf8Bytes, replacement: patched }],
+      },
+      this.input.sourceIndex,
+      this.input.sourceResolver,
+      (source) => this.sourceWriteBlob(source),
+      (binding) => this.sourceWriteText(binding),
+      (reference) => this.approvedPropertyReference(reference),
+    );
+    if (updated.kind !== "edit_source")
+      throw new ToolFailure("DRAFT_SOURCE_MISSING", "This operation has no editable source.");
+    const next = this.operations.map((item) => (item === operation ? updated : item));
+    const totalBytes = next.reduce(
+      (sum, item) =>
+        sum +
+        (item.kind === "create"
+          ? (item.sourceBlob?.utf8Bytes ?? 0)
+          : item.kind === "edit_source"
+            ? item.edits.reduce((n, edit) => n + edit.replacementBlob.utf8Bytes, 0)
+            : 0),
+      0,
+    );
+    if (totalBytes > this.budgets.maxChangedSourceBytes)
+      throw new ToolFailure(
+        "SOURCE_BUDGET_EXHAUSTED",
+        "The repaired draft exceeds the active total changed-source byte budget.",
       );
-    if (name === "studio.stage") {
-      return this.stageChanges((input as { changes: CreatorStagePayload[] }).changes);
-    }
-    if (name === "studio.diff")
-      return {
-        operations: this.operations.map((operation) => ({
-          id: operation.id,
-          planChangeId: operation.planChangeId,
-          kind: operation.kind,
-          hash: contentHash(stableJson(operation)),
-          summary: operationSummary(operation),
-          ...(operation.kind === "edit_source"
-            ? {
-                sourceHash: operation.finalSourceHash,
-                sourceBytes: operation.finalByteCount,
-                editCount: operation.edits.length,
-              }
-            : operation.kind === "create" && operation.sourceBlob
-              ? {
-                  sourceHash: operation.sourceBlob.sourceHash,
-                  sourceBytes: operation.sourceBlob.utf8Bytes,
-                }
-              : {}),
-        })),
-      };
-    if (name === "forge.verify") {
-      const result = await this.verify();
-      if (this.localGate.status === "eligible")
-        this.summary = (input as { summary: string }).summary;
-      return result;
-    }
-    throw new ToolFailure("TOOL_UNKNOWN", `Unknown builder tool ${name}`);
+    assertStudioChangeOperation(
+      updated,
+      this.input.projectIndex,
+      this.input.ownership,
+      this.contract.mutationAuthority,
+      next,
+    );
+    this.operations[this.operations.indexOf(operation)] = cloneOperation(updated);
+    this.localGate = { status: "incomplete", issueHashes: [] };
+    return {
+      planChangeId: patch.planChangeId,
+      operationId: updated.id,
+      operationHash: contentHash(stableJson(updated)),
+      previousOperationHash: contentHash(stableJson(operation)),
+      sourceHash: updated.finalSourceHash,
+      sourceBytes: updated.finalByteCount,
+    };
+  }
+
+  private operationReceipts() {
+    return this.operations.map((operation) => ({
+      planChangeId: operation.planChangeId,
+      kind: operation.kind,
+      operationHash: contentHash(stableJson(operation)),
+      ...(operation.kind === "edit_source"
+        ? { sourceHash: operation.finalSourceHash, sourceBytes: operation.finalByteCount }
+        : operation.kind === "create" && operation.sourceBlob
+          ? {
+              sourceHash: operation.sourceBlob.sourceHash,
+              sourceBytes: operation.sourceBlob.utf8Bytes,
+            }
+          : {}),
+    }));
   }
 
   private stageChanges(payloads: CreatorStagePayload[]) {
@@ -4062,19 +4262,7 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
           if (!capture) throw new Error("Staged source-write blob body is missing");
           return materializeCreatorSourceWriteBlob(capture, binding);
         },
-        (objectId) => {
-          const target = this.input.projectIndex.instances.find(
-            (entry) =>
-              entry.objectId === objectId &&
-              this.contract.initialInspectionPaths.includes(entry.path),
-          );
-          if (!target)
-            throw new ToolFailure(
-              "PROPERTY_REFERENCE_NOT_APPROVED",
-              "Use an objectId from the approved inspection scope for an Instance property reference.",
-            );
-          return target;
-        },
+        (reference) => this.approvedPropertyReference(reference),
       );
       staged.set(payload.planChangeId, operation);
       if (staged.size > CREATOR_MAX_CHANGES)
@@ -4134,51 +4322,69 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
     this.localGate = { status: "incomplete", issueHashes: [] };
     return { staged: true, changes: receipts, review: this.draftReview() };
   }
-  private owner(stableId: string): StudioOwner {
-    return (
-      this.input.ownership.entries.find((entry) => entry.objectId === stableId)?.owner ??
-      "studio_document"
+  private approvedInspectionObject(objectId: string) {
+    const target = this.input.projectIndex.instances.find(
+      (entry) =>
+        entry.objectId === objectId && this.contract.initialInspectionPaths.includes(entry.path),
     );
-  }
-  private inspect(paths: string[]): unknown {
-    const allowed = new Set(this.contract.initialInspectionPaths);
-    const unique = [...new Set(paths)];
-    if (unique.length !== paths.length || paths.some((path) => !allowed.has(path)))
-      throw correctiveFailure(
-        "INSPECTION_PATH_INVALID",
-        "studio.inspect accepts only explicit initial paths declared by the build contract",
-        {
-          receivedPaths: paths,
-          allowedPaths: this.contract.initialInspectionPaths,
-          contractHash: this.contract.hash,
-        },
+    if (!target)
+      throw new ToolFailure(
+        "PROPERTY_REFERENCE_NOT_APPROVED",
+        "Use an objectId from the approved observed-object scope.",
       );
-    const instances = this.input.projectIndex.instances
-      .filter((instance) => unique.includes(instance.path))
-      .map((instance) => ({
-        objectId: instance.objectId,
-        identity: instance.identity,
-        path: instance.path,
-        className: instance.className,
-        instanceHash: contentHash(stableJson(instance)),
-        owner: this.owner(instance.objectId),
-        ...(instance.position ? { position: instance.position } : {}),
-        properties: instance.properties,
-        layoutNotes: creatorLayoutNotes(instance.properties),
-        attributes: instance.attributes,
-      }));
-    const scripts = this.input.projectIndex.scripts
-      .filter((script) => unique.includes(script.path))
-      .map((script) => ({
-        ...script,
-        owner: this.owner(script.documentId),
-      }));
+    return target;
+  }
+  private approvedPropertyReference(reference: { objectId: string } | { changeId: string }) {
+    if ("objectId" in reference) return this.approvedInspectionObject(reference.objectId);
+    const change = this.contract.changes.find(
+      (candidate) => candidate.planChangeId === reference.changeId && candidate.kind === "create",
+    );
+    if (!change)
+      throw new ToolFailure(
+        "PROPERTY_REFERENCE_NOT_APPROVED",
+        "Use an observed objectId or the changeId of an object created by this approved build.",
+      );
     return {
-      revisionHash: this.input.session.currentRevisionHash,
-      paths: unique,
-      instances,
-      scripts,
+      identity: change.target.identity,
+      path: change.target.path,
+      className: change.target.className,
     };
+  }
+  private modelPropertyReferences(rule: CreatorPropertyRule) {
+    const expectedClass = rule.constraints?.referenceClass;
+    if (rule.valueKinds[0] !== "instance_ref" || expectedClass === undefined)
+      return { objectIds: [], changeIds: [] };
+    return {
+      objectIds: this.input.projectIndex.instances
+        .filter(
+          (instance) =>
+            this.contract.initialInspectionPaths.includes(instance.path) &&
+            isRobloxClassAssignableTo(instance.className, expectedClass),
+        )
+        .map((instance) => instance.objectId)
+        .sort(),
+      changeIds: this.contract.changes
+        .filter(
+          (change) =>
+            change.kind === "create" && isRobloxClassAssignableTo(change.className, expectedClass),
+        )
+        .map((change) => change.planChangeId)
+        .sort(),
+    };
+  }
+  private approvedSourceDocumentIds(): string[] {
+    return [
+      ...new Set([
+        ...this.input.sourceConsultation.sources
+          .filter((source) => source.ranges.length > 0)
+          .map((source) => source.document.documentId),
+        ...this.input.sourceConsultation.operations.flatMap((operation) =>
+          operation.kind === "dependencies" && operation.dependencyRequest?.direction === "closure"
+            ? operation.sources.map((source) => source.document.documentId)
+            : [],
+        ),
+      ]),
+    ].sort();
   }
   private readApprovedSource(input: {
     documentId: string;
@@ -4231,7 +4437,7 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
       "Stage this approved script before reading its draft.",
     );
   }
-  /** Feedback rides on the write receipt. Only an explicit final verify can seal Build. */
+  /** Complete writes are reviewed immediately and can seal Build without another model turn. */
   private draftReview(): unknown {
     const pending = this.contract.changes.filter(
       (change) =>
@@ -4242,9 +4448,7 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
         status: "awaiting_changes",
         remainingChangeIds: pending.map((change) => change.planChangeId),
       };
-    const result = this.verify();
-    this.localGate = { status: "incomplete", issueHashes: [] };
-    return result;
+    return this.verify();
   }
   private verify(): unknown {
     const fingerprint = contentHash(stableJson(this.operations));
@@ -4333,10 +4537,10 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
           sources,
         ),
       });
-      const issues = analysis.issues
+      const diagnostics = analysis.issues
         .map((issue) => creatorVerificationDiagnostic(issue, sources))
         .sort((left, right) => stableJson(left).localeCompare(stableJson(right)));
-      const issueHashes = issues.map((issue) => contentHash(stableJson(issue))).sort();
+      const issueHashes = diagnostics.map((issue) => contentHash(stableJson(issue))).sort();
       const statuses = analysis.tiers.map((tier) => tier.status);
       this.localGate = {
         status: statuses.includes("unavailable")
@@ -4348,21 +4552,30 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
       };
       return {
         ...this.localGate,
-        issues,
-        drafts: sources.flatMap((source) => {
-          const lines = analysis.issues
-            .filter((issue) => issue.path === source.studioPath && issue.location)
-            .map((issue) => issue.location!.line);
-          if (!lines.length) return [];
-          return [
-            {
-              planChangeId: source.planChangeId,
-              sourceHash: contentHash(source.source),
-              lineCount: draftLines(source.source).length,
-              excerpts: draftDiagnosticExcerpts(source.source, lines),
-            },
-          ];
-        }),
+        issues: consolidateCreatorDiagnostics(diagnostics),
+        ...(this.localGate.status === "rejected"
+          ? {
+              drafts: sources.flatMap((source) => {
+                const lines = analysis.issues
+                  .filter(
+                    (issue) =>
+                      issue.severity === "error" &&
+                      issue.path === source.studioPath &&
+                      issue.location,
+                  )
+                  .map((issue) => issue.location!.line);
+                if (!lines.length) return [];
+                return [
+                  {
+                    planChangeId: source.planChangeId,
+                    sourceHash: contentHash(source.source),
+                    lineCount: draftLines(source.source).length,
+                    excerpts: draftDiagnosticExcerpts(source.source, [...new Set(lines)]),
+                  },
+                ];
+              }),
+            }
+          : {}),
       };
     } catch (error) {
       const issue = {
@@ -4483,6 +4696,7 @@ export async function runCreatorBuilder(input: {
   const systemPrompt = creatorBuilderSystemPrompt(
     input.plan,
     host.contract,
+    input.projectIndex,
     input.verificationFeedback,
   );
   const result = await invokeCreatorRuntime(input.runtime, {
@@ -6132,6 +6346,9 @@ const STUDIO_INSTANCE_NAME_SCHEMA = z
 const STUDIO_WRITABLE_INSTANCE_TARGET_SCHEMA = STUDIO_INSTANCE_TARGET_SCHEMA.extend({
   className: z.enum(STUDIO_WRITABLE_CLASSES),
 });
+const STUDIO_CREATABLE_INSTANCE_TARGET_SCHEMA = STUDIO_INSTANCE_TARGET_SCHEMA.extend({
+  className: z.enum(STUDIO_CREATABLE_CLASSES),
+});
 const STUDIO_MUTATION_PARENT_SCHEMA = z.union([
   STUDIO_INSTANCE_TARGET_SCHEMA,
   z
@@ -6168,7 +6385,7 @@ const PLAN_CHANGE_SCHEMA = z.union([
     kind: z.literal("create"),
     path: z.string().min(1),
     parent: STUDIO_MUTATION_PARENT_SCHEMA,
-    className: z.enum(STUDIO_NON_SCRIPT_WRITABLE_CLASSES),
+    className: z.enum(STUDIO_NON_SCRIPT_CREATABLE_CLASSES),
     initialization: z.literal("initial_properties"),
   }),
   z.object({
@@ -6219,7 +6436,7 @@ const PLAN_CHANGE_INPUT_SCHEMA = z.union([
     .object({
       id: z.string().min(1).max(128),
       kind: z.literal("create"),
-      className: z.enum(STUDIO_WRITABLE_CLASSES),
+      className: z.enum(STUDIO_CREATABLE_CLASSES),
       name: STUDIO_INSTANCE_NAME_SCHEMA,
       parent: PLAN_PARENT_INPUT_SCHEMA,
     })
@@ -6330,7 +6547,6 @@ function assertRequiredStudioSourceText(source: unknown): asserts source is stri
   )
     throw new Error("Required Studio source is outside the generated source contract");
 }
-const FINITE_NUMBER_SCHEMA = z.number().finite();
 const STUDIO_VALUE_SCHEMA: z.ZodType<StudioValue> = z.custom<StudioValue>((value) => {
   try {
     assertStudioValue(value);
@@ -6340,124 +6556,6 @@ const STUDIO_VALUE_SCHEMA: z.ZodType<StudioValue> = z.custom<StudioValue>((value
   }
 }, "invalid canonical Studio value");
 const PRIMITIVE_SCHEMA = z.union([z.string().max(4096), z.number().finite(), z.boolean()]);
-const NATURAL_VECTOR3_SCHEMA = z
-  .object({
-    x: FINITE_NUMBER_SCHEMA,
-    y: FINITE_NUMBER_SCHEMA,
-    z: FINITE_NUMBER_SCHEMA,
-  })
-  .strict();
-const NATURAL_VECTOR2_SCHEMA = z
-  .object({ x: FINITE_NUMBER_SCHEMA, y: FINITE_NUMBER_SCHEMA })
-  .strict();
-const NATURAL_COLOR3_SCHEMA = z
-  .object({
-    r: z.number().min(0).max(1),
-    g: z.number().min(0).max(1),
-    b: z.number().min(0).max(1),
-  })
-  .strict();
-const NATURAL_CFRAME_SCHEMA = z
-  .object({
-    position: NATURAL_VECTOR3_SCHEMA,
-    rotation: NATURAL_VECTOR3_SCHEMA.describe(
-      "Euler rotation in degrees; Forge composes Z, then Y, then X",
-    ),
-  })
-  .strict();
-const NATURAL_UDIM_SCHEMA = z
-  .object({ scale: FINITE_NUMBER_SCHEMA, offset: z.number().int() })
-  .strict();
-const NATURAL_UDIM2_SCHEMA = z.object({ x: NATURAL_UDIM_SCHEMA, y: NATURAL_UDIM_SCHEMA }).strict();
-const NATURAL_RECT_SCHEMA = z
-  .object({ min: NATURAL_VECTOR2_SCHEMA, max: NATURAL_VECTOR2_SCHEMA })
-  .strict();
-const NATURAL_NUMBER_RANGE_SCHEMA = z
-  .object({ min: FINITE_NUMBER_SCHEMA, max: FINITE_NUMBER_SCHEMA })
-  .strict();
-const NATURAL_NUMBER_SEQUENCE_SCHEMA = z
-  .object({
-    keypoints: z
-      .array(
-        z
-          .object({
-            time: FINITE_NUMBER_SCHEMA,
-            value: FINITE_NUMBER_SCHEMA,
-            envelope: FINITE_NUMBER_SCHEMA,
-          })
-          .strict(),
-      )
-      .min(2)
-      .max(64),
-  })
-  .strict();
-const NATURAL_COLOR_SEQUENCE_SCHEMA = z
-  .object({
-    keypoints: z
-      .array(z.object({ time: FINITE_NUMBER_SCHEMA, color: NATURAL_COLOR3_SCHEMA }).strict())
-      .min(2)
-      .max(64),
-  })
-  .strict();
-const NATURAL_BRICK_COLOR_SCHEMA = z.object({ name: z.string().min(1).max(128) }).strict();
-const NATURAL_FONT_SCHEMA = z
-  .object({
-    family: z.string().min(1).max(1_024),
-    weight: z.string().min(1).max(128),
-    style: z.string().min(1).max(128),
-  })
-  .strict();
-const NATURAL_PHYSICAL_PROPERTIES_SCHEMA = z
-  .object({
-    density: FINITE_NUMBER_SCHEMA,
-    friction: FINITE_NUMBER_SCHEMA,
-    elasticity: FINITE_NUMBER_SCHEMA,
-    frictionWeight: FINITE_NUMBER_SCHEMA,
-    elasticityWeight: FINITE_NUMBER_SCHEMA,
-  })
-  .strict();
-const NATURAL_AXES_SCHEMA = z.object({ x: z.boolean(), y: z.boolean(), z: z.boolean() }).strict();
-const NATURAL_FACES_SCHEMA = z
-  .object({
-    top: z.boolean(),
-    bottom: z.boolean(),
-    left: z.boolean(),
-    right: z.boolean(),
-    front: z.boolean(),
-    back: z.boolean(),
-  })
-  .strict();
-const NATURAL_RAY_SCHEMA = z
-  .object({ origin: NATURAL_VECTOR3_SCHEMA, direction: NATURAL_VECTOR3_SCHEMA })
-  .strict();
-const NATURAL_INSTANCE_REFERENCE_SCHEMA = z
-  .object({
-    objectId: OBJECT_HANDLE_SCHEMA,
-  })
-  .strict();
-const CREATOR_PROPERTY_INPUT_SCHEMA: z.ZodType<CreatorPropertyInput> = z.union([
-  z.null(),
-  z.boolean(),
-  FINITE_NUMBER_SCHEMA,
-  z.string().max(4096),
-  NATURAL_VECTOR2_SCHEMA,
-  NATURAL_VECTOR3_SCHEMA,
-  NATURAL_COLOR3_SCHEMA,
-  NATURAL_CFRAME_SCHEMA,
-  NATURAL_UDIM_SCHEMA,
-  NATURAL_UDIM2_SCHEMA,
-  NATURAL_RECT_SCHEMA,
-  NATURAL_NUMBER_RANGE_SCHEMA,
-  NATURAL_NUMBER_SEQUENCE_SCHEMA,
-  NATURAL_COLOR_SEQUENCE_SCHEMA,
-  NATURAL_BRICK_COLOR_SCHEMA,
-  NATURAL_FONT_SCHEMA,
-  NATURAL_PHYSICAL_PROPERTIES_SCHEMA,
-  NATURAL_AXES_SCHEMA,
-  NATURAL_FACES_SCHEMA,
-  NATURAL_RAY_SCHEMA,
-  NATURAL_INSTANCE_REFERENCE_SCHEMA,
-]);
 const CREATOR_SOURCE_WRITE_BLOB_BINDING_SCHEMA: z.ZodType<CreatorSourceWriteBlobBinding> = z
   .object({
     manifestId: z.string().min(1),
@@ -6476,9 +6574,9 @@ const CHANGE_OPERATION_SCHEMA = z.discriminatedUnion("kind", [
     planChangeId: z.string().min(1),
     kind: z.literal("create"),
     tempId: z.string().min(1),
-    target: STUDIO_WRITABLE_INSTANCE_TARGET_SCHEMA,
+    target: STUDIO_CREATABLE_INSTANCE_TARGET_SCHEMA,
     parent: STUDIO_MUTATION_PARENT_SCHEMA,
-    className: z.enum(STUDIO_WRITABLE_CLASSES),
+    className: z.enum(STUDIO_CREATABLE_CLASSES),
     name: STUDIO_INSTANCE_NAME_SCHEMA,
     properties: z.record(z.string(), STUDIO_VALUE_SCHEMA),
     attributes: z.record(z.string(), PRIMITIVE_SCHEMA),
@@ -6537,30 +6635,6 @@ const CHANGE_OPERATION_SCHEMA = z.discriminatedUnion("kind", [
     finalByteCount: z.number().int().nonnegative(),
   }),
 ]);
-const STAGE_PAYLOAD_SCHEMA = z
-  .object({
-    planChangeId: z.string().min(1),
-    properties: z.record(z.string(), CREATOR_PROPERTY_INPUT_SCHEMA).optional(),
-    attributes: z.record(z.string(), PRIMITIVE_SCHEMA).optional(),
-    removedAttributes: z.array(z.string().min(1)).max(64).optional(),
-    source: boundedSourceSchema()
-      .describe(
-        "Only for creating a new script. Existing edit_source changes must use sourceEdits instead.",
-      )
-      .optional(),
-    sourceEdits: z
-      .array(
-        z.object({
-          startByte: z.number().int().nonnegative(),
-          endByte: z.number().int().nonnegative(),
-          replacement: boundedSourceSchema(),
-        }),
-      )
-      .min(1)
-      .max(1_024)
-      .optional(),
-  })
-  .strict();
 const ROBLOX_API_LOOKUP_SHAPE = {
   className: z
     .string()
@@ -6593,6 +6667,393 @@ const SOURCE_QUERY_CURSOR_SCHEMA = z
     "Omit for the first page. To continue, copy nextCursor from this same source tool with unchanged query/document and options. Never invent a cursor or send START, 0, null, a document ID, or a hash. If nextCursor is absent, there are no more pages.",
   )
   .optional();
+const BUILDER_SUMMARY_SCHEMA = z
+  .string()
+  .trim()
+  .min(1)
+  .max(8192)
+  .describe(
+    "The concise final Markdown message describing what was built and any useful limitations. Do not claim a passed Play test.",
+  );
+const MODEL_SOURCE_EDITS_SCHEMA = z
+  .array(
+    z
+      .object({
+        startByte: z.number().int().nonnegative(),
+        endByte: z.number().int().nonnegative(),
+        replacement: boundedSourceSchema(),
+      })
+      .strict(),
+  )
+  .min(1)
+  .max(1_024);
+const MODEL_DRAFT_READ_SCHEMA = z
+  .object({
+    planChangeId: z.string().min(1),
+    startLine: z.number().int().min(1).optional(),
+    lineCount: z.number().int().min(1).max(200).optional(),
+  })
+  .strict();
+const MODEL_SOURCE_REPAIR_SCHEMA = z
+  .object({
+    kind: z.literal("source"),
+    planChangeId: z.string().min(1),
+    expectedSourceHash: z.string().regex(/^[0-9a-f]{64}$/),
+    edits: z
+      .array(
+        z
+          .object({
+            startLine: z.number().int().min(1),
+            deleteCount: z.number().int().min(0),
+            replacement: boundedSourceSchema(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(64),
+  })
+  .strict();
+
+type CreatorPropertyRule = CreatorPropertyPolicy["allowedProperties"][number];
+
+function modelNumberSchema(
+  rule: CreatorPropertyRule,
+  options: { integer?: true; minimum?: number; maximum?: number } = {},
+) {
+  let schema = options.integer ? z.number().int() : z.number().finite();
+  const minimum = options.minimum ?? rule.constraints?.minimum;
+  const maximum = options.maximum ?? rule.constraints?.maximum;
+  if (minimum !== undefined) schema = schema.min(minimum);
+  if (maximum !== undefined) schema = schema.max(maximum);
+  if (rule.constraints?.minimumExclusive !== undefined)
+    schema = schema.gt(rule.constraints.minimumExclusive);
+  if (rule.constraints?.maximumAbsolute !== undefined) {
+    schema = schema.min(-rule.constraints.maximumAbsolute).max(rule.constraints.maximumAbsolute);
+  }
+  return schema;
+}
+
+function modelStringSchema(rule: CreatorPropertyRule) {
+  const maximum = rule.constraints?.maximumUtf8Bytes ?? 4096;
+  const minimum = rule.constraints?.minimumUtf8Bytes ?? 0;
+  return z
+    .string()
+    .refine((value) => {
+      const bytes = Buffer.byteLength(value, "utf8");
+      return bytes >= minimum && bytes <= maximum;
+    }, `UTF-8 value must be ${minimum}-${maximum} bytes`)
+    .describe(`UTF-8 string, ${minimum}-${maximum} bytes`);
+}
+
+function strictVector2(component: z.ZodNumber) {
+  return z.object({ x: component, y: component }).strict();
+}
+
+function strictVector3(component: z.ZodNumber) {
+  return z.object({ x: component, y: component, z: component }).strict();
+}
+
+function modelPropertyInputDescription(kind: StudioCodec): string {
+  switch (kind) {
+    case "boolean":
+      return "boolean";
+    case "number_f32":
+    case "number_f64":
+    case "int32":
+      return "number";
+    case "int64_decimal":
+      return "base-10 integer string";
+    case "string_utf8":
+    case "content":
+      return "string";
+    case "color3_rgb8":
+      return "{r,g,b}, each 0..1";
+    case "vector2_f32":
+      return "{x,y}";
+    case "vector3_f32":
+      return "{x,y,z}";
+    case "cframe_f32x12":
+      return "{position:{x,y,z},rotation?:{x,y,z}}; rotation is Euler degrees and defaults to zero";
+    case "udim":
+      return "{scale,offset}";
+    case "udim2":
+      return "{x:{scale,offset},y:{scale,offset}}";
+    case "rect":
+      return "{min:{x,y},max:{x,y}}";
+    case "number_range":
+      return "{min,max}";
+    case "number_sequence":
+      return "{keypoints:[{time,value,envelope}]}";
+    case "color_sequence":
+      return "{keypoints:[{time,color:{r,g,b}}]}";
+    case "brick_color":
+    case "enum_name":
+      return "allowed name string";
+    case "font":
+      return "{family,weight,style}";
+    case "physical_properties":
+      return "{density,friction,elasticity,frictionWeight,elasticityWeight}";
+    case "axes":
+      return "{x,y,z} booleans";
+    case "faces":
+      return "{top,bottom,left,right,front,back} booleans";
+    case "ray":
+      return "{origin:{x,y,z},direction:{x,y,z}}";
+    case "instance_ref":
+      return "{objectId} for an observed object or {changeId} for an object created by this build";
+  }
+}
+
+function modelPropertyInputSchema(
+  rule: CreatorPropertyRule,
+  references: { objectIds: string[]; changeIds: string[] },
+): z.ZodType<CreatorPropertyInput> | undefined {
+  const kind = rule.valueKinds[0]!;
+  const number = () => modelNumberSchema(rule);
+  let schema: z.ZodType<CreatorPropertyInput> | undefined;
+  if (kind === "boolean") schema = z.boolean();
+  else if (kind === "number_f32" || kind === "number_f64") schema = number();
+  else if (kind === "int32")
+    schema = modelNumberSchema(rule, {
+      integer: true,
+      minimum: -2_147_483_648,
+      maximum: 2_147_483_647,
+    });
+  else if (kind === "int64_decimal") schema = z.string().regex(/^-?(?:0|[1-9][0-9]*)$/);
+  else if (kind === "string_utf8" || kind === "content") schema = modelStringSchema(rule);
+  else if (kind === "enum_name") {
+    const allowed = rule.constraints?.allowedStrings;
+    schema = allowed?.length
+      ? z.enum(allowed as [string, ...string[]])
+      : z.string().min(1).max(256);
+  } else if (kind === "brick_color") schema = z.string().min(1).max(128);
+  else if (kind === "color3_rgb8")
+    schema = z
+      .object({
+        r: z.number().min(0).max(1),
+        g: z.number().min(0).max(1),
+        b: z.number().min(0).max(1),
+      })
+      .strict();
+  else if (kind === "vector2_f32") schema = strictVector2(number());
+  else if (kind === "vector3_f32") schema = strictVector3(number());
+  else if (kind === "cframe_f32x12") {
+    const maximum = rule.constraints?.cframeTranslationMaximumAbsolute;
+    const positionComponent = z
+      .number()
+      .finite()
+      .min(maximum === undefined ? -Number.MAX_VALUE : -maximum)
+      .max(maximum === undefined ? Number.MAX_VALUE : maximum);
+    schema = z
+      .object({
+        position: strictVector3(positionComponent),
+        rotation: strictVector3(z.number().finite()).optional(),
+      })
+      .strict();
+  } else if (kind === "udim") schema = z.object({ scale: number(), offset: number() }).strict();
+  else if (kind === "udim2") {
+    const axis = z.object({ scale: number(), offset: number() }).strict();
+    schema = z.object({ x: axis, y: axis }).strict();
+  } else if (kind === "rect")
+    schema = z.object({ min: strictVector2(number()), max: strictVector2(number()) }).strict();
+  else if (kind === "number_range") schema = z.object({ min: number(), max: number() }).strict();
+  else if (kind === "number_sequence")
+    schema = z
+      .object({
+        keypoints: z
+          .array(
+            z
+              .object({
+                time: z.number().min(0).max(1),
+                value: z.number().finite(),
+                envelope: z.number().nonnegative(),
+              })
+              .strict(),
+          )
+          .min(2)
+          .max(rule.constraints?.maximumEntries ?? 20),
+      })
+      .strict();
+  else if (kind === "color_sequence")
+    schema = z
+      .object({
+        keypoints: z
+          .array(
+            z
+              .object({
+                time: z.number().min(0).max(1),
+                color: z
+                  .object({
+                    r: z.number().min(0).max(1),
+                    g: z.number().min(0).max(1),
+                    b: z.number().min(0).max(1),
+                  })
+                  .strict(),
+              })
+              .strict(),
+          )
+          .min(2)
+          .max(rule.constraints?.maximumEntries ?? 20),
+      })
+      .strict();
+  else if (kind === "font")
+    schema = z
+      .object({
+        family: z.string().min(1).max(4096),
+        weight: z.string().min(1),
+        style: z.string().min(1),
+      })
+      .strict();
+  else if (kind === "physical_properties")
+    schema = z
+      .object({
+        density: z.number().finite(),
+        friction: z.number().finite(),
+        elasticity: z.number().finite(),
+        frictionWeight: z.number().finite(),
+        elasticityWeight: z.number().finite(),
+      })
+      .strict();
+  else if (kind === "axes")
+    schema = z.object({ x: z.boolean(), y: z.boolean(), z: z.boolean() }).strict();
+  else if (kind === "faces")
+    schema = z
+      .object({
+        top: z.boolean(),
+        bottom: z.boolean(),
+        left: z.boolean(),
+        right: z.boolean(),
+        front: z.boolean(),
+        back: z.boolean(),
+      })
+      .strict();
+  else if (kind === "ray")
+    schema = z
+      .object({
+        origin: strictVector3(z.number().finite()),
+        direction: strictVector3(z.number().finite()),
+      })
+      .strict();
+  else if (kind === "instance_ref") {
+    const variants: z.ZodType<CreatorPropertyInput>[] = [];
+    if (references.objectIds.length > 0)
+      variants.push(
+        z.object({ objectId: z.enum(references.objectIds as [string, ...string[]]) }).strict(),
+      );
+    if (references.changeIds.length > 0)
+      variants.push(
+        z.object({ changeId: z.enum(references.changeIds as [string, ...string[]]) }).strict(),
+      );
+    schema = combineModelSchemas(variants);
+  }
+  if (rule.nullable) schema = schema ? z.union([z.null(), schema]) : z.null();
+  return schema?.describe(modelPropertyInputDescription(kind));
+}
+
+function combineModelSchemas<T>(schemas: z.ZodType<T>[]): z.ZodType<T> | undefined {
+  if (schemas.length === 0) return undefined;
+  let combined = schemas[0]!;
+  for (const schema of schemas.slice(1)) combined = z.union([combined, schema]);
+  return combined;
+}
+
+function modelPropertiesSchema(
+  policy: CreatorPropertyPolicy,
+  referencesFor: (rule: CreatorPropertyRule) => { objectIds: string[]; changeIds: string[] },
+) {
+  const shape: Record<string, z.ZodType> = {};
+  for (const rule of policy.allowedProperties) {
+    const schema = modelPropertyInputSchema(rule, referencesFor(rule));
+    if (schema) shape[rule.name] = schema.optional();
+  }
+  return z.object(shape).strict();
+}
+
+function modelStagePayloadSchema(
+  change: CreatorBuildContractChange,
+  planChangeIds: [string, ...string[]],
+  referencesFor: (rule: CreatorPropertyRule) => { objectIds: string[]; changeIds: string[] },
+) {
+  const planChangeId = z.enum(planChangeIds);
+  if (change.kind === "delete") return z.object({ planChangeId }).strict();
+  if (change.kind === "edit_source")
+    return z.object({ planChangeId, sourceEdits: MODEL_SOURCE_EDITS_SCHEMA }).strict();
+  const properties = modelPropertiesSchema(change.propertyPolicy, referencesFor).optional();
+  const attributes = z.record(z.string(), PRIMITIVE_SCHEMA).optional();
+  if (change.kind === "create")
+    return z
+      .object({
+        planChangeId,
+        properties,
+        attributes,
+        ...(change.propertyPolicy.source === "required" ? { source: boundedSourceSchema() } : {}),
+      })
+      .strict();
+  return z
+    .object({
+      planChangeId,
+      properties,
+      attributes,
+      removedAttributes: z.array(z.string().min(1)).max(64).optional(),
+    })
+    .strict();
+}
+
+function groupedModelStagePayloadSchema(
+  changes: readonly CreatorBuildContractChange[],
+  referencesFor: (rule: CreatorPropertyRule) => { objectIds: string[]; changeIds: string[] },
+) {
+  const groups = new Map<
+    string,
+    { change: CreatorBuildContractChange; planChangeIds: [string, ...string[]] }
+  >();
+  for (const change of changes) {
+    const key = stableJson({ kind: change.kind, propertyPolicy: change.propertyPolicy });
+    const group = groups.get(key);
+    if (group) group.planChangeIds.push(change.planChangeId);
+    else groups.set(key, { change, planChangeIds: [change.planChangeId] });
+  }
+  return combineModelSchemas(
+    [...groups.values()].map(({ change, planChangeIds }) =>
+      modelStagePayloadSchema(change, planChangeIds, referencesFor),
+    ),
+  )!;
+}
+
+function groupedModelPropertyRepairSchema(
+  changes: readonly CreatorBuildContractChange[],
+  referencesFor: (rule: CreatorPropertyRule) => { objectIds: string[]; changeIds: string[] },
+) {
+  const repairable = changes.filter(
+    (change) => change.kind === "create" || change.kind === "update" || change.kind === "move",
+  );
+  const groups = new Map<
+    string,
+    { change: (typeof repairable)[number]; planChangeIds: [string, ...string[]] }
+  >();
+  for (const change of repairable) {
+    const key = stableJson(change.propertyPolicy);
+    const group = groups.get(key);
+    if (group) group.planChangeIds.push(change.planChangeId);
+    else groups.set(key, { change, planChangeIds: [change.planChangeId] });
+  }
+  return combineModelSchemas(
+    [...groups.values()].map(({ change, planChangeIds }) =>
+      z
+        .object({
+          kind: z.literal("properties"),
+          planChangeId: z.enum(planChangeIds),
+          expectedOperationHash: z.string().regex(/^[0-9a-f]{64}$/),
+          properties: modelPropertiesSchema(change.propertyPolicy, referencesFor).refine(
+            (value) => Object.keys(value).length > 0,
+            "Supply at least one property",
+          ),
+        })
+        .strict(),
+    ),
+  );
+}
+
 const BUILDER_DEFINITIONS: AgentToolDefinition[] = [
   definition(
     "studio.api_lookup",
@@ -6600,96 +7061,47 @@ const BUILDER_DEFINITIONS: AgentToolDefinition[] = [
     ROBLOX_API_LOOKUP_SHAPE,
   ),
   definition(
-    "studio.inspect",
-    "Inspect only explicit initial-snapshot paths listed in the immutable CreatorBuildContract. Source bodies are not returned.",
-    {
-      paths: z.array(z.string().min(1)).min(1).max(CREATOR_MAX_INSPECTION_PATHS),
-    },
-  ),
-  definition(
     "source.read",
-    "Read a UTF-8-safe page from any source document in the exact creator-approved consultation/dependency closure. Reading outside that closure fails and requires a new plan.",
+    "Read up to three UTF-8-safe source pages together from the exact creator-approved consultation/dependency closure. Reading outside that closure fails and requires a new plan.",
     {
-      documentId: z.string().min(1).max(256),
-      maximumUtf8Bytes: z
-        .number()
-        .int()
-        .min(1)
-        .max(32 * 1024)
-        .optional(),
-      cursor: SOURCE_QUERY_CURSOR_SCHEMA,
-    },
-  ),
-  definition(
-    "studio.stage",
-    "Stage an array of approved changes atomically. Include all ready property edits and related scripts in ONE changes array; the batch receives one combined diagnostic review. Each entry supplies planChangeId and its creative payload. Entries replace their entire earlier proposal; omitted plan changes remain untouched. If any entry is rejected, the entire batch changes nothing. Property JSON is natural and untagged; the sealed property policy names the required codec. Scalars use booleans, finite numbers, or strings. Compound shapes are Vector2 {x,y}, Vector3 {x,y,z}, Color3 {r,g,b} in 0..1, CFrame {position:{x,y,z},rotation:{x,y,z}} in Euler degrees, UDim {scale,offset}, UDim2 {x:{scale,offset},y:{scale,offset}}, Rect {min:{x,y},max:{x,y}}, NumberRange {min,max}, sequences {keypoints:[...]}, BrickColor {name}, Font {family,weight,style}, PhysicalProperties, Axes, Faces, Ray {origin,direction}, or Instance reference {objectId} copied from studio.inspect. Never send type/value wrappers. Attributes are primitive where permitted. New scripts use source. Existing edit_source operations use only sourceEdits:[{startByte,endByte,replacement}], never source. Forge derives structural fields and converts properties to the trusted Studio representation. This never mutates the live place.",
-    {
-      changes: z
-        .array(STAGE_PAYLOAD_SCHEMA)
-        .min(1)
-        .max(CREATOR_MAX_CHANGES)
-        .describe(
-          'A JSON array of change objects, for example [{"planChangeId":"panel","properties":{"Visible":true}}]. Never JSON-stringify this array; only Luau source and replacement fields contain source strings.',
-        ),
-    },
-  ),
-  definition(
-    "studio.patch_properties",
-    "Edit named properties in an already staged create or update while preserving every other property, attribute, source and structural binding. Copy operationHash from the latest stage/patch receipt, or hash from studio.diff, into expectedOperationHash. Uses the same natural property shapes as studio.stage, including Color3 channels in 0..1. Each supplied property replaces that entire property's value; omitted properties remain unchanged. Issue independent patches to different planChangeIds together in one response, using their observed hashes; patches to the same operation must wait for the preceding receipt. A stale hash or invalid property changes nothing.",
-    {
-      planChangeId: z.string().min(1),
-      expectedOperationHash: z.string().regex(/^[0-9a-f]{64}$/),
-      properties: z
-        .record(z.string(), CREATOR_PROPERTY_INPUT_SCHEMA)
-        .refine((value) => Object.keys(value).length > 0, "Supply at least one property"),
-    },
-  ),
-  definition(
-    "studio.read_draft",
-    "Read the current staged script with exact 1-based line numbers and its sourceHash. Use this before editing code that is not shown in the current diagnostic excerpts. Pages preserve complete lines; nextLine reads the rest. This reads only already staged approved source, never arbitrary project files.",
-    {
-      planChangeId: z.string().min(1),
-      startLine: z.number().int().min(1).optional(),
-      lineCount: z.number().int().min(1).max(200).optional(),
-    },
-  ),
-  definition(
-    "studio.patch_source",
-    "Repair an already staged script using exact line ranges from studio.read_draft or diagnostic excerpts, guarded by their sourceHash. Each edit replaces deleteCount whole lines starting at 1-based startLine; zero deletes inserts before that line, and lineCount+1 appends. replacement contains complete lines without line-number prefixes; include a final newline when inserting before another line. All edits use the SAME original draft, must not overlap, and succeed atomically. Batch all related corrections to a script in ONE call, not one model response per line. Receipts include updated diagnostics once all changes are staged. Other properties and source outside the edited ranges are retained.",
-    {
-      planChangeId: z.string().min(1),
-      expectedSourceHash: z.string().regex(/^[0-9a-f]{64}$/),
-      edits: z
+      reads: z
         .array(
-          z
-            .object({
-              startLine: z.number().int().min(1),
-              deleteCount: z.number().int().min(0),
-              replacement: boundedSourceSchema(),
-            })
-            .strict(),
+          z.object({
+            documentId: z.string().min(1).max(256),
+            maximumUtf8Bytes: z
+              .number()
+              .int()
+              .min(1)
+              .max(16 * 1024)
+              .optional(),
+            cursor: SOURCE_QUERY_CURSOR_SCHEMA,
+          }),
         )
         .min(1)
-        .max(64),
+        .max(3),
     },
   ),
   definition(
-    "studio.diff",
-    "Inspect plan-change bindings, hashes, source hashes and byte counts, and summaries of the complete current staged Studio change set.",
-    {},
+    "studio.build",
+    "Submit the complete approved implementation once. The changes array must contain every approved planChangeId exactly once and remains atomic. Each planned class has an exact property schema; use those shapes directly. CFrame uses position plus optional Euler rotation in degrees. Color3 channels are 0..1. Instance references use an observed objectId or a created changeId offered by the schema. New scripts use source; existing source edits use sourceEdits. Forge derives structural fields, validates every property against its sealed policy, runs the complete local review, and changes nothing in the live place.",
+    {
+      changes: z.array(z.unknown()).min(1).max(CREATOR_MAX_CHANGES),
+      summary: BUILDER_SUMMARY_SCHEMA,
+    },
   ),
   definition(
-    "forge.verify",
-    "Finish Build after reviewing every creator requirement. Staging and patch receipts already provide local diagnostics once all changes are present; fix all reported issues together before this call. This reuses validation only for the identical complete draft, otherwise runs it again. Supply the final Markdown summary. An eligible result finishes the agent turn immediately; the accepted plan is then applied by the host. The live place is not mutated by this tool.",
+    "studio.read_drafts",
+    "Read one or more staged scripts in one request. Each page has exact 1-based line numbers and a sourceHash for a later repair. Request only code outside the diagnostic excerpts already returned by studio.build or studio.repair.",
     {
-      summary: z
-        .string()
-        .trim()
-        .min(1)
-        .max(8192)
-        .describe(
-          "Your concise final Markdown message: what you built and any useful limitations. No claim of a passed Play test. Forge displays this exact message after the accepted plan is applied; do not make a separate response to restate it.",
-        ),
+      drafts: z.array(MODEL_DRAFT_READ_SCHEMA).min(1).max(CREATOR_MAX_CHANGES),
+    },
+  ),
+  definition(
+    "studio.repair",
+    "Apply all independent source and property corrections in one atomic request, then rerun the complete local review. Source repairs use exact line ranges and sourceHash values from the latest diagnostics or studio.read_drafts. Property repairs use the operationHash from the latest receipt. Every omitted field and source line is preserved. A stale or invalid repair changes nothing.",
+    {
+      repairs: z.array(z.unknown()).min(1).max(CREATOR_MAX_CHANGES),
+      summary: BUILDER_SUMMARY_SCHEMA,
     },
   ),
 ];
@@ -6801,14 +7213,6 @@ function clonePlanChange<T extends CreatorPlanChange>(change: T): T {
 function cloneOperation<T extends StudioChangeOperation>(operation: T): T {
   return structuredClone(operation);
 }
-function operationSummary(operation: StudioChangeOperation): string {
-  if (operation.kind === "create") return `Create ${operation.className} ${operation.target.path}`;
-  if (operation.kind === "edit_source") return `Edit source for ${operation.target.path}`;
-  if (operation.kind === "move")
-    return `Move ${operation.target.path} to ${operation.parent.path}/${operation.name}`;
-  return `${operation.kind === "delete" ? "Delete" : "Update"} ${operation.target.path}`;
-}
-
 function creatorLuauAnalysisTopology(
   observation: CreatorProjectIndexView,
   operations: readonly StudioChangeOperation[],
@@ -6940,13 +7344,34 @@ function removeStudioTopologySubtree(classes: Map<string, string>, root: string)
     if (path === root || path.startsWith(`${root}/`)) classes.delete(path);
 }
 
+interface CreatorVerificationDiagnosticView {
+  id: string;
+  ruleId: string;
+  severity: VerificationIssue["severity"];
+  category: VerificationIssue["category"];
+  message: string;
+  path?: string;
+  planChangeId?: string;
+  operationId?: string;
+  location?: {
+    line: number;
+    column: number;
+    endLine?: number;
+    endColumn?: number;
+  };
+  remediation?: {
+    kind: string;
+    steps: string[];
+  };
+}
+
 function creatorVerificationDiagnostic(
   issue: VerificationIssue,
   sources: readonly (StudioLuauAnalysisSource & {
     planChangeId: string;
     operationId: string;
   })[],
-): unknown {
+): CreatorVerificationDiagnosticView {
   const source = issue.path ? sources.find((entry) => entry.studioPath === issue.path) : undefined;
   return {
     id: issue.id,
@@ -6982,6 +7407,45 @@ function creatorVerificationDiagnostic(
         }
       : {}),
   };
+}
+
+function consolidateCreatorDiagnostics(
+  diagnostics: readonly CreatorVerificationDiagnosticView[],
+): Array<
+  Omit<CreatorVerificationDiagnosticView, "id" | "operationId" | "location"> & {
+    count: number;
+    locations?: CreatorVerificationDiagnosticView["location"][];
+  }
+> {
+  const groups = new Map<
+    string,
+    Omit<CreatorVerificationDiagnosticView, "id" | "operationId" | "location"> & {
+      count: number;
+      locations?: CreatorVerificationDiagnosticView["location"][];
+    }
+  >();
+  for (const { id: _id, operationId: _operationId, location, ...diagnostic } of diagnostics) {
+    const key = stableJson(diagnostic);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.count += 1;
+      if (
+        location &&
+        (existing.locations?.length ?? 0) < 12 &&
+        !existing.locations?.some((candidate) => stableJson(candidate) === stableJson(location))
+      )
+        (existing.locations ??= []).push(location);
+      continue;
+    }
+    groups.set(key, {
+      ...diagnostic,
+      count: 1,
+      ...(location ? { locations: [location] } : {}),
+    });
+  }
+  return [...groups.values()].sort((left, right) =>
+    stableJson(left).localeCompare(stableJson(right)),
+  );
 }
 
 function boundedDiagnosticMessage(value: string): string {
@@ -7959,7 +8423,7 @@ export function patchCreatorDraftSource(
   if (contentHash(source) !== expectedHash)
     throw new ToolFailure(
       "DRAFT_SOURCE_CHANGED",
-      "The draft changed. Read studio.read_draft for the current lines and sourceHash before retrying.",
+      "The draft changed. Read its current lines and sourceHash with studio.read_drafts before retrying.",
     );
   if (edits.length === 0 || edits.length > 64)
     throw new ToolFailure("DRAFT_PATCH_INVALID", "Supply 1–64 exact draft edits.");
@@ -8230,7 +8694,7 @@ function normalizeCreatorPropertyInput(
     "position" in input &&
     expectedKind === "cframe_f32x12"
   ) {
-    const degrees = input.rotation;
+    const degrees = input.rotation ?? { x: 0, y: 0, z: 0 };
     const x = (degrees.x * Math.PI) / 180;
     const y = (degrees.y * Math.PI) / 180;
     const z = (degrees.z * Math.PI) / 180;
@@ -8382,13 +8846,6 @@ function normalizeCreatorPropertyInput(
         },
       })),
     });
-  if (
-    typeof input === "object" &&
-    input !== null &&
-    "name" in input &&
-    expectedKind === "brick_color"
-  )
-    return { kind: expectedKind, name: input.name };
   if (typeof input === "object" && input !== null && "family" in input && expectedKind === "font")
     return canonicalStudioValue({ kind: expectedKind, ...input });
   if (
@@ -8413,11 +8870,12 @@ function normalizeCreatorPropertyInput(
   if (
     typeof input === "object" &&
     input !== null &&
-    "objectId" in input &&
+    ("objectId" in input || "changeId" in input) &&
     expectedKind === "instance_ref"
   ) {
-    if (!resolveReference) throw new Error(`Property ${name} requires a host-resolved objectId`);
-    const target = resolveReference(input.objectId);
+    if (!resolveReference)
+      throw new Error(`Property ${name} requires a host-resolved objectId or changeId`);
+    const target = resolveReference(input);
     const expectedClass = rule.constraints?.referenceClass;
     if (expectedClass === undefined || !isRobloxClassAssignableTo(target.className, expectedClass))
       throw new Error(
@@ -8432,7 +8890,9 @@ function normalizeCreatorPropertyInput(
       expectedClass,
     });
   }
-  throw new Error(`Property ${name} has an unsupported natural JSON value`);
+  throw new Error(
+    `Property ${name} expects ${modelPropertyInputDescription(expectedKind)}; received a different JSON shape`,
+  );
 }
 
 function studioFloat(value: number): number {
@@ -9308,17 +9768,15 @@ const CREATOR_PRESENTATION_GUIDANCE =
   'Write all creator-facing prose in GitHub-flavored Markdown. Lead with the useful answer or next step. Use short paragraphs, concise lists, and headings only when they help. Display Roblox hierarchy paths with dots, e.g. Workspace.Airlock.OuterDoor, and bracket notation for names containing spaces, punctuation or Luau keywords (e.g. StarterGui.HUD["Control Panel"]). Slash-separated paths returned by tools are exact internal handles: preserve those bytes in tool arguments, but use Roblox notation in public prose. Filesystem paths keep their original separators. Use inline code for paths, API names, and identifiers; put code examples in fenced code blocks with a language such as luau. Never wrap the entire response in a code fence or emit HTML. Keep internal bookkeeping, journal semantics, and implementation jargon out of the conversation unless requested. Markdown belongs only in prose fields such as answer text, clarification questions, and plan step summaries; tool arguments remain exact schema-valid JSON, and identifiers, paths, enums, staged source, and property values must not acquire Markdown formatting. Include activity in substantive tool calls: a concise public, feature-level summary of what you are working toward, under 120 characters. For example: Connecting the airlock controls to the server. Keep it stable across related calls; do not narrate individual tool operations, private reasoning, bookkeeping, or claim unverified success. No extra request or tool call just for progress. Plan steps should each be one concise sentence about the intended result. Review items should be brief, direct things the user can try; omit Creator review prefixes, evidence terminology and machine-check descriptions. Final answers and plans use the dedicated outcome tools.';
 
 export const CREATOR_PLANNER_SYSTEM_PROMPT = `You are Forge, the creator\'s Roblox project collaborator. Explore current facts with project.search, project.children and project.inspect; batch independent queries and inspections. The orientation reports scriptCount: when it is zero there is no existing source to search. Otherwise inspect relevant hash-verified source and dependency closure with source tools before proposing changes. Use studio.api_lookup only for missing Roblox API facts. Publish exactly one outcome: creator.answer for an answer, creator.request_clarification for a material blocking question, or creator.propose_plan for reviewed work. Object IDs and citation handles come from project/source tools; copy them exactly. The host resolves internal identities, classes and paths. Inspect existing targets before selecting them, and list the inspected objects the builder needs. For GUI work inspect the existing ScreenGui and parent frames, including Size, Position, AnchorPoint, AutomaticSize and layoutNotes. Include explicit update operations for zero-size or unsuitable existing containers; adding child controls does not configure their parent. Plan responsive sizing, readable spacing and viewport fit alongside behavior. Describe concise implementation steps and additional behavioral checks; Forge generates mandatory existence and syntax checks. Source and property values belong to Build after approval. Put visual quality, client-only behavior and unsupported causal judgments in reviews. Never weaken the request, invent hidden criteria, stage changes during planning, or reconstruct internal identity JSON. Once a tool publishes an outcome, the phase is complete.\n\n${CREATOR_PRESENTATION_GUIDANCE}`;
-export const CREATOR_BUILDER_SYSTEM_PROMPT = `You are Forge's Studio builder. The accepted plan fixes all structural authority. Build and review it, then finish with forge.verify and a concise Markdown result. Forge applies the exact eligible change set under the creator's plan acceptance.
+export const CREATOR_BUILDER_SYSTEM_PROMPT = `You are Forge's Studio builder. Implement the accepted plan as one coherent change set. The creator's plan acceptance authorizes Forge to apply the exact locally eligible result.
 
 WORKFLOW
-- Inspect the explicit inspectionPaths in one studio.inspect call; source.read is limited to the approved consultation closure.
-- Stage the approved implementation in one studio.stage call with {changes:[{planChangeId,...creativePayload},...]}. Include related scripts and property edits together. The whole batch succeeds or changes nothing, and returns one combined diagnostic review.
-- Send changes as a JSON array, never a string containing JSON. If a batch is rejected for its encoding, correct that encoding and resubmit the ready changes together. For repairs, issue independent patch calls to different planChangeIds in one response; wait between dependent edits to the same operation so its hash stays current.
-- Review your implementation against the request before staging. When the complete staging review has no errors, call forge.verify with your final Markdown summary next. Do not purchase more tool round trips to rediscover the unchanged draft you just authored; read_draft and patch tools are for specific diagnostics or missing code context.
+- The approved observedObjects are the exact revision-bound objects inspected during planning. Use them directly; do not spend a turn rediscovering unchanged Studio state. source.read is present only when the approved consultation closure contains readable source.
+- Call studio.build once with every approved planChangeId exactly once and a concise final Markdown summary. Send changes as an array, never JSON encoded inside a string. The complete batch succeeds atomically or changes nothing, and Forge immediately runs the full local review.
+- Treat the generated studio.build schema as the only property-input format. Each offered property has one exact JSON shape; copy its lower-case field names and do not invent engine component aliases. Use {changeId} when one new object references another object created in this Build.
+- An eligible studio.build result completes Build without another model request. If it is rejected, use the grouped diagnostics and supplied excerpts. Read multiple missing draft ranges together with studio.read_drafts only when the excerpts are insufficient, then apply every independent correction together in one studio.repair call. An eligible repair also completes Build immediately.
 - New scripts use complete source. Existing edit_source changes use sourceEdits:[{startByte,endByte,replacement}] against the consulted UTF-8 source; never send source for an existing script. The host derives structure, verifies hashes and source bounds. Finish your implementation and security review before staging; do not use tool round trips as a scratchpad for each thought or line.
-- Stage/patch receipts automatically include strict diagnostics once every change is staged. Read those before making more changes. Group ALL related corrections to a script in one studio.patch_source call using the same sourceHash and original 1-based line ranges. Use studio.read_draft for code outside the supplied excerpts; never guess the current text or line numbers.
-- studio.patch_properties preserves other fields. studio.stage replaces the ENTIRE proposal, so restaging a subset discards omitted styling and settings.
-- Stage receipts contain current hashes. studio.diff is optional when you need a change inventory; do not purchase a separate response just to recover hashes already in receipts. Once reviewed and diagnostics are eligible, call forge.verify with the final summary. It finishes Build immediately.
+- studio.repair preserves omitted properties and source lines. Use the latest operationHash or sourceHash exactly; stale or invalid repair batches change nothing. Do not repeat accepted work already present in the current Build checkpoint.
 
 LUAU AND SECURITY
 - Use accurate strict types; never disable analysis, add broad any casts, duplicate modules, or weaken behavior to pass it. Roblox module resolution follows inferred GetService/WaitForChild chains: local storage = game:GetService("ReplicatedStorage"); local system = storage:WaitForChild("System"); require(system:WaitForChild("Protocol")). Keep casts out of require arguments and their instance-path aliases.
@@ -9334,13 +9792,69 @@ GUI AND CAPABILITIES
 
 ${CREATOR_PRESENTATION_GUIDANCE}`;
 
+const CREATOR_BUILDER_OBSERVED_PROPERTIES = new Set([
+  "AnchorPoint",
+  "AutomaticCanvasSize",
+  "AutomaticSize",
+  "CanvasSize",
+  "ClipsDescendants",
+  "DisplayOrder",
+  "Enabled",
+  "IgnoreGuiInset",
+  "LayoutOrder",
+  "Position",
+  "ResetOnSpawn",
+  "ScrollingDirection",
+  "Size",
+  "TextScaled",
+  "TextSize",
+  "TextWrapped",
+  "Visible",
+  "ZIndexBehavior",
+]);
+
+function creatorBuilderObservedProperties(
+  properties: Readonly<Record<string, StudioValue>>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(properties)
+      .filter(([name]) => CREATOR_BUILDER_OBSERVED_PROPERTIES.has(name))
+      .map(([name, value]) => [name, creatorBuilderObservedValue(value)]),
+  );
+}
+
+function creatorBuilderObservedValue(value: StudioValue): unknown {
+  if (value.kind === "nil") return null;
+  if (
+    value.kind === "boolean" ||
+    value.kind === "number_f32" ||
+    value.kind === "number_f64" ||
+    value.kind === "int32" ||
+    value.kind === "int64_decimal" ||
+    value.kind === "string_utf8" ||
+    value.kind === "content" ||
+    value.kind === "enum_name"
+  )
+    return value.value;
+  if (value.kind === "vector2_f32") return { x: value.x, y: value.y };
+  if (value.kind === "vector3_f32") return { x: value.x, y: value.y, z: value.z };
+  if (value.kind === "udim") return { scale: value.scale, offset: value.offset };
+  if (value.kind === "udim2") return { x: { ...value.x }, y: { ...value.y } };
+  if (value.kind === "color3_rgb8") return { r: value.r / 255, g: value.g / 255, b: value.b / 255 };
+  if (value.kind === "font")
+    return { family: value.family, weight: value.weight, style: value.style };
+  return value;
+}
+
 export function creatorBuilderSystemPrompt(
   plan: CreatorPlan,
   contract: CreatorBuildContract,
+  projectIndex: CreatorProjectIndexView,
   verificationFeedback: readonly string[] = [],
 ): string {
   assertCreatorPlan(plan);
   assertCreatorBuildContract(contract);
+  assertCreatorProjectIndexView(projectIndex);
   if (
     contract.planId !== plan.id ||
     contract.planHash !== plan.hash ||
@@ -9354,11 +9868,14 @@ export function creatorBuilderSystemPrompt(
     throw new Error("Creator verification feedback is invalid or exceeds its bound");
   // The sealed contract retains every policy. The model needs each applicable
   // policy once, not the same text for every label, button, and light.
-  const propertyRules: Omit<CreatorPropertyPolicy["allowedProperties"][number], "name">[] = [];
+  const propertyRules: Array<{
+    input: string;
+    nullable?: true;
+    constraints?: CreatorPropertyPolicy["allowedProperties"][number]["constraints"];
+  }> = [];
   const ruleIndices = new Map<string, number>();
   const policies: Array<{
     properties: Record<string, number>;
-    attributes: CreatorPropertyPolicy["attributes"];
     source: CreatorPropertyPolicy["source"];
   }> = [];
   const policyKeys = new Map<string, number>();
@@ -9369,10 +9886,14 @@ export function creatorBuilderSystemPrompt(
       policyIndex = policies.length;
       policyKeys.set(key, policyIndex);
       policies.push({
-        attributes: propertyPolicy.attributes,
         source: propertyPolicy.source,
         properties: Object.fromEntries(
-          propertyPolicy.allowedProperties.map(({ name, ...rule }) => {
+          propertyPolicy.allowedProperties.map(({ name, valueKinds, nullable, constraints }) => {
+            const rule = {
+              input: modelPropertyInputDescription(valueKinds[0]!),
+              ...(nullable ? { nullable: true as const } : {}),
+              ...(constraints === undefined ? {} : { constraints }),
+            };
             const key = stableJson(rule);
             let index = ruleIndices.get(key);
             if (index === undefined) {
@@ -9398,15 +9919,43 @@ export function creatorBuilderSystemPrompt(
   });
   const context = {
     steps: plan.steps,
-    checks: plan.charter.clauses.map((clause) => {
-      if (clause.kind === "creator_review") return clause;
-      const { statement: _generatedDescription, ...check } = clause;
-      return check;
+    qualityRequirements: plan.charter.clauses
+      .filter(
+        (clause) =>
+          clause.kind === "creator_review" ||
+          (clause.kind === "studio_check" && clause.check !== "instance_exists"),
+      )
+      .map((clause) => clause.statement),
+    observedObjects: contract.initialInspectionPaths.flatMap((path) => {
+      const instance = projectIndex.instances.find((candidate) => candidate.path === path);
+      if (!instance) return [];
+      const script = projectIndex.scripts.find(
+        (candidate) => candidate.documentId === instance.objectId,
+      );
+      return [
+        {
+          objectId: instance.objectId,
+          path: instance.path,
+          className: instance.className,
+          properties: creatorBuilderObservedProperties(instance.properties),
+          attributes: instance.attributes,
+          layoutNotes: creatorLayoutNotes(instance.properties),
+          ...(instance.position ? { position: instance.position } : {}),
+          ...(script
+            ? {
+                source: {
+                  documentId: script.documentId,
+                  sourceHash: script.sourceHash,
+                  utf8Bytes: script.utf8Bytes,
+                },
+              }
+            : {}),
+        },
+      ];
     }),
-    inspectionPaths: contract.initialInspectionPaths,
     changes,
     propertyPolicies: policies,
     propertyRules,
   };
-  return `${CREATOR_BUILDER_SYSTEM_PROMPT}\n\nApproved work. Each change's propertyPolicyIndex selects its policy in propertyPolicies. A policy maps each allowed property name to its exact rule index in propertyRules. Only listed changes and properties are authorized. Forge retains all identity and approval bindings. The creator request is in the conversation message.\n${stableJson(context)}${verificationFeedback.length === 0 ? "" : `\n\nForge verification facts from the prior approved attempt follow as canonical data. Repair the implementation without weakening or changing the approved charter:\n${stableJson({ verificationFeedback: [...verificationFeedback] })}`}`;
+  return `${CREATOR_BUILDER_SYSTEM_PROMPT}\n\nApproved work. Each change's propertyPolicyIndex selects its policy in propertyPolicies. A policy maps each allowed property name to its rule in propertyRules. All attributes are primitive. Only listed changes and properties are authorized. Forge retains all identity and approval bindings. The creator request is in the conversation message.\n${stableJson(context)}${verificationFeedback.length === 0 ? "" : `\n\nForge verification facts from the prior approved attempt follow as canonical data. Repair the implementation without weakening or changing the approved charter:\n${stableJson({ verificationFeedback: [...verificationFeedback] })}`}`;
 }

@@ -513,7 +513,8 @@ describe("ConversationTimeline", () => {
 
     expect(screen.getByRole("heading", { name: "Suggested plan" })).toBeVisible();
     expect(screen.queryByText("Validate Luau syntax.")).not.toBeInTheDocument();
-    expect(screen.getByText("Try the prompt in Studio.")).toBeInTheDocument();
+    expect(screen.queryByText("Try the prompt in Studio.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Try it in Studio")).not.toBeInTheDocument();
     expect(screen.getByText(/update the airlock authority/i)).toBeVisible();
     expect(screen.getByRole("button", { name: "Accept plan" })).toBeVisible();
     expect(screen.getAllByRole("button", { name: "Don't build this" })).toHaveLength(1);
@@ -580,7 +581,7 @@ describe("ConversationTimeline", () => {
 
     expect(screen.queryByText("Forge is reading the project index.")).not.toBeInTheDocument();
     expect(screen.queryByText("Forge is producing a bounded plan.")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Load earlier conversation" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Earlier messages" })).toBeVisible();
   });
 
   it("shows a startup failure even before an episode exists", () => {

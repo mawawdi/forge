@@ -1,9 +1,10 @@
 {
   "kind": "StudioCapabilityPolicy",
   "catalogCommit": "d025c96bdb1c81570221997092fbe0ad94b5337c",
-  "roots": ["Lighting", "ReplicatedFirst", "ReplicatedStorage", "ServerScriptService", "ServerStorage", "SoundService", "StarterGui", "StarterPack", "StarterPlayer", "Teams", "Workspace"],
+  "roots": ["Lighting", "MaterialService", "ReplicatedFirst", "ReplicatedStorage", "ServerScriptService", "ServerStorage", "SoundService", "StarterGui", "StarterPack", "StarterPlayer", "Teams", "TextChatService", "Workspace"],
   "authoringContainers": [
     {"path": "Lighting", "className": "Lighting"},
+    {"path": "MaterialService", "className": "MaterialService"},
     {"path": "ReplicatedFirst", "className": "ReplicatedFirst"},
     {"path": "ReplicatedStorage", "className": "ReplicatedStorage"},
     {"path": "ServerScriptService", "className": "ServerScriptService"},
@@ -15,17 +16,23 @@
     {"path": "StarterPlayer/StarterCharacterScripts", "className": "StarterCharacterScripts"},
     {"path": "StarterPlayer/StarterPlayerScripts", "className": "StarterPlayerScripts"},
     {"path": "Teams", "className": "Teams"},
+    {"path": "TextChatService", "className": "TextChatService"},
     {"path": "Workspace", "className": "Workspace"}
   ],
   "operationKinds": ["create", "delete", "edit_source", "move", "update"],
   "authoringGroups": [
-    {"name": "containers", "classes": ["Folder", "Model"], "propertyMode": "structure_only"},
+    {"name": "containers", "classes": ["Configuration", "Folder"], "propertyMode": "structure_only"},
     {"name": "scripts", "classes": ["LocalScript", "ModuleScript", "Script"], "propertyMode": "structure_only"},
-    {"name": "remotes", "classes": ["RemoteEvent", "RemoteFunction"], "propertyMode": "structure_only"},
-    {"name": "value_objects", "classes": ["BoolValue", "CFrameValue", "Color3Value", "IntValue", "NumberValue", "ObjectValue", "StringValue", "Vector3Value"], "propertyMode": "proof_closed_supported_types"},
-    {"name": "three_dimensional", "classes": ["Attachment", "Part", "ProximityPrompt", "WeldConstraint"], "propertyMode": "proof_closed_supported_types"},
-    {"name": "ui", "classes": ["CanvasGroup", "Frame", "ImageButton", "ImageLabel", "ScreenGui", "ScrollingFrame", "SurfaceGui", "TextBox", "TextButton", "TextLabel", "UIAspectRatioConstraint", "UICorner", "UIGradient", "UIGridLayout", "UIListLayout", "UIPadding", "UIScale", "UIStroke", "UITextSizeConstraint"], "propertyMode": "proof_closed_supported_types"},
-    {"name": "effects_audio", "classes": ["Beam", "Decal", "ParticleEmitter", "PointLight", "Sound", "SpotLight", "SurfaceLight", "Texture", "Trail"], "propertyMode": "proof_closed_supported_types"}
+    {"name": "remotes", "classes": ["BindableEvent", "BindableFunction", "RemoteEvent", "RemoteFunction", "UnreliableRemoteEvent"], "propertyMode": "structure_only"},
+    {"name": "value_objects", "classes": ["BoolValue", "BrickColorValue", "CFrameValue", "Color3Value", "IntValue", "NumberValue", "ObjectValue", "RayValue", "StringValue", "Vector3Value"], "propertyMode": "proof_closed_supported_types"},
+    {"name": "world", "classes": ["Attachment", "BlockMesh", "CornerWedgePart", "FileMesh", "MeshPart", "Model", "Part", "PathfindingLink", "PathfindingModifier", "Seat", "SpawnLocation", "SpecialMesh", "Tool", "TrussPart", "UnionOperation", "VehicleSeat", "WedgePart"], "propertyMode": "proof_closed_supported_types"},
+    {"name": "interaction", "classes": ["ClickDetector", "DragDetector", "ProximityPrompt"], "propertyMode": "proof_closed_supported_types"},
+    {"name": "physics", "classes": ["AlignOrientation", "AlignPosition", "AngularVelocity", "BallSocketConstraint", "CylindricalConstraint", "HingeConstraint", "LinearVelocity", "Motor6D", "NoCollisionConstraint", "PrismaticConstraint", "RigidConstraint", "RodConstraint", "RopeConstraint", "SpringConstraint", "Torque", "UniversalConstraint", "VectorForce", "Weld", "WeldConstraint"], "propertyMode": "proof_closed_supported_types"},
+    {"name": "ui", "classes": ["BillboardGui", "CanvasGroup", "Frame", "ImageButton", "ImageLabel", "ScreenGui", "ScrollingFrame", "SurfaceGui", "TextBox", "TextButton", "TextLabel", "UIAspectRatioConstraint", "UICorner", "UIFlexItem", "UIGradient", "UIGridLayout", "UIListLayout", "UIPadding", "UIPageLayout", "UIScale", "UIShadow", "UISizeConstraint", "UIStroke", "UITableLayout", "UITextSizeConstraint", "VideoFrame", "ViewportFrame"], "propertyMode": "proof_closed_supported_types"},
+    {"name": "visuals", "classes": ["Atmosphere", "Beam", "BloomEffect", "BlurEffect", "Clouds", "ColorCorrectionEffect", "Decal", "DepthOfFieldEffect", "Fire", "ForceField", "Highlight", "MaterialVariant", "ParticleEmitter", "PointLight", "Sky", "Smoke", "Sparkles", "SpotLight", "SunRaysEffect", "SurfaceAppearance", "SurfaceLight", "Texture", "Trail"], "propertyMode": "proof_closed_supported_types"},
+    {"name": "audio", "classes": ["ChorusSoundEffect", "CompressorSoundEffect", "DistortionSoundEffect", "EchoSoundEffect", "EqualizerSoundEffect", "FlangeSoundEffect", "PitchShiftSoundEffect", "ReverbSoundEffect", "Sound", "SoundGroup", "TremoloSoundEffect"], "propertyMode": "proof_closed_supported_types"},
+    {"name": "characters", "classes": ["Animation", "AnimationController", "Animator", "Humanoid", "Team"], "propertyMode": "proof_closed_supported_types"},
+    {"name": "engine_settings", "classes": ["Lighting", "MaterialService", "SoundService", "StarterGui", "StarterPlayer", "Terrain", "TextChatService", "Workspace"], "propertyMode": "existing_only_supported_types"}
   ],
   "codecByApiType": {
     "Axes": "axes",
@@ -53,6 +60,7 @@
     "int": "int32",
     "int64": "int64_decimal",
     "string": "string_utf8"
+    ,"time_duration": "string_utf8"
   },
   "propertyDefaults": {
     "maximumUtf8Bytes": 4096,
@@ -65,13 +73,11 @@
     "Instance.Parent": {"reason": "parent_policy_missing"}
   },
   "propertyOverrides": {
-    "ImageButton.HoverImageContent": {"serialized": false},
-    "ImageButton.ImageContent": {"serialized": false},
-    "ImageButton.PressedImageContent": {"serialized": false},
-    "ImageLabel.ImageContent": {"serialized": false},
-    "ScrollingFrame.BottomImageContent": {"serialized": false},
-    "ScrollingFrame.MidImageContent": {"serialized": false},
-    "ScrollingFrame.TopImageContent": {"serialized": false},
+    "BillboardGui.Adornee": {"referenceClass": "Instance"},
+    "BillboardGui.PlayerToHideFrom": {"referenceClass": "Instance"},
+    "CompressorSoundEffect.SideChain": {"referenceClass": "Instance"},
+    "DragDetector.ReferenceInstance": {"referenceClass": "Instance"},
+    "Highlight.Adornee": {"referenceClass": "Instance"},
     "SurfaceGuiBase.Adornee": {"referenceClass": "Instance"},
     "Attachment.Axis": {"maximum": 100000},
     "Attachment.CFrame": {"maximumAbsoluteTranslation": 100000},
@@ -167,6 +173,7 @@
     "Sound.RollOffMaxDistance": {"minimum": 0, "maximum": 100000},
     "Sound.RollOffMinDistance": {"minimum": 0, "maximum": 100000},
     "Sound.Volume": {"minimum": 0, "maximum": 1000},
+    "SoundService.ListenerObject": {"referenceClass": "Instance"},
     "SpotLight.Angle": {"minimum": 0, "maximum": 180},
     "SpotLight.Range": {"minimum": 0, "maximum": 100000},
     "StringValue.Value": {"maximumUtf8Bytes": 4096},
@@ -212,5 +219,5 @@
     {"name": "instance.property_series", "result": "manifest_property_series", "maximumSamples": 128, "minimumIntervalMs": 100, "maximumIntervalMs": 1000},
     {"name": "instance.resolve", "result": "instance_identity"}
   ],
-  "limits": {"maximumOperations": 128, "maximumProjectionFacts": 16384, "maximumProjectionBytes": 524288, "maximumRuntimeTargets": 64, "maximumRuntimeCalls": 128, "maximumRuntimeMs": 300000, "maximumRuntimeResultBytes": 524288, "maximumDiagnostics": 32}
+  "limits": {"maximumOperations": 128, "maximumProjectionFacts": 16384, "maximumProjectionBytes": 2097152, "maximumRuntimeTargets": 64, "maximumRuntimeCalls": 128, "maximumRuntimeMs": 300000, "maximumRuntimeResultBytes": 524288, "maximumDiagnostics": 32}
 }

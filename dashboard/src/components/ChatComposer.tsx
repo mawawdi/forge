@@ -13,8 +13,11 @@ interface ChatComposerProps {
 
 export function ChatComposer({ state, snapshot, onSent }: ChatComposerProps): React.JSX.Element {
   const [message, setMessage] = useState<string | undefined>();
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const { enterToSend } = useBrowserPreferences();
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const modelPickerRef = useRef<HTMLDivElement>(null);
+  const modelTriggerRef = useRef<HTMLButtonElement>(null);
   const conversationId = state?.selectedConversationId;
   const draft = dashboardStore.draftFor(conversationId);
   const contract = state?.controlView?.turnContract;
@@ -54,7 +57,19 @@ export function ChatComposer({ state, snapshot, onSent }: ChatComposerProps): Re
   }, [draft.text, conversationId]);
   useEffect(() => {
     setMessage(undefined);
+    setModelPickerOpen(false);
   }, [conversationId]);
+  useEffect(() => {
+    if (!modelPickerOpen) return;
+    modelPickerRef.current
+      ?.querySelector<HTMLButtonElement>('[role="option"][aria-selected="true"]')
+      ?.focus();
+    const close = (event: PointerEvent): void => {
+      if (!modelPickerRef.current?.contains(event.target as Node)) setModelPickerOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [modelPickerOpen]);
   const messageWithinBounds = Boolean(
     contract && bytes >= contract.minimumBytes && bytes <= contract.maximumBytes,
   );
@@ -129,21 +144,103 @@ export function ChatComposer({ state, snapshot, onSent }: ChatComposerProps): Re
         }}
       />
       <div className="chat-composer__controls">
-        <label>
-          <span className="sr-only">Model</span>
-          <select
-            value={selectedModelId}
+        <div
+          className="composer-model-picker"
+          ref={modelPickerRef}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && modelPickerOpen) {
+              event.preventDefault();
+              setModelPickerOpen(false);
+              modelTriggerRef.current?.focus();
+              return;
+            }
+            if (!modelPickerOpen || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key))
+              return;
+            const options = [
+              ...modelPickerRef.current!.querySelectorAll<HTMLButtonElement>(
+                '[role="option"]:not(:disabled)',
+              ),
+            ];
+            if (!options.length) return;
+            event.preventDefault();
+            const current = options.indexOf(document.activeElement as HTMLButtonElement);
+            const next =
+              event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? options.length - 1
+                  : event.key === "ArrowDown"
+                    ? (current + 1) % options.length
+                    : (current + options.length - 1) % options.length;
+            options[next]?.focus();
+          }}
+        >
+          <button
+            ref={modelTriggerRef}
+            type="button"
+            className="composer-model-trigger"
+            role="combobox"
+            aria-label="Model"
+            aria-haspopup="listbox"
+            aria-expanded={modelPickerOpen}
+            aria-controls="composer-model-options"
             disabled={!registry || Boolean(snapshot.pendingRequest)}
-            onChange={(event) => changeDraft({ modelId: event.target.value })}
+            onClick={() => setModelPickerOpen((open) => !open)}
+            onKeyDown={(event) => {
+              if (["ArrowDown", "ArrowUp"].includes(event.key) && !modelPickerOpen) {
+                event.preventDefault();
+                setModelPickerOpen(true);
+              }
+            }}
           >
-            {registry?.models.map((model) => (
-              <option key={model.id} value={model.id} disabled={model.availability !== "available"}>
-                {model.displayName}
-                {model.availability !== "available" ? " (unavailable)" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
+            <Icon name={modelPickerOpen ? "chevronDown" : "chevronRight"} size={13} />
+            <span>{selectedModel?.displayName ?? "Choose model"}</span>
+          </button>
+          {modelPickerOpen ? (
+            <div className="composer-model-popover">
+              <div className="composer-model-options__heading">
+                <span>Models</span>
+                <small>Choose for your next message</small>
+              </div>
+              <div
+                id="composer-model-options"
+                className="composer-model-options"
+                role="listbox"
+                aria-label="Choose a model"
+              >
+                {registry?.models.map((model) => (
+                  <button
+                    key={model.id}
+                    type="button"
+                    role="option"
+                    aria-selected={model.id === selectedModelId}
+                    disabled={model.availability !== "available"}
+                    onClick={() => {
+                      changeDraft({ modelId: model.id });
+                      setModelPickerOpen(false);
+                      modelTriggerRef.current?.focus();
+                    }}
+                  >
+                    <span className="composer-model-options__icon">
+                      <Icon name="model" size={15} />
+                    </span>
+                    <span>
+                      <strong>{model.displayName}</strong>
+                      <small>
+                        {model.availability === "available"
+                          ? model.id === registry.defaultModelId
+                            ? `${modelProvider(model.id)} · Default`
+                            : modelProvider(model.id)
+                          : (model.detail ?? "Unavailable")}
+                      </small>
+                    </span>
+                    {model.id === selectedModelId ? <Icon name="check" size={16} /> : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
         {canSend ? (
           <span className="composer-keyboard-hint">
             {enterToSend ? "Enter to send" : "⌘/Ctrl Enter"}
@@ -190,6 +287,16 @@ export function ChatComposer({ state, snapshot, onSent }: ChatComposerProps): Re
       </p>
     </form>
   );
+}
+
+function modelProvider(modelId: string): string {
+  const provider = modelId.split("/", 1)[0];
+  if (provider === "openai") return "OpenAI";
+  if (provider === "google") return "Google";
+  if (provider === "deepseek") return "DeepSeek";
+  if (provider === "meta") return "Meta";
+  if (provider === "z-ai") return "Z.ai";
+  return provider || "Model provider";
 }
 
 function placeholder(state: CreatorDashboardState | undefined): string {

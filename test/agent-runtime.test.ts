@@ -1656,6 +1656,69 @@ test("no-progress repetition is scoped to one accepted host-state epoch", async 
   );
 });
 
+test("a semantic checkpoint bounds provider context without discarding run evidence", async () => {
+  let state = 0;
+  const host: AgentToolHost = {
+    definitions: () => [
+      {
+        name: "phase.step",
+        description: "Advance the bounded phase.",
+        inputShape: {},
+        schema: { type: "object", additionalProperties: false },
+      },
+    ],
+    validateBatch: () => ({ valid: true, budgetExhausted: false, feedback: [] }),
+    async execute(): Promise<ToolResult> {
+      state += 1;
+      const value = { state, largePriorResult: "x".repeat(8_000) };
+      const serialized = stableJson(value);
+      return {
+        ok: true,
+        value,
+        truncated: false,
+        resultHash: contentHash(serialized),
+        bytes: Buffer.byteLength(serialized, "utf8"),
+      };
+    },
+    progressToken: () => contentHash(`state-${state}`),
+    contextCheckpoint: () => stableJson({ state, next: state === 1 ? "finish" : "done" }),
+    completionStatus: () =>
+      state === 2
+        ? { ready: true }
+        : { ready: false, code: "MORE_WORK", message: "One bounded step remains." },
+  };
+  const client = new ScriptedModelClient([
+    assistant(1, [{ id: "first", name: "phase.step", arguments: {} }]),
+    (request) => {
+      assert.equal(request.messages.length, 2);
+      assert.equal(request.messages[0]?.role, "user");
+      assert.equal(request.messages[1]?.role, "user");
+      assert.match(
+        request.messages[1]?.role === "user" ? request.messages[1].content : "",
+        /forge_semantic_checkpoint.*\"state\":1/s,
+      );
+      assert.doesNotMatch(stableJson(request.messages), /largePriorResult/);
+      return assistant(2, [{ id: "second", name: "phase.step", arguments: {} }])(request);
+    },
+  ]);
+  const result = await new ForgeNativeAgentRuntime(client).run({
+    systemPrompt: "Test bounded semantic compaction.",
+    prompt: CREATOR_PROMPT,
+    orientation: await genericOrientation(),
+    tools: host,
+    budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 4 },
+    model: "fake/model",
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.turns.length, 2);
+  assert.deepEqual(
+    result.toolCalls.map((call) => call.toolCallId),
+    ["first", "second"],
+    "the immutable run still retains tool evidence omitted from provider context",
+  );
+});
+
 test("a seal-ready host completes immediately without another inference", async () => {
   let ready = false;
   const host: AgentToolHost = {

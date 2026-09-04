@@ -617,7 +617,7 @@ test.describe("Forge workspace project conversation", () => {
 
     const composer = page.getByRole("textbox", { name: "Message Forge" });
     await composer.fill("Keep this unsent design note while Forge reconnects.");
-    await page.getByRole("button", { name: "Load earlier conversation" }).click();
+    await page.getByRole("button", { name: "Earlier messages" }).click();
 
     await expect(
       page.getByRole("status").filter({ hasText: "Forge needs attention" }),

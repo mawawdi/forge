@@ -48,6 +48,8 @@ export function ConversationHeader({
       <div className="conversation-header__studio">
         <span
           className={`studio-indicator studio-indicator--${connectionLost ? "connecting" : (studio?.status ?? "connecting")}`}
+          role="status"
+          aria-live="polite"
         >
           <span aria-hidden="true" />
           {connectionLost ? "Updates paused" : studioLabel(studio?.status)}

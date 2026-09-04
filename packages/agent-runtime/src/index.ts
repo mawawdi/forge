@@ -348,6 +348,12 @@ export interface AgentToolHost {
   completionStatus?(): AgentToolCompletionStatus;
   /** Content identity of accepted semantic progress, when the host can expose it. */
   progressToken?(): string;
+  /**
+   * A bounded, complete projection of the current model-facing state. The
+   * execution journal still retains every prior response and tool result; the
+   * next provider request can use this checkpoint instead of replaying them.
+   */
+  contextCheckpoint?(): string | undefined;
 }
 
 export interface AgentModelTurn {
@@ -1018,6 +1024,18 @@ export class ForgeNativeAgentRuntime implements AgentRuntime {
             turns,
           });
         }
+      }
+      const contextCheckpoint = input.tools.contextCheckpoint?.();
+      if (contextCheckpoint !== undefined) {
+        messages.splice(
+          0,
+          messages.length,
+          { role: "user", content: initialMessage },
+          {
+            role: "user",
+            content: `<forge_semantic_checkpoint>\n${contextCheckpoint}\n</forge_semantic_checkpoint>`,
+          },
+        );
       }
       if (progressBefore !== undefined && progressAfter === progressBefore) {
         const fingerprint = batchResults.some((entry) => !entry.ok)
@@ -1926,12 +1944,14 @@ export async function persistCreatorPhaseAgentRun(input: {
   const consumed: BudgetConsumption = {
     turns: input.runtimeResult.usage.turns,
     toolCalls: toolCalls.length,
-    writes: toolCalls.filter((call) => call.name === "studio.stage").length,
-    verifierCalls: toolCalls.filter((call) => call.name === "forge.verify").length,
+    writes: toolCalls.filter((call) => ["studio.build", "studio.repair"].includes(call.name))
+      .length,
+    verifierCalls: toolCalls.filter((call) => ["studio.build", "studio.repair"].includes(call.name))
+      .length,
     changedFiles: 0,
     addedLines: 0,
     removedLines: 0,
-    changedSourceBytes: toolCalls.reduce((sum, call) => sum + creatorStageSourceBytes(call), 0),
+    changedSourceBytes: toolCalls.reduce((sum, call) => sum + creatorWriteSourceBytes(call), 0),
     toolResultBytes: toolCalls.reduce((sum, call) => sum + call.bytes, 0),
     durationMs: input.runtimeResult.timing.durationMs,
     inputTokens: input.runtimeResult.usage.inputTokens,
@@ -3237,17 +3257,37 @@ function copyToolCallRecord(record: ToolCallRecord): ToolCallRecord {
   };
 }
 
-function creatorStageSourceBytes(record: ToolCallRecord): number {
+function creatorWriteSourceBytes(record: ToolCallRecord): number {
   if (
-    record.name !== "studio.stage" ||
+    !["studio.build", "studio.repair"].includes(record.name) ||
     !record.result.ok ||
-    !isRecord(record.input) ||
-    !Array.isArray(record.input.changes)
+    !isRecord(record.input)
   )
     return 0;
-  return record.input.changes.reduce((bytes, change: unknown) => {
+  const entries =
+    record.name === "studio.build"
+      ? record.input.changes
+      : record.name === "studio.repair"
+        ? record.input.repairs
+        : undefined;
+  if (!Array.isArray(entries)) return 0;
+  return entries.reduce((bytes, change: unknown) => {
     if (!isRecord(change)) return bytes;
     if (typeof change.source === "string") return bytes + Buffer.byteLength(change.source, "utf8");
+    if (typeof change.replacement === "string")
+      return bytes + Buffer.byteLength(change.replacement, "utf8");
+    if (Array.isArray(change.edits))
+      return (
+        bytes +
+        change.edits.reduce(
+          (sum, edit: unknown) =>
+            sum +
+            (isRecord(edit) && typeof edit.replacement === "string"
+              ? Buffer.byteLength(edit.replacement, "utf8")
+              : 0),
+          0,
+        )
+      );
     if (!Array.isArray(change.sourceEdits)) return bytes;
     return (
       bytes +

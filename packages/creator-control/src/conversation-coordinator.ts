@@ -555,7 +555,7 @@ export class CreatorConversationCoordinator {
       for (const checkpoint of checkpoints) {
         if (checkpoint.checkpointType !== "tool_completed" || !checkpoint.toolCall.result.ok)
           continue;
-        if (!["project.inspect", "studio.inspect"].includes(checkpoint.toolCall.name)) continue;
+        if (checkpoint.toolCall.name !== "project.inspect") continue;
         const value = checkpoint.toolCall.result.value;
         if (!value || typeof value !== "object" || !("instances" in value)) continue;
         if (!Array.isArray(value.instances)) continue;
@@ -570,11 +570,9 @@ export class CreatorConversationCoordinator {
         }
       }
       const detailFor = (name: string, input: unknown) =>
-        name === "forge.verify"
+        ["studio.build", "studio.repair"].includes(name)
           ? activityTargets(scriptPaths)
-          : name === "studio.diff"
-            ? activityTargets([...changeNames.values()])
-            : toolActivityDetail(input, objectNames, changeNames);
+          : toolActivityDetail(input, objectNames, changeNames);
       const steps = checkpoints
         .flatMap((checkpoint, index) =>
           checkpoint.checkpointType === "tool_completed"
@@ -4728,12 +4726,15 @@ function activityStepSucceeded(
   result: { readonly ok: boolean; readonly value?: unknown },
 ): boolean {
   if (!result.ok) return false;
-  if (name !== "forge.verify") return true;
+  if (!["studio.build", "studio.repair"].includes(name)) return true;
   return (
     result.value !== null &&
     typeof result.value === "object" &&
-    "status" in result.value &&
-    result.value.status === "eligible"
+    "review" in result.value &&
+    result.value.review !== null &&
+    typeof result.value.review === "object" &&
+    "status" in result.value.review &&
+    result.value.review.status === "eligible"
   );
 }
 
@@ -4747,24 +4748,16 @@ function toolActivityLabel(name: string, detail = "", complete = false): string 
     "source.symbols": ["Inspecting symbols in", "Inspected symbols in"],
     "source.references": ["Finding references to", "Found references to"],
     "source.dependencies": ["Checking dependencies of", "Checked dependencies of"],
-    "studio.inspect": ["Inspecting", "Inspected"],
-    "studio.stage": ["Drafting", "Drafted"],
-    "studio.patch_source": ["Updating", "Updated"],
-    "studio.read_draft": ["Reading", "Read"],
-    "studio.patch_properties": ["Adjusting", "Adjusted"],
-    "studio.diff": ["Reviewing changes to", "Reviewed changes to"],
-    "forge.verify": ["Checking Luau in", "Checked Luau in"],
+    "studio.build": ["Building", "Built"],
+    "studio.read_drafts": ["Reading", "Read"],
+    "studio.repair": ["Repairing", "Repaired"],
     "studio.api_lookup": ["Looking up", "Looked up"],
   };
   const verbs = targets[name];
   if (verbs && detail) {
-    const target = [
-      "studio.stage",
-      "studio.patch_source",
-      "studio.read_draft",
-      "studio.patch_properties",
-      "source.read",
-    ].includes(name)
+    const target = ["studio.build", "studio.read_drafts", "studio.repair", "source.read"].includes(
+      name,
+    )
       ? detail.split("/").at(-1)!
       : detail;
     return activityDetail(`${verbs[complete ? 1 : 0]} ${target}`);
@@ -4782,14 +4775,10 @@ function toolActivityLabel(name: string, detail = "", complete = false): string 
     "creator.answer": "Preparing a response",
     "creator.request_clarification": "Preparing a question",
     "creator.propose_plan": "Preparing the plan",
-    "studio.inspect": "Reading approved objects",
-    "studio.stage": "Drafting changes",
-    "studio.patch_source": complete ? "Updated the script draft" : "Updating the script draft",
-    "studio.read_draft": complete ? "Read the script draft" : "Reading the script draft",
-    "studio.patch_properties": complete ? "Adjusted the design" : "Adjusting the design",
-    "studio.diff": complete ? "Reviewed the draft diff" : "Reviewing the draft diff",
+    "studio.build": complete ? "Built and reviewed the changes" : "Building the approved plan",
+    "studio.read_drafts": complete ? "Read the affected code" : "Reading the affected code",
+    "studio.repair": complete ? "Repaired and reviewed the changes" : "Repairing the changes",
     "studio.api_lookup": "Looking up Roblox APIs",
-    "forge.verify": complete ? "Checked the proposed changes" : "Checking the proposed changes",
   };
   return (
     labels[name] ??
@@ -4822,6 +4811,16 @@ function toolActivityDetail(
         if (!change || typeof change !== "object" || !("planChangeId" in change)) return [];
         return typeof change.planChangeId === "string" && changeNames.has(change.planChangeId)
           ? [changeNames.get(change.planChangeId)!]
+          : [];
+      }),
+    );
+  }
+  if (Array.isArray(fields.repairs)) {
+    return activityTargets(
+      fields.repairs.flatMap((repair: unknown) => {
+        if (!repair || typeof repair !== "object" || !("planChangeId" in repair)) return [];
+        return typeof repair.planChangeId === "string" && changeNames.has(repair.planChangeId)
+          ? [changeNames.get(repair.planChangeId)!]
           : [];
       }),
     );

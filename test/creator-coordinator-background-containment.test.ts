@@ -94,6 +94,40 @@ const studio: StudioBridgeSession = {
   connectedAt: "2026-09-03T00:00:00.000Z",
 };
 
+test("overlapping conversations queue only their project capture boundary", async () => {
+  const coordinator = Object.assign(Object.create(CreatorSessionCoordinator.prototype), {
+    projectOperationQueues: new Map<string, Promise<void>>(),
+  }) as {
+    lockProject<T>(projectId: string, operation: () => Promise<T>): Promise<T>;
+    projectOperationQueues: Map<string, Promise<void>>;
+  };
+  const order: string[] = [];
+  let releaseFirst!: () => void;
+  let confirmFirstStarted!: () => void;
+  const firstGate = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  const firstStarted = new Promise<void>((resolve) => {
+    confirmFirstStarted = resolve;
+  });
+  const first = coordinator.lockProject(studio.projectId, async () => {
+    order.push("first-started");
+    confirmFirstStarted();
+    await firstGate;
+    order.push("first-finished");
+  });
+  const second = coordinator.lockProject(studio.projectId, async () => {
+    order.push("second-started");
+  });
+
+  await firstStarted;
+  assert.deepEqual(order, ["first-started"]);
+  releaseFirst();
+  await Promise.all([first, second]);
+  assert.deepEqual(order, ["first-started", "first-finished", "second-started"]);
+  assert.equal(coordinator.projectOperationQueues.size, 0);
+});
+
 interface ConfirmationHarness {
   artifactStore: ImmutableJsonArtifactStore;
   bundles: Map<string, CreatorSessionBundle>;

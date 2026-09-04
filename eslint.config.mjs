@@ -12,6 +12,7 @@ const [typescriptBase, typescriptEslintRecommended, typescriptRecommended] =
 export default [
   {
     ignores: [
+      ".agents/**",
       ".forge/**",
       "dashboard/dist/**",
       "dist/**",

@@ -899,9 +899,9 @@ test("journal activity fits the browser contract after long errors and multiling
         checkpointType: "tool_completed",
         occurredAt: NOW,
         toolCall: {
-          name: "forge.verify",
-          input: {},
-          result: { ok: true, value: { status: "rejected", issues: [] } },
+          name: "studio.build",
+          input: { changes: [] },
+          result: { ok: true, value: { review: { status: "rejected", issues: [] } } },
         },
       },
     });

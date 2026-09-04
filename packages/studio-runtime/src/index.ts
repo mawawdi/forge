@@ -16,6 +16,7 @@ import {
 } from "../../studio-bridge/src/index.js";
 import type { PluginToBackendMessage } from "../../studio-protocol/src/index.js";
 import {
+  STUDIO_AUTHORING_ROOTS,
   STUDIO_CAPABILITY_MANIFEST_HASH,
   assertEvidenceAgainstProjection,
   assertStudioProjectIndexCapture,
@@ -116,19 +117,7 @@ export async function requestStudioProjectIndex(
     project: request.session.project,
     connectorEpoch: request.connectorEpoch,
     purpose: "creator_project_index",
-    roots: [
-      "Lighting",
-      "ReplicatedFirst",
-      "ReplicatedStorage",
-      "ServerScriptService",
-      "ServerStorage",
-      "SoundService",
-      "StarterGui",
-      "StarterPack",
-      "StarterPlayer",
-      "Teams",
-      "Workspace",
-    ],
+    roots: [...STUDIO_AUTHORING_ROOTS],
     bounds: CREATOR_DEFAULT_RESOURCE_POLICY,
   });
   const requestId = `studio_project_index_${randomUUID()}`;

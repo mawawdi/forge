@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  STUDIO_AUTHORING_ROOTS,
   STUDIO_CAPABILITY_MANIFEST_HASH,
   createStudioProjectEvidenceShard,
   createStudioEvidenceEnvelope,
@@ -25,6 +26,7 @@ import {
   StudioProjectIndexStreamRouter,
   executeCreatorVerificationPlan,
   executeStudioCapabilityCanary,
+  requestStudioProjectIndex,
   waitForStudioProjectIndexCapture,
 } from "../packages/studio-runtime/src/index.js";
 import {
@@ -275,6 +277,33 @@ function connectionThatEmits(
     async close() {},
   };
 }
+
+test("project-index requests use the complete generated authoring-root set", async () => {
+  const projectIndexSession: StudioBridgeSession = {
+    ...session,
+    capabilities: ["studio_project_index", "opaque_identity"],
+  };
+  let requestedRoots: readonly string[] | undefined;
+  const connection = connectionThatEmits((request, handler) => {
+    assert.equal(request.type, "CollectStudioProjectIndex");
+    if (request.type !== "CollectStudioProjectIndex") return;
+    requestedRoots = request.payload.projection.roots;
+    assert.ok(request.requestId);
+    void handler(pluginError(request.requestId, "stop after inspecting projection"), session);
+  });
+
+  await assert.rejects(
+    () =>
+      requestStudioProjectIndex({
+        connection,
+        session: projectIndexSession,
+        connectorEpoch: "runtime_test_connector_epoch",
+        timeoutMs: 100,
+      }),
+    /stop after inspecting projection/,
+  );
+  assert.deepEqual(requestedRoots, STUDIO_AUTHORING_ROOTS);
+});
 
 test("creator verification treats a plugin rejection before acceptance as terminal", async () => {
   const plan = creatorPlan();

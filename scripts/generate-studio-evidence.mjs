@@ -344,7 +344,9 @@ function deriveManifest(policy, catalog, evidenceContractHash) {
       !group ||
       typeof group.name !== "string" ||
       !Array.isArray(group.classes) ||
-      !["structure_only", "proof_closed_supported_types"].includes(group.propertyMode)
+      !["structure_only", "proof_closed_supported_types", "existing_only_supported_types"].includes(
+        group.propertyMode,
+      )
     )
       throw new Error("Invalid Studio capability authoring group");
     for (const className of group.classes) {
@@ -355,9 +357,13 @@ function deriveManifest(policy, catalog, evidenceContractHash) {
       )
         throw new Error(`Invalid or duplicate policy class: ${String(className)}`);
       seenClasses.add(className);
-      assertDirectAuthoringClass(classesByName.get(className));
+      const creatable = group.propertyMode !== "existing_only_supported_types";
+      assertDirectAuthoringClass(classesByName.get(className), creatable);
       const properties = [];
-      if (group.propertyMode === "proof_closed_supported_types") {
+      if (
+        group.propertyMode === "proof_closed_supported_types" ||
+        group.propertyMode === "existing_only_supported_types"
+      ) {
         for (const member of resolveCatalogProperties(classesByName, className)) {
           const qualifiedName = `${member.declaringClass}.${member.name}`;
           const override = propertyPolicyEntry(overrides, qualifiedName, "property override");
@@ -444,7 +450,7 @@ function deriveManifest(policy, catalog, evidenceContractHash) {
           if (
             codec === "instance_ref" &&
             (typeof referenceClass !== "string" ||
-              !isCatalogClassAssignableTo(classesByName, catalogType.name, referenceClass))
+              !isCatalogClassAssignableTo(classesByName, referenceClass, catalogType.name))
           )
             throw new Error(
               `Policy selects invalid or unconstrained Instance reference: ${qualifiedName}`,
@@ -463,7 +469,11 @@ function deriveManifest(policy, catalog, evidenceContractHash) {
                     .sort(),
                 }
               : {}),
-            ...(member.serialization.canSave ? {} : { serialized: false }),
+            // ReflectionService exposes Content as a runtime URI/object view,
+            // independently of the legacy ContentId field that is serialized.
+            ...(catalogType.name === "Content" || !member.serialization.canSave
+              ? { serialized: false }
+              : {}),
             nullable,
             ...bounds,
             ...(referenceClass ? { referenceClass } : {}),
@@ -474,7 +484,7 @@ function deriveManifest(policy, catalog, evidenceContractHash) {
       }
       outputClasses.push({
         name: className,
-        creatable: true,
+        creatable,
         source: SCRIPT_CLASSES.has(className) ? "required_on_create_and_writeable" : "forbidden",
         properties,
       });
@@ -552,14 +562,14 @@ function propertyExclusionReason(exclusion, qualifiedName) {
   return exclusion.reason;
 }
 
-function assertDirectAuthoringClass(classDefinition) {
+function assertDirectAuthoringClass(classDefinition, creatable) {
   if (
     !classDefinition ||
     classDefinition.deprecated ||
     classDefinition.tags.includes("Hidden") ||
     classDefinition.tags.includes("NotScriptable") ||
-    classDefinition.tags.includes("NotCreatable") ||
-    classDefinition.tags.includes("Service")
+    (creatable &&
+      (classDefinition.tags.includes("NotCreatable") || classDefinition.tags.includes("Service")))
   )
     throw new Error(
       `Policy selects a class that cannot receive direct authoring: ${classDefinition?.name ?? "unknown"}`,
@@ -706,7 +716,11 @@ function deriveReflectionTypeExpectation(catalogType, codec) {
   // ContentId is a URI string; Content is a distinct engine datatype even
   // though both use the bounded URI codec on the wire.
   const engineType =
-    catalogType.name === "ContentId" ? "ContentId" : CODEC_REFLECTION_ENGINE_TYPES[codec];
+    catalogType.name === "ContentId"
+      ? "ContentId"
+      : catalogType.name === "time_duration"
+        ? "string"
+        : CODEC_REFLECTION_ENGINE_TYPES[codec];
   if (typeof engineType !== "string" || engineType.length === 0)
     throw new Error(`No ReflectionService EngineType contract for codec ${codec}`);
   const scriptType =
@@ -714,7 +728,7 @@ function deriveReflectionTypeExpectation(catalogType, codec) {
       ? catalogType.name
       : NUMERIC_PRIMITIVE_CATALOG_TYPES.has(catalogType.name)
         ? "number"
-        : catalogType.name === "ContentId"
+        : catalogType.name === "ContentId" || catalogType.name === "time_duration"
           ? "string"
           : catalogType.name;
   if (typeof scriptType !== "string" || scriptType.length === 0)
@@ -867,7 +881,11 @@ function deriveCoverageReport(catalog, policy, policyHash, manifest, manifestHas
   );
   const authoringGroupByMemberId = new Map();
   for (const group of policy.authoringGroups) {
-    if (group.propertyMode !== "proof_closed_supported_types") continue;
+    if (
+      group.propertyMode !== "proof_closed_supported_types" &&
+      group.propertyMode !== "existing_only_supported_types"
+    )
+      continue;
     for (const className of group.classes)
       for (const member of resolveCatalogProperties(classesByName, className)) {
         const prior = authoringGroupByMemberId.get(member.id);
@@ -1177,7 +1195,7 @@ function validateManifest(manifest) {
   const classNames = new Set();
   for (const entry of manifest.classes) {
     if (
-      !entry.creatable ||
+      typeof entry.creatable !== "boolean" ||
       classNames.has(entry.name) ||
       !["forbidden", "required_on_create_and_writeable"].includes(entry.source)
     )

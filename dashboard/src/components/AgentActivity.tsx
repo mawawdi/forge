@@ -44,6 +44,7 @@ export function AgentActivity({
     <section
       className={`agent-activity${activity.running ? " agent-activity--working" : ""}`}
       aria-label="Agent activity"
+      aria-busy={working}
     >
       {activity.commentary.map((message) => (
         <div className="agent-commentary" key={message.sequence}>
@@ -53,6 +54,10 @@ export function AgentActivity({
       <details ref={disclosure} className="agent-activity__disclosure">
         <summary className="agent-activity__heading">
           <Icon name="chevronRight" size={15} />
+          <span
+            className={`agent-activity__state${working ? " is-running" : ""}`}
+            aria-hidden="true"
+          />
           <span
             className={working ? "agent-progress-text is-scanning" : "agent-progress-text"}
             aria-live="polite"
@@ -111,8 +116,13 @@ export function AgentActivity({
           {activity.usage ? (
             <details className="agent-activity__usage">
               <summary>
-                Usage
-                {activity.usage.costUsd !== null ? ` · $${activity.usage.costUsd.toFixed(3)}` : ""}
+                <Icon name="chevronRight" size={13} />
+                <span>
+                  Usage
+                  {activity.usage.costUsd !== null
+                    ? ` · $${activity.usage.costUsd.toFixed(3)}`
+                    : ""}
+                </span>
               </summary>
               <dl>
                 <div>

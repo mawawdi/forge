@@ -67,8 +67,9 @@ describe("ChatComposer", () => {
     expect(
       screen.getByDisplayValue("Keep this request for the next available engine."),
     ).toBeVisible();
+    fireEvent.click(screen.getByRole("combobox", { name: "Model" }));
     expect(screen.getByRole("option", { name: /GPT-5\.6 Luna/ })).toBeDisabled();
-    expect(screen.getByText("This engine is temporarily unavailable.")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("This engine is temporarily unavailable.");
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
   });
 
