@@ -36,6 +36,8 @@ export interface ProjectAuthorityHostContext {
   readonly workspaceRoot: string;
   readonly rojo?: {
     readonly sourcemap: RojoSourcemapArtifact;
+    /** Verified host executable; never exposed to model context or persisted artifacts. */
+    readonly executable: string;
   };
 }
 
@@ -337,6 +339,8 @@ export function assertProjectAuthorityHostContext(
     return;
   }
   if (!isRecord(value.rojo)) fail("Rojo authority context requires a sourcemap");
+  if (typeof value.rojo.executable !== "string" || !isAbsolute(value.rojo.executable))
+    fail("Rojo authority context requires an absolute verified executable path");
   assertRojoSourcemapArtifact(value.rojo.sourcemap);
   if (value.rojo.sourcemap.tool.version !== "7.7.0")
     fail("Rojo authority context requires the pinned Rojo 7.7.0 toolchain");
@@ -425,6 +429,50 @@ export function assertRojoSourcemapArtifact(
     directories: value.directories,
   };
   assertContentIdentity(value, "rojo_sourcemap", payload, "RojoSourcemapArtifact");
+}
+
+/** A fresh pinned map may add only the exact source allocations in verified checkpoints. */
+export function assertRojoSourcemapRefresh(input: {
+  readonly manifest: ProjectAuthorityManifest;
+  readonly previous: RojoSourcemapArtifact;
+  readonly next: RojoSourcemapArtifact;
+  readonly creations: readonly RojoSourceOperation[];
+}): void {
+  assertProjectAuthorityManifest(input.manifest);
+  assertRojoSourcemapArtifact(input.previous);
+  assertRojoSourcemapArtifact(input.next);
+  if (
+    !input.manifest.rojo ||
+    input.next.projectFile !== input.manifest.rojo.projectFile ||
+    input.previous.projectFile !== input.next.projectFile ||
+    input.previous.projectFileHash !== input.next.projectFileHash ||
+    stableJson(input.previous.tool) !== stableJson(input.next.tool) ||
+    stableJson(input.previous.directories) !== stableJson(input.next.directories)
+  )
+    fail("Refreshed Rojo sourcemap changed its pinned tool, project file or declared directories");
+  const expected = new Map(input.previous.scripts.map((entry) => [entry.studioPath, entry]));
+  for (const operation of input.creations) {
+    if (operation.kind !== "create_source") continue;
+    const directory = input.previous.directories.find(
+      (entry) => entry.studioPath === operation.parentStudioPath,
+    );
+    if (
+      !directory ||
+      dirname(operation.sourcePath).split(sep).join("/") !== directory.directoryPath ||
+      !isSafeRelative(operation.sourcePath) ||
+      !isRojoSourceClass(operation.className)
+    )
+      fail("Refreshed Rojo source allocation is outside its original exact directory mapping");
+    const path = operation.parentStudioPath + "/" + operation.name;
+    if (expected.has(path)) fail("Refreshed Rojo source allocation duplicates an existing script");
+    expected.set(path, {
+      studioPath: path,
+      className: operation.className,
+      sourcePath: operation.sourcePath,
+    });
+  }
+  if (stableJson([...expected.values()].sort(compareMapping)) !== stableJson(input.next.scripts))
+    fail("Refreshed Rojo sourcemap differs from its exact verified source allocations");
 }
 
 export async function createProjectAuthorityMap(

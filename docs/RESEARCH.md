@@ -5,15 +5,16 @@ It does not define the current system. Use [Architecture](ARCHITECTURE.md) for
 contracts, [Evaluation policy](EVALS.md) for claims, and [Roadmap](ROADMAP.md) for
 future work.
 
-| Record                                                                       | Purpose                                                                                  |
-| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| [Validation evidence](research/validation-evidence.md)                       | Unique run identities and classifications consolidated from former root-document ledgers |
-| [Conversation evidence](research/durable-creator-conversation.md)            | Conversation, identity, recovery, and UI observations from recorded builds               |
-| [Planning and Build measurements](research/compact-planning-acceptance.md)   | Exact model runs, usage, archived artifacts, and live acceptance limits                  |
-| [Mutation reconciliation](research/mutation-reconciliation.md)               | Why writes require independent readback and complete state comparison                    |
-| [Transaction protocol integrity](research/transaction-protocol-integrity.md) | Delivery, execution, and durable recording boundaries                                    |
-| [Capability completeness](research/studio-capability-completeness.md)        | Catalog accounting, codec closure, and reflection rationale                              |
-| [Execution isolation](research/execution-isolation-boundaries.md)            | Separation of agent execution from authoritative Studio observation                      |
+| Record                                                                       | Purpose                                                                                                                 |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| [Validation evidence](research/validation-evidence.md)                       | Unique run identities and classifications consolidated from former root-document ledgers                                |
+| [Conversation evidence](research/durable-creator-conversation.md)            | Conversation, identity, recovery, and UI observations from recorded builds                                              |
+| [Planning and Build measurements](research/compact-planning-acceptance.md)   | Exact model runs, usage, archived artifacts, and live acceptance limits                                                 |
+| [Mutation reconciliation](research/mutation-reconciliation.md)               | Why writes require independent readback and complete state comparison                                                   |
+| [Transaction protocol integrity](research/transaction-protocol-integrity.md) | Delivery, execution, and durable recording boundaries                                                                   |
+| [Capability completeness](research/studio-capability-completeness.md)        | Catalog accounting, codec closure, and reflection rationale                                                             |
+| [Execution isolation](research/execution-isolation-boundaries.md)            | Separation of agent execution from authoritative Studio observation                                                     |
+| [Modular game IR](research/modular-game-ir.md)                               | Why gameplay rounds and reset belong in optional modules, with a working-tree schema audit and primary-source rationale |
 
 Historical workflow descriptions, old commands, counts, and pending actions apply
 only to their recorded builds. They are not alternate supported interfaces or

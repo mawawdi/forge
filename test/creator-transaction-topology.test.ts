@@ -520,6 +520,44 @@ test("topology compiler orders a delete before a replacement sibling creation", 
   assert.deepEqual(projection.orderedOperationIds, ["delete-prior", "create-replacement"]);
 });
 
+test("replacement waits for every duplicate sibling even when an occupant has another dependency", () => {
+  const root = node("root", { path: "Workspace", name: "Workspace" });
+  const siblings = ["first", "second"].map((id) =>
+    node(id, { parentIdentity: identity("root"), path: "Workspace/Shared", name: "Shared" }),
+  );
+  const destination = target("destination", "Workspace/Destination");
+  const first = {
+    ...move("a-free-first", "first", parent("root"), "First"),
+    target: target("first", "Workspace/Shared"),
+  };
+  const second = {
+    ...move("z-free-second", "second", destination, "Second"),
+    target: target("second", "Workspace/Shared"),
+  };
+  const createDestination = create(
+    "c-create-destination",
+    "destination",
+    parent("root"),
+    "Destination",
+  );
+  const replacement = create("b-create-replacement", "replacement", parent("root"), "Shared");
+  for (const order of [siblings, [...siblings].reverse()]) {
+    const initial = [root, ...order];
+    const operations = [first, createDestination, replacement, second];
+    const topology = compileCreatorTransactionTopology({ initial, operations });
+    assert.deepEqual(topology.orderedOperationIds, [
+      "a-free-first",
+      "c-create-destination",
+      "z-free-second",
+      "b-create-replacement",
+    ]);
+    assert.throws(
+      () => assertCreatorTransactionTopologyOrder({ initial, operations }),
+      /canonical safe topology order/,
+    );
+  }
+});
+
 test("topology compiler recomputes descendant display paths after a parent move", () => {
   const root = node("root", { path: "Workspace", name: "Workspace" });
   const moved = node("moved", {

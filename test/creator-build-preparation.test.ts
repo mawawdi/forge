@@ -3,7 +3,6 @@ import { readFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { contentHash, stableJson } from "../packages/contracts/src/index.js";
 import { ImmutableJsonArtifactStore } from "../packages/artifact-store/src/index.js";
 import {
   AgentExecutionJournalStore,
@@ -12,7 +11,6 @@ import {
   type AgentRuntime,
 } from "../packages/agent-runtime/src/index.js";
 import {
-  assertCreatorBuildContract,
   createCreatorSession,
   advanceSession,
   createCreatorBuildContract,
@@ -27,7 +25,7 @@ import { LocalCreatorAgentWorker } from "../packages/creator-session/src/worker.
 import { CreatorSessionCoordinator } from "../packages/creator-session/src/coordinator.js";
 import type { CreatorSessionBundle } from "../packages/creator-session/src/index.js";
 
-test("accepting a plan builds once and immediately hands the sealed result to automatic Apply", async () => {
+test("accepting a plan builds once and hands the sealed graph to checkpoint preparation", async () => {
   const saved = await incident();
   let session = createCreatorSession({
     prompt: saved.plan.goal,
@@ -49,7 +47,7 @@ test("accepting a plan builds once and immediately hands the sealed result to au
   } as unknown as CreatorSessionBundle;
   let builds = 0;
   let applies = 0;
-  const changeSet = { id: "creator_change_set_auto", hash: "a".repeat(64) };
+  const graph = { id: "game_build_graph_auto", hash: "a".repeat(64) };
   const harness = Object.assign(Object.create(CreatorSessionCoordinator.prototype), {
     bundles: new Map([[session.id, bundle]]),
     input: {
@@ -58,8 +56,9 @@ test("accepting a plan builds once and immediately hands the sealed result to au
           builds++;
           return {
             status: "sealed",
-            changeSet,
-            buildContract: {},
+            graph,
+            summary: "Built the requested graph.",
+            buildContract: { hash: "b".repeat(64) },
             evidence: {},
             sourceWriteBlobs: [],
           };
@@ -73,11 +72,17 @@ test("accepting a plan builds once and immediately hands the sealed result to au
     sourceEvidence: async () => ({}),
     observationForBundle: async () => saved.projectIndex,
     retainSourceWriteBlobs: async (value: unknown) => value,
-    decideChanges: async (value: CreatorSessionBundle, hash: string, decision: string) => {
+    startGameBuild: async (
+      value: CreatorSessionBundle,
+      built: typeof graph,
+      buildContractHash: string,
+      summary: string,
+    ) => {
       applies++;
-      assert.equal(value.session.status, "awaiting_change_approval");
-      assert.equal(hash, changeSet.hash);
-      assert.equal(decision, "approved");
+      assert.equal(value.session.status, "building");
+      assert.deepEqual(built, graph);
+      assert.equal(buildContractHash, "b".repeat(64));
+      assert.equal(summary, "Built the requested graph.");
       assert.equal(value.approvals.length, 1);
       assert.equal(value.approvals[0]?.artifactKind, "plan");
       assert.equal(value.approvals[0]?.authority, "creator");
@@ -230,32 +235,17 @@ async function incident() {
   };
 }
 
-test("the exact archived 19-change Gemini plan prepares and constructs without inference", async () => {
+test("the archived 19-change plan cannot bypass current compiled inventory admission", async () => {
   const saved = await incident();
   assert.equal(saved.plan.hash, "386eab8b4377fcd1d292c0fcf83bde100ad6b8dcc5ffb4503f9d59a889d31c6b");
   assert.equal(saved.projectIndex.instances.length, 42);
-  const prepared = prepareCreatorBuildPlan(saved.plan, saved.projectIndex);
-  assert.equal(prepared.changes.length, 19);
-  const contract = createCreatorBuildContract(saved);
-  assertCreatorBuildContract(contract);
-  assert.deepEqual(contract.changes, prepared.changes);
-  assert.equal(
-    contract.changes.find((change) => change.kind === "update")?.target.className,
-    "Frame",
-  );
-  const tampered = structuredClone(contract);
-  tampered.changes[10]!.propertyPolicy = tampered.propertyPolicies.Part!;
-  const { id: _id, hash: _hash, kind: _kind, ...payload } = tampered;
-  const hash = contentHash(stableJson(payload));
+  assert.equal(saved.plan.changes.length, 19);
+  assert.equal(Object.hasOwn(saved.plan, "compiled"), false);
   assert.throws(
-    () =>
-      assertCreatorBuildContract({
-        ...tampered,
-        id: `creator_build_contract_${hash.slice(0, 24)}`,
-        hash,
-      }),
-    /sealed class policy/,
+    () => prepareCreatorBuildPlan(saved.plan, saved.projectIndex),
+    /Invalid CreatorPlan/,
   );
+  assert.throws(() => createCreatorBuildContract(saved), /Invalid Creator(?:Plan|Session)/);
 });
 
 test("preparation failure retains its diagnostic and cannot claim a provider execution", async () => {

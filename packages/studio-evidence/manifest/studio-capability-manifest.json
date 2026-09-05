@@ -76,6 +76,7 @@
     {
       "creatable": true,
       "name": "AlignOrientation",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "allowed": [
@@ -399,6 +400,7 @@
     {
       "creatable": true,
       "name": "AlignPosition",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -794,6 +796,7 @@
     {
       "creatable": true,
       "name": "AngularVelocity",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -1018,6 +1021,7 @@
     {
       "creatable": true,
       "name": "Animation",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -1074,12 +1078,14 @@
     {
       "creatable": true,
       "name": "AnimationController",
+      "preflightStrategy": "detached_instance",
       "properties": [],
       "source": "forbidden"
     },
     {
       "creatable": true,
       "name": "Animator",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -1110,6 +1116,7 @@
     {
       "creatable": true,
       "name": "Atmosphere",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -1255,6 +1262,7 @@
     {
       "creatable": true,
       "name": "Attachment",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -1432,6 +1440,7 @@
     {
       "creatable": true,
       "name": "BallSocketConstraint",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -1719,6 +1728,7 @@
     {
       "creatable": true,
       "name": "Beam",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -2190,6 +2200,7 @@
     {
       "creatable": true,
       "name": "BillboardGui",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -2804,18 +2815,21 @@
     {
       "creatable": true,
       "name": "BindableEvent",
+      "preflightStrategy": "detached_instance",
       "properties": [],
       "source": "forbidden"
     },
     {
       "creatable": true,
       "name": "BindableFunction",
+      "preflightStrategy": "detached_instance",
       "properties": [],
       "source": "forbidden"
     },
     {
       "creatable": true,
       "name": "BlockMesh",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -2892,6 +2906,7 @@
     {
       "creatable": true,
       "name": "BloomEffect",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -2991,6 +3006,7 @@
     {
       "creatable": true,
       "name": "BlurEffect",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -3044,6 +3060,7 @@
     {
       "creatable": true,
       "name": "BoolValue",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -3074,6 +3091,7 @@
     {
       "creatable": true,
       "name": "BrickColorValue",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -3104,6 +3122,7 @@
     {
       "creatable": true,
       "name": "CFrameValue",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -3135,6 +3154,7 @@
     {
       "creatable": true,
       "name": "CanvasGroup",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -3968,6 +3988,7 @@
     {
       "creatable": true,
       "name": "ChorusSoundEffect",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -4090,6 +4111,7 @@
     {
       "creatable": true,
       "name": "ClickDetector",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -4169,6 +4191,7 @@
     {
       "creatable": true,
       "name": "Clouds",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -4268,6 +4291,7 @@
     {
       "creatable": true,
       "name": "Color3Value",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -4298,6 +4322,7 @@
     {
       "creatable": true,
       "name": "ColorCorrectionEffect",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -4420,6 +4445,7 @@
     {
       "creatable": true,
       "name": "CompressorSoundEffect",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -4613,12 +4639,14 @@
     {
       "creatable": true,
       "name": "Configuration",
+      "preflightStrategy": "detached_instance",
       "properties": [],
       "source": "forbidden"
     },
     {
       "creatable": true,
       "name": "CornerWedgePart",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -4736,7 +4764,9 @@
             "engineType": "BrickColor",
             "scriptType": "BrickColor"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -4760,7 +4790,9 @@
           "reflection": {
             "engineType": "CoordinateFrame",
             "scriptType": "CFrame"
-          }
+          },
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "catalogType": {
@@ -4901,7 +4933,9 @@
             "engineType": "Color3",
             "scriptType": "Color3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -5160,7 +5194,9 @@
             "engineType": "Vector3",
             "scriptType": "Vector3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "catalogType": {
@@ -5219,6 +5255,7 @@
     {
       "creatable": true,
       "name": "CylindricalConstraint",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "allowed": [
@@ -5978,6 +6015,7 @@
     {
       "creatable": true,
       "name": "Decal",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -6188,6 +6226,7 @@
     {
       "creatable": true,
       "name": "DepthOfFieldEffect",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -6310,6 +6349,7 @@
     {
       "creatable": true,
       "name": "DistortionSoundEffect",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -6386,6 +6426,7 @@
     {
       "creatable": true,
       "name": "DragDetector",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -7678,6 +7719,7 @@
     {
       "creatable": true,
       "name": "EchoSoundEffect",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -7823,6 +7865,7 @@
     {
       "creatable": true,
       "name": "EqualizerSoundEffect",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -7945,6 +7988,7 @@
     {
       "creatable": true,
       "name": "FileMesh",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -8119,6 +8163,7 @@
     {
       "creatable": true,
       "name": "Fire",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -8266,6 +8311,7 @@
     {
       "creatable": true,
       "name": "FlangeSoundEffect",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -8388,12 +8434,14 @@
     {
       "creatable": true,
       "name": "Folder",
+      "preflightStrategy": "detached_instance",
       "properties": [],
       "source": "forbidden"
     },
     {
       "creatable": true,
       "name": "ForceField",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -8424,6 +8472,7 @@
     {
       "creatable": true,
       "name": "Frame",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -9244,6 +9293,7 @@
     {
       "creatable": true,
       "name": "Highlight",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -9419,6 +9469,7 @@
     {
       "creatable": true,
       "name": "HingeConstraint",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "allowed": [
@@ -9850,6 +9901,7 @@
     {
       "creatable": true,
       "name": "Humanoid",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -10389,6 +10441,7 @@
     {
       "creatable": true,
       "name": "ImageButton",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -11694,6 +11747,7 @@
     {
       "creatable": true,
       "name": "ImageLabel",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -12762,6 +12816,7 @@
     {
       "creatable": true,
       "name": "IntValue",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -12790,385 +12845,9 @@
       "source": "forbidden"
     },
     {
-      "creatable": false,
-      "name": "Lighting",
-      "properties": [
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "Color3"
-          },
-          "codec": "color3_rgb8",
-          "declaringClass": "Lighting",
-          "name": "Ambient",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Color3",
-            "scriptType": "Color3"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "Lighting",
-          "name": "Brightness",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "Lighting",
-          "name": "ClockTime",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          },
-          "serialized": false
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "Color3"
-          },
-          "codec": "color3_rgb8",
-          "declaringClass": "Lighting",
-          "name": "ColorShift_Bottom",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Color3",
-            "scriptType": "Color3"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "Color3"
-          },
-          "codec": "color3_rgb8",
-          "declaringClass": "Lighting",
-          "name": "ColorShift_Top",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Color3",
-            "scriptType": "Color3"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "Lighting",
-          "name": "EnvironmentDiffuseScale",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "Lighting",
-          "name": "EnvironmentSpecularScale",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "Lighting",
-          "name": "ExposureCompensation",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "Color3"
-          },
-          "codec": "color3_rgb8",
-          "declaringClass": "Lighting",
-          "name": "FogColor",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Color3",
-            "scriptType": "Color3"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "Lighting",
-          "name": "FogEnd",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "Lighting",
-          "name": "FogStart",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "Lighting",
-          "name": "GeographicLatitude",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "Lighting",
-          "name": "GlobalShadows",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "Color3"
-          },
-          "codec": "color3_rgb8",
-          "declaringClass": "Lighting",
-          "name": "OutdoorAmbient",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Color3",
-            "scriptType": "Color3"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "Lighting",
-          "name": "ShadowSoftness",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "time_duration"
-          },
-          "codec": "string_utf8",
-          "declaringClass": "Lighting",
-          "maximumUtf8Bytes": 4096,
-          "name": "TimeOfDay",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "string",
-            "scriptType": "string"
-          }
-        }
-      ],
-      "source": "forbidden"
-    },
-    {
       "creatable": true,
       "name": "LinearVelocity",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -13634,18 +13313,14 @@
     {
       "creatable": true,
       "name": "LocalScript",
+      "preflightStrategy": "detached_instance",
       "properties": [],
       "source": "required_on_create_and_writeable"
     },
     {
-      "creatable": false,
-      "name": "MaterialService",
-      "properties": [],
-      "source": "forbidden"
-    },
-    {
       "creatable": true,
       "name": "MaterialVariant",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "allowed": [
@@ -13803,6 +13478,7 @@
     {
       "creatable": true,
       "name": "MeshPart",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -13920,7 +13596,9 @@
             "engineType": "BrickColor",
             "scriptType": "BrickColor"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -13944,7 +13622,9 @@
           "reflection": {
             "engineType": "CoordinateFrame",
             "scriptType": "CFrame"
-          }
+          },
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "catalogType": {
@@ -14085,7 +13765,9 @@
             "engineType": "Color3",
             "scriptType": "Color3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -14367,7 +14049,9 @@
             "engineType": "Vector3",
             "scriptType": "Vector3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "catalogType": {
@@ -14475,6 +14159,7 @@
     {
       "creatable": true,
       "name": "Model",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "allowed": [
@@ -14538,12 +14223,14 @@
     {
       "creatable": true,
       "name": "ModuleScript",
+      "preflightStrategy": "detached_instance",
       "properties": [],
       "source": "required_on_create_and_writeable"
     },
     {
       "creatable": true,
       "name": "Motor6D",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -14742,6 +14429,7 @@
     {
       "creatable": true,
       "name": "NoCollisionConstraint",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -14822,6 +14510,7 @@
     {
       "creatable": true,
       "name": "NumberValue",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -14854,6 +14543,7 @@
     {
       "creatable": true,
       "name": "ObjectValue",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -14886,6 +14576,7 @@
     {
       "creatable": true,
       "name": "Part",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -15003,7 +14694,9 @@
             "engineType": "BrickColor",
             "scriptType": "BrickColor"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -15027,7 +14720,9 @@
           "reflection": {
             "engineType": "CoordinateFrame",
             "scriptType": "CFrame"
-          }
+          },
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "catalogType": {
@@ -15168,7 +14863,9 @@
             "engineType": "Color3",
             "scriptType": "Color3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -15427,7 +15124,9 @@
             "engineType": "Vector3",
             "scriptType": "Vector3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "allowed": [
@@ -15518,6 +15217,7 @@
     {
       "creatable": true,
       "name": "ParticleEmitter",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -16416,6 +16116,7 @@
     {
       "creatable": true,
       "name": "PathfindingLink",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -16520,6 +16221,7 @@
     {
       "creatable": true,
       "name": "PathfindingModifier",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -16574,6 +16276,7 @@
     {
       "creatable": true,
       "name": "PitchShiftSoundEffect",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -16650,6 +16353,7 @@
     {
       "creatable": true,
       "name": "PointLight",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -16776,6 +16480,7 @@
     {
       "creatable": true,
       "name": "PrismaticConstraint",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "allowed": [
@@ -17207,6 +16912,7 @@
     {
       "creatable": true,
       "name": "ProximityPrompt",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -17950,6 +17656,7 @@
     {
       "creatable": true,
       "name": "RayValue",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -17980,18 +17687,21 @@
     {
       "creatable": true,
       "name": "RemoteEvent",
+      "preflightStrategy": "detached_instance",
       "properties": [],
       "source": "forbidden"
     },
     {
       "creatable": true,
       "name": "RemoteFunction",
+      "preflightStrategy": "detached_instance",
       "properties": [],
       "source": "forbidden"
     },
     {
       "creatable": true,
       "name": "ReverbSoundEffect",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -18160,6 +17870,7 @@
     {
       "creatable": true,
       "name": "RigidConstraint",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -18286,6 +17997,7 @@
     {
       "creatable": true,
       "name": "RodConstraint",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -18527,6 +18239,7 @@
     {
       "creatable": true,
       "name": "RopeConstraint",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -18837,6 +18550,7 @@
     {
       "creatable": true,
       "name": "ScreenGui",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -18954,7 +18668,9 @@
             "engineType": "bool",
             "scriptType": "boolean"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "screen_gui_insets",
+          "setterFamilySeed": "ScreenInsets"
         },
         {
           "catalogType": {
@@ -19060,7 +18776,9 @@
             "engineType": "Enum",
             "enumType": "ScreenInsets",
             "scriptType": "EnumItem"
-          }
+          },
+          "setterFamily": "screen_gui_insets",
+          "setterFamilySeed": "ScreenInsets"
         },
         {
           "allowed": [
@@ -19231,12 +18949,14 @@
     {
       "creatable": true,
       "name": "Script",
+      "preflightStrategy": "detached_instance",
       "properties": [],
       "source": "required_on_create_and_writeable"
     },
     {
       "creatable": true,
       "name": "ScrollingFrame",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -20483,6 +20203,7 @@
     {
       "creatable": true,
       "name": "Seat",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -20600,7 +20321,9 @@
             "engineType": "BrickColor",
             "scriptType": "BrickColor"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -20624,7 +20347,9 @@
           "reflection": {
             "engineType": "CoordinateFrame",
             "scriptType": "CFrame"
-          }
+          },
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "catalogType": {
@@ -20765,7 +20490,9 @@
             "engineType": "Color3",
             "scriptType": "Color3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -21047,7 +20774,9 @@
             "engineType": "Vector3",
             "scriptType": "Vector3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "allowed": [
@@ -21138,6 +20867,7 @@
     {
       "creatable": true,
       "name": "Sky",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -21652,6 +21382,7 @@
     {
       "creatable": true,
       "name": "Smoke",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -21800,6 +21531,7 @@
     {
       "creatable": true,
       "name": "Sound",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -22147,6 +21879,7 @@
     {
       "creatable": true,
       "name": "SoundGroup",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -22175,328 +21908,9 @@
       "source": "forbidden"
     },
     {
-      "creatable": false,
-      "name": "SoundService",
-      "properties": [
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "SoundService",
-          "name": "AcousticSimulationEnabled",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "allowed": [
-            "Alley",
-            "Arena",
-            "Auditorium",
-            "Bathroom",
-            "CarpettedHallway",
-            "Cave",
-            "City",
-            "ConcertHall",
-            "Forest",
-            "GenericReverb",
-            "Hallway",
-            "Hangar",
-            "LivingRoom",
-            "Mountains",
-            "NoReverb",
-            "PaddedCell",
-            "ParkingLot",
-            "Plain",
-            "Quarry",
-            "Room",
-            "SewerPipe",
-            "StoneCorridor",
-            "StoneRoom",
-            "UnderWater"
-          ],
-          "catalogType": {
-            "category": "enum",
-            "name": "ReverbType"
-          },
-          "codec": "enum_name",
-          "declaringClass": "SoundService",
-          "name": "AmbientReverb",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Enum",
-            "enumType": "ReverbType",
-            "scriptType": "EnumItem"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "SoundService",
-          "name": "DiffractionEnabled",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "SoundService",
-          "name": "DistanceFactor",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "SoundService",
-          "name": "DopplerScale",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "CFrame"
-          },
-          "codec": "cframe_f32x12",
-          "declaringClass": "SoundService",
-          "maximumAbsoluteTranslation": 100000,
-          "name": "ListenerCFrame",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "CoordinateFrame",
-            "scriptType": "CFrame"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "class",
-            "name": "Instance"
-          },
-          "codec": "instance_ref",
-          "declaringClass": "SoundService",
-          "name": "ListenerObject",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "referenceClass": "Instance",
-          "reflection": {
-            "engineType": "RefType",
-            "instanceType": "Instance",
-            "scriptType": "Instance"
-          }
-        },
-        {
-          "allowed": [
-            "CFrame",
-            "Camera",
-            "ObjectCFrame",
-            "ObjectPosition"
-          ],
-          "catalogType": {
-            "category": "enum",
-            "name": "ListenerType"
-          },
-          "codec": "enum_name",
-          "declaringClass": "SoundService",
-          "name": "ListenerType",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Enum",
-            "enumType": "ListenerType",
-            "scriptType": "EnumItem"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "SoundService",
-          "name": "OcclusionEnabled",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "SoundService",
-          "name": "RespectFilteringEnabled",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "SoundService",
-          "name": "ReverbEnabled",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "SoundService",
-          "name": "RolloffScale",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        }
-      ],
-      "source": "forbidden"
-    },
-    {
       "creatable": true,
       "name": "Sparkles",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -22573,6 +21987,7 @@
     {
       "creatable": true,
       "name": "SpawnLocation",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -22713,7 +22128,9 @@
             "engineType": "BrickColor",
             "scriptType": "BrickColor"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -22737,7 +22154,9 @@
           "reflection": {
             "engineType": "CoordinateFrame",
             "scriptType": "CFrame"
-          }
+          },
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "catalogType": {
@@ -22878,7 +22297,9 @@
             "engineType": "Color3",
             "scriptType": "Color3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -23206,7 +22627,9 @@
             "engineType": "Vector3",
             "scriptType": "Vector3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "allowed": [
@@ -23320,6 +22743,7 @@
     {
       "creatable": true,
       "name": "SpecialMesh",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -23527,6 +22951,7 @@
     {
       "creatable": true,
       "name": "SpotLight",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -23710,6 +23135,7 @@
     {
       "creatable": true,
       "name": "SpringConstraint",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -24064,628 +23490,9 @@
       "source": "forbidden"
     },
     {
-      "creatable": false,
-      "name": "StarterGui",
-      "properties": [
-        {
-          "allowed": [
-            "LandscapeLeft",
-            "LandscapeRight",
-            "LandscapeSensor",
-            "Portrait",
-            "Sensor"
-          ],
-          "catalogType": {
-            "category": "enum",
-            "name": "ScreenOrientation"
-          },
-          "codec": "enum_name",
-          "declaringClass": "StarterGui",
-          "name": "ScreenOrientation",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Enum",
-            "enumType": "ScreenOrientation",
-            "scriptType": "EnumItem"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "StarterGui",
-          "name": "ShowDevelopmentGui",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        }
-      ],
-      "source": "forbidden"
-    },
-    {
-      "creatable": false,
-      "name": "StarterPlayer",
-      "properties": [
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "StarterPlayer",
-          "name": "AutoJumpEnabled",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "StarterPlayer",
-          "name": "CameraMaxZoomDistance",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "StarterPlayer",
-          "name": "CameraMinZoomDistance",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "allowed": [
-            "Classic",
-            "LockFirstPerson"
-          ],
-          "catalogType": {
-            "category": "enum",
-            "name": "CameraMode"
-          },
-          "codec": "enum_name",
-          "declaringClass": "StarterPlayer",
-          "name": "CameraMode",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Enum",
-            "enumType": "CameraMode",
-            "scriptType": "EnumItem"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "StarterPlayer",
-          "name": "CharacterBreakJointsOnDeath",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "StarterPlayer",
-          "name": "CharacterJumpHeight",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "StarterPlayer",
-          "name": "CharacterJumpPower",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "StarterPlayer",
-          "name": "CharacterMaxSlopeAngle",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "StarterPlayer",
-          "name": "CharacterUseJumpPower",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "StarterPlayer",
-          "name": "CharacterWalkSpeed",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "StarterPlayer",
-          "name": "ClassicDeath",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "allowed": [
-            "Invisicam",
-            "Zoom"
-          ],
-          "catalogType": {
-            "category": "enum",
-            "name": "DevCameraOcclusionMode"
-          },
-          "codec": "enum_name",
-          "declaringClass": "StarterPlayer",
-          "name": "DevCameraOcclusionMode",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Enum",
-            "enumType": "DevCameraOcclusionMode",
-            "scriptType": "EnumItem"
-          }
-        },
-        {
-          "allowed": [
-            "CameraToggle",
-            "Classic",
-            "Follow",
-            "Orbital",
-            "UserChoice"
-          ],
-          "catalogType": {
-            "category": "enum",
-            "name": "DevComputerCameraMovementMode"
-          },
-          "codec": "enum_name",
-          "declaringClass": "StarterPlayer",
-          "name": "DevComputerCameraMovementMode",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Enum",
-            "enumType": "DevComputerCameraMovementMode",
-            "scriptType": "EnumItem"
-          }
-        },
-        {
-          "allowed": [
-            "ClickToMove",
-            "KeyboardMouse",
-            "Scriptable",
-            "UserChoice"
-          ],
-          "catalogType": {
-            "category": "enum",
-            "name": "DevComputerMovementMode"
-          },
-          "codec": "enum_name",
-          "declaringClass": "StarterPlayer",
-          "name": "DevComputerMovementMode",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Enum",
-            "enumType": "DevComputerMovementMode",
-            "scriptType": "EnumItem"
-          }
-        },
-        {
-          "allowed": [
-            "Classic",
-            "Follow",
-            "Orbital",
-            "UserChoice"
-          ],
-          "catalogType": {
-            "category": "enum",
-            "name": "DevTouchCameraMovementMode"
-          },
-          "codec": "enum_name",
-          "declaringClass": "StarterPlayer",
-          "name": "DevTouchCameraMovementMode",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Enum",
-            "enumType": "DevTouchCameraMovementMode",
-            "scriptType": "EnumItem"
-          }
-        },
-        {
-          "allowed": [
-            "ClickToMove",
-            "DynamicThumbstick",
-            "Scriptable",
-            "UserChoice"
-          ],
-          "catalogType": {
-            "category": "enum",
-            "name": "DevTouchMovementMode"
-          },
-          "codec": "enum_name",
-          "declaringClass": "StarterPlayer",
-          "name": "DevTouchMovementMode",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Enum",
-            "enumType": "DevTouchMovementMode",
-            "scriptType": "EnumItem"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "StarterPlayer",
-          "name": "EnableMouseLockOption",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "StarterPlayer",
-          "name": "HealthDisplayDistance",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "StarterPlayer",
-          "name": "LoadCharacterAppearance",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "allowed": [
-            "Default",
-            "Legacy",
-            "LuaCharacterController",
-            "NoCharacterController"
-          ],
-          "catalogType": {
-            "category": "enum",
-            "name": "CharacterControlMode"
-          },
-          "codec": "enum_name",
-          "declaringClass": "StarterPlayer",
-          "name": "LuaCharacterController",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Enum",
-            "enumType": "CharacterControlMode",
-            "scriptType": "EnumItem"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "StarterPlayer",
-          "name": "NameDisplayDistance",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "StarterPlayer",
-          "name": "UserEmotesEnabled",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        }
-      ],
-      "source": "forbidden"
-    },
-    {
       "creatable": true,
       "name": "StringValue",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -24717,6 +23524,7 @@
     {
       "creatable": true,
       "name": "SunRaysEffect",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -24793,6 +23601,7 @@
     {
       "creatable": true,
       "name": "SurfaceAppearance",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "allowed": [
@@ -24927,6 +23736,7 @@
     {
       "creatable": true,
       "name": "SurfaceGui",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -25506,6 +24316,7 @@
     {
       "creatable": true,
       "name": "SurfaceLight",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -25689,6 +24500,7 @@
     {
       "creatable": true,
       "name": "Team",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -25740,723 +24552,9 @@
       "source": "forbidden"
     },
     {
-      "creatable": false,
-      "name": "Terrain",
-      "properties": [
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "BasePart",
-          "name": "Anchored",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "Vector3"
-          },
-          "codec": "vector3_f32",
-          "declaringClass": "BasePart",
-          "name": "AssemblyAngularVelocity",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Vector3",
-            "scriptType": "Vector3"
-          },
-          "serialized": false
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "Vector3"
-          },
-          "codec": "vector3_f32",
-          "declaringClass": "BasePart",
-          "name": "AssemblyLinearVelocity",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Vector3",
-            "scriptType": "Vector3"
-          },
-          "serialized": false
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "BasePart",
-          "name": "AudioCanCollide",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "BrickColor"
-          },
-          "codec": "brick_color",
-          "declaringClass": "BasePart",
-          "name": "BrickColor",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "BrickColor",
-            "scriptType": "BrickColor"
-          },
-          "serialized": false
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "CFrame"
-          },
-          "codec": "cframe_f32x12",
-          "declaringClass": "BasePart",
-          "maximumAbsoluteTranslation": 100000,
-          "name": "CFrame",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "CoordinateFrame",
-            "scriptType": "CFrame"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "BasePart",
-          "name": "CanCollide",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "BasePart",
-          "name": "CanQuery",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "BasePart",
-          "name": "CanTouch",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "BasePart",
-          "name": "CastShadow",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "string"
-          },
-          "codec": "string_utf8",
-          "declaringClass": "BasePart",
-          "maximumUtf8Bytes": 100,
-          "minimumUtf8Bytes": 1,
-          "name": "CollisionGroup",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "string",
-            "scriptType": "string"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "Color3"
-          },
-          "codec": "color3_rgb8",
-          "declaringClass": "BasePart",
-          "name": "Color",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Color3",
-            "scriptType": "Color3"
-          },
-          "serialized": false
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "PhysicalProperties"
-          },
-          "codec": "physical_properties",
-          "declaringClass": "BasePart",
-          "name": "CustomPhysicalProperties",
-          "nullable": true,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "PhysicalProperties",
-            "scriptType": "PhysicalProperties"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "BasePart",
-          "name": "EnableFluidForces",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "BasePart",
-          "name": "Locked",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "BasePart",
-          "name": "Massless",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "allowed": [
-            "Air",
-            "Asphalt",
-            "Basalt",
-            "Brick",
-            "Cardboard",
-            "Carpet",
-            "CeramicTiles",
-            "ClayRoofTiles",
-            "Cobblestone",
-            "Concrete",
-            "CorrodedMetal",
-            "CrackedLava",
-            "DiamondPlate",
-            "Fabric",
-            "Foil",
-            "ForceField",
-            "Glacier",
-            "Glass",
-            "Granite",
-            "Grass",
-            "Ground",
-            "Ice",
-            "LeafyGrass",
-            "Leather",
-            "Limestone",
-            "Marble",
-            "Metal",
-            "Mud",
-            "Neon",
-            "Pavement",
-            "Pebble",
-            "Plaster",
-            "Plastic",
-            "Rock",
-            "RoofShingles",
-            "Rubber",
-            "Salt",
-            "Sand",
-            "Sandstone",
-            "Slate",
-            "SmoothPlastic",
-            "Snow",
-            "Water",
-            "Wood",
-            "WoodPlanks"
-          ],
-          "catalogType": {
-            "category": "enum",
-            "name": "Material"
-          },
-          "codec": "enum_name",
-          "declaringClass": "BasePart",
-          "name": "Material",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Enum",
-            "enumType": "Material",
-            "scriptType": "EnumItem"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "CFrame"
-          },
-          "codec": "cframe_f32x12",
-          "declaringClass": "BasePart",
-          "maximumAbsoluteTranslation": 100000,
-          "name": "PivotOffset",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "CoordinateFrame",
-            "scriptType": "CFrame"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "BasePart",
-          "maximum": 1,
-          "minimum": 0,
-          "name": "Reflectance",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "int"
-          },
-          "codec": "int32",
-          "declaringClass": "BasePart",
-          "name": "RootPriority",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "int",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "Vector3"
-          },
-          "codec": "vector3_f32",
-          "declaringClass": "BasePart",
-          "name": "Rotation",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Vector3",
-            "scriptType": "Vector3"
-          },
-          "serialized": false
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "Vector3"
-          },
-          "codec": "vector3_f32",
-          "declaringClass": "BasePart",
-          "maximum": 2048,
-          "minimumExclusive": 0,
-          "name": "Size",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Vector3",
-            "scriptType": "Vector3"
-          },
-          "serialized": false
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "BasePart",
-          "maximum": 1,
-          "minimum": 0,
-          "name": "Transparency",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "Color3"
-          },
-          "codec": "color3_rgb8",
-          "declaringClass": "Terrain",
-          "name": "WaterColor",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Color3",
-            "scriptType": "Color3"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "Terrain",
-          "name": "WaterReflectance",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "Terrain",
-          "name": "WaterTransparency",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "Terrain",
-          "name": "WaterWaveSize",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "Terrain",
-          "name": "WaterWaveSpeed",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        }
-      ],
-      "source": "forbidden"
-    },
-    {
       "creatable": true,
       "name": "TextBox",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -27800,6 +25898,7 @@
     {
       "creatable": true,
       "name": "TextButton",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -29161,14 +27260,9 @@
       "source": "forbidden"
     },
     {
-      "creatable": false,
-      "name": "TextChatService",
-      "properties": [],
-      "source": "forbidden"
-    },
-    {
       "creatable": true,
       "name": "TextLabel",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -30381,6 +28475,7 @@
     {
       "creatable": true,
       "name": "Texture",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -30691,6 +28786,7 @@
     {
       "creatable": true,
       "name": "Tool",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -30943,6 +29039,7 @@
     {
       "creatable": true,
       "name": "Torque",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -31121,6 +29218,7 @@
     {
       "creatable": true,
       "name": "Trail",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -31512,6 +29610,7 @@
     {
       "creatable": true,
       "name": "TremoloSoundEffect",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -31634,6 +29733,7 @@
     {
       "creatable": true,
       "name": "TrussPart",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -31751,7 +29851,9 @@
             "engineType": "BrickColor",
             "scriptType": "BrickColor"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -31775,7 +29877,9 @@
           "reflection": {
             "engineType": "CoordinateFrame",
             "scriptType": "CFrame"
-          }
+          },
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "catalogType": {
@@ -31916,7 +30020,9 @@
             "engineType": "Color3",
             "scriptType": "Color3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -32175,7 +30281,9 @@
             "engineType": "Vector3",
             "scriptType": "Vector3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "catalogType": {
@@ -32264,6 +30372,7 @@
     {
       "creatable": true,
       "name": "UIAspectRatioConstraint",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -32350,6 +30459,7 @@
     {
       "creatable": true,
       "name": "UICorner",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -32473,6 +30583,7 @@
     {
       "creatable": true,
       "name": "UIFlexItem",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "allowed": [
@@ -32588,6 +30699,7 @@
     {
       "creatable": true,
       "name": "UIGradient",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -32712,6 +30824,7 @@
     {
       "creatable": true,
       "name": "UIGridLayout",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -32932,6 +31045,7 @@
     {
       "creatable": true,
       "name": "UIListLayout",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "allowed": [
@@ -33192,6 +31306,7 @@
     {
       "creatable": true,
       "name": "UIPadding",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -33291,6 +31406,7 @@
     {
       "creatable": true,
       "name": "UIPageLayout",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -33639,6 +31755,7 @@
     {
       "creatable": true,
       "name": "UIScale",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -33669,6 +31786,7 @@
     {
       "creatable": true,
       "name": "UIShadow",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -33837,6 +31955,7 @@
     {
       "creatable": true,
       "name": "UISizeConstraint",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -33890,6 +32009,7 @@
     {
       "creatable": true,
       "name": "UIStroke",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "allowed": [
@@ -34149,6 +32269,7 @@
     {
       "creatable": true,
       "name": "UITableLayout",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "allowed": [
@@ -34367,6 +32488,7 @@
     {
       "creatable": true,
       "name": "UITextSizeConstraint",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -34420,6 +32542,7 @@
     {
       "creatable": true,
       "name": "UnionOperation",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -34537,7 +32660,9 @@
             "engineType": "BrickColor",
             "scriptType": "BrickColor"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -34561,7 +32686,9 @@
           "reflection": {
             "engineType": "CoordinateFrame",
             "scriptType": "CFrame"
-          }
+          },
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "catalogType": {
@@ -34702,7 +32829,9 @@
             "engineType": "Color3",
             "scriptType": "Color3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -34961,7 +33090,9 @@
             "engineType": "Vector3",
             "scriptType": "Vector3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "catalogType": {
@@ -35043,6 +33174,7 @@
     {
       "creatable": true,
       "name": "UniversalConstraint",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -35261,12 +33393,14 @@
     {
       "creatable": true,
       "name": "UnreliableRemoteEvent",
+      "preflightStrategy": "detached_instance",
       "properties": [],
       "source": "forbidden"
     },
     {
       "creatable": true,
       "name": "Vector3Value",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -35299,6 +33433,7 @@
     {
       "creatable": true,
       "name": "VectorForce",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -35500,6 +33635,7 @@
     {
       "creatable": true,
       "name": "VehicleSeat",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -35617,7 +33753,9 @@
             "engineType": "BrickColor",
             "scriptType": "BrickColor"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -35641,7 +33779,9 @@
           "reflection": {
             "engineType": "CoordinateFrame",
             "scriptType": "CFrame"
-          }
+          },
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "catalogType": {
@@ -35782,7 +33922,9 @@
             "engineType": "Color3",
             "scriptType": "Color3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -36110,7 +34252,9 @@
             "engineType": "Vector3",
             "scriptType": "Vector3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "catalogType": {
@@ -36261,6 +34405,7 @@
     {
       "creatable": true,
       "name": "VideoFrame",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -37265,6 +35410,7 @@
     {
       "creatable": true,
       "name": "ViewportFrame",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -38193,6 +36339,7 @@
     {
       "creatable": true,
       "name": "WedgePart",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -38310,7 +36457,9 @@
             "engineType": "BrickColor",
             "scriptType": "BrickColor"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -38334,7 +36483,9 @@
           "reflection": {
             "engineType": "CoordinateFrame",
             "scriptType": "CFrame"
-          }
+          },
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "catalogType": {
@@ -38475,7 +36626,9 @@
             "engineType": "Color3",
             "scriptType": "Color3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_color",
+          "setterFamilySeed": "Color"
         },
         {
           "catalogType": {
@@ -38734,7 +36887,9 @@
             "engineType": "Vector3",
             "scriptType": "Vector3"
           },
-          "serialized": false
+          "serialized": false,
+          "setterFamily": "basepart_transform",
+          "setterFamilySeed": "CFrame"
         },
         {
           "catalogType": {
@@ -38793,6 +36948,7 @@
     {
       "creatable": true,
       "name": "Weld",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -38921,6 +37077,7 @@
     {
       "creatable": true,
       "name": "WeldConstraint",
+      "preflightStrategy": "detached_instance",
       "properties": [
         {
           "catalogType": {
@@ -39000,293 +37157,9 @@
         }
       ],
       "source": "forbidden"
-    },
-    {
-      "creatable": false,
-      "name": "Workspace",
-      "properties": [
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "Workspace",
-          "name": "AirDensity",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "Workspace",
-          "name": "AirTurbulenceIntensity",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "boolean"
-          },
-          "codec": "boolean",
-          "declaringClass": "Workspace",
-          "name": "AllowThirdPartySales",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "bool",
-            "scriptType": "boolean"
-          }
-        },
-        {
-          "allowed": [
-            "Default",
-            "Disabled",
-            "Enabled"
-          ],
-          "catalogType": {
-            "category": "enum",
-            "name": "ClientAnimatorThrottlingMode"
-          },
-          "codec": "enum_name",
-          "declaringClass": "Workspace",
-          "name": "ClientAnimatorThrottling",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Enum",
-            "enumType": "ClientAnimatorThrottlingMode",
-            "scriptType": "EnumItem"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "class",
-            "name": "Camera"
-          },
-          "codec": "instance_ref",
-          "declaringClass": "Workspace",
-          "name": "CurrentCamera",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "referenceClass": "Camera",
-          "reflection": {
-            "engineType": "RefType",
-            "instanceType": "Camera",
-            "scriptType": "Instance"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "double"
-          },
-          "codec": "number_f64",
-          "declaringClass": "Workspace",
-          "name": "DistributedGameTime",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "double",
-            "scriptType": "number"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "datatype",
-            "name": "Vector3"
-          },
-          "codec": "vector3_f32",
-          "declaringClass": "Workspace",
-          "name": "GlobalWind",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Vector3",
-            "scriptType": "Vector3"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "primitive",
-            "name": "float"
-          },
-          "codec": "number_f32",
-          "declaringClass": "Workspace",
-          "name": "Gravity",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "float",
-            "scriptType": "number"
-          }
-        },
-        {
-          "allowed": [
-            "Atomic",
-            "Default",
-            "Nonatomic",
-            "Persistent",
-            "PersistentPerPlayer"
-          ],
-          "catalogType": {
-            "category": "enum",
-            "name": "ModelStreamingMode"
-          },
-          "codec": "enum_name",
-          "declaringClass": "Model",
-          "name": "ModelStreamingMode",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Enum",
-            "enumType": "ModelStreamingMode",
-            "scriptType": "EnumItem"
-          }
-        },
-        {
-          "catalogType": {
-            "category": "class",
-            "name": "BasePart"
-          },
-          "codec": "instance_ref",
-          "declaringClass": "Model",
-          "name": "PrimaryPart",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "referenceClass": "BasePart",
-          "reflection": {
-            "engineType": "RefType",
-            "instanceType": "BasePart",
-            "scriptType": "Instance"
-          }
-        },
-        {
-          "allowed": [
-            "Default",
-            "Disabled",
-            "Enabled"
-          ],
-          "catalogType": {
-            "category": "enum",
-            "name": "AnimatorRetargetingMode"
-          },
-          "codec": "enum_name",
-          "declaringClass": "Workspace",
-          "name": "Retargeting",
-          "nullable": false,
-          "proof": [
-            "canonicalize",
-            "validate",
-            "preflight",
-            "write",
-            "read",
-            "project",
-            "compare"
-          ],
-          "reflection": {
-            "engineType": "Enum",
-            "enumType": "AnimatorRetargetingMode",
-            "scriptType": "EnumItem"
-          }
-        }
-      ],
-      "source": "forbidden"
     }
   ],
-  "evidenceContractHash": "6025a0189bb2918caa1c961eae1d06d26ff94a66e948b0195d0e4bb30758bf38",
+  "evidenceContractHash": "205bd764dbb07f3298581b01d13dcb3f040b1817e7ff4097b2551cb0b1f43413",
   "kind": "StudioCapabilityManifest",
   "limits": {
     "maximumDiagnostics": 32,

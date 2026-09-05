@@ -91,6 +91,7 @@ function neutralPropertyValue(property: ManifestProperty): StudioValue {
         elasticity: number,
         frictionWeight: number,
         elasticityWeight: number,
+        acousticAbsorption: number,
       };
     case "axes":
       return { kind: "axes", x: false, y: false, z: false };

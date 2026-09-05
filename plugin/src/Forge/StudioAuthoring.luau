@@ -222,7 +222,13 @@ local function exactSourceFacts(instance: Instance, beforeHash: string, afterHas
 	}
 end
 
-local function applyProperties(instance: Instance, className: string, properties: any, registry, onExpectedMutationFact: ((any) -> ())?, resolveReference: ((any) -> Instance)?, encodeReference: ((Instance, any) -> any)?)
+local function applyProperties(instance: Instance, className: string, properties: any, registry, onExpectedMutationFact: ((any) -> ())?, resolveReference: ((any) -> Instance)?, encodeReference: ((Instance, any) -> any)?, derivedValues: any?)
+	if onExpectedMutationFact ~= nil then
+		for _, name in ipairs(Generated.derivedMutationPropertyNames(className, properties)) do
+			if derivedValues == nil or derivedValues[name] == nil then error("derived mutation property lacks final detached evidence: " .. name) end
+			reportExpectedMutationFact(onExpectedMutationFact, exactPropertyFact(instance, className, name, derivedValues[name], registry, encodeReference))
+		end
+	end
 	for _, name in ipairs(Generated.sortedMutationPropertyNames(className, properties)) do
 		local value = properties[name]
 		local metadata = Generated.propertyMetadata(className, name)
@@ -513,7 +519,7 @@ local function allocateCreatedHandles(operations: {any}, registry)
 	return handles
 end
 
-local function applyOperation(operation: any, registry, resolveBlob: (any) -> string, onExpectedMutationFact: ((any) -> ())?, createdHandles: any?)
+local function applyOperation(operation: any, registry, resolveBlob: (any) -> string, onExpectedMutationFact: ((any) -> ())?, createdHandles: any?, derivedValues: any?)
 	local resolveReference = if createdHandles == nil then function(reference: any): Instance return referenceResolver(registry, reference) end else function(reference: any): Instance return createdHandles:resolveReference(reference) end
 	local encodeReference = if createdHandles == nil then nil else function(reference: Instance, property: any): any return createdHandles:encodeReference(reference, property) end
 	if operation.kind == "create" then
@@ -535,7 +541,7 @@ local function applyOperation(operation: any, registry, resolveBlob: (any) -> st
 		-- properties are written. This is required for a self-reference and for
 		-- later canonical operations to reference the created object; it remains
 		-- inside the same visible recording and is cancelled with the create.
-		applyProperties(instance, operation.className, operation.properties, registry, onExpectedMutationFact, resolveReference, encodeReference)
+		applyProperties(instance, operation.className, operation.properties, registry, onExpectedMutationFact, resolveReference, encodeReference, derivedValues)
 		applyAttributes(instance, operation.attributes, nil, onExpectedMutationFact)
 		if Generated.classMetadata(operation.className).source ~= "forbidden" then
 			local source = resolveBlob(operation.sourceBlob)
@@ -545,12 +551,12 @@ local function applyOperation(operation: any, registry, resolveBlob: (any) -> st
 		end
 	elseif operation.kind == "update" then
 		local instance = validateExisting(operation, registry)
-		applyEnrollment(operation, registry, onExpectedMutationFact); applyProperties(instance, operation.target.className, operation.properties, registry, onExpectedMutationFact, resolveReference, encodeReference); applyAttributes(instance, operation.attributes, operation.removedAttributes, onExpectedMutationFact)
+		applyEnrollment(operation, registry, onExpectedMutationFact); applyProperties(instance, operation.target.className, operation.properties, registry, onExpectedMutationFact, resolveReference, encodeReference, derivedValues); applyAttributes(instance, operation.attributes, operation.removedAttributes, onExpectedMutationFact)
 	elseif operation.kind == "move" then
 		local instance = validateExisting(operation, registry)
 		local parent = resolveExactParent(operation.parent, registry, "move apply")
 		local oldParent, oldName = instance.Parent, instance.Name
-		applyEnrollment(operation, registry, onExpectedMutationFact); applyProperties(instance, operation.target.className, operation.properties, registry, onExpectedMutationFact, resolveReference, encodeReference); applyAttributes(instance, operation.attributes, operation.removedAttributes, onExpectedMutationFact)
+		applyEnrollment(operation, registry, onExpectedMutationFact); applyProperties(instance, operation.target.className, operation.properties, registry, onExpectedMutationFact, resolveReference, encodeReference, derivedValues); applyAttributes(instance, operation.attributes, operation.removedAttributes, onExpectedMutationFact)
 		reportExpectedMutationFact(onExpectedMutationFact, exactPropertyStateFact(instance, "Name", function() return instance.Name == oldName end, function() return instance.Name == operation.name end))
 		instance.Name = operation.name
 		reportExpectedMutationFact(onExpectedMutationFact, exactPropertyStateFact(instance, "Parent", function() return instance.Parent == oldParent end, function() return instance.Parent == parent end))
@@ -602,7 +608,7 @@ end
 -- unparented scratch parent so that nested creates and reference-valued
 -- properties exercise the same capability surface as the live batch.
 local function detachedScratchGraph(prepared: any)
-	local graph: any = { byIdentity = {}, instances = {}, sourceByIdentity = {} }
+	local graph: any = { byIdentity = {}, instances = {} }
 	local function register(target: any, instance: Instance)
 		local key = identityKey(target.identity)
 		local prior = graph.byIdentity[key]
@@ -610,7 +616,6 @@ local function detachedScratchGraph(prepared: any)
 		graph.byIdentity[key] = instance
 		local post = prepared.topology.postTargets[key]
 		if post ~= nil then graph.byIdentity[identityKey(post.identity)] = instance end
-		table.insert(graph.instances, instance)
 	end
 	function graph:instanceForTarget(target: any): Instance
 		if typeof(target) ~= "table" or typeof(target.identity) ~= "table" then error("detached graph target is malformed") end
@@ -628,40 +633,71 @@ local function detachedScratchGraph(prepared: any)
 		end
 		return referenceResolver(prepared.registry, reference)
 	end
-	function graph:recordSource(target: any, source: string)
-		self.sourceByIdentity[identityKey(target.identity)] = source
-		local post = prepared.topology.postTargets[identityKey(target.identity)]
-		if post ~= nil then self.sourceByIdentity[identityKey(post.identity)] = source end
-	end
-	function graph:sourceForTarget(target: any): string
-		local source = self.sourceByIdentity[identityKey(target.identity)]
-		if typeof(source) ~= "string" then error("detached graph has no approved source counterpart") end
-		return source
-	end
 	function graph:destroy()
-		for index = #self.instances, 1, -1 do self.instances[index]:Destroy() end
+		local failures = {}
+		for index = #self.instances, 1, -1 do
+			local destroyed, failure = pcall(function() self.instances[index]:Destroy() end)
+			if not destroyed then table.insert(failures, boundedFailureDetail(failure)) end
+		end
 		self.instances = {}
 		self.byIdentity = {}
-		self.sourceByIdentity = {}
+		if #failures > 0 then error("detached graph cleanup failed: " .. table.concat(failures, "; ")) end
 	end
 	-- Allocate every authored non-delete target before applying its values. This
 	-- is the detached analogue of the canonical live execution graph: all
 	-- references resolve to their approved scratch counterpart, never to an
 	-- unrelated live object or a generic path lookup.
+	-- Check the complete batch before allocating anything. Engine-owned services
+	-- cannot be tested by constructing another class or by writing the live service.
 	for _, operation in ipairs(prepared.operations) do
 		if operation.kind ~= "delete" then
-			local target = operation.target
-			local instance = Instance.new(classForOperation(operation))
-			instance.Name = if operation.kind == "create" then operation.name else target.path:match("([^/]+)$") or instance.Name
-			register(target, instance)
+			local metadata = Generated.classMetadata(classForOperation(operation))
+			if metadata == nil or metadata.creatable ~= true or metadata.preflightStrategy ~= "detached_instance" then
+				error("no admitted detached preflight strategy for " .. classForOperation(operation))
+			end
 		end
 	end
-	for _, operation in ipairs(prepared.operations) do
-		if (operation.kind == "create" or operation.kind == "move") and typeof(operation.parent) == "table" and operation.parent.kind == "instance" then
-			local child = graph:instanceForTarget(operation.target)
-			local parent = graph.byIdentity[identityKey(operation.parent.identity)]
-			if parent ~= nil then child.Parent = parent end
+	local allocated, allocationFailure = pcall(function()
+		for _, operation in ipairs(prepared.operations) do
+			if operation.kind ~= "delete" then
+				local target = operation.target
+				local instance = Instance.new(classForOperation(operation))
+				-- Retain the handle before any operation that can fail so partial
+				-- allocation cannot leak a scratch instance.
+				table.insert(graph.instances, instance)
+				instance.Name = if operation.kind == "create" then operation.name else target.path:match("([^/]+)$") or instance.Name
+				register(target, instance)
+				if operation.kind ~= "create" then
+					local seeded = {}
+					for _, name in ipairs(Generated.sortedMutationPropertyNames(classForOperation(operation), operation.properties or {})) do
+						local seed = Generated.propertyMetadata(classForOperation(operation), name).setterFamilySeed
+						if seed ~= nil and seed ~= name and not seeded[seed] then
+							local value = nil
+							for _, shard in ipairs(prepared.beforeProjectIndexCapture.shards) do
+								for _, node in ipairs(shard.nodes) do
+									if identityKey(node.identity) == identityKey(target.identity) then value = node.coveredProperties[seed] end
+								end
+							end
+							if value == nil then error("detached family seed missing from bound before capture: " .. seed) end
+							Generated.write(instance, seed, value)
+							seeded[seed] = true
+						end
+					end
+				end
+			end
 		end
+		for _, operation in ipairs(prepared.operations) do
+			if (operation.kind == "create" or operation.kind == "move") and typeof(operation.parent) == "table" and operation.parent.kind == "instance" then
+				local child = graph:instanceForTarget(operation.target)
+				local parent = graph.byIdentity[identityKey(operation.parent.identity)]
+				if parent ~= nil then child.Parent = parent end
+			end
+		end
+	end)
+	if not allocated then
+		local cleaned, cleanupFailure = pcall(function() graph:destroy() end)
+		if not cleaned then error(boundedFailureDetail(allocationFailure) .. "; " .. boundedFailureDetail(cleanupFailure)) end
+		error(allocationFailure)
 	end
 	return graph
 end
@@ -1222,7 +1258,7 @@ local function requiresDetachedStructureCanary(target: any): boolean
 		error("detached structure canary target is malformed")
 	end
 	local metadata = Generated.classMetadata(target.className)
-	return metadata ~= nil and metadata.creatable == true
+	return metadata ~= nil and metadata.creatable == true and metadata.preflightStrategy == "detached_instance"
 end
 
 local function exactProjectionBinding(projection: any, payload: any, changeSet: any, revision: string, collector): boolean
@@ -1801,13 +1837,11 @@ function StudioAuthoring:preflight(payload: any)
 						local beforeSource = StudioScriptSource.read(scratch)
 						local readback = StudioScriptSource.writeAndReadback(scratch, sha256(beforeSource), sha256(source), source)
 						if sha256(readback) ~= sha256(source) then error("detached created-source readback mismatch") end
-						graph:recordSource(operation.target, readback)
 					elseif operation.kind == "edit_source" then
 						local _, finalSource = validatedSourceEdit(operation, self.registry, function(binding) return resolvedSourceWrite(self, binding) end)
 						local beforeSource = StudioScriptSource.read(scratch)
 						local readback = StudioScriptSource.writeAndReadback(scratch, sha256(beforeSource), operation.finalSourceHash, finalSource)
 						if sha256(readback) ~= operation.finalSourceHash or #readback ~= operation.finalByteCount then error("detached edited-source readback mismatch") end
-						graph:recordSource(operation.target, readback)
 					end
 				end)
 				if not ok then complete = false end
@@ -1824,8 +1858,6 @@ function StudioAuthoring:preflight(payload: any)
 				if requirement.kind == "attribute" then
 					if graph == nil then error("detached graph construction failed: " .. tostring(graphFailure)) end
 					local scratch = graph:instanceForTarget(requirement.target)
-					scratch:SetAttribute(requirement.attributeName, true)
-					scratch:SetAttribute(requirement.attributeName, nil)
 					if scratch:GetAttribute(requirement.attributeName) ~= nil then error("attribute removal did not round-trip") end
 				elseif requirement.kind == "structure" then
 					if requiresDetachedStructureCanary(requirement.target) then
@@ -1844,16 +1876,17 @@ function StudioAuthoring:preflight(payload: any)
 					local scratch = graph:instanceForTarget(requirement.target)
 					local metadata = Generated.propertyMetadata(requirement.target.className, requirement.propertyName)
 					if not metadata then error("canary property outside generated manifest") end
-					(scratch :: any)[requirement.propertyName] = Generated.toStudio(metadata.codec, requirement.expected, metadata, function(reference) return graph:resolveReference(reference) end)
+					-- Observe the final batch state. Reapplying this expectation here
+					-- would conceal a later setter changing an earlier property.
 					local result = Generated.read(scratch, requirement.propertyName, function(reference: Instance, property: any)
 						local expected = requirement.expected
 						if typeof(expected) ~= "table" or expected.state ~= "reference" or graph:resolveReference(expected) ~= reference or property.referenceClass ~= expected.expectedClass then error("canary Instance reference readback mismatch") end
 						return expected
 					end); return result
 				elseif requirement.kind == "attribute" then
-					local scratch = graph:instanceForTarget(requirement.target); local canonical = Generated.canonicalAttribute(requirement.expected); scratch:SetAttribute(requirement.attributeName, canonical); return Generated.canonicalAttribute(scratch:GetAttribute(requirement.attributeName))
+					local scratch = graph:instanceForTarget(requirement.target); return Generated.canonicalAttribute(scratch:GetAttribute(requirement.attributeName))
 				elseif requirement.kind == "source_hash" then
-					local source = graph:sourceForTarget(requirement.target)
+					local source = StudioScriptSource.read(graph:instanceForTarget(requirement.target))
 					if sha256(source) ~= requirement.expected then error("canary source does not bind the approved source hash") end
 					return sha256(source)
 				elseif requirement.kind == "structure" then
@@ -2036,9 +2069,14 @@ function StudioAuthoring:apply(
 	binding = persistedOrFailure
 	local applied, failure = pcall(function()
 		for _, operation in ipairs(prepared.operations) do
+			local derivedValues = {}
+			local postTarget = prepared.topology.postTargets[identityKey(operation.target.identity)] or operation.target
+			for _, fact in ipairs(prepared.preflight.facts) do
+				if fact.kind == "property" and identityKey(fact.target.identity) == identityKey(postTarget.identity) and fact.result.status == "observed" then derivedValues[fact.propertyName] = fact.result.value end
+			end
 			local expectedPostTarget = prepared.topology.postTargets[identityKey(operation.target.identity)]
 			validateOperation(operation, self.registry, function(sourceBinding) return resolvedSourceWrite(self, sourceBinding) end, expectedPostTarget, function(reference) return createHandles:resolveReference(reference) end)
-			applyOperation(operation, self.registry, function(sourceBinding) return resolvedSourceWrite(self, sourceBinding) end, onExpectedMutationFact, createHandles)
+			applyOperation(operation, self.registry, function(sourceBinding) return resolvedSourceWrite(self, sourceBinding) end, onExpectedMutationFact, createHandles, derivedValues)
 		end
 	end)
 	if not applied then

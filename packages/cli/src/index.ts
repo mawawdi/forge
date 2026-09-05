@@ -1,7 +1,7 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import {
@@ -23,7 +23,8 @@ import {
   type CreatorStoreLease,
 } from "../../creator-control/src/index.js";
 import { CreatorSessionCoordinator } from "../../creator-session/src/coordinator.js";
-import { loadCreatorBundle } from "../../creator-session/src/index.js";
+import { CREATOR_DEFAULT_STORE, loadCreatorBundle } from "../../creator-session/src/index.js";
+import { replayCreatorOfflineRegression } from "../../creator-session/src/offline-regression.js";
 import {
   assertCreatorDashboardState,
   type CreatorDashboardState,
@@ -48,7 +49,11 @@ import {
   registerExperiment,
   runRegisteredExperiment,
 } from "../../experiments/src/index.js";
-import { defaultTraceDirectory, JsonFileTraceSink } from "../../flight-recorder/src/index.js";
+import {
+  defaultTraceDirectory,
+  JsonFileTraceSink,
+  loadCreatorHostTimingReport,
+} from "../../flight-recorder/src/index.js";
 import {
   CREATOR_MODEL_REGISTRY,
   DEFAULT_CREATOR_MODEL_ID,
@@ -125,6 +130,10 @@ async function main(): Promise<void> {
     return creatorReplayVerification(rest[0], rest.slice(1));
   if (command === "creator" && subcommand === "replay-mutation")
     return creatorReplayMutation(rest[0], rest.slice(1));
+  if (command === "creator" && subcommand === "replay-regression")
+    return creatorReplayRegression(rest[0], rest.slice(1));
+  if (command === "creator" && subcommand === "timings")
+    return creatorTimings(rest[0], rest.slice(1));
   if (command === "experiment" && subcommand === "register")
     return experimentRegister(rest[0], rest.slice(1));
   if (command === "experiment" && subcommand === "build")
@@ -185,7 +194,7 @@ async function creatorServe(optionArgs: string[]): Promise<void> {
     const apiKey = loadOpenRouterApiKey();
     const runtime = new ForgeNativeAgentRuntime(new OpenRouterModelClient({ apiKey }));
     const modelCatalog = await new OpenRouterModelCatalogProbe({ apiKey }).probe();
-    const directory = resolve(options.sessionDirectory ?? ".forge/creator");
+    const directory = resolve(options.sessionDirectory ?? CREATOR_DEFAULT_STORE);
     storeLease = await acquireCreatorStoreLease(directory);
     const sourceAnalysisHost = await PinnedSourceAnalysisHost.create({
       root: resolve(process.cwd()),
@@ -382,7 +391,7 @@ async function creatorReplayVerification(
     return;
   }
   try {
-    const directory = resolve(options.sessionDirectory ?? ".forge/creator");
+    const directory = resolve(options.sessionDirectory ?? CREATOR_DEFAULT_STORE);
     const bundle = await loadCreatorBundle(join(directory, `${sessionId}.json`));
     const verification = options.verificationId
       ? bundle.verifications.find((item) => item.id === options.verificationId)
@@ -401,6 +410,64 @@ async function creatorReplayVerification(
   }
 }
 
+async function creatorReplayRegression(hash: string | undefined, args: string[]): Promise<void> {
+  if (
+    !hash ||
+    !/^[a-f0-9]{64}$/.test(hash) ||
+    !(
+      args.length === 0 ||
+      (args.length === 2 && args[0] === "--session-dir" && args[1] && !args[1].startsWith("--"))
+    )
+  ) {
+    process.stderr.write(
+      "Usage: forge creator replay-regression <manifest-artifact-hash> [--session-dir <path>]\n",
+    );
+    process.exitCode = 2;
+    return;
+  }
+  try {
+    const store = new ImmutableJsonArtifactStore(resolve(args[1] ?? CREATOR_DEFAULT_STORE));
+    const locator = `artifacts/${hash}.json`;
+    const info = await lstat(join(store.root, locator));
+    if (!info.isFile() || info.isSymbolicLink() || info.size > store.maxBytes)
+      throw new Error("Regression manifest must be a bounded regular artifact");
+    const replay = await replayCreatorOfflineRegression({
+      store,
+      artifact: { locator, artifactHash: hash, bytes: info.size },
+    });
+    process.stdout.write(`${JSON.stringify(replay, null, 2)}\n`);
+    process.exitCode = replay.result === "exact_match" ? 0 : replay.result === "mismatch" ? 1 : 2;
+  } catch (error) {
+    process.stderr.write(`Creator regression replay unavailable: ${message(error)}\n`);
+    process.exitCode = 2;
+  }
+}
+
+async function creatorTimings(sessionId: string | undefined, args: string[]): Promise<void> {
+  if (
+    !sessionId ||
+    !(
+      args.length === 0 ||
+      (args.length === 2 && args[0] === "--session-dir" && args[1] && !args[1].startsWith("--"))
+    )
+  ) {
+    process.stderr.write("Usage: forge creator timings <session-id> [--session-dir <path>]\n");
+    process.exitCode = 2;
+    return;
+  }
+  try {
+    const report = await loadCreatorHostTimingReport(
+      resolve(args[1] ?? CREATOR_DEFAULT_STORE),
+      sessionId,
+    );
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    process.exitCode = report.status === "available" ? 0 : 2;
+  } catch (error) {
+    process.stderr.write(`Creator timings unavailable: ${message(error)}\n`);
+    process.exitCode = 2;
+  }
+}
+
 async function creatorReplayMutation(
   sessionId: string | undefined,
   optionArgs: string[],
@@ -414,7 +481,7 @@ async function creatorReplayMutation(
     return;
   }
   try {
-    const directory = resolve(options.sessionDirectory ?? ".forge/creator");
+    const directory = resolve(options.sessionDirectory ?? CREATOR_DEFAULT_STORE);
     const bundle = await loadCreatorBundle(join(directory, `${sessionId}.json`));
     const rojoMutation = options.attemptId
       ? bundle.rojoSourceMutations.find((item) => item.attempt.id === options.attemptId)
@@ -1312,7 +1379,7 @@ function parseStudioCanaryOptions(values: string[]): {
 }
 function usage(): void {
   process.stdout.write(
-    `Forge commands:\n  forge creator serve [--default-model <registered-model-id>]\n  forge creator state [conversation-id]\n  forge creator turn [conversation-id] (--prompt <message> | --prompt-file <file-or->) [--model <registered-model-id>] [--kind <turn-kind>]\n  forge creator act <conversation-id> <action-instance-id> [--text <value> | --text-file <file-or-> | --report <value> | --report-file <file-or->] [--model <registered-model-id>] [--memory-item-id <id> --memory-revision-id <id> --memory-revision-hash <hash>] [--memory-category <category>]\n  forge creator replay-verification <session-id> [--verification <id>] [--session-dir <path>]\n  forge creator replay-mutation <session-id> [--attempt <id>] [--session-dir <path>]\n  forge experiment register <seed> --prompt-file <file> --requirements <file> --acceptance <file> --runtime-plan <file> --runtime-configuration <file> --model <exact-model-id> --output <registration.json>\n  forge experiment build <seed> --registration <registration.json>\n  forge experiment evaluate <artifact> --registration <registration.json>\n  forge studio api-status\n  forge studio capabilities [--class <RobloxClass>] [--query <text>]\n  forge studio canary <seed> --plan <file>\n  forge studio bridge\n  forge verify <project>\n  forge trace show <trace-id>\n`,
+    `Forge commands:\n  forge creator serve [--default-model <registered-model-id>]\n  forge creator state [conversation-id]\n  forge creator turn [conversation-id] (--prompt <message> | --prompt-file <file-or->) [--model <registered-model-id>] [--kind <turn-kind>]\n  forge creator act <conversation-id> <action-instance-id> [--text <value> | --text-file <file-or-> | --report <value> | --report-file <file-or->] [--model <registered-model-id>] [--memory-item-id <id> --memory-revision-id <id> --memory-revision-hash <hash>] [--memory-category <category>]\n  forge creator replay-verification <session-id> [--verification <id>] [--session-dir <path>]\n  forge creator replay-mutation <session-id> [--attempt <id>] [--session-dir <path>]\n  forge creator replay-regression <manifest-artifact-hash> [--session-dir <path>]\n  forge creator timings <session-id> [--session-dir <path>]\n  forge experiment register <seed> --prompt-file <file> --requirements <file> --acceptance <file> --runtime-plan <file> --runtime-configuration <file> --model <exact-model-id> --output <registration.json>\n  forge experiment build <seed> --registration <registration.json>\n  forge experiment evaluate <artifact> --registration <registration.json>\n  forge studio api-status\n  forge studio capabilities [--class <RobloxClass>] [--query <text>]\n  forge studio canary <seed> --plan <file>\n  forge studio bridge\n  forge verify <project>\n  forge trace show <trace-id>\n`,
   );
 }
 function message(error: unknown): string {

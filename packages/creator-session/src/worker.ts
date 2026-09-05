@@ -1,4 +1,5 @@
 import { join, resolve } from "node:path";
+import type { GameBuildGraph } from "../../game-compiler/src/index.js";
 import {
   AgentExecutionJournalStore,
   assertAgentExecutionSlot,
@@ -9,6 +10,7 @@ import {
   type BudgetPolicy,
 } from "../../agent-runtime/src/index.js";
 import { ImmutableJsonArtifactStore } from "../../artifact-store/src/index.js";
+import { HostPhaseRecorder } from "../../flight-recorder/src/host-phase.js";
 import type { ArtifactReference } from "../../artifact-store/src/index.js";
 import type {
   CreatorSourceConsultation,
@@ -26,7 +28,6 @@ import {
   type CreatorAgentOutcome,
   type CreatorApproval,
   type CreatorBuildContract,
-  type CreatorChangeSet,
   type CreatorSourceWriteBlobCapture,
   type CreatorProjectIndexView,
   type CreatorPlan,
@@ -96,7 +97,8 @@ export type CreatorWorkerBuildResult =
   | {
       status: "sealed";
       buildContract: CreatorBuildContract;
-      changeSet: CreatorChangeSet;
+      graph: GameBuildGraph;
+      summary: string;
       sourceWriteBlobs: readonly CreatorSourceWriteBlobCapture[];
       evidence: CreatorSessionBundle["agentRuns"][number];
     }
@@ -244,14 +246,25 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
     const artifactStore = new ImmutableJsonArtifactStore(resolve(this.directory));
     const journalStore = new AgentExecutionJournalStore(artifactStore);
     await executionJournalResume(journalStore, input.execution, false);
+    const timing = {
+      recorder: new HostPhaseRecorder(this.directory),
+      correlation: {
+        sessionId: input.session.id,
+        projectId: input.session.projectId,
+        agentRunId: input.execution.agentRunId,
+        revisionHash: input.session.currentRevisionHash,
+      },
+    };
     try {
-      const prepared = new CreatorBuilderToolHost(input);
-      creatorBuilderSystemPrompt(
-        input.plan,
-        prepared.contract,
-        input.projectIndex,
-        input.verificationFeedback,
-      );
+      await timing.recorder.measure("build_preparation", timing.correlation, () => {
+        const prepared = new CreatorBuilderToolHost(input);
+        creatorBuilderSystemPrompt(
+          input.plan,
+          prepared.contract,
+          input.projectIndex,
+          input.verificationFeedback,
+        );
+      });
     } catch (error) {
       const failure = {
         stage: "preparation" as const,
@@ -270,6 +283,7 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
       return { status: "preparation_failed", failure, diagnostic };
     }
     const result = await runCreatorBuilder({
+      timing,
       session: input.session,
       ownership: input.ownership,
       projectIndex: input.projectIndex,
@@ -331,7 +345,7 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
         },
         evidence,
       };
-    if (result.finalization.status === "unsealed" || !result.changeSet)
+    if (result.finalization.status === "unsealed" || !result.graph)
       return {
         status: "unsealed",
         buildContract: result.toolHost.contract,
@@ -350,7 +364,8 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
     return {
       status: "sealed",
       buildContract: result.toolHost.contract,
-      changeSet: result.changeSet,
+      graph: result.graph,
+      summary: result.summary!,
       sourceWriteBlobs:
         result.sourceWriteBlobs ??
         (() => {

@@ -1,0 +1,21 @@
+-- Extract only fixed native evidence receipts from a user-saved place.
+local fs = require("@lune/fs")
+local process = require("@lune/process")
+local roblox = require("@lune/roblox")
+local serde = require("@lune/serde")
+local placePath, outputPath = process.args[1], process.args[2]
+assert(placePath and outputPath, "Usage: lune run scripts/export-native-conformance.luau <saved-place.rbxlx> <report.json>")
+assert(not fs.isFile(outputPath) and not fs.isDir(outputPath), "output already exists; preserve existing evidence")
+local place = roblox.deserializePlace(fs.readFile(placePath))
+local output = assert(place:GetService("Workspace"):FindFirstChild("ForgeNativeConformanceOutput"), "native report folder missing")
+local function receipt(name)
+	local value = assert(output:FindFirstChild(name), name .. " missing")
+	assert(value:IsA("StringValue"))
+	return serde.decode("json", value.Value)
+end
+local before, reopened = receipt("BeforeSaveReport"), receipt("ReopenReport")
+assert(before.kind == "ForgeNativePreflightConformance" and reopened.kind == before.kind, "unexpected receipt kind")
+assert(before.manifestHash == reopened.manifestHash and before.fixtureBuild.hash == reopened.fixtureBuild.hash, "receipt identity mismatch")
+assert(reopened.beforeReportHash == serde.hash("sha256", output.BeforeSaveReport.Value), "reopen report does not bind saved before report")
+fs.writeFile(outputPath, serde.encode("json", { beforeSave = before, afterReopen = reopened }, true))
+print(`Exported native receipts to {outputPath}; before={before.status}, reopened={reopened.status}`)

@@ -158,6 +158,7 @@ function defaultProjectPropertyValue(property: ManifestProperty): StudioValue {
         elasticity: number,
         frictionWeight: number,
         elasticityWeight: number,
+        acousticAbsorption: number,
       };
     case "axes":
       return { kind: "axes", x: false, y: false, z: false };
@@ -1152,13 +1153,19 @@ function topologyFromCapture(capture: StudioProjectIndexCapture) {
   return studioProjectIndexMetadataView(capture).instances;
 }
 
-function exactMutationEnvelope(projection: StudioEvidenceProjection): StudioEvidenceEnvelope {
+function exactMutationEnvelope(
+  projection: StudioEvidenceProjection,
+  derived: Record<string, StudioValue> = {},
+): StudioEvidenceEnvelope {
   const facts = projection.requirements.map((requirement) => {
     const status = requirement.expectedStatus ?? "observed";
     const result =
       status === "absent"
         ? ({ status: "absent" } as const)
-        : ({ status: "observed", value: requirement.expected } as const);
+        : ({
+            status: "observed",
+            value: requirement.expected ?? derived[requirement.propertyName ?? ""],
+          } as const);
     return {
       kind: requirement.kind,
       key: requirement.key,
@@ -1192,6 +1199,7 @@ function enrolledReconciliationInput(
   before: StudioProjectIndexCapture,
   after: StudioProjectIndexCapture,
   deletedSubtrees: readonly CreatorChangeSetDeleteSubtree[] = [],
+  derived: Record<string, StudioValue> = {},
 ) {
   const structuralParents = creatorStructuralParentsFromProjectIndex(sealed, before);
   const enrollmentBinding = {
@@ -1240,9 +1248,9 @@ function enrolledReconciliationInput(
     projection,
     preflight: {
       projection: preflightProjection,
-      envelope: exactMutationEnvelope(preflightProjection),
+      envelope: exactMutationEnvelope(preflightProjection, derived),
     },
-    directReadback: exactMutationEnvelope(projection),
+    directReadback: exactMutationEnvelope(projection, derived),
     beforeIndexCapture: before,
     afterIndexCapture: after,
   };
@@ -1348,6 +1356,108 @@ test("enrolled property update requires and accepts complete manifest property c
       (fact) => fact.code === "approved_property_not_reflected" && fact.detail.includes("Anchored"),
     ),
     true,
+  );
+});
+
+test("coupled alias deltas require equal final canary, direct readback and complete-index evidence", () => {
+  const prior = ephemeralTarget("6", "Workspace/ColoredPart", "Part");
+  const next = durableTarget("colored-part", prior.path, prior.className);
+  const color: StudioValue = { kind: "color3_rgb8", r: 255, g: 0, b: 0 };
+  const alias: StudioValue = { kind: "brick_color", name: "Really red" };
+  const before = projectCapture([{ target: prior }]);
+  const after = projectCapture([{ target: next, properties: { Color: color, BrickColor: alias } }]);
+  const sealed = sealedEnrollmentChange(
+    "creator-coupled-color",
+    {
+      id: "recolor",
+      kind: "update",
+      target: prior,
+      enrollment: {
+        identity: prior.identity as Extract<typeof prior.identity, { kind: "studio_ephemeral" }>,
+        stableId: "colored-part",
+      },
+      properties: { Color: color },
+      attributes: {},
+      removedAttributes: [],
+    },
+    before,
+  );
+  const input = enrolledReconciliationInput(sealed, before, after, [], { BrickColor: alias });
+  assert.equal(
+    input.projection.requirements.find((requirement) => requirement.propertyName === "BrickColor")
+      ?.expected,
+    undefined,
+  );
+  assert.equal(reconcileCreatorMutation(input).status, "matched");
+  // A valid hash and the same mutation binding do not prove that the canary
+  // actually exercised the approved setter. Recompile it independently.
+  const substituted = compileMutationEvidenceProjectionForManifest(
+    {
+      id: input.preflight.projection.id,
+      project,
+      binding: input.changeSet.binding,
+      operations: input.changeSet.operations.map((operation) => ({
+        ...operation,
+        properties: { Color: { kind: "color3_rgb8", r: 0, g: 0, b: 255 } },
+      })),
+      purpose: "mutation_preflight",
+    },
+    STUDIO_CAPABILITY_MANIFEST,
+    STUDIO_CAPABILITY_MANIFEST_HASH,
+  );
+  assert.notEqual(substituted.contentHash, input.preflight.projection.contentHash);
+  const substitutedResult = reconcileCreatorMutation({
+    ...input,
+    preflight: {
+      projection: substituted,
+      envelope: exactMutationEnvelope(substituted, { BrickColor: alias }),
+    },
+  });
+  assert.equal(substitutedResult.status, "incomplete");
+  assert.ok(
+    substitutedResult.failureFacts.some(
+      (fact) =>
+        fact.code === "capability_preflight_incomplete" && /recompilation/.test(fact.detail),
+    ),
+  );
+  const wrongAlias: StudioValue = { kind: "brick_color", name: "Bright red" };
+  for (const changed of [
+    {
+      ...input,
+      directReadback: exactMutationEnvelope(input.projection, { BrickColor: wrongAlias }),
+    },
+    {
+      ...input,
+      afterIndexCapture: projectCapture([
+        { target: next, properties: { Color: color, BrickColor: wrongAlias } },
+      ]),
+    },
+    {
+      ...input,
+      preflight: {
+        ...input.preflight,
+        envelope: exactMutationEnvelope(input.preflight.projection, { BrickColor: wrongAlias }),
+      },
+    },
+  ]) {
+    const result = reconcileCreatorMutation(changed);
+    assert.equal(result.status, "mismatched");
+    assert.ok(result.failureFacts.some((fact) => fact.code === "derived_property_not_reflected"));
+  }
+  const unrelated = reconcileCreatorMutation({
+    ...input,
+    afterIndexCapture: projectCapture([
+      {
+        target: next,
+        properties: { Color: color, BrickColor: alias, Anchored: { kind: "boolean", value: true } },
+      },
+    ]),
+  });
+  assert.equal(unrelated.status, "mismatched");
+  assert.ok(
+    unrelated.failureFacts.some(
+      (fact) => fact.code === "unapproved_index_delta" && fact.detail.includes("Anchored"),
+    ),
   );
 });
 

@@ -3,6 +3,12 @@ import { eventLabel, formatTimestamp, shortHash } from "../derived";
 import { TechnicalCatalogExplorer } from "./TechnicalCatalogExplorer";
 import { TechnicalReplay } from "./TechnicalReplay";
 import { Icon } from "./Icon";
+import { GameBuildWindow } from "./GameBuildWindow";
+import { GameBuildGraph } from "./GameBuildGraph";
+import {
+  assertGameBuildControlView,
+  type GameBuildControlView,
+} from "../../../packages/creator-conversation/src/game-build-contract";
 import {
   TechnicalSourceExplorer,
   type TechnicalSourceEvidenceAnchor,
@@ -33,6 +39,13 @@ export default function TechnicalDetailsSheet({
   const sheetRef = useRef<HTMLElement>(null);
   const [selected, setSelected] = useState<CreatorConversationAttachment | undefined>();
   const [raw, setRaw] = useState<string | undefined>();
+  const [rawBindingHash, setRawBindingHash] = useState<string | undefined>();
+  const [loadStatus, setLoadStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [graphWindow, setGraphWindow] = useState<{
+    view: GameBuildControlView;
+    source: HTMLElement;
+  }>();
+  const savedGraph = selected?.binding.hash === rawBindingHash ? graphFromArtifact(raw) : undefined;
   const [selectedEventId, setSelectedEventId] = useState<string | undefined>();
   const selectedConversationId = state?.selectedConversationId;
   const initialEvent =
@@ -78,6 +91,7 @@ export default function TechnicalDetailsSheet({
 
   useEffect(() => {
     setSelectedEventId(undefined);
+    setGraphWindow(undefined);
   }, [open, selectedConversationId, event?.id]);
 
   useEffect(() => {
@@ -100,9 +114,15 @@ export default function TechnicalDetailsSheet({
     }
     const controller = new AbortController();
     let active = true;
-    setRaw("Loading raw evidence…");
+    setRawBindingHash(undefined);
+    setRaw(undefined);
+    setLoadStatus("loading");
     void loadArtifact(selected.binding, controller.signal).then((value) => {
-      if (active) setRaw(value);
+      if (active) {
+        setRaw(value.content);
+        setLoadStatus(value.error ? "error" : "ready");
+        setRawBindingHash(selected.binding.hash);
+      }
     });
     return () => {
       active = false;
@@ -173,6 +193,12 @@ export default function TechnicalDetailsSheet({
               ))}
             </select>
           </label>
+          {!detailEvent && state?.controlView?.gameBuild ? (
+            <details className="detail-build-disclosure" open>
+              <summary>Current build implementation</summary>
+              <GameBuildGraph view={state.controlView.gameBuild} />
+            </details>
+          ) : null}
           <section className="detail-section" aria-labelledby="evidence-chain-title">
             <h3 id="evidence-chain-title">Event details</h3>
             {detailEvent ? (
@@ -316,8 +342,12 @@ export default function TechnicalDetailsSheet({
                       <strong>{attachment.label}</strong>
                       <span>{attachment.role.replaceAll("_", " ")}</span>
                     </div>
-                    <button type="button" onClick={() => setSelected(attachment)}>
-                      View raw JSON
+                    <button
+                      type="button"
+                      aria-pressed={selected?.binding.hash === attachment.binding.hash}
+                      onClick={() => setSelected(attachment)}
+                    >
+                      Inspect
                     </button>
                   </li>
                 ))}
@@ -326,12 +356,62 @@ export default function TechnicalDetailsSheet({
               <p>No additional details are attached to this event.</p>
             )}
             {selected ? (
-              <div className="raw-artifact" aria-live="polite">
-                <div>
+              <div className="saved-detail-card">
+                <div className="saved-detail-card__heading">
+                  <Icon name="file" size={18} />
                   <strong>{selected.label}</strong>
-                  <code title={selected.binding.hash}>{shortHash(selected.binding.hash)}</code>
                 </div>
-                <pre tabIndex={0}>{raw}</pre>
+                <p className={loadStatus === "ready" ? "sr-only" : undefined} role="status">
+                  {loadStatus === "loading"
+                    ? "Loading saved details…"
+                    : loadStatus === "error"
+                      ? `Could not load saved details: ${raw}`
+                      : "Saved details loaded."}
+                </p>
+                {loadStatus === "error" ? (
+                  <button type="button" onClick={() => setSelected({ ...selected })}>
+                    <Icon name="retry" size={16} /> Try again
+                  </button>
+                ) : null}
+                {savedGraph ? (
+                  <>
+                    <button
+                      type="button"
+                      className="saved-detail-card__map"
+                      aria-label="Open saved game map"
+                      aria-haspopup="dialog"
+                      onClick={(event) =>
+                        setGraphWindow({ view: savedGraph, source: event.currentTarget })
+                      }
+                    >
+                      <Icon name="graph" size={24} />
+                      <span>
+                        <strong>{savedGraph.architecture?.name ?? "Saved game map"}</strong>
+                        <small>Explore systems and connections in this saved plan</small>
+                      </span>
+                      <Icon name="chevronRight" size={18} />
+                    </button>
+                    <details className="detail-build-disclosure">
+                      <summary>Saved build implementation</summary>
+                      <GameBuildGraph view={savedGraph} historical />
+                    </details>
+                    {graphWindow ? (
+                      <GameBuildWindow
+                        view={graphWindow.view}
+                        historical
+                        returnFocusTo={graphWindow.source}
+                        onClose={() => setGraphWindow(undefined)}
+                      />
+                    ) : null}
+                  </>
+                ) : null}
+                {loadStatus === "ready" ? (
+                  <details className="saved-detail-card__json">
+                    <summary>Raw JSON</summary>
+                    <code title={selected.binding.hash}>{shortHash(selected.binding.hash)}</code>
+                    <pre tabIndex={0}>{raw}</pre>
+                  </details>
+                ) : null}
               </div>
             ) : null}
           </section>
@@ -356,9 +436,33 @@ function focusableElements(container: HTMLElement | null): HTMLElement[] {
   if (!container) return [];
   return Array.from(
     container.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex="0"]',
+      'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary, [tabindex="0"]',
     ),
-  );
+  ).filter((element) => {
+    if (element.closest('[hidden], [inert], [aria-hidden="true"]')) return false;
+    for (let ancestor: HTMLElement | null = element; ancestor; ancestor = ancestor.parentElement) {
+      const style = getComputedStyle(ancestor);
+      if (style.display === "none" || style.visibility === "hidden") return false;
+      if (ancestor instanceof HTMLDetailsElement && !ancestor.open) {
+        const summary = ancestor.querySelector(":scope > summary");
+        if (!summary?.contains(element)) return false;
+      }
+      if (ancestor === container) break;
+    }
+    return true;
+  });
+}
+
+/** Historical graph state is read only from the exact selected immutable artifact. */
+function graphFromArtifact(raw: string | undefined): GameBuildControlView | undefined {
+  if (!raw) return undefined;
+  try {
+    const artifact = JSON.parse(raw) as { gameBuild?: unknown };
+    assertGameBuildControlView(artifact.gameBuild);
+    return artifact.gameBuild;
+  } catch {
+    return undefined;
+  }
 }
 
 function uniqueBindings(
@@ -440,7 +544,10 @@ function sourceEvidenceAnchor(
   };
 }
 
-async function loadArtifact(binding: CreatorArtifactBinding, signal: AbortSignal): Promise<string> {
+async function loadArtifact(
+  binding: CreatorArtifactBinding,
+  signal: AbortSignal,
+): Promise<{ content: string; error: boolean }> {
   try {
     const response = await fetch(
       `/api/artifacts/${encodeURIComponent(binding.artifact.artifactHash)}`,
@@ -450,14 +557,21 @@ async function loadArtifact(binding: CreatorArtifactBinding, signal: AbortSignal
       },
     );
     const body = await response.text();
-    if (!response.ok) return body || `Artifact request failed (${response.status}).`;
+    if (!response.ok)
+      return { content: `Artifact request failed (${response.status}).`, error: true };
     try {
-      return JSON.stringify(JSON.parse(body) as unknown, null, 2);
+      return { content: JSON.stringify(JSON.parse(body) as unknown, null, 2), error: false };
     } catch {
-      return body;
+      return { content: body, error: false };
     }
   } catch (error) {
-    if (signal.aborted) return "";
-    return error instanceof Error ? error.message : "The artifact could not be loaded.";
+    return {
+      content: signal.aborted
+        ? ""
+        : error instanceof Error
+          ? error.message
+          : "The artifact could not be loaded.",
+      error: true,
+    };
   }
 }

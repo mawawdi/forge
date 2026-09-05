@@ -1,8 +1,8 @@
 {
   "kind": "StudioCapabilityCoverageReport",
   "catalogHash": "142406530e50b9c65fee0d7792e48aa22001e8697399820b43382dc5fdfe490e",
-  "policyHash": "ccb24a9c8a55187d9416f97debdc2fbcf131175b87a3d13d15437b865edab3e0",
-  "manifestHash": "6ee47dd5a9dac5d6a1e9c5eab0e33ff30ed20e47dc6744c7985cf964e97817f7",
+  "policyHash": "f832a16e6a4000470434d73d5aca41ebe86b91a9cd660fdbc82a1205054613d3",
+  "manifestHash": "19380b3b5bdcc93bb4d3810621e47e36b5c57f9a402006e2ad6ca5f6259abf33",
   "entries": [
     {
       "catalogEntryId": "class_member:Accessory:property:AccessoryType",
@@ -4999,7 +4999,7 @@
       "name": "Anchored",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "boolean",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5007,7 +5007,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5021,7 +5020,7 @@
       "name": "AssemblyAngularVelocity",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "vector3_f32",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5029,7 +5028,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5043,7 +5041,7 @@
       "name": "AssemblyCenterOfMass",
       "disposition": "source_only",
       "reason": "read_only",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:AssemblyLinearVelocity",
@@ -5052,7 +5050,7 @@
       "name": "AssemblyLinearVelocity",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "vector3_f32",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5060,7 +5058,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5074,7 +5071,7 @@
       "name": "AssemblyMass",
       "disposition": "source_only",
       "reason": "read_only",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:AssemblyRootPart",
@@ -5083,7 +5080,7 @@
       "name": "AssemblyRootPart",
       "disposition": "source_only",
       "reason": "read_only",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:AudioCanCollide",
@@ -5092,7 +5089,7 @@
       "name": "AudioCanCollide",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "boolean",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5100,7 +5097,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5114,7 +5110,7 @@
       "name": "BackParamA",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:BackParamB",
@@ -5123,7 +5119,7 @@
       "name": "BackParamB",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:BackSurface",
@@ -5132,7 +5128,7 @@
       "name": "BackSurface",
       "disposition": "source_only",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:BackSurfaceInput",
@@ -5141,7 +5137,7 @@
       "name": "BackSurfaceInput",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:BottomParamA",
@@ -5150,7 +5146,7 @@
       "name": "BottomParamA",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:BottomParamB",
@@ -5159,7 +5155,7 @@
       "name": "BottomParamB",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:BottomSurface",
@@ -5168,7 +5164,7 @@
       "name": "BottomSurface",
       "disposition": "source_only",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:BottomSurfaceInput",
@@ -5177,7 +5173,7 @@
       "name": "BottomSurfaceInput",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:brickColor",
@@ -5186,7 +5182,7 @@
       "name": "brickColor",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:BrickColor",
@@ -5195,7 +5191,7 @@
       "name": "BrickColor",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "brick_color",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5203,7 +5199,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5217,7 +5212,7 @@
       "name": "CanCollide",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "boolean",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5225,7 +5220,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5239,7 +5233,7 @@
       "name": "CanQuery",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "boolean",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5247,7 +5241,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5261,7 +5254,7 @@
       "name": "CanTouch",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "boolean",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5269,7 +5262,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5283,7 +5275,7 @@
       "name": "CastShadow",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "boolean",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5291,7 +5283,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5305,7 +5296,7 @@
       "name": "CenterOfMass",
       "disposition": "source_only",
       "reason": "read_only",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:CFrame",
@@ -5314,7 +5305,7 @@
       "name": "CFrame",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "cframe_f32x12",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5322,7 +5313,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5336,7 +5326,7 @@
       "name": "CollisionGroup",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "string_utf8",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5344,7 +5334,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5358,7 +5347,7 @@
       "name": "CollisionGroupId",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:Color",
@@ -5367,7 +5356,7 @@
       "name": "Color",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "color3_rgb8",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5375,7 +5364,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5389,7 +5377,7 @@
       "name": "CurrentPhysicalProperties",
       "disposition": "source_only",
       "reason": "read_only",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:CustomPhysicalProperties",
@@ -5398,7 +5386,7 @@
       "name": "CustomPhysicalProperties",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "physical_properties",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5406,7 +5394,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5420,7 +5407,7 @@
       "name": "Elasticity",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:EnableFluidForces",
@@ -5429,7 +5416,7 @@
       "name": "EnableFluidForces",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "boolean",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5437,7 +5424,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5451,7 +5437,7 @@
       "name": "ExtentsCFrame",
       "disposition": "source_only",
       "reason": "read_only",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:ExtentsSize",
@@ -5460,7 +5446,7 @@
       "name": "ExtentsSize",
       "disposition": "source_only",
       "reason": "read_only",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:Friction",
@@ -5469,7 +5455,7 @@
       "name": "Friction",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:FrontParamA",
@@ -5478,7 +5464,7 @@
       "name": "FrontParamA",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:FrontParamB",
@@ -5487,7 +5473,7 @@
       "name": "FrontParamB",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:FrontSurface",
@@ -5496,7 +5482,7 @@
       "name": "FrontSurface",
       "disposition": "source_only",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:FrontSurfaceInput",
@@ -5505,7 +5491,7 @@
       "name": "FrontSurfaceInput",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:LeftParamA",
@@ -5514,7 +5500,7 @@
       "name": "LeftParamA",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:LeftParamB",
@@ -5523,7 +5509,7 @@
       "name": "LeftParamB",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:LeftSurface",
@@ -5532,7 +5518,7 @@
       "name": "LeftSurface",
       "disposition": "source_only",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:LeftSurfaceInput",
@@ -5541,7 +5527,7 @@
       "name": "LeftSurfaceInput",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:LocalTransparencyModifier",
@@ -5550,7 +5536,7 @@
       "name": "LocalTransparencyModifier",
       "disposition": "unsupported",
       "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:Locked",
@@ -5559,7 +5545,7 @@
       "name": "Locked",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "boolean",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5567,7 +5553,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5581,7 +5566,7 @@
       "name": "Mass",
       "disposition": "source_only",
       "reason": "read_only",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:Massless",
@@ -5590,7 +5575,7 @@
       "name": "Massless",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "boolean",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5598,7 +5583,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5612,7 +5596,7 @@
       "name": "Material",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "enum_name",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5620,7 +5604,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5634,7 +5617,7 @@
       "name": "MaterialVariant",
       "disposition": "source_only",
       "reason": "not_serialized",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:Orientation",
@@ -5643,7 +5626,7 @@
       "name": "Orientation",
       "disposition": "unsupported",
       "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:PivotOffset",
@@ -5652,7 +5635,7 @@
       "name": "PivotOffset",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "cframe_f32x12",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5660,7 +5643,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5674,7 +5656,7 @@
       "name": "Position",
       "disposition": "unsupported",
       "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:ReceiveAge",
@@ -5683,7 +5665,7 @@
       "name": "ReceiveAge",
       "disposition": "unsupported",
       "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:Reflectance",
@@ -5692,7 +5674,7 @@
       "name": "Reflectance",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "number_f32",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5700,7 +5682,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5714,7 +5695,7 @@
       "name": "ResizeableFaces",
       "disposition": "source_only",
       "reason": "read_only",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:ResizeIncrement",
@@ -5723,7 +5704,7 @@
       "name": "ResizeIncrement",
       "disposition": "source_only",
       "reason": "read_only",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:RightParamA",
@@ -5732,7 +5713,7 @@
       "name": "RightParamA",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:RightParamB",
@@ -5741,7 +5722,7 @@
       "name": "RightParamB",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:RightSurface",
@@ -5750,7 +5731,7 @@
       "name": "RightSurface",
       "disposition": "source_only",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:RightSurfaceInput",
@@ -5759,7 +5740,7 @@
       "name": "RightSurfaceInput",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:RootPriority",
@@ -5768,7 +5749,7 @@
       "name": "RootPriority",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "int32",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5776,7 +5757,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5790,7 +5770,7 @@
       "name": "Rotation",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "vector3_f32",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5798,7 +5778,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5812,7 +5791,7 @@
       "name": "RotVelocity",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:Size",
@@ -5821,7 +5800,7 @@
       "name": "Size",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "vector3_f32",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5829,7 +5808,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5843,7 +5821,7 @@
       "name": "SpecificGravity",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:TopParamA",
@@ -5852,7 +5830,7 @@
       "name": "TopParamA",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:TopParamB",
@@ -5861,7 +5839,7 @@
       "name": "TopParamB",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:TopSurface",
@@ -5870,7 +5848,7 @@
       "name": "TopSurface",
       "disposition": "source_only",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:TopSurfaceInput",
@@ -5879,7 +5857,7 @@
       "name": "TopSurfaceInput",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePart:property:Transparency",
@@ -5888,7 +5866,7 @@
       "name": "Transparency",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "number_f32",
       "inheritedBy": [
         "CornerWedgePart",
@@ -5896,7 +5874,6 @@
         "Part",
         "Seat",
         "SpawnLocation",
-        "Terrain",
         "TrussPart",
         "UnionOperation",
         "VehicleSeat",
@@ -5910,7 +5887,7 @@
       "name": "Velocity",
       "disposition": "unsupported",
       "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:BasePlayerGui:method:GetGuiObjectsAtPosition",
@@ -21178,104 +21155,64 @@
       "entryKind": "class_property",
       "owner": "Lighting",
       "name": "Ambient",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "color3_rgb8",
-      "inheritedBy": [
-        "Lighting"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:Brightness",
       "entryKind": "class_property",
       "owner": "Lighting",
       "name": "Brightness",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "Lighting"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:ClockTime",
       "entryKind": "class_property",
       "owner": "Lighting",
       "name": "ClockTime",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "Lighting"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:ColorShift_Bottom",
       "entryKind": "class_property",
       "owner": "Lighting",
       "name": "ColorShift_Bottom",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "color3_rgb8",
-      "inheritedBy": [
-        "Lighting"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:ColorShift_Top",
       "entryKind": "class_property",
       "owner": "Lighting",
       "name": "ColorShift_Top",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "color3_rgb8",
-      "inheritedBy": [
-        "Lighting"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:EnvironmentDiffuseScale",
       "entryKind": "class_property",
       "owner": "Lighting",
       "name": "EnvironmentDiffuseScale",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "Lighting"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:EnvironmentSpecularScale",
       "entryKind": "class_property",
       "owner": "Lighting",
       "name": "EnvironmentSpecularScale",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "Lighting"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:ExposureCompensation",
       "entryKind": "class_property",
       "owner": "Lighting",
       "name": "ExposureCompensation",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "Lighting"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:ExtendLightRangeTo120",
@@ -21283,73 +21220,47 @@
       "owner": "Lighting",
       "name": "ExtendLightRangeTo120",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:FogColor",
       "entryKind": "class_property",
       "owner": "Lighting",
       "name": "FogColor",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "color3_rgb8",
-      "inheritedBy": [
-        "Lighting"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:FogEnd",
       "entryKind": "class_property",
       "owner": "Lighting",
       "name": "FogEnd",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "Lighting"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:FogStart",
       "entryKind": "class_property",
       "owner": "Lighting",
       "name": "FogStart",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "Lighting"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:GeographicLatitude",
       "entryKind": "class_property",
       "owner": "Lighting",
       "name": "GeographicLatitude",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "Lighting"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:GlobalShadows",
       "entryKind": "class_property",
       "owner": "Lighting",
       "name": "GlobalShadows",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "boolean",
-      "inheritedBy": [
-        "Lighting"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:LightingStyle",
@@ -21357,21 +21268,15 @@
       "owner": "Lighting",
       "name": "LightingStyle",
       "disposition": "unsupported",
-      "reason": "security_gated",
-      "authoringGroup": "engine_settings"
+      "reason": "security_gated"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:OutdoorAmbient",
       "entryKind": "class_property",
       "owner": "Lighting",
       "name": "OutdoorAmbient",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "color3_rgb8",
-      "inheritedBy": [
-        "Lighting"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:Outlines",
@@ -21379,8 +21284,7 @@
       "owner": "Lighting",
       "name": "Outlines",
       "disposition": "unsupported",
-      "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "reason": "deprecated"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:PrioritizeLightingQuality",
@@ -21388,8 +21292,7 @@
       "owner": "Lighting",
       "name": "PrioritizeLightingQuality",
       "disposition": "unsupported",
-      "reason": "security_gated",
-      "authoringGroup": "engine_settings"
+      "reason": "security_gated"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:ShadowColor",
@@ -21397,21 +21300,15 @@
       "owner": "Lighting",
       "name": "ShadowColor",
       "disposition": "unsupported",
-      "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "reason": "deprecated"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:ShadowSoftness",
       "entryKind": "class_property",
       "owner": "Lighting",
       "name": "ShadowSoftness",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "Lighting"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:Technology",
@@ -21419,21 +21316,15 @@
       "owner": "Lighting",
       "name": "Technology",
       "disposition": "unsupported",
-      "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "reason": "deprecated"
     },
     {
       "catalogEntryId": "class_member:Lighting:property:TimeOfDay",
       "entryKind": "class_property",
       "owner": "Lighting",
       "name": "TimeOfDay",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "string_utf8",
-      "inheritedBy": [
-        "Lighting"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:LinearVelocity:property:ForceLimitMode",
@@ -22375,8 +22266,7 @@
       "owner": "MaterialService",
       "name": "AsphaltName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:BasaltName",
@@ -22384,8 +22274,7 @@
       "owner": "MaterialService",
       "name": "BasaltName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:BrickName",
@@ -22393,8 +22282,7 @@
       "owner": "MaterialService",
       "name": "BrickName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:CardboardName",
@@ -22402,8 +22290,7 @@
       "owner": "MaterialService",
       "name": "CardboardName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:CarpetName",
@@ -22411,8 +22298,7 @@
       "owner": "MaterialService",
       "name": "CarpetName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:CeramicTilesName",
@@ -22420,8 +22306,7 @@
       "owner": "MaterialService",
       "name": "CeramicTilesName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:ClayRoofTilesName",
@@ -22429,8 +22314,7 @@
       "owner": "MaterialService",
       "name": "ClayRoofTilesName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:CobblestoneName",
@@ -22438,8 +22322,7 @@
       "owner": "MaterialService",
       "name": "CobblestoneName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:ConcreteName",
@@ -22447,8 +22330,7 @@
       "owner": "MaterialService",
       "name": "ConcreteName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:CorrodedMetalName",
@@ -22456,8 +22338,7 @@
       "owner": "MaterialService",
       "name": "CorrodedMetalName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:CrackedLavaName",
@@ -22465,8 +22346,7 @@
       "owner": "MaterialService",
       "name": "CrackedLavaName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:DiamondPlateName",
@@ -22474,8 +22354,7 @@
       "owner": "MaterialService",
       "name": "DiamondPlateName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:FabricName",
@@ -22483,8 +22362,7 @@
       "owner": "MaterialService",
       "name": "FabricName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:FoilName",
@@ -22492,8 +22370,7 @@
       "owner": "MaterialService",
       "name": "FoilName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:GlacierName",
@@ -22501,8 +22378,7 @@
       "owner": "MaterialService",
       "name": "GlacierName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:GraniteName",
@@ -22510,8 +22386,7 @@
       "owner": "MaterialService",
       "name": "GraniteName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:GrassName",
@@ -22519,8 +22394,7 @@
       "owner": "MaterialService",
       "name": "GrassName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:GroundName",
@@ -22528,8 +22402,7 @@
       "owner": "MaterialService",
       "name": "GroundName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:IceName",
@@ -22537,8 +22410,7 @@
       "owner": "MaterialService",
       "name": "IceName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:LeafyGrassName",
@@ -22546,8 +22418,7 @@
       "owner": "MaterialService",
       "name": "LeafyGrassName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:LeatherName",
@@ -22555,8 +22426,7 @@
       "owner": "MaterialService",
       "name": "LeatherName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:LimestoneName",
@@ -22564,8 +22434,7 @@
       "owner": "MaterialService",
       "name": "LimestoneName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:MarbleName",
@@ -22573,8 +22442,7 @@
       "owner": "MaterialService",
       "name": "MarbleName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:MetalName",
@@ -22582,8 +22450,7 @@
       "owner": "MaterialService",
       "name": "MetalName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:MudName",
@@ -22591,8 +22458,7 @@
       "owner": "MaterialService",
       "name": "MudName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:PavementName",
@@ -22600,8 +22466,7 @@
       "owner": "MaterialService",
       "name": "PavementName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:PebbleName",
@@ -22609,8 +22474,7 @@
       "owner": "MaterialService",
       "name": "PebbleName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:PlasterName",
@@ -22618,8 +22482,7 @@
       "owner": "MaterialService",
       "name": "PlasterName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:PlasticName",
@@ -22627,8 +22490,7 @@
       "owner": "MaterialService",
       "name": "PlasticName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:RockName",
@@ -22636,8 +22498,7 @@
       "owner": "MaterialService",
       "name": "RockName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:RoofShinglesName",
@@ -22645,8 +22506,7 @@
       "owner": "MaterialService",
       "name": "RoofShinglesName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:RubberName",
@@ -22654,8 +22514,7 @@
       "owner": "MaterialService",
       "name": "RubberName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:SaltName",
@@ -22663,8 +22522,7 @@
       "owner": "MaterialService",
       "name": "SaltName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:SandName",
@@ -22672,8 +22530,7 @@
       "owner": "MaterialService",
       "name": "SandName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:SandstoneName",
@@ -22681,8 +22538,7 @@
       "owner": "MaterialService",
       "name": "SandstoneName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:SlateName",
@@ -22690,8 +22546,7 @@
       "owner": "MaterialService",
       "name": "SlateName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:SmoothPlasticName",
@@ -22699,8 +22554,7 @@
       "owner": "MaterialService",
       "name": "SmoothPlasticName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:SnowName",
@@ -22708,8 +22562,7 @@
       "owner": "MaterialService",
       "name": "SnowName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:Use2022Materials",
@@ -22717,8 +22570,7 @@
       "owner": "MaterialService",
       "name": "Use2022Materials",
       "disposition": "unsupported",
-      "reason": "security_gated",
-      "authoringGroup": "engine_settings"
+      "reason": "security_gated"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:WoodName",
@@ -22726,8 +22578,7 @@
       "owner": "MaterialService",
       "name": "WoodName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialService:property:WoodPlanksName",
@@ -22735,8 +22586,7 @@
       "owner": "MaterialService",
       "name": "WoodPlanksName",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:MaterialVariant:property:AlphaMode",
@@ -23414,7 +23264,7 @@
       "name": "LevelOfDetail",
       "disposition": "unsupported",
       "reason": "security_gated",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:Model:property:ModelStreamingMode",
@@ -23423,12 +23273,11 @@
       "name": "ModelStreamingMode",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "enum_name",
       "inheritedBy": [
         "Model",
-        "Tool",
-        "Workspace"
+        "Tool"
       ]
     },
     {
@@ -23438,12 +23287,11 @@
       "name": "PrimaryPart",
       "disposition": "authorable",
       "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
+      "authoringGroup": "world",
       "codec": "instance_ref",
       "inheritedBy": [
         "Model",
-        "Tool",
-        "Workspace"
+        "Tool"
       ]
     },
     {
@@ -23453,7 +23301,7 @@
       "name": "Scale",
       "disposition": "unsupported",
       "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:Model:property:WorldPivot",
@@ -23462,7 +23310,7 @@
       "name": "WorldPivot",
       "disposition": "source_only",
       "reason": "not_serialized",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:ModerationService:method:BindReviewableContentEventProcessor",
@@ -28253,7 +28101,7 @@
       "name": "Origin",
       "disposition": "unsupported",
       "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:PVInstance:property:Pivot Offset",
@@ -28262,7 +28110,7 @@
       "name": "Pivot Offset",
       "disposition": "unsupported",
       "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "authoringGroup": "world"
     },
     {
       "catalogEntryId": "class_member:PyramidHandleAdornment:property:Height",
@@ -32065,26 +31913,16 @@
       "entryKind": "class_property",
       "owner": "SoundService",
       "name": "AcousticSimulationEnabled",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "boolean",
-      "inheritedBy": [
-        "SoundService"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:SoundService:property:AmbientReverb",
       "entryKind": "class_property",
       "owner": "SoundService",
       "name": "AmbientReverb",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "enum_name",
-      "inheritedBy": [
-        "SoundService"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:SoundService:property:CharacterSoundsUseNewApi",
@@ -32092,8 +31930,7 @@
       "owner": "SoundService",
       "name": "CharacterSoundsUseNewApi",
       "disposition": "unsupported",
-      "reason": "security_gated",
-      "authoringGroup": "engine_settings"
+      "reason": "security_gated"
     },
     {
       "catalogEntryId": "class_member:SoundService:property:DefaultListenerLocation",
@@ -32101,138 +31938,87 @@
       "owner": "SoundService",
       "name": "DefaultListenerLocation",
       "disposition": "unsupported",
-      "reason": "security_gated",
-      "authoringGroup": "engine_settings"
+      "reason": "security_gated"
     },
     {
       "catalogEntryId": "class_member:SoundService:property:DiffractionEnabled",
       "entryKind": "class_property",
       "owner": "SoundService",
       "name": "DiffractionEnabled",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "boolean",
-      "inheritedBy": [
-        "SoundService"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:SoundService:property:DistanceFactor",
       "entryKind": "class_property",
       "owner": "SoundService",
       "name": "DistanceFactor",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "SoundService"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:SoundService:property:DopplerScale",
       "entryKind": "class_property",
       "owner": "SoundService",
       "name": "DopplerScale",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "SoundService"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:SoundService:property:ListenerCFrame",
       "entryKind": "class_property",
       "owner": "SoundService",
       "name": "ListenerCFrame",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "cframe_f32x12",
-      "inheritedBy": [
-        "SoundService"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:SoundService:property:ListenerObject",
       "entryKind": "class_property",
       "owner": "SoundService",
       "name": "ListenerObject",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "instance_ref",
-      "inheritedBy": [
-        "SoundService"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:SoundService:property:ListenerType",
       "entryKind": "class_property",
       "owner": "SoundService",
       "name": "ListenerType",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "enum_name",
-      "inheritedBy": [
-        "SoundService"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:SoundService:property:OcclusionEnabled",
       "entryKind": "class_property",
       "owner": "SoundService",
       "name": "OcclusionEnabled",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "boolean",
-      "inheritedBy": [
-        "SoundService"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:SoundService:property:RespectFilteringEnabled",
       "entryKind": "class_property",
       "owner": "SoundService",
       "name": "RespectFilteringEnabled",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "boolean",
-      "inheritedBy": [
-        "SoundService"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:SoundService:property:ReverbEnabled",
       "entryKind": "class_property",
       "owner": "SoundService",
       "name": "ReverbEnabled",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "boolean",
-      "inheritedBy": [
-        "SoundService"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:SoundService:property:RolloffScale",
       "entryKind": "class_property",
       "owner": "SoundService",
       "name": "RolloffScale",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "SoundService"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:SoundService:property:VolumetricAudio",
@@ -32240,8 +32026,7 @@
       "owner": "SoundService",
       "name": "VolumetricAudio",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Sparkles:property:Color",
@@ -32610,8 +32395,7 @@
       "owner": "StarterGui",
       "name": "ClipsDescendantsSupportsRotation",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:StarterGui:property:ProcessUserInput",
@@ -32619,8 +32403,7 @@
       "owner": "StarterGui",
       "name": "ProcessUserInput",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:StarterGui:property:ResetPlayerGuiOnSpawn",
@@ -32628,8 +32411,7 @@
       "owner": "StarterGui",
       "name": "ResetPlayerGuiOnSpawn",
       "disposition": "unsupported",
-      "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "reason": "deprecated"
     },
     {
       "catalogEntryId": "class_member:StarterGui:property:RtlTextSupport",
@@ -32637,34 +32419,23 @@
       "owner": "StarterGui",
       "name": "RtlTextSupport",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:StarterGui:property:ScreenOrientation",
       "entryKind": "class_property",
       "owner": "StarterGui",
       "name": "ScreenOrientation",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "enum_name",
-      "inheritedBy": [
-        "StarterGui"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterGui:property:ShowDevelopmentGui",
       "entryKind": "class_property",
       "owner": "StarterGui",
       "name": "ShowDevelopmentGui",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "boolean",
-      "inheritedBy": [
-        "StarterGui"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterGui:property:VirtualCursorMode",
@@ -32672,8 +32443,7 @@
       "owner": "StarterGui",
       "name": "VirtualCursorMode",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:AllowCustomAnimations",
@@ -32681,21 +32451,15 @@
       "owner": "StarterPlayer",
       "name": "AllowCustomAnimations",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:AutoJumpEnabled",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "AutoJumpEnabled",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "boolean",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:AvatarJointUpgrade",
@@ -32703,138 +32467,87 @@
       "owner": "StarterPlayer",
       "name": "AvatarJointUpgrade",
       "disposition": "unsupported",
-      "reason": "security_gated",
-      "authoringGroup": "engine_settings"
+      "reason": "security_gated"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:CameraMaxZoomDistance",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "CameraMaxZoomDistance",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:CameraMinZoomDistance",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "CameraMinZoomDistance",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:CameraMode",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "CameraMode",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "enum_name",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:CharacterBreakJointsOnDeath",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "CharacterBreakJointsOnDeath",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "boolean",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:CharacterJumpHeight",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "CharacterJumpHeight",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:CharacterJumpPower",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "CharacterJumpPower",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:CharacterMaxSlopeAngle",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "CharacterMaxSlopeAngle",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:CharacterUseJumpPower",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "CharacterUseJumpPower",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "boolean",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:CharacterWalkSpeed",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "CharacterWalkSpeed",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:ClassicDeath",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "ClassicDeath",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "boolean",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:CreateDefaultPlayerModule",
@@ -32842,73 +32555,47 @@
       "owner": "StarterPlayer",
       "name": "CreateDefaultPlayerModule",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:DevCameraOcclusionMode",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "DevCameraOcclusionMode",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "enum_name",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:DevComputerCameraMovementMode",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "DevComputerCameraMovementMode",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "enum_name",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:DevComputerMovementMode",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "DevComputerMovementMode",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "enum_name",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:DevTouchCameraMovementMode",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "DevTouchCameraMovementMode",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "enum_name",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:DevTouchMovementMode",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "DevTouchMovementMode",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "enum_name",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:EnableDynamicHeads",
@@ -32916,47 +32603,31 @@
       "owner": "StarterPlayer",
       "name": "EnableDynamicHeads",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:EnableMouseLockOption",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "EnableMouseLockOption",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "boolean",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:HealthDisplayDistance",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "HealthDisplayDistance",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:LoadCharacterAppearance",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "LoadCharacterAppearance",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "boolean",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:LoadCharacterLayeredClothing ",
@@ -32964,47 +32635,31 @@
       "owner": "StarterPlayer",
       "name": "LoadCharacterLayeredClothing ",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:LuaCharacterController",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "LuaCharacterController",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "enum_name",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:NameDisplayDistance",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "NameDisplayDistance",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:StarterPlayer:property:UserEmotesEnabled",
       "entryKind": "class_property",
       "owner": "StarterPlayer",
       "name": "UserEmotesEnabled",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "boolean",
-      "inheritedBy": [
-        "StarterPlayer"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Stats:method:GetHarmonyQualityLevel",
@@ -36458,8 +36113,7 @@
       "owner": "Terrain",
       "name": "Decoration",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Terrain:property:GrassLength",
@@ -36467,8 +36121,7 @@
       "owner": "Terrain",
       "name": "GrassLength",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Terrain:property:IsSmooth",
@@ -36476,8 +36129,7 @@
       "owner": "Terrain",
       "name": "IsSmooth",
       "disposition": "unsupported",
-      "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "reason": "deprecated"
     },
     {
       "catalogEntryId": "class_member:Terrain:property:MaterialColors",
@@ -36485,8 +36137,7 @@
       "owner": "Terrain",
       "name": "MaterialColors",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Terrain:property:MaxExtents",
@@ -36494,73 +36145,47 @@
       "owner": "Terrain",
       "name": "MaxExtents",
       "disposition": "source_only",
-      "reason": "read_only",
-      "authoringGroup": "engine_settings"
+      "reason": "read_only"
     },
     {
       "catalogEntryId": "class_member:Terrain:property:WaterColor",
       "entryKind": "class_property",
       "owner": "Terrain",
       "name": "WaterColor",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "color3_rgb8",
-      "inheritedBy": [
-        "Terrain"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Terrain:property:WaterReflectance",
       "entryKind": "class_property",
       "owner": "Terrain",
       "name": "WaterReflectance",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "Terrain"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Terrain:property:WaterTransparency",
       "entryKind": "class_property",
       "owner": "Terrain",
       "name": "WaterTransparency",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "Terrain"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Terrain:property:WaterWaveSize",
       "entryKind": "class_property",
       "owner": "Terrain",
       "name": "WaterWaveSize",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "Terrain"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Terrain:property:WaterWaveSpeed",
       "entryKind": "class_property",
       "owner": "Terrain",
       "name": "WaterWaveSpeed",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "Terrain"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:TerrainDetail:property:ColorMap",
@@ -37987,8 +37612,7 @@
       "owner": "TextChatService",
       "name": "ChatTranslationEnabled",
       "disposition": "unsupported",
-      "reason": "security_gated",
-      "authoringGroup": "engine_settings"
+      "reason": "security_gated"
     },
     {
       "catalogEntryId": "class_member:TextChatService:property:ChatVersion",
@@ -37996,8 +37620,7 @@
       "owner": "TextChatService",
       "name": "ChatVersion",
       "disposition": "unsupported",
-      "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "reason": "deprecated"
     },
     {
       "catalogEntryId": "class_member:TextChatService:property:CreateDefaultCommands",
@@ -38005,8 +37628,7 @@
       "owner": "TextChatService",
       "name": "CreateDefaultCommands",
       "disposition": "unsupported",
-      "reason": "security_gated",
-      "authoringGroup": "engine_settings"
+      "reason": "security_gated"
     },
     {
       "catalogEntryId": "class_member:TextChatService:property:CreateDefaultTextChannels",
@@ -38014,8 +37636,7 @@
       "owner": "TextChatService",
       "name": "CreateDefaultTextChannels",
       "disposition": "unsupported",
-      "reason": "security_gated",
-      "authoringGroup": "engine_settings"
+      "reason": "security_gated"
     },
     {
       "catalogEntryId": "class_member:TextChatService:property:PlatformIntegratedChat",
@@ -38023,8 +37644,7 @@
       "owner": "TextChatService",
       "name": "PlatformIntegratedChat",
       "disposition": "unsupported",
-      "reason": "security_gated",
-      "authoringGroup": "engine_settings"
+      "reason": "security_gated"
     },
     {
       "catalogEntryId": "class_member:TextFilterResult:method:GetChatForUserAsync",
@@ -43036,39 +42656,24 @@
       "entryKind": "class_property",
       "owner": "Workspace",
       "name": "AirDensity",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "Workspace"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:AirTurbulenceIntensity",
       "entryKind": "class_property",
       "owner": "Workspace",
       "name": "AirTurbulenceIntensity",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "Workspace"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:AllowThirdPartySales",
       "entryKind": "class_property",
       "owner": "Workspace",
       "name": "AllowThirdPartySales",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "boolean",
-      "inheritedBy": [
-        "Workspace"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:AuthorityMode",
@@ -43076,8 +42681,7 @@
       "owner": "Workspace",
       "name": "AuthorityMode",
       "disposition": "unsupported",
-      "reason": "security_gated",
-      "authoringGroup": "engine_settings"
+      "reason": "security_gated"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:AvatarUnificationMode",
@@ -43085,47 +42689,31 @@
       "owner": "Workspace",
       "name": "AvatarUnificationMode",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:ClientAnimatorThrottling",
       "entryKind": "class_property",
       "owner": "Workspace",
       "name": "ClientAnimatorThrottling",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "enum_name",
-      "inheritedBy": [
-        "Workspace"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:CurrentCamera",
       "entryKind": "class_property",
       "owner": "Workspace",
       "name": "CurrentCamera",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "instance_ref",
-      "inheritedBy": [
-        "Workspace"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:DistributedGameTime",
       "entryKind": "class_property",
       "owner": "Workspace",
       "name": "DistributedGameTime",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f64",
-      "inheritedBy": [
-        "Workspace"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:EnableSLIMAvatars",
@@ -43133,8 +42721,7 @@
       "owner": "Workspace",
       "name": "EnableSLIMAvatars",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:FallenPartsDestroyHeight",
@@ -43142,8 +42729,7 @@
       "owner": "Workspace",
       "name": "FallenPartsDestroyHeight",
       "disposition": "unsupported",
-      "reason": "security_gated",
-      "authoringGroup": "engine_settings"
+      "reason": "security_gated"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:FallHeightEnabled",
@@ -43151,8 +42737,7 @@
       "owner": "Workspace",
       "name": "FallHeightEnabled",
       "disposition": "unsupported",
-      "reason": "security_gated",
-      "authoringGroup": "engine_settings"
+      "reason": "security_gated"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:FilteringEnabled",
@@ -43160,8 +42745,7 @@
       "owner": "Workspace",
       "name": "FilteringEnabled",
       "disposition": "unsupported",
-      "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "reason": "deprecated"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:FluidForces",
@@ -43169,34 +42753,23 @@
       "owner": "Workspace",
       "name": "FluidForces",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:GlobalWind",
       "entryKind": "class_property",
       "owner": "Workspace",
       "name": "GlobalWind",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "vector3_f32",
-      "inheritedBy": [
-        "Workspace"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:Gravity",
       "entryKind": "class_property",
       "owner": "Workspace",
       "name": "Gravity",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "number_f32",
-      "inheritedBy": [
-        "Workspace"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:IKControlConstraintSupport",
@@ -43204,8 +42777,7 @@
       "owner": "Workspace",
       "name": "IKControlConstraintSupport",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:ImprovedAnimationConstraint",
@@ -43213,8 +42785,7 @@
       "owner": "Workspace",
       "name": "ImprovedAnimationConstraint",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:ImprovedPhysicsReplication",
@@ -43222,8 +42793,7 @@
       "owner": "Workspace",
       "name": "ImprovedPhysicsReplication",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:InsertPoint",
@@ -43231,8 +42801,7 @@
       "owner": "Workspace",
       "name": "InsertPoint",
       "disposition": "source_only",
-      "reason": "not_serialized",
-      "authoringGroup": "engine_settings"
+      "reason": "not_serialized"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:InterpolationThrottling",
@@ -43240,8 +42809,7 @@
       "owner": "Workspace",
       "name": "InterpolationThrottling",
       "disposition": "unsupported",
-      "reason": "deprecated",
-      "authoringGroup": "engine_settings"
+      "reason": "deprecated"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:LayeredClothingCacheOptimizations",
@@ -43249,8 +42817,7 @@
       "owner": "Workspace",
       "name": "LayeredClothingCacheOptimizations",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:LuauTypeCheckMode",
@@ -43258,8 +42825,7 @@
       "owner": "Workspace",
       "name": "LuauTypeCheckMode",
       "disposition": "unsupported",
-      "reason": "security_gated",
-      "authoringGroup": "engine_settings"
+      "reason": "security_gated"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:MeshPartHeadsAndAccessories",
@@ -43267,8 +42833,7 @@
       "owner": "Workspace",
       "name": "MeshPartHeadsAndAccessories",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:MeshStreamingAndImprovedLods",
@@ -43276,8 +42841,7 @@
       "owner": "Workspace",
       "name": "MeshStreamingAndImprovedLods",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:ModelStreamingBehavior",
@@ -43285,8 +42849,7 @@
       "owner": "Workspace",
       "name": "ModelStreamingBehavior",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:NextGenerationReplication",
@@ -43294,8 +42857,7 @@
       "owner": "Workspace",
       "name": "NextGenerationReplication",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:NextGenerationReplicationAlias",
@@ -43303,8 +42865,7 @@
       "owner": "Workspace",
       "name": "NextGenerationReplicationAlias",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:PathfindingUseImprovedSearch",
@@ -43312,8 +42873,7 @@
       "owner": "Workspace",
       "name": "PathfindingUseImprovedSearch",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:PhysicsSteppingMethod",
@@ -43321,8 +42881,7 @@
       "owner": "Workspace",
       "name": "PhysicsSteppingMethod",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:PlayerCharacterDestroyBehavior",
@@ -43330,8 +42889,7 @@
       "owner": "Workspace",
       "name": "PlayerCharacterDestroyBehavior",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:PlayerScriptsUseInputActionSystem",
@@ -43339,8 +42897,7 @@
       "owner": "Workspace",
       "name": "PlayerScriptsUseInputActionSystem",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:PlayerScriptsUseInputActionSystemAlias",
@@ -43348,8 +42905,7 @@
       "owner": "Workspace",
       "name": "PlayerScriptsUseInputActionSystemAlias",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:PredictiveStreamingMode",
@@ -43357,8 +42913,7 @@
       "owner": "Workspace",
       "name": "PredictiveStreamingMode",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:PrimalPhysicsSolver",
@@ -43366,8 +42921,7 @@
       "owner": "Workspace",
       "name": "PrimalPhysicsSolver",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:RejectCharacterDeletions",
@@ -43375,8 +42929,7 @@
       "owner": "Workspace",
       "name": "RejectCharacterDeletions",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:RenderingCacheOptimizations",
@@ -43384,8 +42937,7 @@
       "owner": "Workspace",
       "name": "RenderingCacheOptimizations",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:ReplicateInstanceDestroySetting",
@@ -43393,21 +42945,15 @@
       "owner": "Workspace",
       "name": "ReplicateInstanceDestroySetting",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:Retargeting",
       "entryKind": "class_property",
       "owner": "Workspace",
       "name": "Retargeting",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings",
-      "codec": "enum_name",
-      "inheritedBy": [
-        "Workspace"
-      ]
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:SandboxedInstanceMode",
@@ -43415,8 +42961,7 @@
       "owner": "Workspace",
       "name": "SandboxedInstanceMode",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:SignalBehavior",
@@ -43424,8 +42969,7 @@
       "owner": "Workspace",
       "name": "SignalBehavior",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:SignalBehaviorAlias",
@@ -43433,8 +42977,7 @@
       "owner": "Workspace",
       "name": "SignalBehaviorAlias",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:StreamingEnabled",
@@ -43442,8 +42985,7 @@
       "owner": "Workspace",
       "name": "StreamingEnabled",
       "disposition": "unsupported",
-      "reason": "security_gated",
-      "authoringGroup": "engine_settings"
+      "reason": "security_gated"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:StreamingEnabledAlias",
@@ -43451,8 +42993,7 @@
       "owner": "Workspace",
       "name": "StreamingEnabledAlias",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:StreamingIntegrityMode",
@@ -43460,8 +43001,7 @@
       "owner": "Workspace",
       "name": "StreamingIntegrityMode",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:StreamingMinRadius",
@@ -43469,8 +43009,7 @@
       "owner": "Workspace",
       "name": "StreamingMinRadius",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:StreamingTargetRadius",
@@ -43478,8 +43017,7 @@
       "owner": "Workspace",
       "name": "StreamingTargetRadius",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:StreamOutBehavior",
@@ -43487,8 +43025,7 @@
       "owner": "Workspace",
       "name": "StreamOutBehavior",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:Terrain",
@@ -43496,8 +43033,7 @@
       "owner": "Workspace",
       "name": "Terrain",
       "disposition": "source_only",
-      "reason": "read_only",
-      "authoringGroup": "engine_settings"
+      "reason": "read_only"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:TouchesUseCollisionGroups",
@@ -43505,8 +43041,7 @@
       "owner": "Workspace",
       "name": "TouchesUseCollisionGroups",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:UseFixedSimulation",
@@ -43514,8 +43049,7 @@
       "owner": "Workspace",
       "name": "UseFixedSimulation",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:UseFixedSimulationAlias",
@@ -43523,8 +43057,7 @@
       "owner": "Workspace",
       "name": "UseFixedSimulationAlias",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:Workspace:property:UseNewLuauTypeSolver",
@@ -43532,8 +43065,7 @@
       "owner": "Workspace",
       "name": "UseNewLuauTypeSolver",
       "disposition": "unsupported",
-      "reason": "hidden",
-      "authoringGroup": "engine_settings"
+      "reason": "hidden"
     },
     {
       "catalogEntryId": "class_member:WorldRoot:method:ArePartsTouchingOthers",
@@ -45931,9 +45463,8 @@
       "catalogEntryId": "class:Lighting",
       "entryKind": "class",
       "name": "Lighting",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings"
+      "disposition": "source_only",
+      "reason": "service_root"
     },
     {
       "catalogEntryId": "class:LinearVelocity",
@@ -46067,9 +45598,8 @@
       "catalogEntryId": "class:MaterialService",
       "entryKind": "class",
       "name": "MaterialService",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings"
+      "disposition": "source_only",
+      "reason": "service_root"
     },
     {
       "catalogEntryId": "class:MaterialVariant",
@@ -47380,9 +46910,8 @@
       "catalogEntryId": "class:SoundService",
       "entryKind": "class",
       "name": "SoundService",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings"
+      "disposition": "source_only",
+      "reason": "service_root"
     },
     {
       "catalogEntryId": "class:Sparkles",
@@ -47470,9 +46999,8 @@
       "catalogEntryId": "class:StarterGui",
       "entryKind": "class",
       "name": "StarterGui",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings"
+      "disposition": "source_only",
+      "reason": "service_root"
     },
     {
       "catalogEntryId": "class:StarterPack",
@@ -47485,9 +47013,8 @@
       "catalogEntryId": "class:StarterPlayer",
       "entryKind": "class",
       "name": "StarterPlayer",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings"
+      "disposition": "source_only",
+      "reason": "service_root"
     },
     {
       "catalogEntryId": "class:StarterPlayerScripts",
@@ -47737,9 +47264,8 @@
       "catalogEntryId": "class:Terrain",
       "entryKind": "class",
       "name": "Terrain",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings"
+      "disposition": "source_only",
+      "reason": "class_not_creatable"
     },
     {
       "catalogEntryId": "class:TerrainDetail",
@@ -47831,9 +47357,8 @@
       "catalogEntryId": "class:TextChatService",
       "entryKind": "class",
       "name": "TextChatService",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings"
+      "disposition": "source_only",
+      "reason": "service_root"
     },
     {
       "catalogEntryId": "class:TextFilterResult",
@@ -48424,9 +47949,8 @@
       "catalogEntryId": "class:Workspace",
       "entryKind": "class",
       "name": "Workspace",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "authoringGroup": "engine_settings"
+      "disposition": "source_only",
+      "reason": "service_root"
     },
     {
       "catalogEntryId": "class:WorldModel",
@@ -53395,27 +52919,24 @@
       "entryKind": "enum_item",
       "owner": "AnimatorRetargetingMode",
       "name": "Default",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:AnimatorRetargetingMode:Disabled",
       "entryKind": "enum_item",
       "owner": "AnimatorRetargetingMode",
       "name": "Disabled",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:AnimatorRetargetingMode:Enabled",
       "entryKind": "enum_item",
       "owner": "AnimatorRetargetingMode",
       "name": "Enabled",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:AnnotationEditingMode:None",
@@ -55938,18 +55459,16 @@
       "entryKind": "enum_item",
       "owner": "CameraMode",
       "name": "Classic",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:CameraMode:LockFirstPerson",
       "entryKind": "enum_item",
       "owner": "CameraMode",
       "name": "LockFirstPerson",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:CameraNavigationModel:IndustryCompatible",
@@ -56460,36 +55979,32 @@
       "entryKind": "enum_item",
       "owner": "CharacterControlMode",
       "name": "Default",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:CharacterControlMode:Legacy",
       "entryKind": "enum_item",
       "owner": "CharacterControlMode",
       "name": "Legacy",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:CharacterControlMode:LuaCharacterController",
       "entryKind": "enum_item",
       "owner": "CharacterControlMode",
       "name": "LuaCharacterController",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:CharacterControlMode:NoCharacterController",
       "entryKind": "enum_item",
       "owner": "CharacterControlMode",
       "name": "NoCharacterController",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ChatCallbackType:OnClientFormattingMessage",
@@ -56664,27 +56179,24 @@
       "entryKind": "enum_item",
       "owner": "ClientAnimatorThrottlingMode",
       "name": "Default",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ClientAnimatorThrottlingMode:Disabled",
       "entryKind": "enum_item",
       "owner": "ClientAnimatorThrottlingMode",
       "name": "Disabled",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ClientAnimatorThrottlingMode:Enabled",
       "entryKind": "enum_item",
       "owner": "ClientAnimatorThrottlingMode",
       "name": "Enabled",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:CloseReason:DeveloperShutdown",
@@ -58099,99 +57611,88 @@
       "entryKind": "enum_item",
       "owner": "DevCameraOcclusionMode",
       "name": "Invisicam",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevCameraOcclusionMode:Zoom",
       "entryKind": "enum_item",
       "owner": "DevCameraOcclusionMode",
       "name": "Zoom",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevComputerCameraMovementMode:CameraToggle",
       "entryKind": "enum_item",
       "owner": "DevComputerCameraMovementMode",
       "name": "CameraToggle",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevComputerCameraMovementMode:Classic",
       "entryKind": "enum_item",
       "owner": "DevComputerCameraMovementMode",
       "name": "Classic",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevComputerCameraMovementMode:Follow",
       "entryKind": "enum_item",
       "owner": "DevComputerCameraMovementMode",
       "name": "Follow",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevComputerCameraMovementMode:Orbital",
       "entryKind": "enum_item",
       "owner": "DevComputerCameraMovementMode",
       "name": "Orbital",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevComputerCameraMovementMode:UserChoice",
       "entryKind": "enum_item",
       "owner": "DevComputerCameraMovementMode",
       "name": "UserChoice",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevComputerMovementMode:ClickToMove",
       "entryKind": "enum_item",
       "owner": "DevComputerMovementMode",
       "name": "ClickToMove",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevComputerMovementMode:KeyboardMouse",
       "entryKind": "enum_item",
       "owner": "DevComputerMovementMode",
       "name": "KeyboardMouse",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevComputerMovementMode:Scriptable",
       "entryKind": "enum_item",
       "owner": "DevComputerMovementMode",
       "name": "Scriptable",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevComputerMovementMode:UserChoice",
       "entryKind": "enum_item",
       "owner": "DevComputerMovementMode",
       "name": "UserChoice",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DeveloperMemoryTag:Animation",
@@ -58518,45 +58019,40 @@
       "entryKind": "enum_item",
       "owner": "DevTouchCameraMovementMode",
       "name": "Classic",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevTouchCameraMovementMode:Follow",
       "entryKind": "enum_item",
       "owner": "DevTouchCameraMovementMode",
       "name": "Follow",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevTouchCameraMovementMode:Orbital",
       "entryKind": "enum_item",
       "owner": "DevTouchCameraMovementMode",
       "name": "Orbital",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevTouchCameraMovementMode:UserChoice",
       "entryKind": "enum_item",
       "owner": "DevTouchCameraMovementMode",
       "name": "UserChoice",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevTouchMovementMode:ClickToMove",
       "entryKind": "enum_item",
       "owner": "DevTouchMovementMode",
       "name": "ClickToMove",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevTouchMovementMode:DPad",
@@ -58571,18 +58067,16 @@
       "entryKind": "enum_item",
       "owner": "DevTouchMovementMode",
       "name": "DynamicThumbstick",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevTouchMovementMode:Scriptable",
       "entryKind": "enum_item",
       "owner": "DevTouchMovementMode",
       "name": "Scriptable",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DevTouchMovementMode:Thumbpad",
@@ -58605,9 +58099,8 @@
       "entryKind": "enum_item",
       "owner": "DevTouchMovementMode",
       "name": "UserChoice",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:DialogBehaviorType:MultiplePlayers",
@@ -65327,36 +64820,32 @@
       "entryKind": "enum_item",
       "owner": "ListenerType",
       "name": "Camera",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ListenerType:CFrame",
       "entryKind": "enum_item",
       "owner": "ListenerType",
       "name": "CFrame",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ListenerType:ObjectCFrame",
       "entryKind": "enum_item",
       "owner": "ListenerType",
       "name": "ObjectCFrame",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ListenerType:ObjectPosition",
       "entryKind": "enum_item",
       "owner": "ListenerType",
       "name": "ObjectPosition",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:LoadCharacterLayeredClothing:Default",
@@ -69293,216 +68782,192 @@
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "Alley",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:Arena",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "Arena",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:Auditorium",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "Auditorium",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:Bathroom",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "Bathroom",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:CarpettedHallway",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "CarpettedHallway",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:Cave",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "Cave",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:City",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "City",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:ConcertHall",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "ConcertHall",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:Forest",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "Forest",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:GenericReverb",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "GenericReverb",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:Hallway",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "Hallway",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:Hangar",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "Hangar",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:LivingRoom",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "LivingRoom",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:Mountains",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "Mountains",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:NoReverb",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "NoReverb",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:PaddedCell",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "PaddedCell",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:ParkingLot",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "ParkingLot",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:Plain",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "Plain",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:Quarry",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "Quarry",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:Room",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "Room",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:SewerPipe",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "SewerPipe",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:StoneCorridor",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "StoneCorridor",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:StoneRoom",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "StoneRoom",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ReverbType:UnderWater",
       "entryKind": "enum_item",
       "owner": "ReverbType",
       "name": "UnderWater",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:RibbonTool:ColorPicker",
@@ -70172,45 +69637,40 @@
       "entryKind": "enum_item",
       "owner": "ScreenOrientation",
       "name": "LandscapeLeft",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ScreenOrientation:LandscapeRight",
       "entryKind": "enum_item",
       "owner": "ScreenOrientation",
       "name": "LandscapeRight",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ScreenOrientation:LandscapeSensor",
       "entryKind": "enum_item",
       "owner": "ScreenOrientation",
       "name": "LandscapeSensor",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ScreenOrientation:Portrait",
       "entryKind": "enum_item",
       "owner": "ScreenOrientation",
       "name": "Portrait",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ScreenOrientation:Sensor",
       "entryKind": "enum_item",
       "owner": "ScreenOrientation",
       "name": "Sensor",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum_item:ScreenshotCaptureResult:NoDeviceSupport",
@@ -76882,9 +76342,8 @@
       "catalogEntryId": "enum:AnimatorRetargetingMode",
       "entryKind": "enum",
       "name": "AnimatorRetargetingMode",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum:AnnotationEditingMode",
@@ -77309,9 +76768,8 @@
       "catalogEntryId": "enum:CameraMode",
       "entryKind": "enum",
       "name": "CameraMode",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum:CameraNavigationModel",
@@ -77401,9 +76859,8 @@
       "catalogEntryId": "enum:CharacterControlMode",
       "entryKind": "enum",
       "name": "CharacterControlMode",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum:ChatCallbackType",
@@ -77458,9 +76915,8 @@
       "catalogEntryId": "enum:ClientAnimatorThrottlingMode",
       "entryKind": "enum",
       "name": "ClientAnimatorThrottlingMode",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum:CloseReason",
@@ -77704,25 +77160,22 @@
       "catalogEntryId": "enum:DevCameraOcclusionMode",
       "entryKind": "enum",
       "name": "DevCameraOcclusionMode",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum:DevComputerCameraMovementMode",
       "entryKind": "enum",
       "name": "DevComputerCameraMovementMode",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum:DevComputerMovementMode",
       "entryKind": "enum",
       "name": "DevComputerMovementMode",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum:DeveloperMemoryTag",
@@ -77763,17 +77216,15 @@
       "catalogEntryId": "enum:DevTouchCameraMovementMode",
       "entryKind": "enum",
       "name": "DevTouchCameraMovementMode",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum:DevTouchMovementMode",
       "entryKind": "enum",
       "name": "DevTouchMovementMode",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum:DialogBehaviorType",
@@ -78504,9 +77955,8 @@
       "catalogEntryId": "enum:ListenerType",
       "entryKind": "enum",
       "name": "ListenerType",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum:LoadCharacterLayeredClothing",
@@ -79258,9 +78708,8 @@
       "catalogEntryId": "enum:ReverbType",
       "entryKind": "enum",
       "name": "ReverbType",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum:RibbonTool",
@@ -79396,9 +78845,8 @@
       "catalogEntryId": "enum:ScreenOrientation",
       "entryKind": "enum",
       "name": "ScreenOrientation",
-      "disposition": "authorable",
-      "reason": "proof_closed",
-      "codec": "enum_name"
+      "disposition": "source_only",
+      "reason": "script_api"
     },
     {
       "catalogEntryId": "enum:ScreenshotCaptureResult",
@@ -82247,29 +81695,29 @@
   "summary": {
     "total": 9685,
     "byDisposition": {
-      "authorable": 1582,
+      "authorable": 1432,
       "observable_only": 18,
-      "source_only": 6560,
+      "source_only": 6710,
       "creator_reviewed": 0,
       "unsupported": 1525
     },
     "byReason": {
-      "script_api": 5881,
+      "script_api": 6023,
       "deprecated": 754,
       "hidden": 176,
       "read_only": 251,
-      "proof_closed": 1582,
+      "proof_closed": 1432,
       "not_serialized": 125,
       "security_gated": 601,
       "engine_or_external_authority": 1,
       "structure_managed": 1,
       "parent_policy_missing": 1,
-      "service_root": 144,
-      "class_not_creatable": 150,
+      "service_root": 151,
+      "class_not_creatable": 151,
       "catalog_only": 18
     },
-    "authorableClasses": 133,
-    "authorableProperties": 1511
+    "authorableClasses": 125,
+    "authorableProperties": 1420
   },
-  "contentHash": "1f8ee414787aab748c16a65e1cac10b3756ed167253a8764872ef790bb95245d"
+  "contentHash": "9192fe0790ba0bbfa5affd534687e5066d2f6913a7a51002d6627b6d9924d8ed"
 }

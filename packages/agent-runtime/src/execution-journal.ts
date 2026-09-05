@@ -375,6 +375,13 @@ export class AgentExecutionJournalStore {
     assertJournalId(journalId);
     const head = await this.readHead(journalId);
     if (head === undefined) throw new Error(`Agent execution journal is missing: ${journalId}`);
+    return this.loadFromHead(head);
+  }
+
+  /** Replay an immutable captured head without consulting the mutable journal pointer. */
+  async loadFromHead(head: AgentExecutionJournalHead): Promise<LoadedAgentExecutionJournal> {
+    assertAgentExecutionJournalHead(head);
+    const journalId = head.journalId;
     const reverse: AgentExecutionJournalEntry[] = [];
     const visited = new Set<string>();
     let expectedSequence = head.sequence;
@@ -412,10 +419,12 @@ export class AgentExecutionJournalStore {
   async loadIfPresent(journalId: string): Promise<LoadedAgentExecutionJournal | undefined> {
     assertJournalId(journalId);
     const head = await this.readHead(journalId);
-    return head === undefined ? undefined : this.load(journalId);
+    return head === undefined ? undefined : this.loadFromHead(head);
   }
 
-  private async readHead(journalId: string): Promise<AgentExecutionJournalHead | undefined> {
+  /** Read only the bounded journal pointer; does not traverse checkpoint artifacts. */
+  async readHead(journalId: string): Promise<AgentExecutionJournalHead | undefined> {
+    assertJournalId(journalId);
     await this.ensureHeadDirectory();
     try {
       const descriptor = await open(
@@ -436,6 +445,8 @@ export class AgentExecutionJournalStore {
         if (`${stableJson(parsed)}\n` !== serialized)
           throw new Error("Agent execution journal head JSON is not canonical");
         assertAgentExecutionJournalHead(parsed);
+        if (parsed.journalId !== journalId)
+          throw new Error("Agent execution journal head identity mismatch");
         return parsed;
       } finally {
         await descriptor.close();

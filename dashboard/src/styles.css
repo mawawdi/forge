@@ -21,6 +21,16 @@
   --shadow-soft: 0 18px 55px rgb(0 0 0 / 22%);
   --shadow-float: 0 20px 70px rgb(0 0 0 / 38%);
   --focus-ring: 0 0 0 3px rgb(174 188 255 / 20%);
+  --workspace-canvas: #202126;
+  --workspace-panel: #25272e;
+  --workspace-panel-raised: #2d3038;
+  --workspace-text: var(--paper);
+  --workspace-text-secondary: var(--paper-muted);
+  --workspace-text-muted: #a0a5b2;
+  --workspace-border: #ffffff14;
+  --workspace-border-strong: #ffffff29;
+  --workspace-accent: var(--blueprint);
+  --workspace-focus: var(--focus-ring);
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 18px;
@@ -236,14 +246,41 @@ p {
 .conversation-header__studio {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   padding-right: 16px;
   font-size: 13px;
+}
+.conversation-header__studio .header-icon-button {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
 }
 .header-settings {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.header-game-map {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--workspace-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--workspace-panel);
+  color: var(--workspace-text);
+  font-size: 13px;
+  font-weight: 550;
+  white-space: nowrap;
+  transition:
+    background var(--motion-fast),
+    border-color var(--motion-fast);
+}
+.header-game-map:hover {
+  background: var(--workspace-panel-raised);
+  border-color: var(--workspace-accent);
 }
 .header-rail-toggle {
   display: grid;
@@ -1153,9 +1190,9 @@ p {
 }
 .technical-details-sheet {
   display: flex;
-  width: min(720px, 100%);
-  height: 100vh;
-  max-height: 100vh;
+  width: min(760px, 100%);
+  height: 100dvh;
+  max-height: 100dvh;
   min-height: 0;
   overflow: hidden;
   flex-direction: column;
@@ -1164,7 +1201,7 @@ p {
     radial-gradient(circle at 70% -10%, rgb(174 188 255 / 8%), transparent 28rem), #1b1d23;
   border-left: 1px solid var(--border-strong);
   box-shadow: -28px 0 80px rgb(0 0 0 / 44%);
-  animation: sheet-enter 220ms var(--ease-out);
+  animation: sheet-enter var(--motion-base) var(--ease-out);
 }
 .technical-details-sheet__heading {
   display: flex;
@@ -1193,6 +1230,7 @@ p {
   font-size: 1.1rem;
   letter-spacing: -0.035em;
   text-transform: capitalize;
+  overflow-wrap: anywhere;
 }
 .technical-details-sheet__heading button,
 .attachment-list button {
@@ -1206,10 +1244,9 @@ p {
 .technical-details-sheet__heading button {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  min-width: 38px;
-  min-height: 38px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   border-radius: 10px;
 }
 .technical-details-sheet__body {
@@ -1318,6 +1355,95 @@ p {
   padding: 10px 11px;
   background: #ffffff03;
 }
+.attachment-list li > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.attachment-list button {
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+}
+.attachment-list button[aria-pressed="true"] {
+  background: var(--workspace-panel-raised);
+  border-color: var(--workspace-accent);
+  color: var(--workspace-text);
+}
+.detail-build-disclosure {
+  margin-top: 16px;
+  border: 1px solid var(--workspace-border-strong);
+  border-radius: var(--radius-md);
+  overflow: clip;
+  background: var(--workspace-panel);
+}
+.detail-build-disclosure > summary {
+  padding: 16px;
+  min-height: 52px;
+  cursor: pointer;
+  color: var(--workspace-text);
+  font-size: 14px;
+  font-weight: 550;
+}
+.detail-build-disclosure[open] > summary {
+  border-bottom: 1px solid var(--workspace-border);
+}
+.saved-detail-card {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--workspace-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--workspace-panel);
+  overflow-wrap: anywhere;
+}
+.saved-detail-card__heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--workspace-text-secondary);
+  font-size: 14px;
+}
+.saved-detail-card__map {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px;
+  text-align: left;
+  background: var(--workspace-panel-raised);
+  border: 1px solid var(--workspace-border-strong);
+  border-radius: var(--radius-sm);
+}
+.saved-detail-card__map:hover {
+  border-color: var(--workspace-accent);
+}
+.saved-detail-card__map > span {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.saved-detail-card__map strong {
+  font-size: 14px;
+}
+.saved-detail-card__map small {
+  color: var(--workspace-text-secondary);
+  font-size: 13px;
+}
+.saved-detail-card__json > summary {
+  cursor: pointer;
+  padding: 14px 0;
+  min-height: 44px;
+  font-size: 13px;
+  color: var(--workspace-text-secondary);
+}
+.saved-detail-card__json pre {
+  max-height: 360px;
+  overflow: auto;
+  padding: 12px;
+  background: var(--slate);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
 .attachment-list strong,
 .attachment-list span {
   display: block;
@@ -1330,34 +1456,6 @@ p {
   color: var(--muted);
   font-size: 0.68rem;
   text-transform: capitalize;
-}
-.raw-artifact {
-  margin-top: 13px;
-  border: 1px solid #434959;
-  border-radius: 10px;
-  background: #111319;
-  color: #dce7ef;
-}
-.raw-artifact > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid #455c72;
-  padding: 9px 10px;
-  font-size: 0.72rem;
-}
-.raw-artifact code {
-  color: #a7c2e1;
-  font-size: 0.64rem;
-}
-.raw-artifact pre {
-  max-height: 360px;
-  margin: 0;
-  padding: 12px;
-  overflow: auto;
-  font-size: 0.68rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
 }
 .technical-section-heading {
   display: flex;
@@ -1563,6 +1661,13 @@ p {
   .conversation-header__studio {
     padding-right: 12px;
   }
+  .header-game-map > span {
+    display: none;
+  }
+  .header-game-map {
+    padding: 0;
+    width: 44px;
+  }
   .conversation-layout {
     display: flex;
   }
@@ -1604,7 +1709,7 @@ p {
     margin-left: auto;
   }
   .conversation-header__studio {
-    gap: 0;
+    gap: 8px;
     padding-right: 7px;
   }
   .conversation-header__title h1 {

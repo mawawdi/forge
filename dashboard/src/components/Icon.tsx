@@ -1,5 +1,9 @@
 const paths = {
   plus: "M12 5v14M5 12h14",
+  graph:
+    "M12 3l3 2v4l-3 2-3-2V5ZM5 14l3 2v4l-3 2-3-2v-4Zm14 0 3 2v4l-3 2-3-2v-4ZM12 11v2l-7 1m7-1 7 1",
+  expand: "M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5",
+  restore: "M8 3v5H3m18 0h-5V3M3 16h5v5m8 0v-5h5",
   close: "m6 6 12 12M18 6 6 18",
   chevronDown: "m6 9 6 6 6-6",
   chevronRight: "m9 6 6 6-6 6",

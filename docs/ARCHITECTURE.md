@@ -141,6 +141,10 @@ records the source ranges and dependency closure actually returned to the planne
 the builder reads only its approved source closure. Static analysis is never a
 claim that code executed successfully in Studio.
 
+Builder `studio.read_observations` retrieves bounded pages of properties from the
+immutable approved revision, scoped to authorized targets. It replaces the fixed
+property whitelist; missing slices can be requested without inventing current facts.
+
 A Studio edit notification is a dirty hint, not a revision. A callback during index
 reading requires a bounded capture retry. A complete capture remains immutable
 historical evidence while its bytes are transported, but current write authority
@@ -151,11 +155,22 @@ post-Apply failure.
 
 ## Planning and virtual building
 
-The model-facing plan format uses observed `objectId` handles. Creates declare a
-local change ID, class, name, and parent; moves declare an observed target and
-destination. Parents must be an observed Studio-owned object or a generated engine
-container. Newly planned objects cannot serve as parents for other planned objects.
-The host resolves exact identity, ownership, path, class, and initialization.
+`game-ir` admits ordinary Luau source packages and optional exactly pinned recipe
+instances, typed connections, static import/artifact dependencies and an explicit
+resource policy. It requires no round, countdown, scene, UI, player mode or reset.
+The planner reads `game.catalog` and proposes this `GameDesignSpec`; the host's
+read-only `game-compiler` resolves the exact `GamePlan` before review. Generic source
+packages provide the extension path for unfamiliar mechanics. Optional host recipes
+currently provide primitive scenes, responsive UI, typed Studio edits and the
+content-addressed ForgeRuntime bundle. Recipes are trusted host code, never model
+supplied compiler implementations.
+
+Plans contain every editor operation, generated parent/reference, source/value slot,
+dependency, identity and capability/compiler lock. Generated three-level hierarchies
+use the existing transaction topology compiler. Stable entity identities bind the
+project and semantic ID, independently of display names and array order. Existing
+targets still require observed identity, ownership and before hashes. Runtime objects
+constructed later by ordinary installed game code are separate from editor inventory.
 
 Plan publication and Build share approval-independent preparation validation.
 The host generates mandatory instance-existence and Luau syntax checks. Behavioral
@@ -165,13 +180,74 @@ check details remain accessible through Details.
 
 Accepting the immutable plan produces a `CreatorBuildContract`. It fixes operation
 IDs and kinds, exact targets, class policy, parents, paths, and preconditions. The
-builder supplies allowed values, attributes, and source through virtual tools. New
-scripts use complete source. Existing scripts use sorted, non-overlapping UTF-8
-byte edits against the consulted before hash. The host materializes the candidate
-and checks its final bytes and hash. Draft inspection and patch tools stay bound
-to approved change IDs.
+builder supplies only approved value and source slots through virtual tools. Locked
+runtime and component bytes come from the host catalog. Source replacements arrive
+as complete source and lower into the existing hash-guarded source-write contract.
+New imports, objects or affected properties require a new reviewed plan. The host
+materializes the candidate and checks final bytes, hashes and topology. Draft repair
+remains bound to approved slots; it cannot rewrite locked package bytes.
+
+`studio.build` fills every custom slot exactly once and checks the whole candidate.
+Bounded `studio.repair` operates within that authority. Successful local completion
+seals a `GameBuildGraph` and ends model work immediately. Compiler artifacts include
+recursive dependency input hashes, source hashes and semantic provenance. Unchanged
+artifact bytes can be reused; reuse does not grant fresh mutation authority.
+
+The coordinator partitions the sealed graph under the existing 128-operation,
+16,384-fact and 2 MiB evidence limits. The initial aggregate profile admits 8,192
+operations, 64 MiB graph material and 128 partitions. These are admission limits,
+not measured performance guarantees or limits on the IR's genres. Ordinary objects
+and modules precede a final entrypoint partition; an activation group exceeding a
+partition requires a revised staging plan. Studio writes stay serialized.
+
+Each partition binds the same accepted plan and sealed graph, a fresh authoritative
+project capture and a replayed contiguous checkpoint prefix. A checkpoint requires
+matched readback/reconciliation, committed finalization and the exact consumed native
+acknowledgement. Missing acknowledgements and external edits stop continuation.
+Committed prefixes remain explicitly incomplete; recovery resumes the unchanged
+graph only through **Continue build**. Complete graphs are published once, after
+aggregate receipt verification. Loading stored sessions independently replays the
+receipt evidence. No provider call reconstructs or summarizes completed partitions.
+
+`GameDesignSpec.architecture` carries a creator-authored game name, named concepts,
+their purpose, optional parent groups and labeled relationships. Leaf concepts bind
+declared implementation component IDs; group hierarchies are acyclic, while semantic
+feedback relationships may cycle. There is no system or genre enum. The map is part
+of exact plan identity and describes intended behavior, not behavioral verification.
+
+The dashboard opens **Game map** beside Settings in a separate expandable window.
+Its canvas centers the game and shows the declared systems, their expandable
+components, authored icons and meaningful relationships. Files, hashes, checkpoints
+and mutation status belong to the existing Technical details panel, outside this
+window. A design without architecture shows an explicit empty game map. Historical
+views use only the selected immutable artifact. The separate implementation view
+derives progress from each concept's component closure; applied means verified
+editor writes, with gameplay evidence kept separate.
+
+Map and list modes share selection and search context. The game window supports
+keyboard pan, zoom/fit controls, branch expansion and a component inspector; narrow
+screens use a full-screen window with a stacked inspector. A saved map is labeled
+as such and opens from its immutable artifact preview without exposing raw JSON
+first. Technical implementation details use checkpoint progress, bounded browsing
+and explicit identity/source disclosures. Workspace colors and interaction states
+share dashboard tokens; motion respects the reduced-motion preference.
+
+The creator schema cutover uses `.forge/creator-compiled` as the default store. Old
+`.forge/creator` evidence is retained without a compatibility reader or migration.
 
 The local gate uses the real pinned Luau tools and a strict analysis configuration.
+Staged sourcemaps include non-script objects so their represented classes reach
+the analyzer input. The pinned analyzer still accepts an invalid Part.Size assignment
+through tested unannotated Workspace lookup forms; explicit Part typing rejects it.
+Invoked analyzer processes share a host deadline and retained
+output budget; this is not an OS sandbox or proof of descendant-process isolation.
+An additional pinned official `luau-ast` pass checks materialized/observed modules
+against declared static imports and final topology without executing candidate
+source. It rejects undeclared/dynamic imports, aliases of global `require` and effective
+`--!nocheck`/`--!nonstrict` directives. Reflective environments produce an incomplete
+gate. Ordinary service access, runtime Instance creation and logging remain available.
+Installed source dependencies can be declared without redundant writes through
+hash-bound `observed` placements. Static import closure is not runtime confinement.
 Staging, local eligibility, and a source diff do not mutate Studio. A preparation
 failure preserves its stage, code, readable diagnostic, and artifact before any
 provider dispatch. Retry build uses a fresh execution slot and the existing approved
@@ -186,15 +262,27 @@ alone does not authorize a write. The authored policy and generator produce one
 `StudioCapabilityManifest` shared by TypeScript and Luau. The generated report and
 `forge studio capabilities` provide current counts and exact scope.
 
-The manifest distinguishes creatable instances from update-only engine objects.
-Planning can create only classes marked `creatable`; observed services and engine
-roots can expose proof-closed properties without granting `Instance.new` authority.
+The current manifest admits only creatable classes with an explicit
+`detached_instance` preflight strategy. Unproved update-only service/Terrain writes
+are disabled; legal engine roots and containers remain available as parents.
 Builder tools derive an exact JSON schema for each approved class and property from
 the sealed manifest, including compound values and references to observed or
 same-Build objects. The model never reconstructs the internal tagged value format.
 
 A property is authorable only when validation, canonicalization, detached
 preflight, writing, direct readback, projection, and comparison are all implemented.
+Manifest admission is not proof that every native setter has passed conformance.
+The six-field PhysicalProperties codec includes acoustic absorption. Setter-family
+metadata rejects simultaneous Color/BrickColor, CFrame/Rotation and
+ScreenInsets/IgnoreGuiInset applications. Each family names its canonical seed.
+When an alternate setter needs existing state, detached preflight seeds from the
+bound before-capture, applies the requested setter once, and reads the final aliases
+without corrective writes. Derived aliases enter canonical projections without a
+model-supplied expected value. Reconciliation admits their delta only when scratch,
+direct readback and the complete after-index agree; unrelated changes still reject.
+The ScreenGui pairing follows Roblox's documented
+[inset coupling](https://raw.githubusercontent.com/Roblox/creator-docs/main/content/en-us/reference/engine/classes/ScreenGui.yaml).
+Offline regressions cover these families; native conformance remains user-run.
 Structural Name/Parent rules are separate. Reflection attestation compares declaring
 class, engine/storage type, Luau type, enum/reference constraints, serialization,
 and permissions. Missing facts are incomplete; contradictory complete facts are
@@ -214,6 +302,13 @@ The mutation sequence is:
 5. For a matched result, persist finalization intent, recheck revision and detector
    state, close the recording once, and require exact closure and acknowledgement
    before publishing the checkpoint and Markdown result.
+
+Detached preflight reads the final scratch graph without reapplying expected
+properties, attributes or source immediately before comparison. Unsupported scratch
+strategies reject before allocation, and partial allocations are cleaned on failure.
+Offline setter-side-effect regressions exercise this path. The separate native
+conformance fixture supplies user-run engine/save-reopen evidence; offline success
+does not substitute for it.
 
 Canonical values account for Studio storage semantics, including numeric/color
 quantization, compound values, enums, explicit nullable values, and class-bound
@@ -268,12 +363,19 @@ with Rojo. `--project-authority` opts into a private ownership manifest. Forge
 constructs its sourcemap using the pinned Rojo executable; it does not start live
 sync or accept an arbitrary user-supplied map as authority.
 
-A change set selects exactly one writer: Studio or declared Rojo source roots.
-Mixed ownership is rejected before approval. Filesystem access permits regular Luau
+A current aggregate plan and each change set select exactly one writer: Studio or
+declared Rojo source roots. Mixed ownership is rejected before approval; plans that
+combine these writer domains still need per-operation authority and corresponding
+partition rules. Filesystem access permits regular Luau
 files only, bounded roots, fail-closed paths/symlinks, hash-guarded replacement, and
 explicit absent creation. A source-write receipt is not Studio proof: completion
 requires a complete Studio capture proving the mapped hashes and allowed delta.
 A pending sync stays explicit. Reversion is a separate authorized transaction.
+
+Rojo graph checkpoints bind the guarded source attempt, exact before/after Studio
+captures, authority map and independently replayed synchronization proof. They use
+a distinct receipt kind, with no invented ChangeHistory acknowledgement. The next
+partition requires an authority map consistent with that verified prefix.
 
 ## Registered experiments
 
@@ -290,12 +392,29 @@ or a model-quality score. See [Evaluation policy](EVALS.md).
 
 ## Storage and verification
 
-The private current store is `.forge/creator`. Immutable artifacts bind source,
+The private current store is `.forge/creator-compiled`. Immutable artifacts bind source,
 observations, plans, approvals, runs, traces, transactions, and checkpoints. Readers
 verify regular-file safety, canonical hashes, graph bindings, and commit order.
 Schema changes replace the format outright; there are no migration readers or
 compatibility aliases. Preserve an external checksum-verified snapshot before an
 authorized reset.
+
+Host phase timings persist separate immutable start/completion records under
+`host-timings` in the session directory, keyed by the session identity hash. The
+`forge creator timings <session-id>` command reports recorded spans, incomplete
+starts, distributions and limitations. Monotonic durations describe host boundaries
+such as capture, analysis, transfer and transaction round trips; they do not isolate
+all engine write time or attribute elapsed adapter time to provider computation.
+
+Failed generation persistence captures an immutable `CreatorOfflineRegression`
+manifest and a private discovery pointer under `offline-regressions`. It preserves
+failure classifications, the session snapshot, immutable journal heads and a bounded
+artifact closure. `forge creator replay-regression <manifest-artifact-hash>` verifies
+the retained host contracts and raw evidence with zero provider, Studio or candidate
+execution calls. It returns exit 0 for exact replay, 1 for mismatch and 2 for missing
+or incomplete evidence. This is a reference-based fixture in the original artifact
+store, not a portable export or gameplay rerun. It does not turn a failed run into a
+successful game, and private evaluator material is never added to builder context.
 
 Generated host/connector identity binds the evidence policy, protocol, transaction
 implementation, and plugin source. The compiled runtime manifest separately checks

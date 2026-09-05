@@ -100,6 +100,29 @@ test("trace persistence failures are explicit and never alter a verification dec
   assert.match(run.tracePersistence.error ?? "", /Trace persistence failed/);
 });
 
+test("overlapping spans reserve unique IDs before any completion or recorded interval", () => {
+  const clock = new ManualClock();
+  const recorder = new FlightRecorder({ projectId: "overlap" }, { clock });
+  const first = recorder.startSpan("forge.project.snapshot");
+  const second = recorder.startSpan("forge.verify.luau");
+  recorder.recordSpan("forge.verify.replication", "ok");
+  clock.advance(2);
+  recorder.endSpan(second, "ok");
+  clock.advance(3);
+  recorder.endSpan(first, "ok");
+  const trace = recorder.complete(
+    { ...acceptedOutcome(), latencyMs: { total: 5 } },
+    { issues: [] },
+    semanticReplayability(),
+  );
+  assert.equal(new Set(trace.spans.map((span) => span.id)).size, 3);
+  assert.deepEqual(
+    trace.spans.map((span) => span.durationMs),
+    [0, 2, 5],
+  );
+  assertBuildTrace(trace);
+});
+
 test("flight recorder uses monotonic intervals and BuildTrace rejects impossible timing evidence", () => {
   const clock = new ManualClock();
   const recorder = new FlightRecorder(

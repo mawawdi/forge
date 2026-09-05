@@ -1,5 +1,6 @@
 import type { ArtifactReference } from "../../artifact-store/src/index.js";
 import type { ModelUsage, ModelRequestSizes } from "../../model-client/src/contracts.js";
+import { assertGameBuildControlView, type GameBuildControlView } from "./game-build-contract.js";
 
 /** Browser-safe reservation shape; lower runtime validates the same closed algebra. */
 export interface CreatorAgentExecutionSlot {
@@ -592,6 +593,7 @@ export type CreatorControlActionId =
   | "retry_work"
   | "build_plan"
   | "retry_build"
+  | "resume_build"
   | "revise_plan"
   | "reject_plan"
   | "apply_changes"
@@ -672,6 +674,7 @@ export interface CreatorControlView {
     readonly startedAt: string;
   };
   readonly technicalAttachments: readonly CreatorTechnicalAttachment[];
+  readonly gameBuild?: GameBuildControlView;
 }
 
 export interface CreatorConversationSummary {
@@ -1491,6 +1494,7 @@ export function assertCreatorControlView(value: unknown): asserts value is Creat
   if (!Array.isArray(record.technicalAttachments) || record.technicalAttachments.length > 64)
     throw new Error("Invalid control view technical attachments");
   for (const attachment of record.technicalAttachments) assertTechnicalAttachment(attachment);
+  if (record.gameBuild !== undefined) assertGameBuildControlView(record.gameBuild);
 }
 
 export const AGENT_ACTIVITY_DETAIL_MAX_BYTES = 240;
@@ -2153,6 +2157,7 @@ const CONTROL_ACTIONS = [
   "retry_work",
   "build_plan",
   "retry_build",
+  "resume_build",
   "revise_plan",
   "reject_plan",
   "apply_changes",

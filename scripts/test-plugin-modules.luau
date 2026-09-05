@@ -660,7 +660,7 @@ assert(string.find(authoringSource, "exactSourceFacts", 1, true) and string.find
 assert(string.find(authoringSource, "\treturn payload\nend\n\nlocal function referenceEncoder", 1, true), "exact mutation-fact construction must return its bounded matcher payload for monitor attribution")
 assert(string.find(authoringSource, "compileMutationTransactionTopologyFromIndex", 1, true) and string.find(authoringSource, "canonicalOperations(changeSet, topology)", 1, true) and string.find(authoringSource, "detachedScratchGraph(prepared)", 1, true), "Prepare, detached preflight, and Apply must consume one generated transaction topology")
 assert(string.find(authoringSource, "for _, operation in ipairs(prepared.operations) do", 1, true) and not string.find(authoringSource, "for _, operation in ipairs(prepared.changeSet.operations) do validateOperation", 1, true), "Apply must validate and materialize each operation only at its canonical execution point")
-assert(string.find(authoringSource, "local function allocateCreatedHandles", 1, true) and string.find(authoringSource, "createdHandles:resolveReference(reference)", 1, true) and string.find(authoringSource, "registry:enrollInstance(instance, operation.target.identity.stableId)", 1, true) and string.find(authoringSource, "applyProperties(instance, operation.className, operation.properties, registry, onExpectedMutationFact, resolveReference, encodeReference)", 1, true), "Apply must allocate private detached create handles before recording and use their exact reference resolver while materializing created identities")
+assert(string.find(authoringSource, "local function allocateCreatedHandles", 1, true) and string.find(authoringSource, "createdHandles:resolveReference(reference)", 1, true) and string.find(authoringSource, "registry:enrollInstance(instance, operation.target.identity.stableId)", 1, true) and string.find(authoringSource, "applyProperties(instance, operation.className, operation.properties, registry, onExpectedMutationFact, resolveReference, encodeReference, derivedValues)", 1, true), "Apply must allocate private detached create handles before recording and use their exact reference resolver while materializing created identities")
 assert(string.find(authoringSource, "local function boundedFailureDetail", 1, true) and string.find(authoringSource, "failureDetail = boundedFailureDetail", 1, true) and string.find(authoringSource, "recordingAttempted = false", 1, true), "pre-recording and recording failures must retain bounded actionable detail without fabricating a mutation attempt")
 local preRecordingFailure = assert(string.find(authoringSource, 'failureCode = "pre_recording_validation_failed"', 1, true), "Apply must classify a pre-recording validation failure distinctly")
 local noCancellationAcknowledgement = string.find(authoringSource, "cancellationProven = false", preRecordingFailure - 512, true)
@@ -790,7 +790,7 @@ assert(measuredShardBytes == #StudioProjectIndexCanonical.material({ root = "Wor
 assert(StudioProjectIndexCanonical.objectMaterialLength({ root = #StudioProjectIndexCanonical.material("Teams"), ordinal = #StudioProjectIndexCanonical.material(0), nodes = StudioProjectIndexCanonical.arrayMaterialLength(0, 0) }) == #StudioProjectIndexCanonical.material({ root = "Teams", ordinal = 0, nodes = {} }), "empty-root shard sizing must remain exact")
 assert(Generated.canonicalValueMaterial({ kind = "boolean", value = false }) ~= Generated.canonicalValueMaterial({ kind = "boolean", value = true }), "false must not collapse into omitted evidence")
 assert(Generated.canonicalValueMaterial({ kind = "number_f32", value = -0 }) ~= Generated.canonicalValueMaterial({ kind = "number_f32", value = 0 }), "negative zero must retain its float bit pattern")
-assert(Generated.canonicalValueMaterial({ kind = "nil", expectedCodec = "physical_properties" }) ~= Generated.canonicalValueMaterial({ kind = "physical_properties", density = 0.7, friction = 0.3, elasticity = 0.5, frictionWeight = 1, elasticityWeight = 1 }), "explicit nil must not collapse into a present datatype value")
+assert(Generated.canonicalValueMaterial({ kind = "nil", expectedCodec = "physical_properties" }) ~= Generated.canonicalValueMaterial({ kind = "physical_properties", density = 0.7, friction = 0.3, elasticity = 0.5, frictionWeight = 1, elasticityWeight = 1, acousticAbsorption = 0.3 }), "explicit nil must not collapse into a present datatype value")
 assert(Generated.canonicalValueMaterial({ kind = "nil", expectedCodec = "physical_properties" }) ~= Generated.canonicalValueMaterial({ kind = "nil", expectedCodec = "boolean" }), "generic nil material must bind the exact expected codec")
 assert(not pcall(function() Generated.canonicalValue({ kind = "nil", expectedCodec = "instance_ref" }) end), "generic nil must reject the class-constrained instance-reference codec")
 local nilPhysicalProperty = Generated.propertyMetadata("Part", "CustomPhysicalProperties")
@@ -1332,6 +1332,25 @@ assert(pcall(function()
 		{ id = "create_replacement", kind = "create", target = replacementTarget, parent = { kind = "engine_container", path = "Workspace", className = "Workspace" }, className = "Folder", name = "A", properties = {}, attributes = {} },
 	} }, topologyCapture())
 end), "a move may free an exact sibling slot for a later canonical create")
+
+-- Both initial identities occupy the replacement slot. The second move waits
+-- for a newly created destination, so depending only on the first move would
+-- incorrectly schedule the replacement before that second occupant leaves.
+local duplicateSlotCapture = topologyCapture()
+for index = 2, 3 do
+	duplicateSlotCapture.shards[1].nodes[index].name = "Shared"
+	duplicateSlotCapture.shards[1].nodes[index].displayPath = "Workspace/Shared"
+end
+local duplicateDestination = topologyTarget({ kind = "forge_attribute", stableId = "duplicate_destination" }, "Workspace/Destination", "Folder")
+local duplicateFirst = moveTopologyOperation("a_free_first", topologyTarget(topologyA, "Workspace/Shared", "Folder"), workspaceParent, "First")
+local duplicateSecond = moveTopologyOperation("z_free_second", topologyTarget(topologyB, "Workspace/Shared", "Folder"), duplicateDestination, "Second")
+local duplicateCreateDestination = { id = "c_create_destination", kind = "create", target = duplicateDestination, parent = workspaceParent, className = "Folder", name = "Destination", properties = {}, attributes = {} }
+local duplicateReplacement = { id = "b_create_replacement", kind = "create", target = topologyTarget({ kind = "forge_attribute", stableId = "duplicate_replacement" }, "Workspace/Shared", "Folder"), parent = workspaceParent, className = "Folder", name = "Shared", properties = {}, attributes = {} }
+assert(not pcall(function()
+	Generated.compileMutationTransactionTopologyFromIndex({ kind = "CreatorChangeSet", id = "duplicate_slot_unsafe_order", operations = { duplicateFirst, duplicateCreateDestination, duplicateReplacement, duplicateSecond } }, duplicateSlotCapture)
+end), "a replacement must not precede any prior occupant's freeing operation")
+local duplicateTopology = Generated.compileMutationTransactionTopologyFromIndex({ kind = "CreatorChangeSet", id = "duplicate_slot_safe_order", operations = { duplicateFirst, duplicateCreateDestination, duplicateSecond, duplicateReplacement } }, duplicateSlotCapture)
+assert(table.concat(duplicateTopology.canonicalOperationIds, ",") == "a_free_first,c_create_destination,z_free_second,b_create_replacement", "all duplicate occupants must leave before replacement, including a move with its own parent-create dependency")
 end
 
 local identity = { kind = "forge_attribute", stableId = "prompt_1" }

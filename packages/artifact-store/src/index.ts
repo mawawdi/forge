@@ -227,7 +227,7 @@ async function ensureSafeAbsoluteDirectory(directory: string): Promise<void> {
 }
 
 /** Validate every existing absolute root component before a read. */
-async function assertSafeAbsoluteDirectory(directory: string): Promise<void> {
+export async function assertSafeAbsoluteDirectory(directory: string): Promise<void> {
   await visitSafeAbsoluteDirectory(directory, false);
 }
 

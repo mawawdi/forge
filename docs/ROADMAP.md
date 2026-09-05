@@ -4,6 +4,24 @@ This roadmap contains future work and the evidence needed to complete it.
 [Architecture](ARCHITECTURE.md) describes what exists today; historical run records
 belong in [Research](RESEARCH.md).
 
+## Open creation harness
+
+The [open creation implementation plan](roadmap/game-generation.md) is the working
+sequence. Ordinary Luau source packages provide open-ended behavior; optional recipes
+provide convenient lowerings and stronger scoped checks. The core requires no genre,
+round, countdown, reset, UI or world topology. It separates design admission, exact
+editor authority, runtime behavior and evidence. The composition IR, compiler,
+creator workflow cutover and checkpoint orchestration are implemented with offline
+coverage. Native installation, recovery, performance and creator-quality evidence
+remain release work.
+
+Required composition work supports arbitrary project content with stable identities,
+explicit shared dependencies, independently owned instances and reviewed overrides.
+Novel content composed from admitted capabilities needs no new host recipe or kit
+membership. Curated content libraries are optional product expansion, excluded from
+core completion criteria. General reuse, safe updates and incremental compilation
+remain engineering work; catalog size is not a progress measure.
+
 ## 1. Validate the complete creator workflow
 
 Exercise first link, read-only planning, accept/change/reject, automatic Build and
@@ -56,11 +74,13 @@ search/import only with explicit ownership, provenance, and review requirements.
 
 ## Later product work
 
-- Multiple durable checkpoints and a clear restore experience.
-- Reviewed failure mining and regression promotion from real runs.
+- User-run evidence for multiple durable checkpoints and explicit recovery.
+- Reviewed failure mining and behavioral regression promotion from retained runs.
 - Calibrated qualitative evaluation without overstating machine judgments.
 - Automatic Rojo ownership discovery that preserves one writer per change set.
 - Isolated non-Studio workers and deployment boundaries justified by measured needs.
+- Optional editable content libraries when creator demand and measured quality or
+  authoring cost justify them; no curated-kit prerequisite for open creation.
 - Cloud identity, shared projects, and multi-user collaboration.
 
 These are roadmap items, not current capabilities. Each needs a concrete user flow,

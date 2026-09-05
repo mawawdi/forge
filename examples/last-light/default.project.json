@@ -1,0 +1,14 @@
+{
+  "name": "ForgeLastLightCleanSeed",
+  "tree": {
+    "$className": "DataModel",
+    "Workspace": { "$className": "Workspace" },
+    "ReplicatedStorage": { "$className": "ReplicatedStorage" },
+    "ServerScriptService": { "$className": "ServerScriptService" },
+    "StarterGui": { "$className": "StarterGui" },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": { "$className": "StarterPlayerScripts" }
+    }
+  }
+}

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import TechnicalDetailsSheet from "./TechnicalDetailsSheet";
 import type { CreatorConversationEvent } from "../types";
 import { HASH, dashboardState, event } from "../test/fixtures";
+import { GRAPH_VIEW } from "../test/game-build-fixture";
 
 afterEach(() => {
   cleanup();
@@ -10,6 +11,70 @@ afterEach(() => {
 });
 
 describe("TechnicalDetailsSheet", () => {
+  it("pins saved graph state to the selected artifact while the live graph advances", async () => {
+    const historical = event({
+      attachments: [
+        {
+          role: "technical_detail",
+          label: "Saved control snapshot",
+          binding: {
+            id: "snapshot",
+            hash: HASH,
+            artifact: { locator: `artifacts/${HASH}.json`, artifactHash: HASH, bytes: 90 },
+          },
+        },
+      ],
+    });
+    const state = dashboardState();
+    const liveState = {
+      ...state,
+      controlView: {
+        ...state.controlView!,
+        gameBuild: { ...GRAPH_VIEW, planHash: "c".repeat(64) },
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ gameBuild: GRAPH_VIEW }))),
+    );
+    const view = render(
+      <TechnicalDetailsSheet
+        open
+        event={historical}
+        state={liveState}
+        returnFocusTo={undefined}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Open saved game map" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Inspect" }));
+    const toggle = await screen.findByRole("button", {
+      name: "Open saved game map",
+    });
+    expect(screen.getByText("Raw JSON").closest("details")).not.toHaveAttribute("open");
+    expect(toggle).toBeVisible();
+    fireEvent.click(toggle);
+    expect(screen.getByRole("dialog", { name: "Shared workshop" })).toBeVisible();
+    view.rerender(
+      <TechnicalDetailsSheet
+        open
+        event={historical}
+        state={{
+          ...liveState,
+          controlView: {
+            ...liveState.controlView,
+            gameBuild: { ...liveState.controlView.gameBuild, status: "complete" },
+          },
+        }}
+        returnFocusTo={undefined}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByRole("dialog", { name: "Shared workshop" })).toBeVisible();
+    expect(screen.getByRole("dialog", { name: "Shared workshop" })).not.toHaveTextContent(
+      GRAPH_VIEW.stoppedReason!,
+    );
+  });
   it("is a focus-managed dialog and returns focus to the event that opened it", () => {
     const trigger = document.createElement("button");
     trigger.textContent = "Open technical details";
@@ -42,10 +107,10 @@ describe("TechnicalDetailsSheet", () => {
 
     const dialog = screen.getByRole("dialog", { name: /creator message/i });
     expect(dialog).toHaveAttribute("aria-modal", "true");
-    expect(screen.getByRole("button", { name: "View raw JSON" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Inspect" })).toBeVisible();
     const focusable = Array.from(
       dialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex="0"]',
+        'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary, [tabindex="0"]',
       ),
     );
     expect(focusable[0]).toHaveFocus();
@@ -69,6 +134,76 @@ describe("TechnicalDetailsSheet", () => {
     );
     expect(document.activeElement).toBe(trigger);
     trigger.remove();
+  });
+
+  it("includes disclosure summaries but skips their hidden controls when trapping focus", () => {
+    render(
+      <TechnicalDetailsSheet
+        open
+        event={undefined}
+        state={dashboardState()}
+        returnFocusTo={undefined}
+        onClose={vi.fn()}
+      />,
+    );
+    const dialog = screen.getByRole("dialog");
+    const disclosure = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "Additional evidence";
+    const hidden = document.createElement("button");
+    hidden.textContent = "Hidden evidence action";
+    disclosure.append(summary, hidden);
+    dialog.append(disclosure);
+    const close = screen.getByRole("button", { name: "Close details" });
+    close.focus();
+    fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+    expect(summary).toHaveFocus();
+    fireEvent.keyDown(summary, { key: "Tab" });
+    expect(close).toHaveFocus();
+    disclosure.open = true;
+    fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+    expect(hidden).toHaveFocus();
+  });
+
+  it("announces a concise loading failure and retries the exact saved artifact", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("Internal failure", { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ gameBuild: GRAPH_VIEW })));
+    vi.stubGlobal("fetch", fetch);
+    const snapshot = event({
+      attachments: [
+        {
+          role: "technical_detail",
+          label: "Saved plan",
+          binding: {
+            id: "snapshot",
+            hash: HASH,
+            artifact: { locator: `artifacts/${HASH}.json`, artifactHash: HASH, bytes: 90 },
+          },
+        },
+      ],
+    });
+    render(
+      <TechnicalDetailsSheet
+        open
+        event={snapshot}
+        state={dashboardState()}
+        returnFocusTo={undefined}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Inspect" }));
+    expect(
+      await screen.findByText("Could not load saved details: Artifact request failed (503)."),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("button", { name: "Open saved game map" })).toBeVisible();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[0]![0]).toBe(fetch.mock.calls[1]![0]);
+    const announcement = screen.getByText("Saved details loaded.");
+    expect(announcement).toHaveAttribute("role", "status");
+    expect(announcement).not.toHaveTextContent(GRAPH_VIEW.planHash);
   });
 
   it("labels each citation by its actual evidence authority", () => {
@@ -336,7 +471,7 @@ describe("TechnicalDetailsSheet", () => {
     );
 
     expect(screen.getByText("Sealed memory revision")).toBeVisible();
-    expect(screen.getByRole("button", { name: "View raw JSON" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Inspect" })).toBeVisible();
   });
 
   it("does not mix current control evidence into a selected historical event", () => {

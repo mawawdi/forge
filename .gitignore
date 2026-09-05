@@ -1,6 +1,7 @@
 node_modules/
 .env
 dist/
+*dist/
 .DS_Store
 .forge/
 target/
@@ -15,3 +16,4 @@ dashboard/test-results/
 dashboard/playwright-report/
 .agents/
 **.png
+!dashboard/e2e/*-snapshots/*.png

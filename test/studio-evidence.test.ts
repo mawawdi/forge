@@ -31,9 +31,11 @@ import {
   studioEvidenceEnvelopeHash,
   studioEvidenceFactKey,
   studioValuesEqual,
+  sortedStudioMutationPropertyNames,
   type StudioCapabilityManifest,
   type StudioEvidenceFact,
   type StudioEvidenceTarget,
+  type StudioValue,
 } from "../packages/studio-evidence/src/index.js";
 
 const project = { name: "Evidence Test", placeId: 7, universeId: 11 };
@@ -82,6 +84,33 @@ test("generation rejects missing codec mappings before any model or Studio run",
       );
       assert.equal(result.status, 1);
       assert.match(result.stderr, diagnostic);
+    }
+    for (const mutation of [
+      "missing_strategy",
+      "unknown_strategy",
+      "noncreatable_class",
+    ] as const) {
+      const invalid = structuredClone(policy);
+      if (mutation === "missing_strategy") delete invalid.authoringGroups[0].preflightStrategy;
+      if (mutation === "unknown_strategy")
+        invalid.authoringGroups[0].preflightStrategy = "live_write";
+      if (mutation === "noncreatable_class") invalid.authoringGroups[0].classes.push("Terrain");
+      await writeFile(resolve(sandbox, policyPath), JSON.stringify(invalid));
+      const result = spawnSync(
+        process.execPath,
+        ["scripts/generate-studio-evidence.mjs", "--check"],
+        {
+          cwd: sandbox,
+          encoding: "utf8",
+        },
+      );
+      assert.equal(result.status, 1, mutation);
+      assert.match(
+        result.stderr,
+        mutation === "noncreatable_class"
+          ? /class that cannot receive direct authoring: Terrain/
+          : /Invalid Studio capability authoring group/,
+      );
     }
   } finally {
     await rm(sandbox, { recursive: true, force: true });
@@ -140,10 +169,6 @@ test("content reflection matches the complete live Studio 0.737 attestation", ()
     // independently of the documentation catalog's canSave flag.
     assert.equal(property.serialized, false, `${property.className}.${property.name}`);
   }
-  const timeOfDay = properties.find(
-    (property) => property.className === "Lighting" && property.name === "TimeOfDay",
-  );
-  assert.deepEqual(timeOfDay?.reflection, { engineType: "string", scriptType: "string" });
 });
 
 test("generated Studio evidence manifest is closed and canonical", () => {
@@ -155,6 +180,8 @@ test("generated Studio evidence manifest is closed and canonical", () => {
     STUDIO_CAPABILITY_MANIFEST.operationKinds.length,
   );
   for (const classDefinition of STUDIO_CAPABILITY_MANIFEST.classes) {
+    assert.equal(classDefinition.creatable, true);
+    assert.equal(classDefinition.preflightStrategy, "detached_instance");
     assert.equal(
       new Set(classDefinition.properties.map((property) => property.name)).size,
       classDefinition.properties.length,
@@ -174,6 +201,145 @@ test("generated Studio evidence manifest is closed and canonical", () => {
     }
   }
   assert.ok(STUDIO_CAPABILITY_COVERAGE_REPORT.entries.length > 9_000);
+});
+
+test("manifest grants require a lawful detached same-class strategy", () => {
+  for (const strategy of [undefined, "live_write", "surrogate_part"]) {
+    const manifest = structuredClone(STUDIO_CAPABILITY_MANIFEST) as unknown as {
+      classes: Array<{ preflightStrategy?: string; creatable: boolean }>;
+    };
+    if (strategy === undefined) delete manifest.classes[0]!.preflightStrategy;
+    else manifest.classes[0]!.preflightStrategy = strategy;
+    assert.throws(() => assertStudioCapabilityManifest(manifest), /manifest class/);
+  }
+  const manifest = structuredClone(STUDIO_CAPABILITY_MANIFEST) as unknown as {
+    classes: Array<{ creatable: boolean }>;
+  };
+  manifest.classes[0]!.creatable = false;
+  assert.throws(() => assertStudioCapabilityManifest(manifest), /manifest class/);
+});
+
+test("PhysicalProperties preserves all six fields and the pinned engine constructor bounds", () => {
+  const value = {
+    kind: "physical_properties" as const,
+    density: 0.7,
+    friction: 1.5,
+    elasticity: 0.5,
+    frictionWeight: 50,
+    elasticityWeight: 100,
+    acousticAbsorption: 0.3,
+  };
+  assert.deepEqual(canonicalStudioValue(value), {
+    ...value,
+    density: Math.fround(value.density),
+    acousticAbsorption: Math.fround(value.acousticAbsorption),
+  });
+  const changed = { ...value, acousticAbsorption: 0.8 };
+  assert.equal(studioValuesEqual(value, changed), false);
+  assert.notEqual(canonicalStudioValueMaterial(value), canonicalStudioValueMaterial(changed));
+  const { acousticAbsorption: _removed, ...incomplete } = value;
+  assert.throws(() => canonicalStudioValue(incomplete as never), /physical properties/);
+  for (const [field, minimum, maximum] of [
+    ["density", Math.fround(0.0001), 100],
+    ["friction", 0, 2],
+    ["elasticity", 0, 1],
+    ["frictionWeight", 0, 100],
+    ["elasticityWeight", 0, 100],
+    ["acousticAbsorption", 0, 1],
+  ] as const) {
+    for (const endpoint of [minimum, maximum])
+      assert.doesNotThrow(() => canonicalStudioValue({ ...value, [field]: endpoint }));
+    for (const outside of [minimum - 0.00001, maximum + 0.00001, NaN, Infinity])
+      assert.throws(
+        () => canonicalStudioValue({ ...value, [field]: outside }),
+        /physical properties/,
+      );
+  }
+});
+
+test("coupled setter families reject combined writes without granting derived effects", () => {
+  const assignments: Record<string, StudioValue> = {
+    BrickColor: { kind: "brick_color", name: "Bright red" },
+    Color: { kind: "color3_rgb8", r: 0, g: 255, b: 0 },
+    CFrame: { kind: "cframe_f32x12", components: [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1] },
+    Position: { kind: "vector3_f32", x: 2, y: 3, z: 4 },
+    Rotation: { kind: "vector3_f32", x: 5, y: 6, z: 7 },
+    Orientation: { kind: "vector3_f32", x: 8, y: 9, z: 10 },
+  };
+  for (const definition of STUDIO_CAPABILITY_MANIFEST.classes) {
+    if (!definition.properties.some((property) => property.declaringClass === "BasePart")) continue;
+    const families = [
+      ["BrickColor", "Color"],
+      ["CFrame", "Rotation"],
+    ];
+    for (const family of families) {
+      assert.equal(
+        new Set(
+          family.map(
+            (name) =>
+              definition.properties.find((property) => property.name === name)?.setterFamily,
+          ),
+        ).size,
+        1,
+      );
+      for (const name of family) {
+        assert.deepEqual(
+          sortedStudioMutationPropertyNames(definition, { [name]: assignments[name]! }),
+          [name],
+        );
+      }
+      for (let left = 0; left < family.length; left += 1) {
+        for (let right = left + 1; right < family.length; right += 1) {
+          const properties = {
+            [family[left]!]: assignments[family[left]!]!,
+            [family[right]!]: assignments[family[right]!]!,
+          };
+          assert.throws(
+            () =>
+              compileMutationEvidenceProjection({
+                id: "coupled-setters",
+                project,
+                binding: { sessionId: "coupled-setters", changeSetHash: "coupled-setters" },
+                operations: [
+                  {
+                    id: "update",
+                    kind: "update",
+                    target: { ...target, className: definition.name },
+                    properties,
+                  },
+                ],
+              }),
+            /coupled property setters/,
+          );
+        }
+      }
+    }
+    assert.deepEqual(
+      sortedStudioMutationPropertyNames(definition, {
+        Color: assignments.Color!,
+        CFrame: assignments.CFrame!,
+      }),
+      ["CFrame", "Color"],
+    );
+    for (const name of ["Position", "Orientation"]) {
+      assert.throws(
+        () =>
+          sortedStudioMutationPropertyNames(definition, {
+            CFrame: assignments.CFrame!,
+            [name]: assignments[name]!,
+          }),
+        /outside manifest/,
+      );
+    }
+  }
+  const frame = STUDIO_CAPABILITY_MANIFEST.classes.find((entry) => entry.name === "Frame")!;
+  assert.deepEqual(
+    sortedStudioMutationPropertyNames(frame, {
+      Position: { kind: "udim2", x: { scale: 0, offset: 0 }, y: { scale: 0, offset: 0 } },
+      Rotation: { kind: "number_f32", value: 30 },
+    }),
+    ["Position", "Rotation"],
+  );
 });
 
 test("catalog-derived direct property selection stays exhaustive and keeps structural authority separate", () => {
@@ -293,6 +459,7 @@ test("manifest nullability is explicit per inherited property and never implied 
       elasticity: 0.5,
       frictionWeight: 1,
       elasticityWeight: 1,
+      acousticAbsorption: 0.3,
     }),
   );
 });

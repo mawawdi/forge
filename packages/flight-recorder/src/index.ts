@@ -18,6 +18,8 @@ import {
   type TracePersistence,
 } from "../../contracts/src/index.js";
 
+export * from "./host-phase.js";
+
 export interface FlightRecorderContext {
   projectId: ID;
   project?: Partial<BuildTrace["project"]>;
@@ -63,6 +65,7 @@ export class FlightRecorder {
   private readonly events: BuildTraceEvent[] = [];
   private readonly activeSpans = new Map<ID, ActiveSpan>();
   private sequence = 0;
+  private spanIdentitySequence = 0;
   private project: BuildTrace["project"];
   private references: BuildTrace["references"];
   private components: BuildTrace["components"];
@@ -108,7 +111,7 @@ export class FlightRecorder {
   startSpan(name: ForgeSpanName, attributes: Record<string, TraceAttributeValue> = {}): ActiveSpan {
     this.assertOpen();
     const span: ActiveSpan = {
-      id: `span_${this.sequence + 1}`,
+      id: `span_${++this.spanIdentitySequence}`,
       name,
       startedAt: this.clock.now().toISOString(),
       startedMonotonicMs: this.clock.monotonicNow(),
@@ -152,7 +155,7 @@ export class FlightRecorder {
         ? intervalFromDuration(this.clock.now().toISOString(), interval)
         : assertTraceInterval(interval);
     this.spans.push({
-      id: `span_${this.sequence + 1}`,
+      id: `span_${++this.spanIdentitySequence}`,
       sequence: this.nextSequence(),
       name,
       startedAt: timing.startedAt,

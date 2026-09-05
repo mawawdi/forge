@@ -74,7 +74,7 @@ test("CLI help exposes the conversation control surface and registered experimen
   const result = spawnSync(process.execPath, [cli, "--help"], { encoding: "utf8" });
   assert.equal(result.status, 0);
   const lines = result.stdout.split("\n").filter((line) => /^  forge /.test(line));
-  assert.equal(lines.length, 15);
+  assert.equal(lines.length, 17);
   assert.match(result.stdout, /Forge commands/);
   assert.match(result.stdout, /forge creator serve \[--default-model/);
   assert.match(result.stdout, /forge creator state/);
@@ -83,6 +83,8 @@ test("CLI help exposes the conversation control surface and registered experimen
   assert.match(result.stdout, /--memory-item-id/);
   assert.match(result.stdout, /forge creator replay-verification/);
   assert.match(result.stdout, /forge creator replay-mutation/);
+  assert.match(result.stdout, /forge creator timings/);
+  assert.match(result.stdout, /forge creator replay-regression/);
   assert.match(result.stdout, /forge experiment register/);
   assert.match(result.stdout, /--runtime-configuration/);
   assert.match(result.stdout, /forge experiment build/);

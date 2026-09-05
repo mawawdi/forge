@@ -4,6 +4,7 @@ import { mkdtemp, readdir } from "node:fs/promises";
 import { CreatorPlaytestContextStore } from "./playtest-context.js";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { rojoStudioNonSourceHash, rojoSyncObservation } from "./rojo-evidence.js";
 import {
   AgentExecutionJournalStore,
   DEFAULT_AGENT_BUDGETS,
@@ -15,6 +16,7 @@ import {
   type ArtifactReference,
 } from "../../artifact-store/src/index.js";
 import { contentHash, stableJson } from "../../contracts/src/index.js";
+import { HostPhaseRecorder, type HostPhase } from "../../flight-recorder/src/host-phase.js";
 import {
   RojoMutationApplyError,
   applyRojoSourceChangeSet,
@@ -25,7 +27,9 @@ import {
   assertRojoSourceRevert,
   assertRojoSourceRevertSyncProof,
   assertRojoSyncProof,
+  assertRojoSourcemapRefresh,
   createProjectAuthorityMap,
+  createRojoSourcemapArtifact,
   createRojoSourceChangeSet,
   createRojoSourceRevertSyncProof,
   createRojoSyncProof,
@@ -37,10 +41,10 @@ import {
   type ProjectAuthorityMap,
   type RojoMutationAttempt,
   type RojoSourceClass,
-  type RojoSourceOperation,
   type RojoSourceChangeSet,
   type RojoSourceRevert,
 } from "../../project-authority/src/index.js";
+import { generatePinnedRojoSourcemap } from "../../project-authority/src/host.js";
 import {
   assertProductionStudioSourceIndex,
   assertCreatorSourceConsultation,
@@ -102,6 +106,7 @@ import {
 } from "../../studio-evidence/src/index.js";
 import {
   CREATOR_REQUEST_TEXT_MAX_BYTES,
+  createCreatorChangeSet,
   advanceSession,
   closeInterruptedCreatorRecording,
   assertCreatorTransactionControlActionBinding,
@@ -132,6 +137,19 @@ import {
   type CreatorVerificationRecord,
   assertCreatorTransactionTopologyOrder,
 } from "./index.js";
+import {
+  gameBuildPartitionOperations,
+  assertGameBuildGraph,
+  bindGameBuildPartition,
+  createGameCheckpointReceipt,
+  createGameRojoCheckpointReceipt,
+  createGamePartitionBinding,
+  verifyGameCheckpointPrefix,
+  type GameBuildGraph,
+  type GameCheckpointReceipt,
+} from "../../game-compiler/src/index.js";
+import { createGameBuildControlView } from "./game-build-view.js";
+import { captureCreatorOfflineRegression } from "./offline-regression.js";
 import {
   createCreatorBuildAuthorityChangeNotice,
   createCreatorProjectChangeNotice,
@@ -309,6 +327,7 @@ class ProjectAuthorityRevokedError extends Error {
 }
 
 type CreatorPreRecordingPhase =
+  | "graph_binding"
   | "source_transfer"
   | "prepare_transport"
   | "preflight_transport"
@@ -362,6 +381,7 @@ export interface CreatorExactSourceDiffPage {
 }
 
 export class CreatorSessionCoordinator {
+  private readonly timings: HostPhaseRecorder;
   private readonly bundles = new CreatorSessionBundleStore();
   /** Per-session durable writes must not race through independent async paths. */
   private readonly bundlePersistQueues = new Map<string, Promise<void>>();
@@ -535,6 +555,7 @@ export class CreatorSessionCoordinator {
     if (input.projectAuthority !== undefined)
       assertProjectAuthorityHostContext(input.projectAuthority);
     this.artifactStore = new ImmutableJsonArtifactStore(resolve(input.directory));
+    this.timings = new HostPhaseRecorder(input.directory);
     this.playtestContext = new CreatorPlaytestContextStore(resolve(input.directory));
     this.unsubscribe = input.connection.subscribeWithSession((message, session) => {
       // Project-index fragments are consumed by a stream receiver before the
@@ -786,12 +807,22 @@ export class CreatorSessionCoordinator {
         {
           ...settledBundle,
           checkpoint,
+          gameBuilds: settledBundle.gameBuilds!.map((build) =>
+            build.graph.hash === changeSet.partition.graphHash && build.status !== "complete"
+              ? { ...build, status: "awaiting_checkpoint" as const }
+              : build,
+          ),
           session: advanceSession(
             bundle.session.status === "committing"
               ? bundle.session
               : advanceSession(bundle.session, { status: "committing" }),
             {
-              status: "completed",
+              status: settledBundle.gameBuilds!.some(
+                (build) =>
+                  build.graph.hash === changeSet.partition.graphHash && build.status === "complete",
+              )
+                ? "completed"
+                : "recovery_required",
               checkpoint,
               projectCapture: {
                 captureHash: finalIndexCapture.hash,
@@ -1164,6 +1195,60 @@ export class CreatorSessionCoordinator {
     return authorityMap;
   }
 
+  private async refreshGameRojoAuthorityMap(
+    bundle: CreatorSessionBundle,
+    capture: StudioProjectIndexCapture,
+  ): Promise<NonNullable<CreatorSessionBundle["projectAuthority"]>> {
+    const context = this.input.projectAuthority;
+    if (!context?.rojo) throw new Error("Graph source continuation lost its pinned host context");
+    const mutations = await Promise.all(
+      bundle
+        .gameBuilds!.at(-1)!
+        .receipts.flatMap((receipt) =>
+          receipt.kind === "GameRojoCheckpointReceipt"
+            ? [this.artifactStore.read(receipt.sourceChangeSet, assertRojoSourceChangeSet)]
+            : [],
+        ),
+    );
+    const creations = mutations.flatMap((changeSet) =>
+      changeSet.operations.filter((operation) => operation.kind === "create_source"),
+    );
+    const sourcemap = creations.length
+      ? createRojoSourcemapArtifact({
+          manifest: context.manifest,
+          projectFileHash: context.rojo.sourcemap.projectFileHash,
+          sourceMapJson: await generatePinnedRojoSourcemap({
+            executable: context.rojo.executable,
+            workspaceRoot: context.workspaceRoot,
+            projectFile: context.rojo.sourcemap.projectFile,
+            expectedBinaryHash: context.rojo.sourcemap.tool.binaryHash,
+          }),
+          tool: context.rojo.sourcemap.tool,
+        })
+      : context.rojo.sourcemap;
+    assertRojoSourcemapRefresh({
+      manifest: context.manifest,
+      previous: context.rojo.sourcemap,
+      next: sourcemap,
+      creations,
+    });
+    const authorityMap = await createProjectAuthorityMap({
+      projectId: bundle.session.projectId,
+      studioRevisionHash: capture.revision.hash,
+      manifest: context.manifest,
+      workspaceRoot: context.workspaceRoot,
+      rojo: { sourcemap },
+    });
+    assertRojoInitialStudioParity(capture, authorityMap);
+    return {
+      authorityMap: {
+        id: authorityMap.id,
+        hash: authorityMap.hash,
+        artifact: await this.artifactStore.write(authorityMap),
+      },
+    };
+  }
+
   private async projectIndexCaptureBinding(
     capture: StudioProjectIndexCapture,
   ): Promise<import("./mutation-evidence.js").CreatorMutationArtifactIndexCapture> {
@@ -1410,7 +1495,29 @@ export class CreatorSessionCoordinator {
     );
   }
 
-  private async waitForTransactionProjectIndex(
+  private waitForTransactionProjectIndex(
+    ...args: Parameters<CreatorSessionCoordinator["waitForTransactionProjectIndexMeasured"]>
+  ) {
+    const message = args[0].find(
+      (candidate) =>
+        candidate.requestId === args[1] &&
+        isRecord(candidate.payload) &&
+        "creatorSessionId" in candidate.payload &&
+        typeof candidate.payload.creatorSessionId === "string",
+    );
+    const sessionId =
+      message && isRecord(message.payload) && "creatorSessionId" in message.payload
+        ? message.payload.creatorSessionId
+        : undefined;
+    if (typeof sessionId !== "string") return this.waitForTransactionProjectIndexMeasured(...args);
+    return this.timings.measure(
+      "post_state_capture",
+      { sessionId, requestId: args[1], revisionHash: args[3] },
+      () => this.waitForTransactionProjectIndexMeasured(...args),
+    );
+  }
+
+  private async waitForTransactionProjectIndexMeasured(
     messages: PluginToBackendMessage[],
     requestId: string,
     manifestId: string,
@@ -1930,6 +2037,7 @@ export class CreatorSessionCoordinator {
           bundle,
           requiredSingleAgentExecution(action.agentExecutions, "builder"),
         );
+      if (action.actionId === "transaction_resume_build") return this.resumeGameBuild(bundle);
       if (action.actionId === "transaction_reject_plan")
         return this.decidePlan(bundle, requiredArtifactHash(view, "plan"), "rejected");
       if (action.actionId === "transaction_approve_and_apply_changes")
@@ -2149,7 +2257,7 @@ export class CreatorSessionCoordinator {
           this.emit();
           return;
         }
-        await this.artifactStore.write({
+        const acknowledgement = await this.artifactStore.write({
           kind: "CreatorChangeFinalizationAcknowledgement",
           studioSessionId: session.sessionId,
           projectId: session.projectId,
@@ -2160,6 +2268,30 @@ export class CreatorSessionCoordinator {
           acknowledgedAt: message.sentAt,
         });
         this.pendingFinalizationAcknowledgements.delete(message.payload.finalizationRequestId);
+        if (message.payload.recordingState === "none") {
+          const sessionId = pending.receipt.creatorSessionId;
+          setTimeout(() => {
+            void this.lock(sessionId, async () => {
+              const bundle = await this.bundle(sessionId);
+              const build = bundle.gameBuilds?.at(-1);
+              if (
+                !build ||
+                build.status !== "awaiting_checkpoint" ||
+                !["committing", "recovery_required"].includes(bundle.session.status)
+              )
+                return;
+              await this.recordGameCheckpoint(bundle, pending.authorityHash, acknowledgement);
+            })
+              .catch(async (error) => {
+                const current = this.bundles.get(sessionId);
+                if (current?.session.status === "committing")
+                  await this.failIncomplete(current, "game_checkpoint_incomplete", detail(error));
+              })
+              .catch((error) =>
+                this.recordDeferredTaskFailure(sessionId, "game checkpoint continuation", error),
+              );
+          }, 0);
+        }
       }
       if (message.payload.recordingState === "none") {
         this.setRecordingInventoryClearIfSettled(
@@ -2979,7 +3111,15 @@ export class CreatorSessionCoordinator {
       await this.requireClearRecordingInventory(studio);
       if (this.bundles.has(creatorSessionId))
         throw new Error("Preassigned creator session identity was already consumed");
-      const projectIndex = await this.collectProjectIndex(studio);
+      const projectIndex = await this.timings.measure(
+        "project_capture",
+        {
+          sessionId: creatorSessionId,
+          projectId: studio.projectId,
+          agentRunId: execution.agentRunId,
+        },
+        () => this.collectProjectIndex(studio),
+      );
       const projectIndexBinding = await this.persistProjectIndex(projectIndex);
       const projectView = studioProjectIndexMetadataView(projectIndex);
       const freshState = projectIndexViewForCreator(projectView);
@@ -3061,7 +3201,16 @@ export class CreatorSessionCoordinator {
       "Indexing current Script Editor source with the pinned analysis toolchain. Studio is read-only.",
     );
     try {
-      const analyzed = await this.analyzeProjectSources(projectIndex);
+      const analyzed = await this.timings.measure(
+        "source_analysis",
+        {
+          sessionId: session.id,
+          projectId: session.projectId,
+          agentRunId: execution.agentRunId,
+          revisionHash: projectIndex.revision.hash,
+        },
+        () => this.analyzeProjectSources(projectIndex),
+      );
       session = advanceSession(session, { status: "planning" });
       bundle = {
         ...bundle,
@@ -3726,7 +3875,7 @@ export class CreatorSessionCoordinator {
     }
     const plan = bundle.plan;
     if (!execution) throw new Error("Approved plan has no preassigned builder execution");
-    let session = advanceSession(bundle.session, {
+    const session = advanceSession(bundle.session, {
       status: "building",
       approval,
     });
@@ -3767,6 +3916,20 @@ export class CreatorSessionCoordinator {
           ...liveAfterBuild,
           buildContracts: [...liveAfterBuild.buildContracts, built.buildContract],
           agentRuns: [...liveAfterBuild.agentRuns, built.evidence],
+          ...(built.status === "sealed"
+            ? {
+                gameBuilds: [
+                  ...(liveAfterBuild.gameBuilds ?? []),
+                  {
+                    graph: built.graph,
+                    buildContractHash: built.buildContract.hash,
+                    summary: built.summary,
+                    receipts: [],
+                    status: "incomplete" as const,
+                  },
+                ],
+              }
+            : {}),
         };
         this.bundles.set(session.id, staleResultBundle);
         await this.persist(staleResultBundle);
@@ -3792,18 +3955,12 @@ export class CreatorSessionCoordinator {
         return this.finish(bundle, `Builder stopped: ${built.failure.detail}`);
       }
       bundle = await this.retainSourceWriteBlobs(bundle, built.sourceWriteBlobs);
-      session = advanceSession(session, {
-        status: "awaiting_change_approval",
-        changeSet: built.changeSet,
-      });
-      bundle = {
-        ...bundle,
-        session,
-        changeSets: [...bundle.changeSets, built.changeSet],
-      };
-      this.bundles.set(session.id, bundle);
-      await this.persist(bundle);
-      return await this.decideChanges(bundle, built.changeSet.hash, "approved");
+      return await this.startGameBuild(
+        bundle,
+        built.graph,
+        built.buildContract.hash,
+        built.summary,
+      );
     } catch (error) {
       const liveAfterFailure = this.bundles.get(session.id);
       if (liveAfterFailure?.session.status === "refresh_required") {
@@ -3823,6 +3980,260 @@ export class CreatorSessionCoordinator {
           detail: detail(error),
         });
       return this.failIncomplete(bundle, "builder_execution_failed", detail(error));
+    }
+  }
+
+  private async startGameBuild(
+    bundle: CreatorSessionBundle,
+    graph: GameBuildGraph,
+    buildContractHash: string,
+    resultSummary: string,
+  ): Promise<unknown> {
+    if (!bundle.plan) throw new Error("Compiled build has no accepted creator plan");
+    assertGameBuildGraph(graph, bundle.plan.compiled);
+    if (graph.localChecks.status !== "eligible")
+      throw new Error(
+        "The entire compiled candidate must be locally eligible before any transaction",
+      );
+    bundle = {
+      ...bundle,
+      gameBuilds: [
+        ...(bundle.gameBuilds ?? []),
+        { graph, buildContractHash, summary: resultSummary, receipts: [], status: "building" },
+      ],
+    };
+    this.bundles.set(bundle.session.id, bundle);
+    await this.persist(bundle);
+    return this.prepareNextGamePartition(bundle);
+  }
+
+  private async recordGameCheckpoint(
+    bundle: CreatorSessionBundle,
+    attemptHash: string,
+    acknowledgement: ArtifactReference,
+  ): Promise<unknown> {
+    const build = bundle.gameBuilds!.at(-1)!;
+    const attempt = bundle.mutationAttempts.find((attempt) => attempt.hash === attemptHash);
+    if (!attempt || !bundle.plan)
+      throw new Error("Finalization acknowledgement lost its exact mutation attempt");
+    const receipt = await createGameCheckpointReceipt({
+      plan: bundle.plan.compiled,
+      graph: build.graph,
+      ordinal: build.receipts.length,
+      attempt: await this.artifactStore.write(attempt),
+      acknowledgement,
+      store: this.artifactStore,
+      ...(build.receipts.length ? { previousReceipt: build.receipts.at(-1)! } : {}),
+    });
+    return this.recordVerifiedGameCheckpoint(bundle, receipt);
+  }
+
+  private async recordVerifiedGameCheckpoint(
+    bundle: CreatorSessionBundle,
+    receipt: GameCheckpointReceipt,
+  ): Promise<unknown> {
+    const build = bundle.gameBuilds!.at(-1)!;
+    if (!bundle.plan) throw new Error("Graph checkpoint lost its accepted plan");
+    const receipts = [...build.receipts, receipt];
+    const prefix = await verifyGameCheckpointPrefix({
+      plan: bundle.plan.compiled,
+      graph: build.graph,
+      receipts,
+      store: this.artifactStore,
+    });
+    const complete = prefix.status === "matched";
+    const recovering = bundle.session.status === "recovery_required";
+    bundle = {
+      ...bundle,
+      gameBuilds: bundle.gameBuilds!.map((candidate) =>
+        candidate.graph.hash === build.graph.hash
+          ? {
+              ...candidate,
+              receipts,
+              status: complete
+                ? ("complete" as const)
+                : recovering
+                  ? ("incomplete" as const)
+                  : ("building" as const),
+            }
+          : candidate,
+      ),
+    };
+    if (complete)
+      bundle = {
+        ...bundle,
+        session: advanceSession(
+          recovering ? advanceSession(bundle.session, { status: "committing" }) : bundle.session,
+          { status: "completed" },
+        ),
+      };
+    else if (recovering)
+      bundle = { ...bundle, session: advanceSession(bundle.session, { status: "incomplete" }) };
+    this.bundles.set(bundle.session.id, bundle);
+    await this.persist(bundle);
+    if (complete) return this.finish(bundle, build.summary);
+    if (recovering)
+      return this.finish(
+        bundle,
+        `Recovered ${receipts.length} of ${build.graph.partitions.length} verified checkpoints. Continue build explicitly to resume the unchanged accepted graph.`,
+      );
+    await this.publishView(
+      bundle,
+      `${receipts.length} of ${build.graph.partitions.length} partitions verified. Preparing the next bounded transaction from the same accepted graph.`,
+    );
+    try {
+      return await this.prepareNextGamePartition(bundle);
+    } catch (error) {
+      const current = this.bundles.get(bundle.session.id) ?? bundle;
+      if (current.session.status === "committing" && !current.activeMutation)
+        return this.failIncomplete(current, "game_checkpoint_continuation_stopped", detail(error));
+      throw error;
+    }
+  }
+
+  private async prepareNextGamePartition(bundle: CreatorSessionBundle): Promise<unknown> {
+    const build = bundle.gameBuilds?.at(-1);
+    const plan = bundle.plan;
+    if (!build || !plan || build.status !== "building" || bundle.activeMutation)
+      throw new Error("Build continuation requires its exact sealed graph and a closed recording");
+    const contract = bundle.buildContracts.find(
+      (contract) => contract.hash === build.buildContractHash,
+    );
+    const approval = bundle.approvals.find(
+      (approval) => approval.hash === build.graph.acceptanceHash,
+    );
+    if (!contract || !approval) throw new Error("Build lost its original accepted-plan authority");
+    const prefix = await verifyGameCheckpointPrefix({
+      plan: plan.compiled,
+      graph: build.graph,
+      receipts: build.receipts,
+      store: this.artifactStore,
+    });
+    const studio = await this.currentAttestedStudioSession();
+    await this.requireClearRecordingInventory(studio);
+    const capture = await this.collectProjectIndex(studio);
+    if (capture.revision.hash !== prefix.currentRevisionHash)
+      throw new Error(
+        "External edits changed the verified build prefix; explicit recovery or a revised plan is required",
+      );
+    bundle = await this.retainProjectIndex(bundle, capture);
+    const observation = studioProjectIndexMetadataView(capture);
+    if (this.input.projectAuthority?.rojo)
+      bundle = {
+        ...bundle,
+        projectAuthority: await this.refreshGameRojoAuthorityMap(bundle, capture),
+      };
+    const ownership = createStudioOwnershipMap({
+      projectId: bundle.session.projectId,
+      revisionHash: capture.revision.hash,
+      projectIndex: observation,
+      ...(this.input.projectAuthority
+        ? {
+            projectAuthority: this.input.projectAuthority.manifest,
+            rojoOwnedPaths: bundle.ownership.entries
+              .filter((entry) => entry.owner === "rojo_source")
+              .map((entry) => entry.path),
+          }
+        : {}),
+    });
+    const partition = build.graph.partitions[prefix.nextPartitionOrdinal];
+    if (!partition) throw new Error("No remaining partition is authorized");
+    const operations = gameBuildPartitionOperations(build.graph, prefix.nextPartitionOrdinal);
+    const sourceHashes = new Set(
+      operations.flatMap((operation) =>
+        operation.kind === "create" && operation.sourceBlob
+          ? [operation.sourceBlob.manifestHash]
+          : operation.kind === "edit_source"
+            ? operation.edits.map((edit) => edit.replacementBlob.manifestHash)
+            : [],
+      ),
+    );
+    const changeSet = createCreatorChangeSet(
+      {
+        partition: createGamePartitionBinding(
+          prefix,
+          build.graph,
+          plan.compiled,
+          capture.revision.hash,
+        ),
+        checkpointOwnership: ownership,
+        summary: build.summary,
+        sessionId: bundle.session.id,
+        attempt: bundle.session.repairsUsed + 1,
+        promptHash: bundle.session.promptHash,
+        planId: plan.id,
+        planHash: plan.hash,
+        charterId: plan.charter.id,
+        charterHash: plan.charter.hash,
+        planApprovalId: approval.id,
+        planApprovalHash: approval.hash,
+        buildContractId: contract.id,
+        buildContractHash: contract.hash,
+        ownershipMapId: ownership.id,
+        ownershipMapHash: ownership.hash,
+        expectedRevisionHash: capture.revision.hash,
+        operations: [...operations],
+        sourceWriteBlobs: build.graph.sourceWriteBlobs.filter((binding) =>
+          sourceHashes.has(binding.manifestHash),
+        ),
+        localGate: { status: "eligible", issueHashes: [...build.graph.localChecks.artifactHashes] },
+      },
+      observation,
+      ownership,
+      plan,
+      contract,
+      build.graph,
+    );
+    bundle = {
+      ...bundle,
+      changeSets: [...bundle.changeSets, changeSet],
+      session: advanceSession(bundle.session, {
+        status: "awaiting_change_approval",
+        changeSet,
+        projectCapture: { captureHash: capture.hash, revisionHash: capture.revision.hash },
+      }),
+    };
+    this.bundles.set(bundle.session.id, bundle);
+    await this.persist(bundle);
+    return this.decideChanges(bundle, changeSet.hash, "approved");
+  }
+
+  private async resumeGameBuild(bundle: CreatorSessionBundle): Promise<unknown> {
+    const build = bundle.gameBuilds?.at(-1);
+    if (
+      bundle.session.status !== "incomplete" ||
+      !build ||
+      build.status === "complete" ||
+      bundle.activeMutation
+    )
+      throw new Error(
+        "Resume requires a sealed incomplete graph and explicitly recovered closed recording",
+      );
+    bundle = {
+      ...bundle,
+      gameBuilds: bundle.gameBuilds!.map((candidate) =>
+        candidate === build ? { ...candidate, status: "building" as const } : candidate,
+      ),
+    };
+    this.bundles.set(bundle.session.id, bundle);
+    await this.persist(bundle);
+    try {
+      return await this.prepareNextGamePartition(bundle);
+    } catch (error) {
+      const current = this.bundles.get(bundle.session.id) ?? bundle;
+      if (current.session.status === "incomplete")
+        return this.finish(
+          {
+            ...current,
+            gameBuilds: current.gameBuilds!.map((candidate) =>
+              candidate.graph.hash === build.graph.hash
+                ? { ...candidate, status: "incomplete" as const }
+                : candidate,
+            ),
+          },
+          `Build recovery stopped: ${detail(error)}`,
+        );
+      throw error;
     }
   }
 
@@ -3916,6 +4327,13 @@ export class CreatorSessionCoordinator {
     return this.finish(
       {
         ...bundle,
+        ...(bundle.gameBuilds
+          ? {
+              gameBuilds: bundle.gameBuilds.map((build) =>
+                build.status !== "complete" ? { ...build, status: "incomplete" as const } : build,
+              ),
+            }
+          : {}),
         projectChanges: [...bundle.projectChanges, { notice, artifact, priorStatus: "incomplete" }],
         session: advanceSession(bundle.session, { status: "refresh_required" }),
       },
@@ -4028,7 +4446,8 @@ export class CreatorSessionCoordinator {
     if (
       authorityMap.manifestHash !== contentHash(stableJson(context.manifest)) ||
       !authorityMap.rojo ||
-      authorityMap.rojo.sourcemap.hash !== context.rojo.sourcemap.hash ||
+      authorityMap.rojo.sourcemap.projectFileHash !== context.rojo.sourcemap.projectFileHash ||
+      stableJson(authorityMap.rojo.sourcemap.tool) !== stableJson(context.rojo.sourcemap.tool) ||
       authorityMap.studioRevisionHash !== before.revision.hash
     )
       throw new Error("Rojo source-authority host context or pre-Apply revision binding changed");
@@ -4045,6 +4464,34 @@ export class CreatorSessionCoordinator {
     const sourceChangeSet = await guarded(
       this.translateRojoSourceChangeSet(bundle, changeSet, authorityMap, before),
     );
+    const graphBuild = bundle.gameBuilds?.find(
+      (build) => build.graph.hash === changeSet.partition.graphHash,
+    );
+    if (!graphBuild || !bundle.plan || !bundle.session.changeApproval)
+      throw new Error("Rojo mutation lost its exact accepted graph authority");
+    const graphBinding = await guarded(
+      bindGameBuildPartition({
+        plan: bundle.plan.compiled,
+        graph: graphBuild.graph,
+        receipts: graphBuild.receipts,
+        store: this.artifactStore,
+        capture: before,
+        transaction: {
+          sessionId: bundle.session.id,
+          changeSetId: changeSet.id,
+          changeSetHash: changeSet.hash,
+          buildContractHash: changeSet.buildContractHash,
+          approvalHash: bundle.session.changeApproval.hash,
+          dashboardReviewHash:
+            this.views.get(bundle.session.id)?.hash ?? bundle.session.changeApproval.hash,
+        },
+      }),
+    );
+    if (
+      stableJson(graphBinding.partitionBinding) !== stableJson(changeSet.partition) ||
+      stableJson(graphBinding.operations) !== stableJson(changeSet.operations)
+    )
+      throw new Error("Rojo source mutation differs from the exact approved graph partition");
     const sourceChangeSetArtifact = await guarded(this.artifactStore.write(sourceChangeSet));
     bundle = {
       ...bundle,
@@ -4133,6 +4580,11 @@ export class CreatorSessionCoordinator {
       session: advanceSession(bundle.session, {
         status: "awaiting_source_sync",
       }),
+      gameBuilds: bundle.gameBuilds!.map((build) =>
+        build.graph.hash === changeSet.partition.graphHash
+          ? { ...build, status: "awaiting_checkpoint" as const }
+          : build,
+      ),
     };
     return guarded(
       this.finish(
@@ -4257,6 +4709,9 @@ export class CreatorSessionCoordinator {
         return this.finish(
           {
             ...next,
+            gameBuilds: next.gameBuilds!.map((build) =>
+              build.status === "complete" ? build : { ...build, status: "incomplete" as const },
+            ),
             session: advanceSession(next.session, {
               status: "incomplete",
               failure: {
@@ -4282,12 +4737,48 @@ export class CreatorSessionCoordinator {
       artifact,
     });
     if (proof.status === "matched") {
-      return this.finish(
+      const build = next.gameBuilds?.at(-1);
+      const beforeIndexCapture = next.projectIndices.find(
+        (binding) => binding.revision.hash === changeSet.beforeStudioRevisionHash,
+      );
+      if (!build || !next.plan || !next.projectAuthority || !beforeIndexCapture)
+        throw new Error("Rojo source synchronization lost its exact graph and pre-write capture");
+      let receipt: GameCheckpointReceipt;
+      try {
+        receipt = await createGameRojoCheckpointReceipt({
+          plan: next.plan.compiled,
+          graph: build.graph,
+          ordinal: build.receipts.length,
+          authorityMap: next.projectAuthority.authorityMap.artifact,
+          sourceChangeSet: mutation.changeSet.artifact,
+          attempt: mutation.attempt.artifact,
+          syncProof: artifact,
+          beforeIndexCapture,
+          afterIndexCapture: await this.projectIndexCaptureBinding(capture),
+          store: this.artifactStore,
+          ...(build.receipts.length ? { previousReceipt: build.receipts.at(-1)! } : {}),
+        });
+      } catch (error) {
+        return this.finish(
+          {
+            ...next,
+            session: advanceSession(next.session, {
+              status: "recovery_required",
+              failure: { code: "rojo_graph_checkpoint_rejected", detail: detail(error) },
+            }),
+          },
+          "The source sync proof did not reproduce the exact graph partition. The write remains recorded; explicit source recovery is required.",
+        );
+      }
+      return this.recordVerifiedGameCheckpoint(
         {
           ...next,
-          session: advanceSession(next.session, { status: "completed" }),
+          session: advanceSession(next.session, {
+            status: "committing",
+            projectCapture: { captureHash: capture.hash, revisionHash: capture.revision.hash },
+          }),
         },
-        "Complete Studio index evidence exactly matches the guarded Rojo source mutation. Review the result; this proof establishes source synchronization, not gameplay behavior.",
+        receipt,
       );
     }
     return this.finish(
@@ -4405,7 +4896,17 @@ export class CreatorSessionCoordinator {
     };
     let beforeIndexCapture: StudioProjectIndexCapture;
     try {
-      beforeIndexCapture = await guarded(this.collectProjectIndex(studio, authority));
+      beforeIndexCapture = await guarded(
+        this.timings.measure(
+          "project_capture",
+          {
+            sessionId: bundle.session.id,
+            projectId: studio.projectId,
+            changeSetHash: changeSet.hash,
+          },
+          () => this.collectProjectIndex(studio, authority),
+        ),
+      );
       bundle = await guarded(this.retainProjectIndex(bundle, beforeIndexCapture, authority));
     } catch (error) {
       return guarded(
@@ -4453,6 +4954,42 @@ export class CreatorSessionCoordinator {
       structuralParents,
       purpose: "mutation_preflight",
     });
+    const graphBuild = bundle.gameBuilds?.find(
+      (build) => build.graph.hash === changeSet.partition.graphHash,
+    );
+    if (!graphBuild)
+      throw new CreatorPreRecordingFailure(
+        "graph_binding",
+        "game_graph_missing",
+        "The approved transaction lost its sealed game graph",
+      );
+    const graphBinding = await guarded(
+      bindGameBuildPartition({
+        plan: bundle.plan!.compiled,
+        graph: graphBuild.graph,
+        receipts: graphBuild.receipts,
+        store: this.artifactStore,
+        capture: beforeIndexCapture,
+        transaction: {
+          sessionId: bundle.session.id,
+          changeSetId: changeSet.id,
+          changeSetHash: changeSet.hash,
+          buildContractHash: changeSet.buildContractHash,
+          approvalHash: changeApproval.hash,
+          dashboardReviewHash,
+        },
+      }),
+    );
+    if (
+      stableJson(graphBinding.partitionBinding) !== stableJson(changeSet.partition) ||
+      stableJson(graphBinding.preflight) !== stableJson(preflightProjection) ||
+      stableJson(graphBinding.readback) !== stableJson(projection)
+    )
+      throw new CreatorPreRecordingFailure(
+        "graph_binding",
+        "game_partition_binding_mismatch",
+        "Fresh checkpoint projections differ from the exact approved graph partition",
+      );
     const changeSetEvidence: CreatorMutationChangeSetLike = {
       kind: "CreatorChangeSet",
       id: changeSet.id,
@@ -4504,11 +5041,26 @@ export class CreatorSessionCoordinator {
     const indexStreams = new StudioProjectIndexStreamRouter();
     const unsubscribe = this.capture(studio, messages, indexStreams);
     const requestId = `creator_apply_${randomUUID()}`;
+    let closeTiming: Awaited<ReturnType<HostPhaseRecorder["start"]>> | undefined;
+    const nextTiming = async (phase?: HostPhase, outcome: "returned" | "threw" = "returned") => {
+      const previous = closeTiming;
+      closeTiming = undefined;
+      await previous?.(outcome);
+      if (phase)
+        closeTiming = await this.timings.start(phase, {
+          sessionId: bundle.session.id,
+          projectId: studio.projectId,
+          requestId,
+          changeSetHash: changeSet.hash,
+          revisionHash: beforeIndexCapture.revision.hash,
+        });
+    };
     let preRecordingPhase: CreatorPreRecordingPhase = "source_transfer";
     let receivedPreflightEvidence: StudioEvidenceEnvelope | undefined;
     assertAuthority();
     this.beginFinalizationRequest(requestId);
     try {
+      await nextTiming("source_transfer");
       // The plugin must acknowledge every hash-bound immutable source blob
       // before it even parses the sealed change set.  A transport restart
       // therefore cannot turn a missing large source into an implicit body or
@@ -4521,6 +5073,7 @@ export class CreatorSessionCoordinator {
       const projectionJson = serializeStudioEvidenceProjection(projection);
       const preflightProjectionJson = serializeStudioEvidenceProjection(preflightProjection);
       preRecordingPhase = "prepare_transport";
+      await nextTiming("prepare_transport");
       assertAuthority();
       await guarded(
         this.streamCreatorChangePrepare(
@@ -4565,6 +5118,7 @@ export class CreatorSessionCoordinator {
         ),
       );
       preRecordingPhase = "preflight_transport";
+      await nextTiming("preflight_roundtrip");
       assertAuthority();
       await guarded(
         this.input.connection.send(
@@ -4608,6 +5162,7 @@ export class CreatorSessionCoordinator {
           requestId,
         ),
       );
+      await nextTiming();
       if (preflight.type === "CreatorMutationFailed") {
         bundle = await guarded(
           this.recordIncompletePreflightAttempt(
@@ -4692,6 +5247,7 @@ export class CreatorSessionCoordinator {
       bundle = applyingBundle;
       this.bundles.set(bundle.session.id, bundle);
       assertAuthority();
+      await nextTiming("apply_readback_roundtrip");
       await guarded(
         this.input.connection.send(
           createBackendMessage(
@@ -4736,6 +5292,7 @@ export class CreatorSessionCoordinator {
           requestId,
         ),
       );
+      await nextTiming();
       if (applied.type === "CreatorMutationFailed") {
         const failedRecordingId = applied.payload.recordingId;
         const failureFacts = createMutationFailureFacts([
@@ -4918,21 +5475,31 @@ export class CreatorSessionCoordinator {
           afterIndexCapture,
         ),
       );
-      const reconciliation = reconcileCreatorMutation({
-        sessionId: bundle.session.id,
-        attemptId,
-        manifest: STUDIO_CAPABILITY_MANIFEST,
-        manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
-        changeSet: changeSetEvidence,
-        projection,
-        preflight: {
-          projection: preflightProjection,
-          envelope: preflight.payload.preflightEvidence,
+      const reconciliation = await this.timings.measure(
+        "reconciliation",
+        {
+          sessionId: bundle.session.id,
+          projectId: studio.projectId,
+          requestId,
+          changeSetHash: changeSet.hash,
         },
-        directReadback: applied.payload.directReadbackEvidence,
-        beforeIndexCapture,
-        afterIndexCapture,
-      });
+        () =>
+          reconcileCreatorMutation({
+            sessionId: bundle.session.id,
+            attemptId,
+            manifest: STUDIO_CAPABILITY_MANIFEST,
+            manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
+            changeSet: changeSetEvidence,
+            projection,
+            preflight: {
+              projection: preflightProjection,
+              envelope: preflight.payload.preflightEvidence,
+            },
+            directReadback: applied.payload.directReadbackEvidence,
+            beforeIndexCapture,
+            afterIndexCapture,
+          }),
+      );
       const reconciliationArtifact = await guarded(this.artifactStore.write(reconciliation));
       activeMutation = {
         ...activeMutation,
@@ -5092,6 +5659,7 @@ export class CreatorSessionCoordinator {
       assertAuthority();
       return await guarded(this.commitAppliedChanges(bundle, authority));
     } catch (error) {
+      await nextTiming(undefined, "threw");
       if (error instanceof ProjectAuthorityRevokedError) throw error;
       const current = this.bundles.get(bundle.session.id) ?? bundle;
       if (
@@ -5119,6 +5687,7 @@ export class CreatorSessionCoordinator {
       }
       throw error;
     } finally {
+      await nextTiming();
       this.endFinalizationRequest(requestId);
       unsubscribe();
       if (
@@ -5138,6 +5707,13 @@ export class CreatorSessionCoordinator {
     return this.finish(
       {
         ...bundle,
+        ...(bundle.gameBuilds
+          ? {
+              gameBuilds: bundle.gameBuilds.map((build) =>
+                build.status !== "complete" ? { ...build, status: "incomplete" as const } : build,
+              ),
+            }
+          : {}),
         session: advanceSession(bundle.session, {
           status: "incomplete",
           failure: { code, detail: detailValue },
@@ -5556,7 +6132,7 @@ export class CreatorSessionCoordinator {
           ...bundle,
           checkpoint,
           session: advanceSession(bundle.session, {
-            status: "completed",
+            status: "committing",
             checkpoint,
             projectCapture: {
               captureHash: finalIndexCapture.hash,
@@ -5571,7 +6147,20 @@ export class CreatorSessionCoordinator {
       this.pendingRecordings.delete(bundle.session.id);
       this.bundles.set(bundle.session.id, bundle);
       await guarded(this.persist(bundle));
-      await guarded(this.publishView(bundle, changeSet.summary));
+      const gameBuilds = bundle.gameBuilds!.map((build) =>
+        build.graph.hash === changeSet.partition.graphHash
+          ? { ...build, status: "awaiting_checkpoint" as const }
+          : build,
+      );
+      bundle = { ...bundle, gameBuilds };
+      this.bundles.set(bundle.session.id, bundle);
+      await guarded(this.persist(bundle));
+      await guarded(
+        this.publishView(
+          bundle,
+          `Partition ${changeSet.partition.ordinal + 1} committed. Waiting for its exact finalization acknowledgement before extending the verified build prefix.`,
+        ),
+      );
       await guarded(this.acknowledgeFinalization(studio, finalized, attempt.hash, authority));
       return summary(bundle);
     } finally {
@@ -5821,8 +6410,13 @@ export class CreatorSessionCoordinator {
           {
             ...bundle,
             checkpoint,
+            gameBuilds: bundle.gameBuilds!.map((build) =>
+              build.graph.hash === changeSet.partition.graphHash
+                ? { ...build, status: "awaiting_checkpoint" as const }
+                : build,
+            ),
             session: advanceSession(bundle.session, {
-              status: "completed",
+              status: "committing",
               checkpoint,
               projectCapture: {
                 captureHash: finalIndexCapture.hash,
@@ -5838,7 +6432,7 @@ export class CreatorSessionCoordinator {
         await this.persist(bundle);
         await this.publishView(
           bundle,
-          "Machine checks completed. Visually review the exact result, then accept it or reject and roll it back.",
+          "The partition passed its checks and committed. Waiting for its exact finalization acknowledgement before extending the verified build graph.",
         );
         await this.acknowledgeFinalization(studio, finalized, attempt.hash);
         return summary(bundle);
@@ -6015,21 +6609,7 @@ export class CreatorSessionCoordinator {
       return this.finish(bundle, `Repair builder stopped: ${built.failure.detail}`);
     }
     bundle = await this.retainSourceWriteBlobs(bundle, built.sourceWriteBlobs);
-    bundle = {
-      ...bundle,
-      changeSets: [...bundle.changeSets, built.changeSet],
-      session: advanceSession(bundle.session, {
-        status: "awaiting_change_approval",
-        changeSet: built.changeSet,
-      }),
-    };
-    this.bundles.set(bundle.session.id, bundle);
-    await this.persist(bundle);
-    await this.publishView(
-      bundle,
-      "The failed attempt was cancelled. Review the repaired exact change set; approval applies it immediately.",
-    );
-    return summary(bundle);
+    return this.startGameBuild(bundle, built.graph, built.buildContract.hash, built.summary);
   }
 
   private async review(
@@ -6761,12 +7341,17 @@ export class CreatorSessionCoordinator {
           {
             ...bundle,
             checkpoint,
+            gameBuilds: bundle.gameBuilds!.map((build) =>
+              build.graph.hash === changeSet.partition.graphHash
+                ? { ...build, status: "awaiting_checkpoint" as const }
+                : build,
+            ),
             session: advanceSession(
               bundle.session.status === "committing"
                 ? bundle.session
                 : advanceSession(bundle.session, { status: "committing" }),
               {
-                status: "completed",
+                status: "recovery_required",
                 checkpoint,
                 projectCapture: {
                   captureHash: finalIndexCapture.hash,
@@ -6802,8 +7387,8 @@ export class CreatorSessionCoordinator {
       await this.persist(bundle);
       await this.publishView(
         bundle,
-        bundle.session.status === "completed"
-          ? changeSet.summary
+        bundle.gameBuilds?.at(-1)?.status === "awaiting_checkpoint"
+          ? "Recovered the committed partition. Its exact finalization acknowledgement is still required to verify the checkpoint; continuation requires explicit recovery."
           : "Recovered the exact finalized mutation as incomplete; no worker or Studio operation was retried.",
       );
       await this.acknowledgeFinalization(studio, finalized, attempt.hash);
@@ -6939,7 +7524,16 @@ export class CreatorSessionCoordinator {
       this.retainFinalizationReceipt(studio, finalized),
     );
     const requestId = retained.requestId;
-    const authorityHash = attemptHash ?? retained.pending.authorityHash;
+    // A retained native receipt can arrive after a process restart. Bind its
+    // acknowledgement to the already persisted attempt, never the delivery hash.
+    const retainedBundle = this.bundles.get(finalized.payload.creatorSessionId);
+    const retainedAttempt = retainedBundle?.mutationAttempts.find(
+      (attempt) =>
+        attempt.completion === "settled" &&
+        attempt.changeSet.hash === finalized.payload.changeSetHash &&
+        attempt.projection.hash === finalized.payload.projectionHash,
+    );
+    const authorityHash = attemptHash ?? retainedAttempt?.hash ?? retained.pending.authorityHash;
     if (authorityHash !== retained.pending.authorityHash)
       this.pendingFinalizationAcknowledgements.set(requestId, {
         ...retained.pending,
@@ -7102,7 +7696,16 @@ export class CreatorSessionCoordinator {
       );
       this.finalizationAcknowledgementCommands.set(requestId, command);
     }
-    await this.input.connection.send(command);
+    await this.timings.measure(
+      "acknowledgement_send",
+      {
+        sessionId: receipt.creatorSessionId,
+        projectId: studio.projectId,
+        requestId,
+        changeSetHash: receipt.changeSetHash,
+      },
+      () => this.input.connection.send(command!),
+    );
   }
 
   private setRecordingInventoryClearIfSettled(
@@ -7121,7 +7724,21 @@ export class CreatorSessionCoordinator {
     });
   }
 
-  private async finalizeRecording(
+  private finalizeRecording(
+    ...args: Parameters<CreatorSessionCoordinator["finalizeRecordingMeasured"]>
+  ) {
+    return this.timings.measure(
+      "finalization_roundtrip",
+      {
+        sessionId: args[1],
+        projectId: args[0].projectId,
+        changeSetHash: args[2].hash,
+      },
+      () => this.finalizeRecordingMeasured(...args),
+    );
+  }
+
+  private async finalizeRecordingMeasured(
     studio: StudioBridgeSession,
     sessionId: string,
     changeSet: CreatorChangeSet,
@@ -7775,6 +8392,7 @@ export class CreatorSessionCoordinator {
         this.bundles.set(current.session.id, current);
         const durable = this.bundles.get(current.session.id)!;
         await persistCreatorBundle(durable, this.input.directory);
+        await captureCreatorOfflineRegression({ bundle: durable, store: this.artifactStore });
         this.emit();
       });
     this.bundlePersistQueues.set(sessionId, write);
@@ -8015,56 +8633,6 @@ function requiredChangeSet(bundle: CreatorSessionBundle): CreatorChangeSet {
   return changeSet;
 }
 
-function rojoStudioNonSourceHash(
-  view: ReturnType<typeof studioProjectIndexMetadataView>,
-  operations: readonly RojoSourceOperation[] = [],
-): string {
-  const created = operations.filter(
-    (operation): operation is Extract<RojoSourceOperation, { readonly kind: "create_source" }> =>
-      operation.kind === "create_source",
-  );
-  const instances = [
-    ...view.instances.map((instance) => ({
-      path: instance.path,
-      className: instance.className,
-      properties: instance.properties,
-      attributes: instance.attributes,
-      tags: instance.tags,
-    })),
-    ...created.map((operation) => ({
-      path: `${operation.parentStudioPath}/${operation.name}`,
-      className: operation.className,
-      properties: {},
-      attributes: {},
-      tags: [],
-    })),
-  ].sort(
-    (left, right) =>
-      left.path.localeCompare(right.path) || left.className.localeCompare(right.className),
-  );
-  const scripts = [
-    ...view.scripts.map((script) => ({
-      path: script.path,
-      className: script.className,
-      executionContext: script.executionContext,
-    })),
-    ...created.map((operation) => ({
-      path: `${operation.parentStudioPath}/${operation.name}`,
-      className: operation.className,
-      executionContext:
-        operation.className === "Script"
-          ? ("server" as const)
-          : operation.className === "LocalScript"
-            ? ("client" as const)
-            : ("shared" as const),
-    })),
-  ].sort(
-    (left, right) =>
-      left.path.localeCompare(right.path) || left.className.localeCompare(right.className),
-  );
-  return contentHash(stableJson({ instances, scripts }));
-}
-
 function isRojoSourceClass(value: string): value is RojoSourceClass {
   return value === "Script" || value === "LocalScript" || value === "ModuleScript";
 }
@@ -8101,38 +8669,6 @@ function isRojoRevertStatus(
     status === "recovery_required" ||
     status === "awaiting_review"
   );
-}
-
-function rojoSyncObservation(
-  capture: StudioProjectIndexCapture,
-  expectedEntries: readonly {
-    readonly studioPath: string;
-    readonly className: "Script" | "LocalScript" | "ModuleScript";
-    readonly sourceHash: string;
-  }[],
-) {
-  const view = studioProjectIndexMetadataView(capture);
-  const scripts = new Map(
-    view.scripts.map((script) => [`${script.path}\u0000${script.className}`, script] as const),
-  );
-  const sourceEntries = expectedEntries.flatMap((expected) => {
-    const actual = scripts.get(`${expected.studioPath}\u0000${expected.className}`);
-    return actual
-      ? [
-          {
-            studioPath: expected.studioPath,
-            className: expected.className,
-            sourceHash: actual.sourceHash,
-          },
-        ]
-      : [];
-  });
-  return {
-    complete: true,
-    studioRevisionHash: capture.revision.hash,
-    nonSourceStateHash: rojoStudioNonSourceHash(view),
-    sourceEntries,
-  };
 }
 
 function rojoProofDetail(prefix: string, facts: readonly { readonly statement: string }[]): string {
@@ -8864,6 +9400,9 @@ function controlView(
     bundle.preparationFailure?.execution.purpose === "builder" &&
       !bundle.activeMutation &&
       bundle.mutationAttempts.length === 0,
+    bundle.session.status === "incomplete" &&
+      !bundle.activeMutation &&
+      !!bundle.gameBuilds?.some((build) => build.status !== "complete"),
   );
   const evidence = bundle.agentRuns.map(
     ({ phase, agentRunId, agentRun, traceId, trace, traceBuildKey }) => ({
@@ -8879,6 +9418,17 @@ function controlView(
     .filter((clause) => clause.kind === "creator_review")
     .map((clause) => clause.statement);
   return createCreatorTransactionControlView({
+    ...(bundle.plan
+      ? {
+          gameBuild: createGameBuildControlView({
+            plan: bundle.plan,
+            ...(bundle.gameBuilds?.at(-1) ? { build: bundle.gameBuilds.at(-1)! } : {}),
+            sessionStatus: bundle.session.status,
+            ...(changeSet ? { activeChangeSet: changeSet } : {}),
+            ...(bundle.session.failure ? { stoppedReason: detailValue } : {}),
+          }),
+        }
+      : {}),
     creatorSessionId: bundle.session.id,
     creatorSessionHash: bundle.session.hash,
     status: bundle.session.status,
@@ -8903,7 +9453,10 @@ function controlActions(
   changeApplicationAvailable = true,
   sourceRevertAvailable = false,
   buildRetryAvailable = false,
+  graphResumeAvailable = false,
 ): CreatorTransactionControlView["actions"] {
+  if (status === "incomplete" && graphResumeAvailable)
+    return [{ id: "transaction_resume_build", label: "Resume verified build", intent: "primary" }];
   if (status === "incomplete" && buildRetryAvailable)
     return [{ id: "transaction_retry_build", label: "Retry build", intent: "primary" }];
   if (status === "refresh_required")
@@ -9633,6 +10186,11 @@ function preRecordingDiagnostic(
   failureDetail: string,
 ): { code: string; detail: string } {
   switch (phase) {
+    case "graph_binding":
+      return {
+        code: "creator_graph_binding_failed",
+        detail: `The sealed graph could not bind its next verified checkpoint: ${failureDetail}`,
+      };
     case "source_transfer":
       return {
         code: "creator_source_transfer_failed",

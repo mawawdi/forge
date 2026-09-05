@@ -309,6 +309,7 @@ test("pinned toolchain startup provisions only missing locked bytes and rejects 
     sha256: createHash("sha256").update(archive).digest("hex"),
     bytes: archive.byteLength,
     binary,
+    archiveEntries: [binary],
   });
   const lock: SourceAnalysisToolchainLock = {
     kind: "ForgeSourceAnalysisToolchainLock",
@@ -317,6 +318,7 @@ test("pinned toolchain startup provisions only missing locked bytes and rejects 
       {
         name: "rojo",
         version: "fixture",
+        upstreamCommit: "a".repeat(40),
         repository: "example/rojo",
         releaseTag: "fixture",
         githubApiRelease: "https://example.invalid/rojo",
@@ -325,10 +327,20 @@ test("pinned toolchain startup provisions only missing locked bytes and rejects 
       {
         name: "luau-lsp",
         version: "fixture",
+        upstreamCommit: "b".repeat(40),
         repository: "example/lsp",
         releaseTag: "fixture",
         githubApiRelease: "https://example.invalid/lsp",
         assets: [asset("lsp.zip", "luau-lsp")],
+      },
+      {
+        name: "luau-ast",
+        version: "fixture",
+        upstreamCommit: "c".repeat(40),
+        repository: "example/ast",
+        releaseTag: "fixture",
+        githubApiRelease: "https://example.invalid/ast",
+        assets: [asset("ast.zip", "luau-ast")],
       },
     ],
   };
@@ -356,8 +368,8 @@ test("pinned toolchain startup provisions only missing locked bytes and rejects 
     },
     extract,
   });
-  assert.equal(installed.tools.length, 2);
-  assert.equal(downloads, 2);
+  assert.equal(installed.tools.length, 3);
+  assert.equal(downloads, 3);
   const reused = await ensurePinnedSourceAnalysisToolchain({
     root,
     lock,
@@ -369,7 +381,7 @@ test("pinned toolchain startup provisions only missing locked bytes and rejects 
     extract,
   });
   assert.equal(reused.hash, installed.hash);
-  assert.equal(downloads, 2);
+  assert.equal(downloads, 3);
   await writeFile(installed.tools[0]!.executable, "tampered", "utf8");
   await assert.rejects(
     ensurePinnedSourceAnalysisToolchain({
@@ -384,7 +396,7 @@ test("pinned toolchain startup provisions only missing locked bytes and rejects 
     }),
     /size mismatch|SHA-256 mismatch/i,
   );
-  assert.equal(downloads, 2);
+  assert.equal(downloads, 3);
   const missingRoot = await mkdtemp(`${tmpdir()}/forge-source-toolchain-missing-`);
   await assert.rejects(PinnedSourceAnalysisHost.create({ root: missingRoot, lock }), /missing/i);
 });
@@ -394,6 +406,12 @@ test("verified host produces production semantic rows only from bounded LSP stdi
   const assets = await mkdtemp(`${tmpdir()}/forge-source-lsp-assets-`);
   const rojo = join(assets, "rojo");
   const lsp = join(assets, "luau-lsp");
+  const ast = join(assets, "luau-ast");
+  await writeFile(
+    ast,
+    '#!/bin/sh\nprintf \'%s\' \'{"root":{"type":"AstStatBlock","body":[]},"commentLocations":[]}\'\n',
+  );
+  await chmod(ast, 0o700);
   await writeFile(
     rojo,
     [
@@ -431,6 +449,7 @@ test("verified host produces production semantic rows only from bounded LSP stdi
   };
   const rojoArchive = await archive("rojo");
   const lspArchive = await archive("luau-lsp");
+  const astArchive = await archive("luau-ast");
   const lockedAsset = (
     entry: { readonly bytes: Buffer; readonly name: string },
     binary: string,
@@ -441,6 +460,7 @@ test("verified host produces production semantic rows only from bounded LSP stdi
     sha256: createHash("sha256").update(entry.bytes).digest("hex"),
     bytes: entry.bytes.byteLength,
     binary,
+    archiveEntries: [binary],
   });
   const lock: SourceAnalysisToolchainLock = {
     kind: "ForgeSourceAnalysisToolchainLock",
@@ -449,6 +469,7 @@ test("verified host produces production semantic rows only from bounded LSP stdi
       {
         name: "rojo",
         version: "fixture",
+        upstreamCommit: "a".repeat(40),
         repository: "example/rojo",
         releaseTag: "fixture",
         githubApiRelease: "https://example.invalid/rojo",
@@ -457,10 +478,20 @@ test("verified host produces production semantic rows only from bounded LSP stdi
       {
         name: "luau-lsp",
         version: "fixture",
+        upstreamCommit: "b".repeat(40),
         repository: "example/lsp",
         releaseTag: "fixture",
         githubApiRelease: "https://example.invalid/lsp",
         assets: [lockedAsset(lspArchive, "luau-lsp")],
+      },
+      {
+        name: "luau-ast",
+        version: "fixture",
+        upstreamCommit: "c".repeat(40),
+        repository: "example/ast",
+        releaseTag: "fixture",
+        githubApiRelease: "https://example.invalid/ast",
+        assets: [lockedAsset(astArchive, "luau-ast")],
       },
     ],
   };
@@ -469,7 +500,11 @@ test("verified host produces production semantic rows only from bounded LSP stdi
     lock,
     platform: "darwin-arm64",
     download: async (asset) =>
-      asset.name === rojoArchive.name ? rojoArchive.bytes : lspArchive.bytes,
+      asset.name === rojoArchive.name
+        ? rojoArchive.bytes
+        : asset.name === lspArchive.name
+          ? lspArchive.bytes
+          : astArchive.bytes,
   });
   const source = "local function greet() return true end\nreturn greet()\n";
   const host = await PinnedSourceAnalysisHost.create({

@@ -133,6 +133,10 @@ export interface StudioManifestProperty {
   readonly reflection: StudioReflectionTypeExpectation;
   /** Catalog class which declares this property, including inherited rows. */
   readonly declaringClass: string;
+  /** At most one member of this coupled setter family may be written per object. */
+  readonly setterFamily?: string;
+  /** Lossless family state seeded from the bound before capture for scratch updates. */
+  readonly setterFamilySeed?: string;
   readonly serialized?: boolean;
   readonly allowed?: readonly string[];
   readonly minimum?: number;
@@ -158,6 +162,8 @@ export interface StudioManifestProperty {
 export interface StudioManifestClass {
   readonly name: string;
   readonly creatable: boolean;
+  /** The fixed, same-class construction route exercised before any live write. */
+  readonly preflightStrategy: "detached_instance";
   readonly source: StudioSourceRule;
   readonly properties: readonly StudioManifestProperty[];
 }
@@ -304,6 +310,7 @@ export type StudioValue =
       readonly elasticity: number;
       readonly frictionWeight: number;
       readonly elasticityWeight: number;
+      readonly acousticAbsorption: number;
     }
   | {
       readonly kind: "axes";
@@ -777,11 +784,16 @@ export function assertStudioCapabilityManifest(
   let previousClass = "";
   for (const entry of classes) {
     const item = record(entry, "manifest class");
-    exactKeys(item, ["name", "creatable", "source", "properties"], "manifest class");
+    exactKeys(
+      item,
+      ["name", "creatable", "preflightStrategy", "source", "properties"],
+      "manifest class",
+    );
     if (
       !nonEmpty(item.name) ||
       item.name <= previousClass ||
-      typeof item.creatable !== "boolean" ||
+      item.creatable !== true ||
+      item.preflightStrategy !== "detached_instance" ||
       !["forbidden", "required_on_create_and_writeable"].includes(String(item.source))
     )
       fail("manifest class");
@@ -796,6 +808,8 @@ export function assertStudioCapabilityManifest(
         "catalogType",
         "reflection",
         "declaringClass",
+        "setterFamily",
+        "setterFamilySeed",
         "serialized",
         "allowed",
         "minimum",
@@ -822,6 +836,25 @@ export function assertStudioCapabilityManifest(
       )
         fail("manifest property");
       assertCatalogType(property.catalogType);
+      if (
+        property.setterFamily !== undefined &&
+        (typeof property.setterFamily !== "string" ||
+          !/^[a-z][a-z0-9_]{0,127}$/.test(property.setterFamily))
+      )
+        fail("manifest property setter family");
+      if (
+        (property.setterFamily === undefined) !== (property.setterFamilySeed === undefined) ||
+        (property.setterFamilySeed !== undefined &&
+          !properties.some((candidate) => {
+            const row = record(candidate, "manifest property");
+            return (
+              row.name === property.setterFamilySeed &&
+              row.setterFamily === property.setterFamily &&
+              row.setterFamilySeed === property.setterFamilySeed
+            );
+          }))
+      )
+        fail("manifest property setter family seed");
       const catalogType = property.catalogType as StudioCatalogType;
       assertReflectionTypeExpectation(property.reflection, catalogType);
       if ((property.codec === "enum_name") !== (catalogType.category === "enum"))
@@ -1389,6 +1422,7 @@ export function canonicalStudioValue(
         elasticity: canonicalF32(value.elasticity),
         frictionWeight: canonicalF32(value.frictionWeight),
         elasticityWeight: canonicalF32(value.elasticityWeight),
+        acousticAbsorption: canonicalF32(value.acousticAbsorption),
       };
       break;
     case "axes":
@@ -1544,7 +1578,15 @@ export function assertStudioValue(value: unknown): asserts value is StudioValue 
     case "physical_properties":
       exactKeys(
         item,
-        ["kind", "density", "friction", "elasticity", "frictionWeight", "elasticityWeight"],
+        [
+          "kind",
+          "density",
+          "friction",
+          "elasticity",
+          "frictionWeight",
+          "elasticityWeight",
+          "acousticAbsorption",
+        ],
         "physical properties value",
       );
       if (
@@ -1554,9 +1596,16 @@ export function assertStudioValue(value: unknown): asserts value is StudioValue 
           item.elasticity,
           item.frictionWeight,
           item.elasticityWeight,
+          item.acousticAbsorption,
         ].every(finiteNumber) ||
-        Number(item.density) <= 0 ||
-        [item.friction, item.elasticity, item.frictionWeight, item.elasticityWeight].some(
+        Number(item.density) < Math.fround(0.0001) ||
+        Number(item.density) > 100 ||
+        Number(item.friction) < 0 ||
+        Number(item.friction) > 2 ||
+        [item.frictionWeight, item.elasticityWeight].some(
+          (entry) => Number(entry) < 0 || Number(entry) > 100,
+        ) ||
+        [item.elasticity, item.acousticAbsorption].some(
           (entry) => Number(entry) < 0 || Number(entry) > 1,
         )
       )
@@ -1606,6 +1655,51 @@ export function assertStudioValue(value: unknown): asserts value is StudioValue 
       if (!nonEmpty(item.value) || !validUtf8(item.value)) fail("enum value");
       return;
   }
+}
+
+/**
+ * One canonical property-write order and coupled-setter admission rule. This
+ * rejects conflicting requests; it never widens the allowed project-index
+ * delta to include unproven engine-derived effects.
+ */
+export function sortedStudioMutationPropertyNames(
+  classDefinition: StudioManifestClass,
+  properties: Readonly<Record<string, StudioValue>>,
+): readonly string[] {
+  record(properties, "mutation properties");
+  const names = Object.keys(properties).sort(compareText);
+  const families = new Map<string, string>();
+  for (const name of names) {
+    const property = classDefinition.properties.find((entry) => entry.name === name);
+    if (property === undefined) fail(`mutation property outside manifest: ${name}`);
+    if (property.setterFamily === undefined) continue;
+    const previous = families.get(property.setterFamily);
+    if (previous !== undefined) fail(`coupled property setters: ${previous} and ${name}`);
+    families.set(property.setterFamily, name);
+  }
+  return names;
+}
+
+/** These fields require exact canary evidence; this does not predict their values. */
+export function derivedStudioMutationPropertyNames(
+  classDefinition: StudioManifestClass,
+  properties: Readonly<Record<string, StudioValue>>,
+): readonly string[] {
+  const families = new Set(
+    sortedStudioMutationPropertyNames(classDefinition, properties).flatMap(
+      (name) =>
+        classDefinition.properties.find((property) => property.name === name)!.setterFamily ?? [],
+    ),
+  );
+  return classDefinition.properties
+    .filter(
+      (property) =>
+        property.setterFamily !== undefined &&
+        families.has(property.setterFamily) &&
+        !Object.hasOwn(properties, property.name),
+    )
+    .map((property) => property.name)
+    .sort(compareText);
 }
 
 export function assertStudioValueForProperty(
@@ -1824,6 +1918,7 @@ export function canonicalStudioValueMaterial(value: StudioValue): string {
         tagged("elasticity", f32Bits(item.elasticity)),
         tagged("friction-weight", f32Bits(item.frictionWeight)),
         tagged("elasticity-weight", f32Bits(item.elasticityWeight)),
+        tagged("acoustic-absorption", f32Bits(item.acousticAbsorption)),
       );
     case "axes":
       return tagged(
@@ -2515,9 +2610,11 @@ export function compileMutationEvidenceProjectionForManifest(
         ...(structureStatus === "observed" ? { expected: expectedStructure } : {}),
       });
     }
-    for (const [name, value] of Object.entries(operation.properties ?? {}).sort(([left], [right]) =>
-      compareText(left, right),
+    for (const name of sortedStudioMutationPropertyNames(
+      manifestClass,
+      operation.properties ?? {},
     )) {
+      const value = operation.properties![name]!;
       const property = manifestClass.properties.find((candidate) => candidate.name === name);
       if (property === undefined) fail(`mutation property outside manifest: ${name}`);
       assertStudioValueForProperty(value, property);
@@ -2527,6 +2624,17 @@ export function compileMutationEvidenceProjectionForManifest(
         target,
         propertyName: name,
         expected: canonicalStudioValue(value, property),
+      });
+    }
+    for (const name of derivedStudioMutationPropertyNames(
+      manifestClass,
+      operation.properties ?? {},
+    )) {
+      requirements.push({
+        key: studioEvidenceFactKey("property", target, name),
+        kind: "property",
+        target,
+        propertyName: name,
       });
     }
     for (const [name, value] of Object.entries(operation.attributes ?? {}).sort(([left], [right]) =>
@@ -3444,6 +3552,7 @@ function numericComponents(value: StudioValue): readonly number[] {
         value.elasticity,
         value.frictionWeight,
         value.elasticityWeight,
+        value.acousticAbsorption,
       ];
     case "ray":
       return [

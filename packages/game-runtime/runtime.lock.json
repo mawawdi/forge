@@ -1,0 +1,41 @@
+{
+  "kind": "ForgeRuntimeLock",
+  "abi": "forge-runtime@1",
+  "provenance": {
+    "owner": "Forge",
+    "license": "MIT",
+    "licenseHash": "0dab7297fe0cbc8aa2f0621f7ce4315b9413e58f8ddf75b4e7615c39c8f241b3",
+    "thirdPartyDependencies": []
+  },
+  "modules": [
+    {
+      "id": "event",
+      "name": "Event",
+      "relativePath": "Event.luau",
+      "sourceHash": "45166b3fcc0c7d5c3ee8bf40f36e991700e79c097e18627e3e77dcc1295cf23e",
+      "utf8Bytes": 4137
+    },
+    {
+      "id": "scope",
+      "name": "Scope",
+      "relativePath": "Scope.luau",
+      "sourceHash": "aaf4b190cadefde3705e2e242a6e935e09df5ecf3cd60903b42354cc25a61d17",
+      "utf8Bytes": 2988
+    },
+    {
+      "id": "state-machine",
+      "name": "StateMachine",
+      "relativePath": "StateMachine.luau",
+      "sourceHash": "e8629169f0455d02d315906ac9e04eb7f3305f28e45c4f6afc307cb1ea776bf8",
+      "utf8Bytes": 3587
+    },
+    {
+      "id": "task",
+      "name": "Task",
+      "relativePath": "Task.luau",
+      "sourceHash": "4f975b89d0aa1e99277bff7f0a86ddf69370caadb1d75fac18adef83e1b7c559",
+      "utf8Bytes": 5039
+    }
+  ],
+  "bundleHash": "917ca9740a82bb061a42cd4b3ee369199dea9e3a3b6d5f4d57079627b0b61736"
+}

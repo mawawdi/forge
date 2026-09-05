@@ -1,8 +1,5 @@
-import { execFile as execFileCallback } from "node:child_process";
-import { lstat, mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
-import { promisify } from "node:util";
+import { lstat, readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { contentHash } from "../../contracts/src/index.js";
 import {
   assertProjectAuthorityManifest,
@@ -11,8 +8,7 @@ import {
   type ProjectAuthorityManifest,
 } from "../../project-authority/src/index.js";
 import { ensureOfficialSourceAnalysisToolchain } from "../../source-intelligence/src/index.js";
-
-const execFile = promisify(execFileCallback);
+import { generatePinnedRojoSourcemap } from "../../project-authority/src/host.js";
 
 export interface CreatorServeOptions {
   readonly valid: boolean;
@@ -116,6 +112,7 @@ export async function loadCreatorServeOptions(
       );
     const sourceMap = await generatePinnedRojoSourcemap({
       executable: rojo.executable,
+      expectedBinaryHash: rojo.binaryHash,
       workspaceRoot,
       projectFile: manifest.rojo.projectFile,
     });
@@ -123,6 +120,7 @@ export async function loadCreatorServeOptions(
       manifest,
       workspaceRoot,
       rojo: {
+        executable: rojo.executable,
         sourcemap: createRojoSourcemapArtifact({
           manifest,
           projectFileHash: contentHash(projectFile),
@@ -141,48 +139,6 @@ export async function loadCreatorServeOptions(
       context,
     },
   };
-}
-
-/**
- * The only authority map source is a fresh result from the verified, pinned
- * Rojo executable. A manifest can name the project root but cannot smuggle a
- * user-authored sourcemap into a creator transaction.
- */
-async function generatePinnedRojoSourcemap(input: {
-  readonly executable: string;
-  readonly workspaceRoot: string;
-  readonly projectFile: string;
-}): Promise<string> {
-  const temporaryRoot = await mkdtemp(join(tmpdir(), "forge-rojo-sourcemap-"));
-  const output = join(temporaryRoot, "sourcemap.json");
-  try {
-    const projectPath = resolve(input.workspaceRoot, input.projectFile);
-    const result = await execFile(
-      input.executable,
-      ["sourcemap", projectPath, "--output", output],
-      {
-        cwd: input.workspaceRoot,
-        encoding: "utf8",
-        maxBuffer: 4 * 1024 * 1024,
-        windowsHide: true,
-      },
-    );
-    if (result.stdout.length > 256 * 1024 || result.stderr.length > 256 * 1024)
-      throw new Error("Pinned Rojo sourcemap produced excessive diagnostic output");
-    const sourceMap = await readRegularText(
-      temporaryRoot,
-      basename(output),
-      "Pinned Rojo sourcemap",
-    );
-    if (Buffer.byteLength(sourceMap, "utf8") > 16 * 1024 * 1024)
-      throw new Error("Pinned Rojo sourcemap exceeds the 16 MiB authority bound");
-    return sourceMap;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Verified Rojo sourcemap failed before creator startup: ${message}`);
-  } finally {
-    await rm(temporaryRoot, { recursive: true, force: true });
-  }
 }
 
 async function readRegularText(

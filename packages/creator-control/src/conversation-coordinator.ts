@@ -109,6 +109,7 @@ import {
   preparationFailureMessage,
 } from "./agent-failure.js";
 import { creatorTerminalOutputKey } from "../../creator-conversation/src/contracts.js";
+import { HostPhaseRecorder } from "../../flight-recorder/src/host-phase.js";
 import { activityDetail, failedActivityDetail } from "./agent-activity.js";
 import { WorkspaceLabels, workspaceProjectKey, workspaceRenameSchema } from "./workspace-labels.js";
 
@@ -173,6 +174,7 @@ type JobExecutionAssessment =
  * contracts without deriving legal actions from status strings in the browser.
  */
 export class CreatorConversationCoordinator {
+  private readonly timings: HostPhaseRecorder;
   private readonly workspaceLabels: WorkspaceLabels;
   private readonly store: CreatorConversationStore;
   private readonly identityJobStore: CreatorProjectIdentityJobStore;
@@ -221,6 +223,7 @@ export class CreatorConversationCoordinator {
     },
   ) {
     this.store = new CreatorConversationStore(options.directory, options.conversationStoreOptions);
+    this.timings = new HostPhaseRecorder(options.directory);
     this.workspaceLabels = new WorkspaceLabels(options.directory);
     this.identityJobStore = new CreatorProjectIdentityJobStore(this.store.artifactStore);
     this.modelRegistry = materializeModelRegistry(
@@ -1034,7 +1037,8 @@ export class CreatorConversationCoordinator {
           ? "agent_turn"
           : executionPurpose
             ? "agent_action"
-            : liveDescriptor.actionId === "apply_changes"
+            : liveDescriptor.actionId === "apply_changes" ||
+                liveDescriptor.actionId === "resume_build"
               ? "studio_transaction"
               : "control_action",
         status: "queued",
@@ -3853,6 +3857,7 @@ export class CreatorConversationCoordinator {
       ...(turnContract ? { turnContract } : {}),
       actions,
       ...activity,
+      ...(transactionView?.gameBuild ? { gameBuild: transactionView.gameBuild } : {}),
       technicalAttachments: transactionView
         ? [
             ...(await technicalAttachmentsFromView(transactionView, this.store)),
@@ -4098,6 +4103,26 @@ export class CreatorConversationCoordinator {
     loaded: LoadedCreatorConversation,
     input: AppendEventWithoutConversation,
   ): Promise<LoadedCreatorConversation> {
+    if (
+      (input.eventType !== "terminal_output" && input.eventType !== "plan_revision") ||
+      !input.binding?.sessionId
+    )
+      return this.appendMeasured(loaded, input);
+    return this.timings.measure(
+      "conversation_publication",
+      {
+        sessionId: input.binding.sessionId,
+        conversationId: loaded.conversation.id,
+        ...(input.episodeId ? { episodeId: input.episodeId } : {}),
+      },
+      () => this.appendMeasured(loaded, input),
+    );
+  }
+
+  private async appendMeasured(
+    loaded: LoadedCreatorConversation,
+    input: AppendEventWithoutConversation,
+  ): Promise<LoadedCreatorConversation> {
     const occurredAt = this.now();
     const sequence = loaded.head.sequence + 1;
     const introducesEpisode =
@@ -4170,7 +4195,25 @@ export class CreatorConversationCoordinator {
     });
   }
 
-  private async materializeConversationContext(
+  private materializeConversationContext(
+    ...args: Parameters<CreatorConversationCoordinator["materializeConversationContextMeasured"]>
+  ) {
+    const job = args[0].jobs.find(
+      (candidate) => candidate.turnId === args[2] && candidate.transactionSessionId,
+    );
+    if (!job?.transactionSessionId) return this.materializeConversationContextMeasured(...args);
+    return this.timings.measure(
+      "conversation_context",
+      {
+        sessionId: job.transactionSessionId,
+        jobId: job.id,
+        conversationId: args[0].conversation.id,
+      },
+      () => this.materializeConversationContextMeasured(...args),
+    );
+  }
+
+  private async materializeConversationContextMeasured(
     loaded: LoadedCreatorConversation,
     request: CreatorTurnRequest,
     currentTurnId: string,
@@ -5256,6 +5299,7 @@ function externalAction(id: string): CreatorControlActionDescriptor["actionId"] 
     {
       transaction_approve_plan: "build_plan",
       transaction_retry_build: "retry_build",
+      transaction_resume_build: "resume_build",
       transaction_reject_plan: "reject_plan",
       transaction_approve_and_apply_changes: "apply_changes",
       transaction_reject_changes: "reject_changes",
@@ -5277,6 +5321,7 @@ function actionLabel(id: CreatorControlActionDescriptor["actionId"]): string {
       {
         build_plan: "Accept plan",
         retry_build: "Retry build",
+        resume_build: "Continue build",
         reject_plan: "Reject plan",
         apply_changes: "Apply changes",
         reject_changes: "Don’t apply",
@@ -5307,7 +5352,14 @@ function actionIntent(
     ].includes(id)
   )
     return "danger";
-  return ["build_plan", "retry_build", "apply_changes", "retry_play", "keep_changes"].includes(id)
+  return [
+    "build_plan",
+    "retry_build",
+    "resume_build",
+    "apply_changes",
+    "retry_play",
+    "keep_changes",
+  ].includes(id)
     ? "primary"
     : "secondary";
 }
@@ -5319,7 +5371,7 @@ function decisionForAction(
   if (id === "build_plan" || id === "retry_build") return "build";
   if (id === "revise_plan") return "revise_plan";
   if (id === "reject_plan") return "reject_plan";
-  if (id === "apply_changes") return "apply";
+  if (id === "apply_changes" || id === "resume_build") return "apply";
   if (id === "reject_changes") return "reject_change";
   if (id === "retry_play") return "retry_play";
   if (id === "cancel_changes") return "cancel_change";
@@ -5401,6 +5453,7 @@ function transactionAction(
     {
       build_plan: "transaction_approve_plan",
       retry_build: "transaction_retry_build",
+      resume_build: "transaction_resume_build",
       reject_plan: "transaction_reject_plan",
       apply_changes: "transaction_approve_and_apply_changes",
       reject_changes: "transaction_reject_changes",
@@ -5443,6 +5496,7 @@ function lowerActionStillEligible(
 ): boolean {
   if (actionId === "build_plan") return status === "awaiting_plan_approval";
   if (actionId === "retry_build") return status === "incomplete";
+  if (actionId === "resume_build") return status === "incomplete";
   if (actionId === "apply_changes") return status === "awaiting_change_approval";
   if (actionId === "retry_play") return status === "awaiting_verification_retry";
   if (actionId === "refresh_project") return status === "refresh_required";

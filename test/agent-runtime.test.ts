@@ -1072,9 +1072,9 @@ test("creator builder repair AgentRuns bind distinct terminal execution journals
         finalization: {
           status: "sealed",
           artifact: {
-            kind: "change_set",
-            id: `creator_change_set_repair_${repair}`,
-            hash: contentHash(`creator-change-set-repair-${repair}`),
+            kind: "game_build_graph",
+            id: `game_build_graph_repair_${repair}`,
+            hash: contentHash(`game-build-graph-repair-${repair}`),
           },
         },
         runtime,

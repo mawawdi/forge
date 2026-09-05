@@ -9,6 +9,7 @@ import { ProjectSettings } from "./components/ProjectSettings";
 import { ProjectRail } from "./components/ProjectRail";
 import { ConversationSearch } from "./components/ConversationSearch";
 import { Icon } from "./components/Icon";
+import { GameBuildWindow } from "./components/GameBuildWindow";
 import type { CreatorConversationEvent } from "./types";
 
 const TechnicalDetailsSheet = lazy(() => import("./components/TechnicalDetailsSheet"));
@@ -28,6 +29,7 @@ export function App(): React.JSX.Element {
   const [contextOpen, setContextOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [graphOpen, setGraphOpen] = useState(false);
   const [awayFromLatest, setAwayFromLatest] = useState(false);
   const [newUpdates, setNewUpdates] = useState(false);
   const [commandError, setCommandError] = useState<string>();
@@ -37,6 +39,7 @@ export function App(): React.JSX.Element {
   const detailsReturnFocus = useRef<HTMLElement | undefined>(undefined);
   const projectReturnFocus = useRef<HTMLElement | undefined>(undefined);
   const contextReturnFocus = useRef<HTMLElement | undefined>(undefined);
+  const graphReturnFocus = useRef<HTMLElement | undefined>(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastConversation = useRef<string | undefined>(undefined);
   const followingLatest = useRef(true);
@@ -60,6 +63,7 @@ export function App(): React.JSX.Element {
     setDetailsOpen(false);
     setDetailsEvent(undefined);
     setContextOpen(false);
+    setGraphOpen(false);
     setCommandError(undefined);
     if (focusNewConversation.current) {
       document.getElementById("forge-message")?.focus({ preventScroll: true });
@@ -175,13 +179,14 @@ export function App(): React.JSX.Element {
     function handleKey(event: KeyboardEvent): void {
       if (event.defaultPrevented || event.isComposing || !(event.metaKey || event.ctrlKey)) return;
       if (event.key.toLowerCase() === "k") {
+        if (graphOpen) return;
         event.preventDefault();
         setContextOpen(false);
         closeDetails();
         setSearchOpen(!searchOpen);
         return;
       }
-      if (searchOpen || contextOpen || detailsOpen) return;
+      if (searchOpen || contextOpen || detailsOpen || graphOpen) return;
       if (event.shiftKey && event.key.toLowerCase() === "o") {
         event.preventDefault();
         void createConversation();
@@ -237,6 +242,10 @@ export function App(): React.JSX.Element {
         projectsVisible={projectsVisible}
         onOpenProjects={toggleProjects}
         onOpenDetails={(source) => openDetails(undefined, source)}
+        onOpenGraph={(source) => {
+          graphReturnFocus.current = source;
+          setGraphOpen(true);
+        }}
         onOpenContext={(source) => {
           contextReturnFocus.current = source;
           setContextOpen(true);
@@ -388,6 +397,13 @@ export function App(): React.JSX.Element {
           contextReturnFocus.current?.focus();
         }}
       />
+      {graphOpen ? (
+        <GameBuildWindow
+          view={state?.controlView?.gameBuild}
+          returnFocusTo={graphReturnFocus.current}
+          onClose={() => setGraphOpen(false)}
+        />
+      ) : null}
       <Suspense
         fallback={
           detailsOpen ? <div className="technical-loading">Opening technical details…</div> : null

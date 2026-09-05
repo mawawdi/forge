@@ -104,6 +104,11 @@ export interface CreatorTransactionTopologyProjection<
   /** A deterministic order that never observes a transient invalid topology. */
   readonly orderedOperations: readonly TOperation[];
   readonly orderedOperationIds: readonly string[];
+  /** Exact constraints used by the fixed transaction ordering, before canonical tie-breaking. */
+  readonly dependencyEdges: readonly {
+    readonly operationId: string;
+    readonly dependencyId: string;
+  }[];
   /** Final live nodes, sorted by identity key. */
   readonly finalNodes: readonly CreatorTransactionTopologyFinalNode[];
   /** Every identity removed by an authored delete, including descendants. */
@@ -344,28 +349,27 @@ export function compileCreatorTransactionTopology<
     }
   }
 
+  const initialSiblings = indexSiblings(initial);
   for (const [operationId, placement] of placementByOperation) {
     const operation = operationById.get(operationId)!;
     const targetKey = targetKeyFor(operation.target, operation.id);
-    const initialOccupant = findInitialSibling(
-      initial,
-      placement.parentKey,
-      placement.name,
-      targetKey,
-    );
-    if (!initialOccupant) continue;
-    const freeingOperation = operationThatFreesNode(
-      initialOccupant,
-      initial,
-      nodes,
-      operationByTarget,
-      deletedByIdentity,
-    );
-    if (!freeingOperation)
-      throw new Error(
-        `Creator transaction final sibling name collision at ${placement.parentKey}/${placement.name}`,
+    // An observed slot may contain several opaque identities. Every occupant
+    // must leave before a replacement can be materialized in that slot.
+    for (const occupant of initialSiblings.get(placement.parentKey)?.get(placement.name) ?? []) {
+      if (occupant === targetKey) continue;
+      const freeingOperation = operationThatFreesNode(
+        occupant,
+        initial,
+        nodes,
+        operationByTarget,
+        deletedByIdentity,
       );
-    addDependency(operationId, freeingOperation);
+      if (!freeingOperation)
+        throw new Error(
+          `Creator transaction final sibling name collision at ${placement.parentKey}/${placement.name}`,
+        );
+      addDependency(operationId, freeingOperation);
+    }
   }
 
   for (const [nodeKey, initialNode] of initial) {
@@ -405,6 +409,13 @@ export function compileCreatorTransactionTopology<
   return Object.freeze({
     orderedOperations: Object.freeze(orderedOperations),
     orderedOperationIds: Object.freeze(orderedOperationIds),
+    dependencyEdges: Object.freeze(
+      [...dependencies]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .flatMap(([operationId, required]) =>
+          [...required].sort().map((dependencyId) => Object.freeze({ operationId, dependencyId })),
+        ),
+    ),
     finalNodes: Object.freeze(finalNodes),
     deletedIdentityKeys: Object.freeze([...deletedByIdentity.keys()].sort()),
   });
@@ -621,20 +632,15 @@ function assertFinalPlacementsDoNotCollide<TOperation extends CreatorTransaction
   placements: ReadonlyMap<string, { readonly parentKey: string; readonly name: string }>,
   operationsById: ReadonlyMap<string, TOperation>,
 ): void {
+  const siblings = indexSiblings(nodes, deleted);
   for (const [operationId, placement] of placements) {
     const operation = operationsById.get(operationId);
     if (!operation) throw new Error(`Creator transaction lost placement operation ${operationId}`);
     const targetKey = targetKeyFor(operation.target, operation.id);
-    const collision = [...nodes.values()].find(
-      (node) =>
-        !deleted.has(node.identityKey) &&
-        node.identityKey !== targetKey &&
-        node.parentKey === placement.parentKey &&
-        node.name === placement.name,
-    );
+    const collision = findSibling(siblings, placement.parentKey, placement.name, targetKey);
     if (collision !== undefined)
       throw new Error(
-        `Creator transaction final sibling name collision (${targetKey} and ${collision.identityKey})`,
+        `Creator transaction final sibling name collision (${targetKey} and ${collision})`,
       );
   }
 }
@@ -719,17 +725,38 @@ function operationPropertyValues(
   return Object.values(operation.properties);
 }
 
-function findInitialSibling(
-  initial: ReadonlyMap<string, MutableTopologyNode>,
+type SiblingIndex = ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>;
+
+/** Preserve every identity in an occupied slot, including pre-existing duplicate names. */
+function indexSiblings(
+  nodes: ReadonlyMap<string, MutableTopologyNode>,
+  excluded?: ReadonlySet<string>,
+): SiblingIndex {
+  const parents = new Map<string, Map<string, string[]>>();
+  for (const node of nodes.values()) {
+    if (node.parentKey === undefined || excluded?.has(node.identityKey)) continue;
+    let names = parents.get(node.parentKey);
+    if (!names) {
+      names = new Map();
+      parents.set(node.parentKey, names);
+    }
+    const occupants = names.get(node.name);
+    if (occupants) occupants.push(node.identityKey);
+    else names.set(node.name, [node.identityKey]);
+  }
+  return parents;
+}
+
+function findSibling(
+  siblings: SiblingIndex,
   parentKey: string,
   name: string,
   exceptKey: string,
 ): string | undefined {
-  for (const node of initial.values()) {
-    if (node.identityKey !== exceptKey && node.parentKey === parentKey && node.name === name)
-      return node.identityKey;
-  }
-  return undefined;
+  return siblings
+    .get(parentKey)
+    ?.get(name)
+    ?.find((key) => key !== exceptKey);
 }
 
 function operationThatFreesNode<TOperation extends CreatorTransactionTopologyOperation>(

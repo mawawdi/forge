@@ -18,6 +18,10 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 import {
+  AnalysisProcessDeadline,
+  type LuauAnalysisExecutionOptions,
+} from "../../luau-toolchain/src/process.js";
+import {
   createPinnedLuauLspSourceIndex,
   type SourceDocumentInput,
   type SourceDocumentDescriptor,
@@ -33,7 +37,7 @@ import {
  * carries GitHub's release-asset digest and size, not a mutable PATH lookup.
  */
 export const OFFICIAL_SOURCE_ANALYSIS_TOOLCHAIN_LOCK_HASH =
-  "49699a17a8536fc02448fcc4516d9b0affccf07fdce458f7074d3b37eb1597a2";
+  "1c2a2c933b7fda5cb539fd015accc954bc16273a467c9726d1347e454617c76d";
 
 export type SourceAnalysisPlatform =
   "darwin-arm64" | "darwin-x64" | "linux-arm64" | "linux-x64" | "win32-arm64" | "win32-x64";
@@ -44,13 +48,15 @@ export interface SourceAnalysisToolAsset {
   readonly url: string;
   readonly sha256: string;
   readonly bytes: number;
-  /** The sole regular file extracted from the signed release asset. */
+  /** Exact admitted archive listing. Only binary is extracted. */
+  readonly archiveEntries: readonly string[];
   readonly binary: string;
 }
 
 export interface SourceAnalysisToolLock {
-  readonly name: "rojo" | "luau-lsp";
+  readonly name: "rojo" | "luau-lsp" | "luau-ast";
   readonly version: string;
+  readonly upstreamCommit: string;
   readonly repository: string;
   readonly releaseTag: string;
   readonly githubApiRelease: string;
@@ -64,8 +70,9 @@ export interface SourceAnalysisToolchainLock {
 }
 
 export interface VerifiedPinnedSourceAnalysisTool {
-  readonly name: "rojo" | "luau-lsp";
+  readonly name: "rojo" | "luau-lsp" | "luau-ast";
   readonly version: string;
+  readonly upstreamCommit: string;
   readonly asset: SourceAnalysisToolAsset;
   /** Absolute local path. This is host state and is never copied to an artifact. */
   readonly executable: string;
@@ -90,8 +97,9 @@ export interface PinnedSourceAnalysisToolchainProof {
   readonly lockHash: string;
   readonly platform: SourceAnalysisPlatform;
   readonly tools: readonly {
-    readonly name: "rojo" | "luau-lsp";
+    readonly name: "rojo" | "luau-lsp" | "luau-ast";
     readonly version: string;
+    readonly upstreamCommit: string;
     readonly assetName: string;
     readonly assetHash: string;
     readonly assetBytes: number;
@@ -110,7 +118,7 @@ export interface PinnedSourceAnalysisArtifact {
   readonly sourceSnapshotHash: string;
   readonly toolchain: PinnedSourceAnalysisToolchainProof;
   readonly executions: readonly {
-    readonly tool: "rojo" | "luau-lsp";
+    readonly tool: "rojo" | "luau-lsp" | "luau-ast";
     readonly commandHash: string;
     readonly exitCode: number;
     readonly stdoutHash: string;
@@ -133,6 +141,29 @@ export interface IncompletePinnedSourceAnalysisResult {
 
 export type PinnedSourceAnalysisOutcome =
   PinnedSourceAnalysisResult | IncompletePinnedSourceAnalysisResult;
+
+export interface PinnedLuauAstDocument {
+  readonly documentId: string;
+  readonly path: string;
+  readonly className: string;
+  readonly executionContext: "server" | "client" | "shared";
+  readonly sourceHash: string;
+  readonly utf8Bytes: number;
+  readonly typeMode: "default" | "strict" | "nonstrict" | "nocheck";
+  readonly ast: unknown;
+}
+
+export interface PinnedLuauAstAnalysis {
+  readonly kind: "PinnedLuauAstAnalysis";
+  readonly status: "complete";
+  readonly hash: string;
+  readonly snapshotHash: string;
+  readonly toolchain: PinnedSourceAnalysisToolchainProof;
+  readonly documents: readonly PinnedLuauAstDocument[];
+  readonly executions: PinnedSourceAnalysisArtifact["executions"];
+  readonly executionPolicy: AnalysisProcessDeadline["policy"];
+}
+export type PinnedLuauAstOutcome = PinnedLuauAstAnalysis | IncompletePinnedSourceAnalysisResult;
 
 const LSP_REQUEST_TIMEOUT_MS = 5_000;
 const LSP_SESSION_TIMEOUT_MS = 30_000;
@@ -272,6 +303,7 @@ export async function assertPinnedSourceAnalysisToolchain(
     tools.push({
       name: tool.name,
       version: tool.version,
+      upstreamCommit: tool.upstreamCommit,
       asset,
       executable,
       binaryHash: hashBytes(expectedBinary),
@@ -349,7 +381,7 @@ export async function assertOfficialSourceAnalysisToolchain(
 }
 
 /**
- * Production-only host boundary. Construction verifies the two absolute
+ * Production-only host boundary. Construction verifies the three absolute
  * binaries before any source is staged. The deterministic navigation index
  * remains intentionally separate: it offers bounded document navigation while
  * this artifact proves that the pinned tools analyzed the same source hashes.
@@ -376,9 +408,102 @@ export class PinnedSourceAnalysisHost {
     return toolchainProof(this.toolchain);
   }
 
-  async analyze(input: PinnedSourceAnalysisInput): Promise<PinnedSourceAnalysisOutcome> {
+  /** Official parser output only. This never executes candidate Luau or type functions. */
+  async analyzeAst(
+    input: PinnedSourceAnalysisInput,
+    options: LuauAnalysisExecutionOptions = {},
+  ): Promise<PinnedLuauAstOutcome> {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), "forge-pinned-luau-ast-"));
+    try {
+      const admitted = admitProductionSourceAnalysis(input);
+      const staged = await stageSourceDocuments(admitted, temporaryRoot);
+      const parser = this.requiredTool("luau-ast");
+      // Recheck the installed executable at use, after the constructor's archive proof.
+      const status = await lstat(parser.executable);
+      if (
+        !status.isFile() ||
+        status.isSymbolicLink() ||
+        status.size !== parser.binaryBytes ||
+        hashBytes(await readFile(parser.executable)) !== parser.binaryHash
+      )
+        throw new Error("Pinned luau-ast executable integrity mismatch");
+      const execution = new AnalysisProcessDeadline(options);
+      const documents: PinnedLuauAstDocument[] = [];
+      const executions: PinnedSourceAnalysisArtifact["executions"][number][] = [];
+      for (const entry of staged.entries) {
+        const result = execution.run(parser.executable, [entry.file], {
+          cwd: temporaryRoot,
+          maxBuffer: 20 * 1024 * 1024,
+        });
+        if (result.failure)
+          return {
+            status: "incomplete",
+            code:
+              result.failure.kind === "timeout" || result.failure.kind === "output_limit"
+                ? "source_analysis_resource_exhausted"
+                : "source_analysis_failed",
+            reason: "luau_ast_" + result.failure.kind,
+          };
+        if (result.status !== 0)
+          return {
+            status: "incomplete",
+            code: "source_analysis_failed",
+            reason: "luau_ast_parse_failed",
+          };
+        const ast: unknown = JSON.parse(result.stdout);
+        if (
+          !isRecord(ast) ||
+          !isRecord(ast.root) ||
+          ast.root.type !== "AstStatBlock" ||
+          !Array.isArray(ast.root.body) ||
+          !Array.isArray(ast.commentLocations)
+        )
+          throw new Error("Official luau-ast returned an unsupported document envelope");
+        documents.push({
+          ...entry.document,
+          utf8Bytes: Buffer.byteLength(entry.source),
+          typeMode: astTypeMode(ast.commentLocations, entry.source),
+          ast,
+        });
+        executions.push(
+          executionRecord("luau-ast", ["<pinned-luau-ast>", entry.document.sourceHash], {
+            exitCode: result.status,
+            stdout: Buffer.from(result.stdout),
+            stderr: Buffer.from(result.stderr),
+          }),
+        );
+      }
+      const payload = {
+        kind: "PinnedLuauAstAnalysis" as const,
+        status: "complete" as const,
+        snapshotHash: input.snapshotHash,
+        toolchain: this.proof(),
+        documents,
+        executions,
+        executionPolicy: execution.policy,
+      };
+      return { ...payload, hash: contentHash(stableJson(payload)) };
+    } catch (error) {
+      return {
+        status: "incomplete",
+        code:
+          error instanceof SourceAnalysisResourceExhausted
+            ? "source_analysis_resource_exhausted"
+            : "source_analysis_failed",
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  }
+
+  async analyze(
+    input: PinnedSourceAnalysisInput,
+    options: LuauAnalysisExecutionOptions = {},
+  ): Promise<PinnedSourceAnalysisOutcome> {
     const temporaryRoot = await mkdtemp(join(tmpdir(), "forge-pinned-source-analysis-"));
     try {
+      const execution = new AnalysisProcessDeadline(options);
       const admitted = admitProductionSourceAnalysis(input);
       const staged = await stageSourceDocuments(admitted, temporaryRoot);
       const projectPath = join(temporaryRoot, "default.project.json");
@@ -391,8 +516,9 @@ export class PinnedSourceAnalysisHost {
       const rojo = this.requiredTool("rojo");
       const rojoRun = await runVerifiedBinary(
         rojo.executable,
-        ["sourcemap", projectPath, "--output", sourcemapPath],
+        ["sourcemap", projectPath, "--include-non-scripts", "--output", sourcemapPath],
         temporaryRoot,
+        execution,
       );
       if (rojoRun.exitCode !== 0)
         return {
@@ -420,6 +546,7 @@ export class PinnedSourceAnalysisHost {
           analysisConfigHash: contentHash(
             stableJson({
               toolchainProofHash: toolchain.hash,
+              subprocessPolicy: execution.policy,
               sourcemapHash,
               protocol: "lsp-stdio-document-symbol-references-v1",
               limits: {
@@ -445,7 +572,13 @@ export class PinnedSourceAnalysisHost {
       const executions = [
         executionRecord(
           "rojo",
-          ["sourcemap", "<staged-project>", "--output", "<temporary-sourcemap>"],
+          [
+            "sourcemap",
+            "<staged-project>",
+            "--include-non-scripts",
+            "--output",
+            "<temporary-sourcemap>",
+          ],
           rojoRun,
         ),
         {
@@ -498,7 +631,7 @@ export class PinnedSourceAnalysisHost {
     }
   }
 
-  private requiredTool(name: "rojo" | "luau-lsp"): VerifiedPinnedSourceAnalysisTool {
+  private requiredTool(name: "rojo" | "luau-lsp" | "luau-ast"): VerifiedPinnedSourceAnalysisTool {
     const tool = this.toolchain.tools.find((entry) => entry.name === name);
     if (!tool) throw new Error(`Verified source analysis toolchain is missing ${name}`);
     return tool;
@@ -513,15 +646,17 @@ export function assertSourceAnalysisToolchainLock(
     value.kind !== "ForgeSourceAnalysisToolchainLock" ||
     value.version !== 1 ||
     !Array.isArray(value.tools) ||
-    value.tools.length !== 2
+    value.tools.length !== 3
   )
     throw new Error("Invalid source analysis toolchain lock");
   const names = new Set<string>();
   for (const tool of value.tools) {
     if (
       !isRecord(tool) ||
-      (tool.name !== "rojo" && tool.name !== "luau-lsp") ||
+      (tool.name !== "rojo" && tool.name !== "luau-lsp" && tool.name !== "luau-ast") ||
       typeof tool.version !== "string" ||
+      typeof tool.upstreamCommit !== "string" ||
+      !/^[a-f0-9]{40}$/.test(tool.upstreamCommit) ||
       !nonEmptyText(tool.repository) ||
       !nonEmptyText(tool.releaseTag) ||
       !httpsUrl(tool.githubApiRelease) ||
@@ -541,7 +676,12 @@ export function assertSourceAnalysisToolchainLock(
         !httpsUrl(asset.url) ||
         !isHash(asset.sha256) ||
         !positiveInteger(asset.bytes) ||
-        !safeFileName(asset.binary)
+        !safeFileName(asset.binary) ||
+        !Array.isArray(asset.archiveEntries) ||
+        asset.archiveEntries.length === 0 ||
+        !asset.archiveEntries.every(safeFileName) ||
+        new Set(asset.archiveEntries).size !== asset.archiveEntries.length ||
+        !asset.archiveEntries.includes(asset.binary)
       )
         throw new Error("Invalid source analysis toolchain lock asset");
       if (assetNames.has(asset.name))
@@ -549,12 +689,14 @@ export function assertSourceAnalysisToolchainLock(
       assetNames.add(asset.name);
     }
   }
-  if (names.size !== 2 || !names.has("rojo") || !names.has("luau-lsp"))
-    throw new Error("Source analysis toolchain lock must pin Rojo and luau-lsp exactly once");
+  if (names.size !== 3 || !names.has("rojo") || !names.has("luau-lsp") || !names.has("luau-ast"))
+    throw new Error(
+      "Source analysis toolchain lock must pin Rojo, luau-lsp and luau-ast exactly once",
+    );
 }
 
 function orderedTools(lock: SourceAnalysisToolchainLock): readonly SourceAnalysisToolLock[] {
-  return ["rojo", "luau-lsp"].map((name) => {
+  return ["rojo", "luau-lsp", "luau-ast"].map((name) => {
     const tool = lock.tools.find((entry) => entry.name === name);
     if (!tool) throw new Error(`Source analysis toolchain lock is missing ${name}`);
     return tool;
@@ -594,7 +736,7 @@ function archivePath(
 }
 
 function executablePath(directory: string, tool: SourceAnalysisToolLock): string {
-  return resolve(directory, "bin", tool.name === "rojo" ? "rojo" : "luau-lsp");
+  return resolve(directory, "bin", tool.name);
 }
 
 async function verifiedArchiveState(
@@ -724,7 +866,7 @@ async function extractLockedBinary(
   if (listing.exitCode !== 0)
     throw new Error(`Unable to inspect pinned release archive ${archive}`);
   const entries = listing.stdout.toString("utf8").split(/\r?\n/u).filter(Boolean);
-  if (entries.length !== 1 || entries[0] !== asset.binary)
+  if (stableJson(entries.sort()) !== stableJson([...asset.archiveEntries].sort()))
     throw new Error(`Pinned release archive has an unexpected file layout: ${archive}`);
   const extracted = await captureBinary("unzip", ["-p", archive, asset.binary]);
   if (extracted.exitCode !== 0)
@@ -759,33 +901,66 @@ async function captureBinary(
   });
 }
 
+/** Match the pinned parser's header hotcomments and Frontend::parseMode.
+ * Locations come from the official parser; no source tokenization happens here.
+ */
+function astTypeMode(
+  comments: readonly unknown[],
+  source: string,
+): PinnedLuauAstDocument["typeMode"] {
+  const bytes = Buffer.from(source);
+  const lineStarts = [0];
+  for (let i = 0; i < bytes.length; i++) if (bytes[i] === 10) lineStarts.push(i + 1);
+  const spans = comments
+    .map((comment) => {
+      if (!isRecord(comment) || typeof comment.location !== "string")
+        throw new Error("Unsupported official AST comment location");
+      const match = /^(\d+),(\d+) - (\d+),(\d+)$/.exec(comment.location);
+      if (!match) throw new Error("Unsupported official AST comment range");
+      const startLine = Number(match[1]),
+        endLine = Number(match[3]);
+      if (lineStarts[startLine] === undefined || lineStarts[endLine] === undefined)
+        throw new Error("AST comment line exceeds source");
+      const start = lineStarts[startLine]! + Number(match[2]),
+        end = lineStarts[endLine]! + Number(match[4]);
+      if (start < 0 || end < start || end > bytes.length)
+        throw new Error("AST comment range exceeds source");
+      return { start, end, type: comment.type };
+    })
+    .sort((a, b) => a.start - b.start);
+  let cursor = 0;
+  for (const span of spans) {
+    if (span.start < cursor) throw new Error("AST comments overlap");
+    if (!/^[\t\n\v\f\r ]*$/.test(bytes.subarray(cursor, span.start).toString("utf8"))) break;
+    const text = bytes.subarray(span.start, span.end).toString("utf8");
+    if (span.type === "Comment" && text.startsWith("--!")) {
+      const mode = text.slice(3).replace(/[\t\n\v\f\r ]+$/, "");
+      if (mode === "nocheck" || mode === "nonstrict" || mode === "strict") return mode;
+    }
+    cursor = span.end;
+  }
+  return "default";
+}
+
 async function runVerifiedBinary(
   executable: string,
   args: readonly string[],
   cwd: string,
+  execution: AnalysisProcessDeadline,
 ): Promise<{
   readonly exitCode: number;
   readonly stdout: Buffer;
   readonly stderr: Buffer;
 }> {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(executable, [...args], {
-      cwd,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(Buffer.from(chunk)));
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(Buffer.from(chunk)));
-    child.once("error", reject);
-    child.once("close", (code) =>
-      resolvePromise({
-        exitCode: code ?? 1,
-        stdout: Buffer.concat(stdout),
-        stderr: Buffer.concat(stderr),
-      }),
-    );
-  });
+  const result = execution.run(executable, [...args], { cwd, maxBuffer: 20 * 1024 * 1024 });
+  if (result.failure?.kind === "timeout" || result.failure?.kind === "output_limit")
+    throw new SourceAnalysisResourceExhausted(result.failure.kind);
+  if (result.failure) throw new Error("Pinned analysis process failed: " + result.failure.kind);
+  return {
+    exitCode: result.status ?? 1,
+    stdout: Buffer.from(result.stdout),
+    stderr: Buffer.from(result.stderr),
+  };
 }
 
 interface LspPosition {
@@ -1283,6 +1458,8 @@ function isLowSurrogate(value: number): boolean {
 class SourceAnalysisResourceExhausted extends Error {
   constructor(
     reason:
+      | "timeout"
+      | "output_limit"
       | "document_count_exceeded"
       | "document_source_bytes_exceeded"
       | "aggregate_source_bytes_exceeded"
@@ -1547,7 +1724,7 @@ async function canonicalPrivateSourcemapHash(
 }
 
 function executionRecord(
-  tool: "rojo" | "luau-lsp",
+  tool: "rojo" | "luau-lsp" | "luau-ast",
   command: readonly string[],
   result: {
     readonly exitCode: number;
@@ -1570,6 +1747,7 @@ function toolchainProof(
   const tools = value.tools.map((tool) => ({
     name: tool.name,
     version: tool.version,
+    upstreamCommit: tool.upstreamCommit,
     assetName: tool.asset.name,
     assetHash: tool.asset.sha256,
     assetBytes: tool.asset.bytes,
@@ -1597,6 +1775,7 @@ function toolMaterial(tool: VerifiedPinnedSourceAnalysisTool): Omit<
   return {
     name: tool.name,
     version: tool.version,
+    upstreamCommit: tool.upstreamCommit,
     asset: {
       name: tool.asset.name,
       sha256: tool.asset.sha256,

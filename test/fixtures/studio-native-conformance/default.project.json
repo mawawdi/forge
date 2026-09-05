@@ -1,0 +1,25 @@
+{
+  "name": "ForgeNativeConformance",
+  "tree": {
+    "$className": "DataModel",
+    "ServerStorage": {
+      "ForgeNativeConformance": {
+        "$path": "Runner.luau",
+        "Cases": { "$path": "Cases.luau" },
+        "Forge": {
+          "$className": "Folder",
+          "GeneratedStudioEvidence": {
+            "$path": "../../../plugin/src/Forge/GeneratedStudioEvidence.luau"
+          },
+          "StudioAuthoring": { "$path": "../../../plugin/src/Forge/StudioAuthoring.luau" },
+          "StudioScriptSource": { "$path": "../../../plugin/src/Forge/StudioScriptSource.luau" },
+          "StudioProjectIndexCanonical": {
+            "$path": "../../../plugin/src/Forge/StudioProjectIndexCanonical.luau"
+          },
+          "Constants": { "$path": "../../../plugin/src/Forge/Constants.luau" },
+          "Hash": { "$path": "../../../plugin/src/Forge/Hash.luau" }
+        }
+      }
+    }
+  }
+}

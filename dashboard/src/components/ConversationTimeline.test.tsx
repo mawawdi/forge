@@ -38,6 +38,7 @@ describe("ConversationTimeline", () => {
     });
     const stillOpen = event({
       ...recovery,
+      eventType: "recovery",
       id: "recovery-open",
       sequence: 4,
       binding: { sessionId: "open-session" },

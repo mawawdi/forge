@@ -1110,7 +1110,7 @@ export interface CreatorAgentExecutionWorker {
   isolation: "none";
 }
 export type CreatorPhaseArtifact = {
-  kind: "creator_outcome" | "change_set";
+  kind: "creator_outcome" | "game_build_graph";
   id: string;
   hash: string;
 };
@@ -1893,7 +1893,8 @@ export async function persistCreatorPhaseAgentRun(input: {
     input.finalization.detail.length === 0
   )
     throw new Error("Invalid unsealed creator phase outcome");
-  const intendedArtifactKind = input.phase === "creator_planner" ? "creator_outcome" : "change_set";
+  const intendedArtifactKind =
+    input.phase === "creator_planner" ? "creator_outcome" : "game_build_graph";
   if (
     (input.phase === "creator_builder") !== (input.creatorBuildContract !== undefined) ||
     (input.creatorBuildContract &&
@@ -3752,13 +3753,13 @@ function isCreatorPhaseOutcome(value: unknown): value is CreatorPhaseOutcome {
   if (value.status === "sealed")
     return (
       isRecord(value.artifact) &&
-      ["creator_outcome", "change_set"].includes(String(value.artifact.kind)) &&
+      ["creator_outcome", "game_build_graph"].includes(String(value.artifact.kind)) &&
       isIdentifier(value.artifact.id) &&
       isHash(value.artifact.hash)
     );
   return (
     value.status === "unsealed" &&
-    ["creator_outcome", "change_set"].includes(String(value.intendedArtifactKind)) &&
+    ["creator_outcome", "game_build_graph"].includes(String(value.intendedArtifactKind)) &&
     ["runtime", "finalization"].includes(String(value.failureStage)) &&
     isIdentifier(value.failureCode) &&
     isHash(value.detailHash)

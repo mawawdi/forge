@@ -14,6 +14,11 @@ const projects = [
   ["status-beacon", "examples/status-beacon/default.project.json", "StatusBeacon.rbxlx"],
   ["door-control", "examples/door-control/default.project.json", "DoorControl.rbxlx"],
   [
+    "studio-native-conformance",
+    "test/fixtures/studio-native-conformance/default.project.json",
+    "ForgeNativeConformance.rbxlx",
+  ],
+  [
     "orbital-freight-airlock",
     "examples/orbital-freight-airlock/default.project.json",
     "OrbitalFreightAirlock.rbxlx",

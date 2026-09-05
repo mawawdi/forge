@@ -1758,6 +1758,7 @@ export function isEpisodeStatusTransition(
       "incomplete",
     ],
     finalizing: [
+      "awaiting_change_decision",
       "completed",
       "building",
       "awaiting_review",
@@ -1802,6 +1803,7 @@ export function isEpisodeStatusTransition(
       "incomplete",
     ],
     awaiting_source_sync: [
+      "finalizing",
       "completed",
       "awaiting_review",
       "recovery_required",
@@ -1812,7 +1814,7 @@ export function isEpisodeStatusTransition(
     completed: [],
     rejected: [],
     superseded: [],
-    incomplete: ["building", "refresh_required"],
+    incomplete: ["building", "awaiting_change_decision", "refresh_required"],
   };
   return allowed[from].includes(to);
 }

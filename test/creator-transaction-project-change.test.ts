@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ImmutableJsonArtifactStore } from "../packages/artifact-store/src/index.js";
-import { contentHash } from "../packages/contracts/src/index.js";
+import { contentHash, stableJson } from "../packages/contracts/src/index.js";
 import {
   CreatorSessionCoordinator,
   createChangeReviewPresentation,
@@ -995,8 +995,30 @@ test("dashboard renders a provisional create from its immutable pre-Apply index"
       before.revision.hash,
       before.hash,
     );
+    // Synthetic display data: this test never admits a graph or claims a native receipt.
+    const partition = {
+      kind: "GamePartitionBinding" as const,
+      planHash: contentHash("review-baseline-compiled-plan"),
+      graphHash: contentHash("review-baseline-build-graph"),
+      acceptanceHash: "b".repeat(64),
+      partitionHash: contentHash("review-baseline-partition"),
+      ordinal: 0,
+      verifiedPrefixHash: contentHash(
+        stableJson({
+          kind: "GameCheckpointPrefix",
+          graphHash: contentHash("review-baseline-build-graph"),
+          status: "incomplete",
+          receipts: [],
+          currentRevisionHash: before.revision.hash,
+          nextPartitionOrdinal: 0,
+        }),
+      ),
+      beforeRevisionHash: before.revision.hash,
+    };
     const changeSet = {
       kind: "CreatorChangeSet",
+      partition: { ...partition, hash: contentHash(stableJson(partition)) },
+      checkpointOwnership: ownership,
       summary: "Updated the requested objects.",
       id: "creator_change_set_review_baseline",
       hash: "e".repeat(64),

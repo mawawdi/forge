@@ -783,6 +783,14 @@ export function assertStudioProjectIndexNode(
   manifest: StudioCapabilityManifest = STUDIO_CAPABILITY_MANIFEST,
 ): asserts value is StudioProjectIndexNode {
   assertStudioCapabilityManifest(manifest);
+  assertNodeWithManifestProperties(value, projectPropertiesByClass(manifest));
+}
+
+/** Reuse only within one synchronous validation; mutable external manifests are never cached. */
+function assertNodeWithManifestProperties(
+  value: unknown,
+  propertiesByClass: ReturnType<typeof projectPropertiesByClass>,
+): asserts value is StudioProjectIndexNode {
   if (!isRecord(value)) fail("project index node");
   const expected = [
     "identity",
@@ -833,7 +841,7 @@ export function assertStudioProjectIndexNode(
       stableJson(value.coveredPropertyNames)
   )
     fail("project index covered properties");
-  const requiredProperties = projectPropertiesByClass(manifest).get(value.className);
+  const requiredProperties = propertiesByClass.get(value.className);
   const requiredPropertyNames = [...(requiredProperties?.keys() ?? [])].sort();
   if (stableJson(value.coveredPropertyNames) !== stableJson(requiredPropertyNames))
     fail("project index manifest property coverage");
@@ -1646,8 +1654,10 @@ function canonicalNodes(
   nodes: readonly StudioProjectIndexNode[],
   manifest: StudioCapabilityManifest,
 ): StudioProjectIndexNode[] {
+  assertStudioCapabilityManifest(manifest);
+  const propertiesByClass = projectPropertiesByClass(manifest);
   const canonical = nodes.map((node) => {
-    assertStudioProjectIndexNode(node, manifest);
+    assertNodeWithManifestProperties(node, propertiesByClass);
     return {
       identity: canonicalIdentity(node.identity),
       displayPath: node.displayPath,

@@ -26,7 +26,7 @@
     "dashboard:dev": "npm --prefix dashboard run dev",
     "dashboard:test": "npm --prefix dashboard test",
     "dashboard:acceptance": "npm --prefix dashboard run test:acceptance",
-    "plugin:test": "find plugin/src -name '*.luau' -print0 | xargs -0 luau-compile --only-parse && luau-lsp analyze --no-strict-dm-types --definitions packages/luau-toolchain/roblox/globalTypes.d.luau plugin/src/Forge/DirectRuntimeObserver.luau plugin/src/Forge/Hash.luau && node scripts/check-plugin-ui.mjs && lune run scripts/test-plugin-modules.luau && lune run scripts/test-studio-property-codecs.luau && lune run scripts/test-studio-project-authority.luau && lune run scripts/test-project-identity-persistence.luau",
+    "plugin:test": "find plugin/src -name '*.luau' -print0 | xargs -0 luau-compile --only-parse && luau-lsp analyze --no-strict-dm-types --definitions packages/luau-toolchain/roblox/globalTypes.d.luau plugin/src/Forge/DirectRuntimeObserver.luau plugin/src/Forge/Hash.luau && node scripts/check-plugin-ui.mjs && lune run scripts/test-plugin-modules.luau && lune run scripts/test-studio-property-codecs.luau && lune run scripts/test-studio-preflight.luau && lune run scripts/test-studio-project-authority.luau && lune run scripts/test-project-identity-persistence.luau",
     "plugin:replay-prepare": "lune run scripts/replay-creator-prepare.luau",
     "plugin:build": "rojo build plugin/default.project.json -o \"$HOME/Documents/Roblox/Plugins/ForgeStudioPlugin.rbxmx\"",
     "formal:setup": "node scripts/setup-tla.mjs",

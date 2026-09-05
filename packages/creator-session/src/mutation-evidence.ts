@@ -7,6 +7,7 @@ import {
   assertStudioValue,
   compileMutationEvidenceProjection,
   compileMutationEvidenceProjectionForManifest,
+  derivedStudioMutationPropertyNames,
   isStudioCreatorMutationBinding,
   matchesStudioCreatorMutationBinding,
   studioValuesEqual,
@@ -787,7 +788,44 @@ export function reconcileCreatorMutation(
     const transitions = mutationObjectTransitions(changeSet.operations);
     if (validateObjectTransitionsInCaptures(transitions, before, after, addMismatch)) {
       const difference = indexDifference(before, after, transitions);
-      const allowed = approvedIndexDelta(changeSet.operations, before, after, transitions);
+      const allowed = new Set(approvedIndexDelta(changeSet.operations, before, after, transitions));
+      const afterNodes = captureNodes(after);
+      for (const operation of changeSet.operations) {
+        if (operation.target.kind !== "instance" || operation.kind === "delete") continue;
+        const className = operation.target.className;
+        const classDefinition = input.manifest.classes.find((entry) => entry.name === className)!;
+        for (const name of derivedStudioMutationPropertyNames(
+          classDefinition,
+          operation.properties ?? {},
+        )) {
+          const canary = input.preflight.envelope.facts.find(
+            (fact) =>
+              fact.kind === "property" &&
+              fact.propertyName === name &&
+              sameTarget(fact.target, operation.target),
+          );
+          const actual = input.directReadback.facts.find(
+            (fact) =>
+              fact.kind === "property" &&
+              fact.propertyName === name &&
+              sameTarget(fact.target, operation.target),
+          );
+          const objectId = mutationTargetObjectId(operation.target);
+          const indexed = afterNodes.get(objectId)?.node.coveredProperties[name];
+          if (
+            canary?.result.status !== "observed" ||
+            actual?.result.status !== "observed" ||
+            indexed === undefined ||
+            stableJson(canary.result.value) !== stableJson(actual.result.value) ||
+            stableJson(canary.result.value) !== stableJson(indexed)
+          ) {
+            addMismatch(
+              "derived_property_not_reflected",
+              `Final detached, direct and complete-index values differ for ${objectId}.${name}.`,
+            );
+          } else allowed.add(`node:${objectId}:property:${name}`);
+        }
+      }
       for (const change of difference.changes) {
         if (!allowed.has(change.key))
           addMismatch(
@@ -1140,6 +1178,19 @@ function validatePreflight(
       !matchesStudioCreatorMutationBinding(preflight.projection.binding, changeSet.binding)
     )
       throw new Error("preflight is not bound to sealed mutation");
+    const recompiled = compileMutationEvidenceProjectionForManifest(
+      {
+        id: preflight.projection.id,
+        project: changeSet.project,
+        binding: changeSet.binding,
+        operations: changeSet.operations,
+        purpose: "mutation_preflight",
+      },
+      manifest,
+      manifestHash,
+    );
+    if (recompiled.contentHash !== preflight.projection.contentHash)
+      throw new Error("preflight projection does not equal deterministic recompilation");
   } catch (error) {
     incomplete(
       "capability_preflight_incomplete",

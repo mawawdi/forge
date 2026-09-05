@@ -8,6 +8,7 @@ export function ConversationHeader({
   onOpenProjects,
   onOpenContext,
   onOpenDetails,
+  onOpenGraph,
   projectsVisible,
 }: {
   readonly state: CreatorDashboardState | undefined;
@@ -15,6 +16,7 @@ export function ConversationHeader({
   readonly onOpenProjects: (source: HTMLElement) => void;
   readonly onOpenContext: (source: HTMLElement) => void;
   readonly onOpenDetails: (source: HTMLElement) => void;
+  readonly onOpenGraph: (source: HTMLElement) => void;
   readonly projectsVisible: boolean;
 }): React.JSX.Element {
   const conversation = state?.conversations.find(
@@ -62,6 +64,17 @@ export function ConversationHeader({
           className="header-icon-button"
         >
           <Icon name="details" size={19} />
+        </button>
+        <button
+          type="button"
+          className="header-game-map"
+          aria-label="Open game map"
+          title="Game map"
+          aria-haspopup="dialog"
+          onClick={(event) => onOpenGraph(event.currentTarget)}
+        >
+          <Icon name="graph" size={19} />
+          <span>Game map</span>
         </button>
         <button
           type="button"

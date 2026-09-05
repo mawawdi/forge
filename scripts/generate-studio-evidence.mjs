@@ -344,9 +344,8 @@ function deriveManifest(policy, catalog, evidenceContractHash) {
       !group ||
       typeof group.name !== "string" ||
       !Array.isArray(group.classes) ||
-      !["structure_only", "proof_closed_supported_types", "existing_only_supported_types"].includes(
-        group.propertyMode,
-      )
+      group.preflightStrategy !== "detached_instance" ||
+      !["structure_only", "proof_closed_supported_types"].includes(group.propertyMode)
     )
       throw new Error("Invalid Studio capability authoring group");
     for (const className of group.classes) {
@@ -357,13 +356,10 @@ function deriveManifest(policy, catalog, evidenceContractHash) {
       )
         throw new Error(`Invalid or duplicate policy class: ${String(className)}`);
       seenClasses.add(className);
-      const creatable = group.propertyMode !== "existing_only_supported_types";
+      const creatable = true;
       assertDirectAuthoringClass(classesByName.get(className), creatable);
       const properties = [];
-      if (
-        group.propertyMode === "proof_closed_supported_types" ||
-        group.propertyMode === "existing_only_supported_types"
-      ) {
+      if (group.propertyMode === "proof_closed_supported_types") {
         for (const member of resolveCatalogProperties(classesByName, className)) {
           const qualifiedName = `${member.declaringClass}.${member.name}`;
           const override = propertyPolicyEntry(overrides, qualifiedName, "property override");
@@ -485,6 +481,7 @@ function deriveManifest(policy, catalog, evidenceContractHash) {
       outputClasses.push({
         name: className,
         creatable,
+        preflightStrategy: group.preflightStrategy,
         source: SCRIPT_CLASSES.has(className) ? "required_on_create_and_writeable" : "forbidden",
         properties,
       });
@@ -628,11 +625,25 @@ function copyPropertyBounds(override) {
     "nullable",
     "serialized",
     "referenceClass",
+    "setterFamily",
+    "setterFamilySeed",
   ];
   const output = {};
   for (const [key, value] of Object.entries(override)) {
     if (!allowed.includes(key)) throw new Error(`Unknown property policy field: ${key}`);
     if (key === "referenceClass") {
+      output[key] = value;
+      continue;
+    }
+    if (key === "setterFamily") {
+      if (typeof value !== "string" || !/^[a-z][a-z0-9_]{0,127}$/.test(value))
+        throw new Error("Property setter family must be a bounded identifier");
+      output[key] = value;
+      continue;
+    }
+    if (key === "setterFamilySeed") {
+      if (typeof value !== "string" || !/^[A-Za-z][A-Za-z0-9]{0,127}$/.test(value))
+        throw new Error("Property family seed must name a bounded manifest property");
       output[key] = value;
       continue;
     }
@@ -881,11 +892,7 @@ function deriveCoverageReport(catalog, policy, policyHash, manifest, manifestHas
   );
   const authoringGroupByMemberId = new Map();
   for (const group of policy.authoringGroups) {
-    if (
-      group.propertyMode !== "proof_closed_supported_types" &&
-      group.propertyMode !== "existing_only_supported_types"
-    )
-      continue;
+    if (group.propertyMode !== "proof_closed_supported_types") continue;
     for (const className of group.classes)
       for (const member of resolveCatalogProperties(classesByName, className)) {
         const prior = authoringGroupByMemberId.get(member.id);
@@ -1195,7 +1202,8 @@ function validateManifest(manifest) {
   const classNames = new Set();
   for (const entry of manifest.classes) {
     if (
-      typeof entry.creatable !== "boolean" ||
+      entry.creatable !== true ||
+      entry.preflightStrategy !== "detached_instance" ||
       classNames.has(entry.name) ||
       !["forbidden", "required_on_create_and_writeable"].includes(entry.source)
     )
@@ -1245,6 +1253,23 @@ function validateManifest(manifest) {
         throw new Error(`Invalid property declaration: ${entry.name}.${property.name}`);
       if ((property.codec === "enum_name") !== (property.catalogType.category === "enum"))
         throw new Error(`Invalid enum type declaration: ${entry.name}.${property.name}`);
+      if (
+        property.setterFamily !== undefined &&
+        (typeof property.setterFamily !== "string" ||
+          !/^[a-z][a-z0-9_]{0,127}$/.test(property.setterFamily))
+      )
+        throw new Error(`Invalid setter family: ${entry.name}.${property.name}`);
+      if (
+        (property.setterFamily === undefined) !== (property.setterFamilySeed === undefined) ||
+        (property.setterFamilySeed !== undefined &&
+          !entry.properties.some(
+            (candidate) =>
+              candidate.name === property.setterFamilySeed &&
+              candidate.setterFamily === property.setterFamily &&
+              candidate.setterFamilySeed === property.setterFamilySeed,
+          ))
+      )
+        throw new Error(`Invalid setter family seed: ${entry.name}.${property.name}`);
       const derivedReflection = deriveReflectionTypeExpectation(
         property.catalogType,
         property.codec,
@@ -1404,7 +1429,7 @@ for _, class in ipairs(Generated.manifest.classes) do
 		Generated.codecs[property.codec] = true
 	end
 	table.sort(propertyList, function(left, right) return left.name < right.name end)
-	Generated.classes[class.name] = { creatable = class.creatable, source = class.source, properties = properties, propertyList = propertyList }
+	Generated.classes[class.name] = { creatable = class.creatable, preflightStrategy = class.preflightStrategy, source = class.source, properties = properties, propertyList = propertyList }
 	table.insert(Generated.writableClasses, class.name)
 	if class.source ~= "forbidden" then table.insert(Generated.scriptClasses, class.name) end
 	table.insert(Generated.resolvableClasses, class.name)
@@ -1510,7 +1535,30 @@ function Generated.sortedMutationPropertyNames(className: any, properties: any):
 		table.insert(names, name)
 	end
 	table.sort(names)
+	-- One setter is allowed per family. Derived readback is separately bound
+	-- to the final detached canary; family membership alone proves no value.
+	local families = {}
+	for _, name in ipairs(names) do
+		local family = class.properties[name].setterFamily
+		if family ~= nil then
+			if families[family] ~= nil then error("coupled property setters: " .. families[family] .. " and " .. name) end
+			families[family] = name
+		end
+	end
 	return names
+end
+function Generated.derivedMutationPropertyNames(className: string, properties: any): {string}
+	local class = Generated.classMetadata(className)
+	local families, result = {}, {}
+	for _, name in ipairs(Generated.sortedMutationPropertyNames(className, properties)) do
+		local family = class.properties[name].setterFamily
+		if family ~= nil then families[family] = true end
+	end
+	for _, property in ipairs(class.propertyList) do
+		if property.setterFamily ~= nil and families[property.setterFamily] and properties[property.name] == nil then table.insert(result, property.name) end
+	end
+	table.sort(result)
+	return result
 end
 -- Project indexing needs the canonical ordered manifest rows, whereas
 -- mutation validation needs name lookup. Keep those two generated interfaces
@@ -1598,7 +1646,7 @@ local function valueNumbers(value: any): {number}
 	if value.kind == "number_range" then return { value.min, value.max } end
 	if value.kind == "number_sequence" then local result = {}; for _, item in ipairs(value.keypoints) do table.insert(result, item.time); table.insert(result, item.value); table.insert(result, item.envelope) end; return result end
 	if value.kind == "color_sequence" then local result = {}; for _, item in ipairs(value.keypoints) do table.insert(result, item.time); table.insert(result, item.color.r); table.insert(result, item.color.g); table.insert(result, item.color.b) end; return result end
-	if value.kind == "physical_properties" then return { value.density, value.friction, value.elasticity, value.frictionWeight, value.elasticityWeight } end
+	if value.kind == "physical_properties" then return { value.density, value.friction, value.elasticity, value.frictionWeight, value.elasticityWeight, value.acousticAbsorption } end
 	if value.kind == "ray" then return { value.origin.x, value.origin.y, value.origin.z, value.direction.x, value.direction.y, value.direction.z } end
 	return {}
 end
@@ -1645,7 +1693,17 @@ function Generated.canonicalValue(value: any, property: any?): any
 	if kind == "number_sequence" or kind == "color_sequence" then exactKeys(value, { "kind", "keypoints" }); return { kind = kind, keypoints = keypoints(value.keypoints, kind, property and property.maximumEntries) } end
 	if kind == "brick_color" then exactKeys(value, { "kind", "name" }); if not validUtf8(value.name) or value.name == "" then error("invalid BrickColor") end; if property and property.allowed then local found = false; for _, name in ipairs(property.allowed) do if name == value.name then found = true end end; if not found then error("BrickColor not allowlisted") end end; return { kind = kind, name = value.name } end
 	if kind == "font" then exactKeys(value, { "kind", "family", "weight", "style" }); for _, item in ipairs({ value.family, value.weight, value.style }) do if not validUtf8(item) or item == "" then error("invalid Font") end end; return { kind = kind, family = value.family, weight = value.weight, style = value.style } end
-	if kind == "physical_properties" then exactKeys(value, { "kind", "density", "friction", "elasticity", "frictionWeight", "elasticityWeight" }); local density, friction, elasticity, frictionWeight, elasticityWeight = f32(value.density), f32(value.friction), f32(value.elasticity), f32(value.frictionWeight), f32(value.elasticityWeight); if density <= 0 or friction < 0 or friction > 1 or elasticity < 0 or elasticity > 1 or frictionWeight < 0 or frictionWeight > 1 or elasticityWeight < 0 or elasticityWeight > 1 then error("invalid PhysicalProperties") end; return { kind = kind, density = density, friction = friction, elasticity = elasticity, frictionWeight = frictionWeight, elasticityWeight = elasticityWeight } end
+	if kind == "physical_properties" then
+		exactKeys(value, { "kind", "density", "friction", "elasticity", "frictionWeight", "elasticityWeight", "acousticAbsorption" })
+		-- Bounds are the six-argument constructor domain in the pinned official
+		-- PhysicalProperties.yaml. Validate before quantizing, while admitting the
+		-- float32 representation of the documented density lower endpoint.
+		for _, bound in ipairs({ { "density", f32(0.0001), 100 }, { "friction", 0, 2 }, { "elasticity", 0, 1 }, { "frictionWeight", 0, 100 }, { "elasticityWeight", 0, 100 }, { "acousticAbsorption", 0, 1 } }) do
+			local component = value[bound[1]]
+			if typeof(component) ~= "number" or component ~= component or component < bound[2] or component > bound[3] then error("invalid PhysicalProperties") end
+		end
+		return { kind = kind, density = f32(value.density), friction = f32(value.friction), elasticity = f32(value.elasticity), frictionWeight = f32(value.frictionWeight), elasticityWeight = f32(value.elasticityWeight), acousticAbsorption = f32(value.acousticAbsorption) }
+	end
 	if kind == "axes" then exactKeys(value, { "kind", "x", "y", "z" }); for _, item in ipairs({ value.x, value.y, value.z }) do if typeof(item) ~= "boolean" then error("invalid Axes") end end; return { kind = kind, x = value.x, y = value.y, z = value.z } end
 	if kind == "faces" then exactKeys(value, { "kind", "top", "bottom", "left", "right", "front", "back" }); for _, item in ipairs({ value.top, value.bottom, value.left, value.right, value.front, value.back }) do if typeof(item) ~= "boolean" then error("invalid Faces") end end; return { kind = kind, top = value.top, bottom = value.bottom, left = value.left, right = value.right, front = value.front, back = value.back } end
 	if kind == "ray" then exactKeys(value, { "kind", "origin", "direction" }); return { kind = kind, origin = vector3(value.origin, "invalid Ray origin"), direction = vector3(value.direction, "invalid Ray direction") } end
@@ -1683,7 +1741,7 @@ function Generated.toStudio(codec: any, value: any, property: any?, referenceRes
 	if codec == "color_sequence" then local points = {}; for index, item in ipairs(canonical.keypoints) do points[index] = ColorSequenceKeypoint.new(item.time, Color3.fromRGB(item.color.r, item.color.g, item.color.b)) end; return ColorSequence.new(points) end
 	if codec == "brick_color" then return BrickColor.new(canonical.name) end
 	if codec == "font" then local weight, style = (Enum.FontWeight :: any)[canonical.weight], (Enum.FontStyle :: any)[canonical.style]; if weight == nil or style == nil then error("Font enum unavailable") end; return Font.new(canonical.family, weight, style) end
-	if codec == "physical_properties" then return PhysicalProperties.new(canonical.density, canonical.friction, canonical.elasticity, canonical.frictionWeight, canonical.elasticityWeight) end
+	if codec == "physical_properties" then return PhysicalProperties.new(canonical.density, canonical.friction, canonical.elasticity, canonical.frictionWeight, canonical.elasticityWeight, canonical.acousticAbsorption) end
 	if codec == "axes" then local values = {}; if canonical.x then table.insert(values, Enum.Axis.X) end; if canonical.y then table.insert(values, Enum.Axis.Y) end; if canonical.z then table.insert(values, Enum.Axis.Z) end; return Axes.new(table.unpack(values)) end
 	if codec == "faces" then local values = {}; if canonical.top then table.insert(values, Enum.NormalId.Top) end; if canonical.bottom then table.insert(values, Enum.NormalId.Bottom) end; if canonical.left then table.insert(values, Enum.NormalId.Left) end; if canonical.right then table.insert(values, Enum.NormalId.Right) end; if canonical.front then table.insert(values, Enum.NormalId.Front) end; if canonical.back then table.insert(values, Enum.NormalId.Back) end; return Faces.new(table.unpack(values)) end
 	if codec == "ray" then return Ray.new(Vector3.new(canonical.origin.x, canonical.origin.y, canonical.origin.z), Vector3.new(canonical.direction.x, canonical.direction.y, canonical.direction.z)) end
@@ -1726,7 +1784,7 @@ function Generated.fromStudio(codec: any, value: any, referenceEncoder: any?, pr
 	if codec == "color_sequence" then local points = {}; for index, item in ipairs(value.Keypoints) do points[index] = { time = item.Time, color = { r = math.floor(item.Value.R * 255 + 0.5), g = math.floor(item.Value.G * 255 + 0.5), b = math.floor(item.Value.B * 255 + 0.5) } } end; return Generated.canonicalValue({ kind = codec, keypoints = points }) end
 	if codec == "brick_color" then return Generated.canonicalValue({ kind = codec, name = value.Name }) end
 	if codec == "font" then return Generated.canonicalValue({ kind = codec, family = value.Family, weight = value.Weight.Name, style = value.Style.Name }) end
-	if codec == "physical_properties" then return Generated.canonicalValue({ kind = codec, density = value.Density, friction = value.Friction, elasticity = value.Elasticity, frictionWeight = value.FrictionWeight, elasticityWeight = value.ElasticityWeight }) end
+	if codec == "physical_properties" then return Generated.canonicalValue({ kind = codec, density = value.Density, friction = value.Friction, elasticity = value.Elasticity, frictionWeight = value.FrictionWeight, elasticityWeight = value.ElasticityWeight, acousticAbsorption = value.AcousticAbsorption }) end
 	if codec == "axes" then return Generated.canonicalValue({ kind = codec, x = value.X, y = value.Y, z = value.Z }) end
 	if codec == "faces" then return Generated.canonicalValue({ kind = codec, top = value.Top, bottom = value.Bottom, left = value.Left, right = value.Right, front = value.Front, back = value.Back }) end
 	if codec == "ray" then return Generated.canonicalValue({ kind = codec, origin = { x = value.Origin.X, y = value.Origin.Y, z = value.Origin.Z }, direction = { x = value.Direction.X, y = value.Direction.Y, z = value.Direction.Z } }) end
@@ -1812,7 +1870,7 @@ function Generated.canonicalValueMaterial(value: any): string
 	if item.kind == "color_sequence" then local values = {}; for index, point in ipairs(item.keypoints) do values[index] = tagged("keypoint", tagged("time", hex(string.pack(">f", point.time))) .. tagged("color", tagged("color", tagged("r", tostring(point.color.r)) .. tagged("g", tostring(point.color.g)) .. tagged("b", tostring(point.color.b))))) end; return tagged("studio-value", tagged("codec", item.kind) .. tagged("keypoints", taggedSequence(values))) end
 	if item.kind == "brick_color" then return tagged("studio-value", tagged("codec", item.kind) .. tagged("name", item.name)) end
 	if item.kind == "font" then return tagged("studio-value", tagged("codec", item.kind) .. tagged("family", item.family) .. tagged("weight", item.weight) .. tagged("style", item.style)) end
-	if item.kind == "physical_properties" then return tagged("studio-value", tagged("codec", item.kind) .. tagged("density", hex(string.pack(">f", item.density))) .. tagged("friction", hex(string.pack(">f", item.friction))) .. tagged("elasticity", hex(string.pack(">f", item.elasticity))) .. tagged("friction-weight", hex(string.pack(">f", item.frictionWeight))) .. tagged("elasticity-weight", hex(string.pack(">f", item.elasticityWeight)))) end
+	if item.kind == "physical_properties" then return tagged("studio-value", tagged("codec", item.kind) .. tagged("density", hex(string.pack(">f", item.density))) .. tagged("friction", hex(string.pack(">f", item.friction))) .. tagged("elasticity", hex(string.pack(">f", item.elasticity))) .. tagged("friction-weight", hex(string.pack(">f", item.frictionWeight))) .. tagged("elasticity-weight", hex(string.pack(">f", item.elasticityWeight))) .. tagged("acoustic-absorption", hex(string.pack(">f", item.acousticAbsorption)))) end
 	if item.kind == "axes" then return tagged("studio-value", tagged("codec", item.kind) .. tagged("x", item.x and "1" or "0") .. tagged("y", item.y and "1" or "0") .. tagged("z", item.z and "1" or "0")) end
 	if item.kind == "faces" then return tagged("studio-value", tagged("codec", item.kind) .. tagged("top", item.top and "1" or "0") .. tagged("bottom", item.bottom and "1" or "0") .. tagged("left", item.left and "1" or "0") .. tagged("right", item.right and "1" or "0") .. tagged("front", item.front and "1" or "0") .. tagged("back", item.back and "1" or "0")) end
 	if item.kind == "ray" then local function vector(part) return tagged("vector3", tagged("x", hex(string.pack(">f", part.x))) .. tagged("y", hex(string.pack(">f", part.y))) .. tagged("z", hex(string.pack(">f", part.z)))) end; return tagged("studio-value", tagged("codec", item.kind) .. tagged("origin", vector(item.origin)) .. tagged("direction", vector(item.direction))) end
@@ -2095,11 +2153,14 @@ local function appendMutationRequirements(requirements: {any}, operation: any, t
 	end
 	local properties = operation.properties
 	if properties ~= nil then
-		for _, name in ipairs(sortedNames(properties, "invalid mutation properties")) do
+		for _, name in ipairs(Generated.sortedMutationPropertyNames(target.className, properties)) do
 			local property = Generated.propertyMetadata(target.className, name)
 			if property == nil then error("mutation property outside manifest") end
 			local canonical = Generated.validateValue(property.codec, properties[name], property)
 			table.insert(requirements, { key = Generated.factKey("property", target, name), kind = "property", target = target, propertyName = name, expected = postMutationValue(canonical, enrollments, topology) })
+		end
+		for _, name in ipairs(Generated.derivedMutationPropertyNames(target.className, properties)) do
+			table.insert(requirements, { key = Generated.factKey("property", target, name), kind = "property", target = target, propertyName = name })
 		end
 	end
 	local attributes = operation.attributes
@@ -2445,7 +2506,7 @@ local function buildVirtualMutationTopology(changeSet: any, index: any, enrollme
 		end
 		local references = {}
 		if operation.properties ~= nil then
-			for _, name in ipairs(sortedNames(operation.properties, "invalid mutation properties")) do
+			for _, name in ipairs(Generated.sortedMutationPropertyNames(operation.target.className, operation.properties)) do
 				local property = Generated.propertyMetadata(operation.target.className, name)
 				if property == nil then error("mutation property outside manifest") end
 				local value = Generated.validateValue(property.codec, operation.properties[name], property)
@@ -2594,12 +2655,13 @@ local function buildVirtualMutationTopology(changeSet: any, index: any, enrollme
 			end
 		end
 	end
-	local function initialSibling(parentKey: any, name: any, exceptKey: any): any
+	local function initialSiblings(parentKey: any, name: any, exceptKey: any): {string}
+		local occupants = {}
 		for _, key in ipairs(sortedNames(entries, "invalid virtual mutation topology")) do
 			local entry = entries[key]
-			if key ~= exceptKey and entry.initial and entry.initialParentKey == parentKey and entry.initialName == name then return key end
+			if key ~= exceptKey and entry.initial and entry.initialParentKey == parentKey and entry.initialName == name then table.insert(occupants, key) end
 		end
-		return nil
+		return occupants
 	end
 	local function operationThatFrees(occupantKey: any): any
 		if deletedByIdentity[occupantKey] ~= nil then return deletedByIdentity[occupantKey] end
@@ -2612,8 +2674,7 @@ local function buildVirtualMutationTopology(changeSet: any, index: any, enrollme
 	for _, operation in ipairs(changeSet.operations) do
 		if operation.kind == "create" or operation.kind == "move" then
 			local targetKey = operationTargets[operation.id]
-			local occupantKey = initialSibling(operationParents[operation.id], operation.name, targetKey)
-			if occupantKey ~= nil then
+			for _, occupantKey in ipairs(initialSiblings(operationParents[operation.id], operation.name, targetKey)) do
 				local freeingOperation = operationThatFrees(occupantKey)
 				if freeingOperation == nil then error("virtual mutation sibling collision") end
 				addDependency(operation.id, freeingOperation)
@@ -2895,6 +2956,25 @@ function canonicalVectors() {
       elasticity: Math.fround(0.5),
       frictionWeight: Math.fround(0.75),
       elasticityWeight: 1,
+      acousticAbsorption: Math.fround(0.3),
+    }),
+    vector("physical_properties_minimum", {
+      kind: "physical_properties",
+      density: Math.fround(0.0001),
+      friction: 0,
+      elasticity: 0,
+      frictionWeight: 0,
+      elasticityWeight: 0,
+      acousticAbsorption: 0,
+    }),
+    vector("physical_properties_maximum", {
+      kind: "physical_properties",
+      density: 100,
+      friction: 2,
+      elasticity: 1,
+      frictionWeight: 100,
+      elasticityWeight: 100,
+      acousticAbsorption: 1,
     }),
     vector("axes", { kind: "axes", x: true, y: false, z: true }),
     vector("faces", {
@@ -3357,7 +3437,8 @@ function valueMaterial(value) {
           tagged("friction", f32Bits(value.friction)) +
           tagged("elasticity", f32Bits(value.elasticity)) +
           tagged("friction-weight", f32Bits(value.frictionWeight)) +
-          tagged("elasticity-weight", f32Bits(value.elasticityWeight)),
+          tagged("elasticity-weight", f32Bits(value.elasticityWeight)) +
+          tagged("acoustic-absorption", f32Bits(value.acousticAbsorption)),
       );
     case "axes":
       return tagged(

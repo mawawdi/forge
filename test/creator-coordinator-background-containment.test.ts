@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ImmutableJsonArtifactStore } from "../packages/artifact-store/src/index.js";
+import { HostPhaseRecorder } from "../packages/flight-recorder/src/host-phase.js";
 import { CreatorSessionCoordinator } from "../packages/creator-session/src/coordinator.js";
 import {
   createCreatorProjectChangeNotice,
@@ -33,7 +34,9 @@ import {
 
 const project = { name: "Deferred coordinator follow-up", placeId: 901, universeId: 902 };
 
-test("concurrent and retried finalization acknowledgements keep the exact command identity", async () => {
+test("concurrent and retried finalization acknowledgements keep the exact command identity", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "forge-finalization-timing-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
   const receipt = {
     ...JSON.parse(await readFile("test/fixtures/creator-finalization-incident.json", "utf8")),
     manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
@@ -41,6 +44,7 @@ test("concurrent and retried finalization acknowledgements keep the exact comman
   const sent: BackendToPluginMessage[] = [];
   let rejectFirst = true;
   const coordinator = Object.assign(Object.create(CreatorSessionCoordinator.prototype), {
+    timings: new HostPhaseRecorder(directory),
     finalizationAcknowledgementCommands: new Map(),
     input: {
       connection: {

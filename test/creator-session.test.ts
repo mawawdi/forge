@@ -5,6 +5,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { contentHash, stableJson } from "../packages/contracts/src/index.js";
+import {
+  compileGamePlan,
+  type GameInventoryItem,
+  type GameObservedSourceArtifact,
+} from "../packages/game-compiler/src/index.js";
+import {
+  createGameDefinitionRegistry,
+  gameRecipeDefinitionLock,
+  type GameRecipeDefinition,
+  type GameDesignSpec,
+  type GameSourcePlacement,
+  type GameSourceFile,
+} from "../packages/game-ir/src/index.js";
+import { STUDIO_PATCH_DEFINITION } from "../packages/game-composition/src/index.js";
 import { ImmutableJsonArtifactStore } from "../packages/artifact-store/src/index.js";
 import {
   advanceSession,
@@ -16,7 +30,6 @@ import {
   assertOwnershipMap,
   canonicalizeCreatorPropertyInput,
   createCreatorApproval,
-  authorizeCreatorPlanExecution,
   createCreatorBuildContract,
   prepareCreatorBuildPlan,
   createCreatorPlan,
@@ -61,6 +74,245 @@ import {
 } from "../packages/model-client/src/index.js";
 
 const revisionHash = contentHash("initial evidence revision");
+
+/** Test fixtures compile their exact inventory through the production compiler. */
+function createTestPlan(
+  input: Omit<Parameters<typeof createCreatorPlan>[0], "compiled">,
+  index: Parameters<typeof createCreatorPlan>[1],
+  ownership: Parameters<typeof createCreatorPlan>[2],
+  payloads: Record<
+    string,
+    Partial<Pick<GameInventoryItem, "lockedProperties" | "valueSlots" | "attributes">>
+  > = {},
+  sourceContract: { imports?: Record<string, string[]>; observed?: Record<string, string> } = {},
+) {
+  const definition: GameRecipeDefinition = {
+    kind: "GameRecipeDefinition",
+    id: "test-inventory",
+    abi: "1",
+    sourceExports: [],
+    configSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+    ports: [],
+    obligations: [],
+  };
+  const inventory: GameInventoryItem[] = input.changes.map((change) => {
+    const observed =
+      change.kind === "create"
+        ? undefined
+        : index.instances.find(
+            (instance) => stableJson(instance.identity) === stableJson(change.target.identity),
+          );
+    const source =
+      observed && index.scripts.find((script) => script.documentId === observed.objectId);
+    const sourceBearing =
+      change.kind === "edit_source" ||
+      (change.kind === "create" &&
+        ["Script", "LocalScript", "ModuleScript"].includes(change.className));
+    return {
+      id: change.id,
+      componentId: sourceBearing ? "fixture-source" : "fixture",
+      change,
+      lockedProperties: {},
+      valueSlots: [],
+      attributes: {},
+      removedAttributes: [],
+      dependencies: [],
+      ...(sourceBearing
+        ? {
+            source: {
+              fileId: change.id,
+              content: { kind: "slot" as const, maximumUtf8Bytes: 256 * 1024 },
+            },
+          }
+        : {}),
+      ...(change.kind === "edit_source"
+        ? { beforeSourceHash: source!.sourceHash, beforeSourceBytes: source!.utf8Bytes }
+        : observed
+          ? { beforeHash: contentHash(stableJson(observed)) }
+          : {}),
+      ...payloads[change.id],
+    };
+  });
+  const sourceImports = (id: string) =>
+    (sourceContract.imports?.[id] ?? []).map((fileId) => ({
+      componentId: "fixture-source",
+      fileId,
+    }));
+  const files: GameSourceFile[] = inventory.flatMap((item) => {
+    if (!item.source) return [];
+    const change = item.change;
+    if (change.kind !== "create" && change.kind !== "edit_source")
+      throw new Error("Fixture source placement is not a write");
+    const className = change.kind === "create" ? change.className : change.target.className;
+    if (className !== "Script" && className !== "LocalScript" && className !== "ModuleScript")
+      throw new Error("Fixture source must be a script");
+    return [
+      {
+        id: item.source.fileId,
+        path: item.id + ".luau",
+        content: item.source.content,
+        role: className === "ModuleScript" ? "module" : "entrypoint",
+        context:
+          className === "Script" ? "server" : className === "LocalScript" ? "client" : "shared",
+        imports: sourceImports(item.source.fileId),
+        placement:
+          change.kind === "create"
+            ? {
+                kind: "create",
+                operationId: item.id,
+                className,
+                parent: change.parent,
+                name: change.path.split("/").at(-1)!,
+              }
+            : {
+                kind: "edit_source",
+                operationId: item.id,
+                target: change.target,
+                beforeSourceHash: item.beforeSourceHash!,
+                beforeSourceBytes: item.beforeSourceBytes!,
+              },
+      },
+    ];
+  });
+  const observedSources: GameObservedSourceArtifact[] = Object.entries(
+    sourceContract.observed ?? {},
+  ).map(([fileId, documentId]) => {
+    const instance = index.instances.find((instance) => instance.objectId === documentId)!;
+    const source = index.scripts.find((source) => source.documentId === documentId)!;
+    const target = {
+      kind: "instance" as const,
+      identity: instance.identity,
+      path: instance.path,
+      className: instance.className,
+    };
+    files.push({
+      id: fileId,
+      path: fileId + ".luau",
+      role: "module",
+      context: "shared",
+      content: { kind: "locked", sourceHash: source.sourceHash, utf8Bytes: source.utf8Bytes },
+      imports: sourceImports(fileId),
+      placement: { kind: "observed", target },
+    });
+    return {
+      componentId: "fixture-source",
+      fileId,
+      target,
+      sourceHash: source.sourceHash,
+      utf8Bytes: source.utf8Bytes,
+      imports: sourceImports(fileId),
+    };
+  });
+  const compiled = compileGamePlan({
+    design: {
+      kind: "GameDesignSpec",
+      id: "fixture",
+      intent: input.creatorPrompt,
+      components: [
+        {
+          kind: "recipe_instance",
+          id: "fixture",
+          definition: gameRecipeDefinitionLock(definition),
+          config: {},
+        },
+        ...(files.length
+          ? [
+              {
+                kind: "source_package" as const,
+                id: "fixture-source",
+                ports: [],
+                obligations: [],
+                files,
+              },
+            ]
+          : []),
+      ],
+      connections: [],
+      artifactDependencies: [],
+    },
+    registry: createGameDefinitionRegistry([definition]),
+    projectId: ownership.projectId,
+    project: index.project,
+    sessionId: input.sessionId,
+    observedRevisionHash: input.projectRevisionHash,
+    initialTopology: index.instances,
+    observation: index,
+    inventory,
+    observedSources,
+  });
+  return createCreatorPlan(
+    { ...input, compiled, changes: compiled.inventory.map((item) => item.change) },
+    index,
+    ownership,
+  );
+}
+
+function sourceDesign(placement: GameSourcePlacement, intent: string): GameDesignSpec {
+  const className = placement.kind === "create" ? placement.className : placement.target.className;
+  return {
+    kind: "GameDesignSpec",
+    id: "source-change",
+    intent,
+    components: [
+      {
+        kind: "source_package",
+        id: "custom-source",
+        ports: [],
+        obligations: [],
+        files: [
+          {
+            id: "main",
+            path: "Main.luau",
+            context:
+              className === "LocalScript" ? "client" : className === "Script" ? "server" : "shared",
+            role: className === "ModuleScript" ? "module" : "entrypoint",
+            imports: [],
+            content: { kind: "slot", maximumUtf8Bytes: 256 * 1024 },
+            placement,
+          },
+        ],
+      },
+    ],
+    connections: [],
+    artifactDependencies: [],
+  };
+}
+
+function folderDesign(
+  name: string,
+  parent: { kind: "engine" | "object"; id: string },
+): GameDesignSpec {
+  return {
+    kind: "GameDesignSpec",
+    id: "folder-change",
+    intent: "Create the requested folder.",
+    components: [
+      {
+        kind: "recipe_instance",
+        id: "folder",
+        definition: gameRecipeDefinitionLock(STUDIO_PATCH_DEFINITION),
+        config: {
+          operations: [
+            {
+              id: "folder",
+              kind: "create",
+              name,
+              className: "Folder",
+              parent,
+              properties: [],
+              valueSlots: [],
+              attributes: [],
+              removedAttributes: [],
+              dependencies: [],
+            },
+          ],
+        },
+      },
+    ],
+    connections: [],
+    artifactDependencies: [],
+  };
+}
 
 test("GUI inspection calls out collapsed fixed containers without misdiagnosing UDim2", () => {
   const size = { kind: "udim2" as const, x: { scale: 0, offset: 0 }, y: { scale: 0, offset: 0 } };
@@ -250,7 +502,7 @@ test("build preparation covers every creatable class and operation across stable
         { id: "delete", kind: "delete", target: target("Delete"), expectedClass: className },
         { id: "source", kind: "edit_source", target: target("Source"), expectedClass: "Script" },
       ] as CreatorPlanChange[];
-      const plan = createCreatorPlan(
+      const plan = createTestPlan(
         {
           sessionId: session.id,
           promptHash: session.promptHash,
@@ -296,7 +548,7 @@ test("build preparation covers every creatable class and operation across stable
       const prepared = prepareCreatorBuildPlan(plan, index);
       assert.deepEqual(
         prepared.changes.map((change) => change.kind),
-        ["create", "update", "move", "delete", "edit_source"],
+        ["create", "delete", "move", "edit_source", "update"],
       );
       const approval = createCreatorApproval({
         sessionId: session.id,
@@ -349,11 +601,12 @@ test("a built draft can be refined before application, but an applying change ca
   assert.throws(() => advanceSession(applying, { status: "refining_plan" }), /transition/i);
 });
 
-test("engine settings are writable only through observed update targets", () => {
+test("engine settings without detached preflight remain parent containers but are not writable", () => {
   const updateOnly = STUDIO_CAPABILITY_MANIFEST.classes
     .filter((classDefinition) => !classDefinition.creatable)
     .map((classDefinition) => classDefinition.name);
-  assert.deepEqual(updateOnly, [
+  assert.deepEqual(updateOnly, []);
+  const engineClasses = [
     "Lighting",
     "MaterialService",
     "SoundService",
@@ -362,7 +615,16 @@ test("engine settings are writable only through observed update targets", () => 
     "Terrain",
     "TextChatService",
     "Workspace",
-  ]);
+  ];
+  for (const className of engineClasses)
+    assert.equal(
+      STUDIO_CAPABILITY_MANIFEST.classes.some((entry) => entry.name === className),
+      false,
+    );
+  for (const className of engineClasses.filter((name) => name !== "Terrain"))
+    assert.ok(
+      STUDIO_CAPABILITY_MANIFEST.authoringContainers.some((entry) => entry.className === className),
+    );
   const ownership = createStudioOwnershipMap({
     projectId: "engine-settings",
     revisionHash,
@@ -379,7 +641,7 @@ test("engine settings are writable only through observed update targets", () => 
   assert.equal(orientation.content.mode, "creator_session");
   if (orientation.content.mode !== "creator_session") return;
   const allowed = new Set(orientation.content.studioAuthoring.allowedClasses);
-  for (const className of updateOnly) assert.equal(allowed.has(className), false, className);
+  for (const className of engineClasses) assert.equal(allowed.has(className), false, className);
 });
 
 test("compact planning uses inspected handles, rejects stale authority and generates structural checks", async () => {
@@ -433,8 +695,21 @@ test("compact planning uses inspected handles, rejects stale authority and gener
   });
   const proposal = {
     inspectionObjectIds: [script.objectId],
-    steps: [{ statement: prompt, changeIds: ["edit"] }],
-    changes: [{ id: "edit", kind: "edit_source", objectId: script.objectId }],
+    design: sourceDesign(
+      {
+        operationId: "edit",
+        kind: "edit_source",
+        target: {
+          kind: "instance",
+          identity: script.identity,
+          path: script.path,
+          className: script.className,
+        },
+        beforeSourceHash: contentHash(source),
+        beforeSourceBytes: Buffer.byteLength(source),
+      },
+      prompt,
+    ),
     checks: [{ check: "playtest_diagnostics", maximumErrors: 0, maximumWarnings: 0 }],
     reviews: ["Try the requested interaction in Studio."],
   };
@@ -457,7 +732,21 @@ test("compact planning uses inspected handles, rejects stale authority and gener
   await host.execute("source.dependencies", { documentId: script.objectId, direction: "closure" });
   const unknown = await host.execute("creator.propose_plan", {
     ...proposal,
-    changes: [{ ...proposal.changes[0], objectId: "stale-id" }],
+    design: sourceDesign(
+      {
+        operationId: "edit",
+        kind: "edit_source",
+        target: {
+          kind: "instance",
+          identity: { kind: "forge_attribute", stableId: "stale-id" },
+          path: script.path,
+          className: script.className,
+        },
+        beforeSourceHash: contentHash(source),
+        beforeSourceBytes: Buffer.byteLength(source),
+      },
+      prompt,
+    ),
   });
   assert.equal(unknown.ok, false);
   const result = await host.execute("creator.propose_plan", proposal);
@@ -520,14 +809,8 @@ test("compact planning uses inspected handles, rejects stale authority and gener
   assert.equal(
     (
       await builder.execute("studio.build", {
-        changes: [
-          {
-            planChangeId: "edit",
-            sourceEdits: [
-              { startByte: 0, endByte: Buffer.byteLength(source), replacement: stagedSource },
-            ],
-          },
-        ],
+        sources: [{ slotId: "edit", source: stagedSource }],
+        values: [],
         summary: "Updated the script.",
       })
     ).ok,
@@ -1089,7 +1372,7 @@ test("project-authority adapter selects exactly one writer per change set", () =
       maximumWarnings: 0,
     },
   ];
-  const studioPlan = createCreatorPlan(
+  const studioPlan = createTestPlan(
     planInput(
       [
         {
@@ -1125,7 +1408,7 @@ test("project-authority adapter selects exactly one writer per change set", () =
     },
     expectedClass: "ModuleScript" as const,
   };
-  const rojoPlan = createCreatorPlan(
+  const rojoPlan = createTestPlan(
     planInput(
       [rojoChange],
       [
@@ -1143,7 +1426,7 @@ test("project-authority adapter selects exactly one writer per change set", () =
   assert.equal(rojoPlan.mutationAuthority, "rojo_source");
   assert.throws(
     () =>
-      createCreatorPlan(
+      createTestPlan(
         planInput(
           [
             rojoChange,
@@ -1392,7 +1675,7 @@ test("creator planner exposes bounded pinned Roblox API context", async () => {
   assert.ok(host.definitions().some((entry) => entry.name === "studio.api_lookup"));
   assert.match(
     host.definitions().find((entry) => entry.name === "creator.propose_plan")?.description ?? "",
-    new RegExp(`at least ${CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS} ms`),
+    /GameDesignSpec/,
   );
   const result = await host.execute("studio.api_lookup", {
     className: "ProximityPrompt",
@@ -1469,15 +1752,12 @@ test("provider wire preserves omitted planner fields and host-issued pagination 
       const planSchema = body.tools.find(
         (entry: { function: { name: string } }) => entry.function.name === "creator_propose_plan",
       ).function.parameters;
-      assert.equal(planSchema.properties.changes.items.oneOf, undefined);
-      assert.equal(planSchema.properties.changes.items.anyOf.length, 5);
+      assert.equal(planSchema.properties.changes, undefined);
+      assert.equal(planSchema.properties.steps, undefined);
+      assert.equal(planSchema.properties.design.type, "object");
       assert.equal(planSchema.properties.checks.items.anyOf.length, 4);
-      assert.ok(
-        planSchema.properties.changes.items.anyOf.every(
-          (branch: { type: string }) => branch.type === "object",
-        ),
-      );
-      assert.match(planSchema.properties.checks.description, /maximumErrors/);
+      assert.ok(planSchema.required.includes("design"));
+      assert.match(planSchema.properties.checks.description, /native evidence/);
       return new Response(
         JSON.stringify({
           id: "offline-inspection-response",
@@ -1649,30 +1929,22 @@ test("broad project exploration cannot overflow a plan outcome's citation bound"
   const proposal = {
     citationHandles: [results[0]!.citationHandle],
     inspectionObjectIds: [],
-    steps: [{ statement: "Create an empty folder.", changeIds: ["folder"] }],
-    changes: [
-      {
-        id: "folder",
-        kind: "create",
-        name: "NewFolder",
-        parent: { rootPath: "Workspace" },
-        className: "Folder",
-      },
-    ],
+    design: folderDesign("NewFolder", { kind: "engine", id: "Workspace" }),
     checks: [{ check: "playtest_diagnostics", maximumErrors: 0, maximumWarnings: 0 }],
     reviews: [],
   };
   const malformed = await host.execute("creator.propose_plan", {
     ...proposal,
-    changes: [{ ...proposal.changes[0], className: undefined, name: undefined }],
+    design: { ...proposal.design, components: [{ kind: "source_package", id: "malformed" }] },
   });
   assert.equal(malformed.error?.code, "TOOL_ARGUMENTS_INVALID");
-  assert.match(malformed.error?.message ?? "", /changes\.0\.className/);
-  assert.match(malformed.error?.message ?? "", /changes\.0\.name/);
+  assert.match(malformed.error?.message ?? "", /design/);
   const duplicate = await host.execute("creator.propose_plan", {
     ...proposal,
-    steps: [{ statement: "Create two folders.", changeIds: ["folder", "other"] }],
-    changes: [...proposal.changes, { ...proposal.changes[0], id: "other" }],
+    design: {
+      ...proposal.design,
+      components: [...proposal.design.components, ...proposal.design.components],
+    },
   });
   assert.equal(duplicate.ok, false);
   const result = await host.execute("creator.propose_plan", proposal);
@@ -1956,7 +2228,7 @@ test("engine-owned authoring containers are valid parents without entering mutab
       ],
     },
   };
-  const plan = createCreatorPlan(
+  const plan = createTestPlan(
     { ...planInput, ...planSourceBinding(sources) },
     platformObservation,
     ownership,
@@ -1992,26 +2264,17 @@ test("engine-owned authoring containers are valid parents without entering mutab
   const context = JSON.parse(
     builderPrompt.split("The creator request is in the conversation message.\n")[1]!,
   );
+  assert.deepEqual(context.compiledInventory, {
+    count: plan.compiled.inventory.length,
+    hash: plan.compiled.hash,
+  });
+  assert.deepEqual(context.design, plan.compiled.design);
   assert.deepEqual(
-    context.changes.map((change: { planChangeId: string }) => change.planChangeId),
-    contract.changes.map((change) => change.planChangeId),
+    context.sourceSlots.map((slot: { id: string }) => slot.id),
+    plan.compiled.inventory.filter((item) => item.source).map((item) => item.id),
   );
-  for (const change of context.changes) {
-    const policy = context.propertyPolicies[change.propertyPolicyIndex];
-    assert.deepEqual(
-      {
-        attributes: "primitive",
-        source: policy.source,
-        allowedProperties: Object.entries(policy.properties).map(([name, index]) => ({
-          name,
-          valueKinds: [context.propertyRules[index as number].type],
-          nullable: context.propertyRules[index as number].nullable ?? false,
-          constraints: context.propertyRules[index as number].constraints,
-        })),
-      },
-      contract.changes.find((entry) => entry.planChangeId === change.planChangeId)!.propertyPolicy,
-    );
-  }
+  assert.deepEqual(context.valueSlots, []);
+  assert.equal(context.propertyPolicies, undefined);
   assert.deepEqual(context.steps, plan.steps);
   assert.deepEqual(
     context.qualityRequirements,
@@ -2039,27 +2302,12 @@ test("engine-owned authoring containers are valid parents without entering mutab
   });
   const rejected = await host.execute("creator.propose_plan", {
     inspectionObjectIds: [],
-    steps: [
-      {
-        statement: "Attempt one create below an absent mutable parent.",
-        changeIds: ["invalid-create"],
-      },
-    ],
-    changes: [
-      {
-        id: "invalid-create",
-        kind: "create",
-        name: "NewFolder",
-        parent: { objectId: "forge_attribute:missing" },
-        className: "Folder",
-      },
-    ],
+    design: folderDesign("NewFolder", { kind: "object", id: "forge_attribute:missing" }),
     checks: [{ check: "playtest_diagnostics", maximumErrors: 0, maximumWarnings: 0 }],
     reviews: [],
   });
   assert.equal(rejected.ok, false);
-  assert.equal(rejected.error?.code, "PLAN_OBJECT_NOT_OBSERVED");
-  assert.match(rejected.error?.message ?? "", /Unknown or stale object IDs/i);
+  assert.match(rejected.error?.message ?? "", /observ|object/i);
   const completion = host.completionStatus();
   assert.equal(completion.ready, false);
   if (!completion.ready) assert.match(completion.message, /Last outcome failure/);
@@ -2106,7 +2354,7 @@ test("indexed non-authorable classes remain exact structural parents without gai
     ownership,
   });
   const sources = sourceEvidence(structuralObservation, structuralCaptureHash);
-  const plan = createCreatorPlan(
+  const plan = createTestPlan(
     {
       sessionId: session.id,
       promptHash: session.promptHash,
@@ -2195,7 +2443,8 @@ test("indexed non-authorable classes remain exact structural parents without gai
     sourceConsultation: sources.sourceConsultation,
   });
   const staged = await host.execute("studio.build", {
-    changes: [{ planChangeId: "camera-child", properties: {}, attributes: {} }],
+    sources: [],
+    values: [],
     summary: "Created the approved child.",
   });
   assert.equal(staged.ok, true);
@@ -2261,7 +2510,7 @@ test("creator verification keeps staged source repair and rejects invalid Luau",
     ownership,
   });
   const sources = sourceEvidence(topologyObservation, topologyCaptureHash);
-  const plan = createCreatorPlan(
+  const plan = createTestPlan(
     {
       sessionId: session.id,
       promptHash: session.promptHash,
@@ -2354,6 +2603,40 @@ test("creator verification keeps staged source repair and rejects invalid Luau",
     },
     topologyObservation,
     ownership,
+    {
+      panel: {
+        attributes: { Purpose: "status" },
+        valueSlots: [
+          {
+            id: "panel-cframe",
+            propertyName: "CFrame",
+            schema: {
+              type: "object",
+              properties: {
+                kind: { type: "string", maxLength: 32, enum: ["cframe_f32x12"] },
+                components: { type: "array", items: { type: "number" }, maxItems: 12 },
+              },
+              required: ["kind", "components"],
+              additionalProperties: false,
+            },
+          },
+          ...["Transparency", "Reflectance"].map((propertyName) => ({
+            id: "panel-" + propertyName.toLowerCase(),
+            propertyName,
+            schema: {
+              type: "object" as const,
+              properties: {
+                kind: { type: "string" as const, maxLength: 32, enum: ["number_f32"] },
+                value: { type: "number" as const, minimum: 0, maximum: 1 },
+              },
+              required: ["kind", "value"],
+              additionalProperties: false as const,
+            },
+          })),
+        ],
+      },
+    },
+    { imports: { server: ["protocol"] } },
   );
   const planApproval = createCreatorApproval({
     sessionId: session.id,
@@ -2387,31 +2670,14 @@ test("creator verification keeps staged source repair and rejects invalid Luau",
   assert.equal(host.stagedOperations().length, 0);
   assert.equal(host.stagedSourceWriteBlobs().length, 0);
   const rejectedBatch = await host.execute("studio.build", {
-    changes: [
-      { planChangeId: "protocol", source: "return { Enabled = true }\n" },
-      {
-        planChangeId: "panel",
-        properties: {
-          CFrame: {
-            X: 0,
-            Y: 4,
-            Z: 0,
-            R00: 1,
-            R01: 0,
-            R02: 0,
-            R10: 0,
-            R11: 1,
-            R12: 0,
-            R20: 0,
-            R21: 0,
-            R22: 1,
-          },
-        },
-      },
-      {
-        planChangeId: "server",
-        source: "--!strict\nlocal impossible: string = 1\nprint(impossible)\n",
-      },
+    sources: [
+      { slotId: "protocol", source: "return { Enabled = true }\n" },
+      { slotId: "server", source: "--!strict\nlocal impossible: string = 1\nprint(impossible)\n" },
+    ],
+    values: [
+      { slotId: "panel-cframe", value: { X: 0, Y: 4, Z: 0 } },
+      { slotId: "panel-transparency", value: 0.2 },
+      { slotId: "panel-reflectance", value: 0.1 },
     ],
     summary: "Built the airlock implementation.",
   });
@@ -2420,21 +2686,14 @@ test("creator verification keeps staged source repair and rejects invalid Luau",
   assert.equal(host.stagedOperations().length, 0, "an invalid complete batch is atomic");
 
   const built = await host.execute("studio.build", {
-    changes: [
-      { planChangeId: "protocol", source: "return { Enabled = true }\n" },
-      {
-        planChangeId: "panel",
-        properties: {
-          CFrame: { position: { x: 0, y: 4, z: 0 } },
-          Transparency: 0.2,
-          Reflectance: 0.1,
-        },
-        attributes: { Purpose: "status" },
-      },
-      {
-        planChangeId: "server",
-        source: "--!strict\nlocal impossible: string = 1\nprint(impossible)\n",
-      },
+    sources: [
+      { slotId: "protocol", source: "return { Enabled = true }\n" },
+      { slotId: "server", source: "--!strict\nlocal impossible: string = 1\nprint(impossible)\n" },
+    ],
+    values: [
+      { slotId: "panel-cframe", value: { position: { x: 0, y: 4, z: 0 } } },
+      { slotId: "panel-transparency", value: 0.2 },
+      { slotId: "panel-reflectance", value: 0.1 },
     ],
     summary: "Built the requested server behavior.",
   });
@@ -2528,18 +2787,12 @@ test("creator verification keeps staged source repair and rejects invalid Luau",
   assert.equal(staleRepair.ok, false);
   assert.equal(host.progressToken(), repairedState, "a stale atomic repair changes nothing");
   assert.equal(host.completionStatus().ready, true);
-  const sealed = host.seal();
-  assert.equal(sealed.summary, "Built the requested server behavior.");
-  const delegated = authorizeCreatorPlanExecution(planApproval, sealed, "2026-09-04T10:00:00.000Z");
-  assert.equal(delegated.authority, "accepted_plan");
-  assert.deepEqual(delegated.planAuthorization, { id: planApproval.id, hash: planApproval.hash });
-  assert.throws(() =>
-    authorizeCreatorPlanExecution(
-      { ...planApproval, artifactHash: "f".repeat(64) },
-      sealed,
-      delegated.decidedAt,
-    ),
-  );
+  const sealed = host.sealedGraph();
+  assert.equal(sealed.kind, "GameBuildGraph");
+  assert.equal(sealed.acceptanceHash, planApproval.hash);
+  assert.equal(sealed.planHash, plan.compiled.hash);
+  assert.equal(sealed.localChecks.status, "eligible");
+  assert.equal(sealed.operations.length, 3);
 });
 
 test("creator verification retains unchanged ModuleScript source and passes valid Luau", async () => {
@@ -2634,7 +2887,7 @@ test("creator verification retains unchanged ModuleScript source and passes vali
       source: protocolSource,
     },
   ]);
-  const plan = createCreatorPlan(
+  const plan = createTestPlan(
     {
       sessionId: session.id,
       promptHash: session.promptHash,
@@ -2688,6 +2941,11 @@ test("creator verification retains unchanged ModuleScript source and passes vali
     },
     dependencyObservation,
     ownership,
+    {},
+    {
+      imports: { server: ["protocol"] },
+      observed: { protocol: "forge_attribute:protocol-existing" },
+    },
   );
   const planApproval = createCreatorApproval({
     sessionId: session.id,
@@ -2708,9 +2966,9 @@ test("creator verification retains unchanged ModuleScript source and passes vali
     sourceConsultation: sources.sourceConsultation,
   });
   const staged = await host.execute("studio.build", {
-    changes: [
+    sources: [
       {
-        planChangeId: "server",
+        slotId: "server",
         source: [
           'local ReplicatedStorage = game:GetService("ReplicatedStorage")',
           'local system = ReplicatedStorage:WaitForChild("AirlockSystem")',
@@ -2720,6 +2978,7 @@ test("creator verification retains unchanged ModuleScript source and passes vali
         ].join("\n"),
       },
     ],
+    values: [],
     summary: "Built the requested server behavior.",
   });
   assert.equal(staged.ok, true);
@@ -2804,7 +3063,10 @@ test("creator session history is bound to immutable project-index captures", asy
       assertCreatorSessionBundle({
         ...bundle,
         agentRuns: [
-          { ...reference, outcome: { ...reference.outcome, intendedArtifactKind: "change_set" } },
+          {
+            ...reference,
+            outcome: { ...reference.outcome, intendedArtifactKind: "game_build_graph" },
+          },
         ],
       }),
     /does not match its referenced phase/,
@@ -3004,11 +3266,11 @@ test("creator plans reserve enough Play Solo time for a human-triggered observat
     ...planSourceBinding(sources),
   };
   assert.throws(
-    () => createCreatorPlan(input, runtimeObservation, runtimeOwnership),
+    () => createTestPlan(input, runtimeObservation, runtimeOwnership),
     new RegExp(`capacity for at least ${CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS} ms`),
   );
   assert.doesNotThrow(() =>
-    createCreatorPlan(
+    createTestPlan(
       {
         ...input,
         charter: {
@@ -3080,7 +3342,6 @@ test("creator property inputs reach every proof-closed manifest codec", () => {
     ["NumberValue", "Value", Math.PI, "number_f64"],
     ["Part", "CollisionGroup", "Default", "string_utf8"],
     ["Part", "Material", "Plastic", "enum_name"],
-    ["Lighting", "TimeOfDay", "21:30:00", "string_utf8"],
     ["ParticleEmitter", "Lifetime", { min: 0.5, max: 2 }, "number_range"],
   ] as const;
 

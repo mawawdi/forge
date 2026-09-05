@@ -1,9 +1,24 @@
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { basename, delimiter, join, relative, resolve, sep } from "node:path";
 import type { VerificationIssue, VerificationReport } from "../../contracts/src/index.js";
+import {
+  AnalysisProcessDeadline,
+  type AnalysisProcessFailure,
+  type LuauAnalysisExecutionOptions,
+} from "./process.js";
+
+export type { LuauAnalysisExecutionOptions } from "./process.js";
 
 type ToolRecord = VerificationReport["toolchain"][number];
 type TierStatus = "pass" | "fail" | "unavailable";
@@ -39,10 +54,15 @@ interface DefinitionMetadata {
   sha256: string;
 }
 
-export function analyzeWithRobloxLuau(root: string, files: string[]): LuauAnalysisResult {
+export function analyzeWithRobloxLuau(
+  root: string,
+  files: string[],
+  options: LuauAnalysisExecutionOptions = {},
+): LuauAnalysisResult {
+  const execution = new AnalysisProcessDeadline(options);
   const canonicalRoot = resolve(root);
   const relativeFiles = [...files].sort((left, right) => left.localeCompare(right));
-  const syntax = analyzeSyntax(canonicalRoot, relativeFiles);
+  const syntax = analyzeSyntax(canonicalRoot, relativeFiles, execution);
   if (syntax.status !== "pass") {
     return {
       tools: syntax.tools,
@@ -55,7 +75,7 @@ export function analyzeWithRobloxLuau(root: string, files: string[]): LuauAnalys
       stderr: syntax.stderr,
     };
   }
-  const roblox = analyzeRobloxTypes(canonicalRoot, relativeFiles);
+  const roblox = analyzeRobloxTypes(canonicalRoot, relativeFiles, execution);
   return {
     tools: [...syntax.tools, ...roblox.tools],
     tiers: [
@@ -76,12 +96,15 @@ export function analyzeWithRobloxLuau(root: string, files: string[]): LuauAnalys
  * temporary host paths out of diagnostics and binds every source file to its
  * logical Studio path before the Roblox-aware analyzer runs.
  */
-export function analyzeStudioSourcesWithRobloxLuau(input: {
-  nodes: readonly StudioLuauAnalysisNode[];
-  sources: readonly StudioLuauAnalysisSource[];
-  /** Existing trusted project source used only to resolve candidate imports. */
-  dependencySources?: readonly StudioLuauAnalysisSource[];
-}): LuauAnalysisResult {
+export function analyzeStudioSourcesWithRobloxLuau(
+  input: {
+    nodes: readonly StudioLuauAnalysisNode[];
+    sources: readonly StudioLuauAnalysisSource[];
+    /** Existing trusted project source used only to resolve candidate imports. */
+    dependencySources?: readonly StudioLuauAnalysisSource[];
+  },
+  options: LuauAnalysisExecutionOptions = {},
+): LuauAnalysisResult {
   const temporaryRoot = mkdtempSync(join(tmpdir(), "forge-studio-luau-analysis-"));
   try {
     // Untyped candidate files otherwise use Luau's nonstrict default, which
@@ -120,7 +143,7 @@ export function analyzeStudioSourcesWithRobloxLuau(input: {
       { encoding: "utf8", mode: 0o600 },
     );
     const candidateFiles = sourceFiles.slice(0, sources.length).map((source) => source.file);
-    const result = analyzeWithRobloxLuau(temporaryRoot, candidateFiles);
+    const result = analyzeWithRobloxLuau(temporaryRoot, candidateFiles, options);
     const sourceByFile = new Map(sourceFiles.map((source) => [source.file, source]));
     const issues = result.issues.map((issue) => remapStudioIssue(issue, sourceByFile));
     const remappedIssueIds = new Map(
@@ -144,6 +167,7 @@ export function analyzeStudioSourcesWithRobloxLuau(input: {
 function analyzeSyntax(
   root: string,
   files: string[],
+  execution: AnalysisProcessDeadline,
 ): {
   status: TierStatus;
   tools: ToolRecord[];
@@ -163,7 +187,14 @@ function analyzeSyntax(
     {
       name: "luau-compile",
       command: "luau-compile --only-parse <files>",
-      configHash: hash(`${binaryHash(executable)}|official-luau-syntax`),
+      configHash: hash(
+        JSON.stringify({
+          executableHash: binaryHash(executable),
+          mode: "official-luau-syntax",
+          execution: execution.policy,
+          maxBuffer: 10 * 1024 * 1024,
+        }),
+      ),
     },
   ];
   const issues: VerificationIssue[] = [];
@@ -171,27 +202,31 @@ function analyzeSyntax(
   let stderr = "";
   let failed = false;
   for (const file of files) {
-    const result = spawnSync(executable, ["--only-parse", resolve(root, file)], {
+    const result = execution.run(executable, ["--only-parse", resolve(root, file)], {
       cwd: root,
-      encoding: "utf8",
       maxBuffer: 10 * 1024 * 1024,
     });
     stdout += result.stdout ?? "";
     stderr += result.stderr ?? "";
-    issues.push(...parseCompilerDiagnostics(`${result.stdout ?? ""}${result.stderr ?? ""}`, root));
-    if (result.error)
-      issues.push(
-        toolIssue(
-          "LUAU_SYNTAX_TOOL_UNAVAILABLE",
-          `luau-compile failed to start: ${result.error.message}`,
-        ),
-      );
-    if (result.status !== 0 || result.error) failed = true;
+    if (result.failure) {
+      issues.push(processFailureIssue("LUAU_SYNTAX", "luau-compile", result.failure));
+      break;
+    }
+    const diagnostics = parseCompilerDiagnostics(`${result.stdout}${result.stderr}`, root);
+    issues.push(...diagnostics);
+    if (result.status !== 0) {
+      failed = true;
+      if (diagnostics.length === 0) {
+        issues.push(
+          toolIssue(
+            "LUAU_SYNTAX_TOOL_FAILURE",
+            "luau-compile failed without a parseable diagnostic.",
+          ),
+        );
+        break;
+      }
+    }
   }
-  if (failed && issues.length === 0)
-    issues.push(
-      toolIssue("LUAU_SYNTAX_TOOL_FAILURE", "luau-compile failed without a parseable diagnostic."),
-    );
   return {
     status: issues.some((issue) => issue.category === "tooling")
       ? "unavailable"
@@ -208,6 +243,7 @@ function analyzeSyntax(
 function analyzeRobloxTypes(
   root: string,
   files: string[],
+  execution: AnalysisProcessDeadline,
 ): {
   status: TierStatus;
   tools: ToolRecord[];
@@ -250,21 +286,49 @@ function analyzeRobloxTypes(
     const sourcemapPath = join(temporaryRoot, "sourcemap.json");
     const projectPath =
       existingProjectPath(root) ?? writeSyntheticProject(temporaryRoot, root, files);
-    const sourcemap = spawnSync(rojo, ["sourcemap", projectPath, "--output", sourcemapPath], {
-      cwd: root,
-      encoding: "utf8",
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    if (sourcemap.error || sourcemap.status !== 0 || !existsSync(sourcemapPath)) {
-      const detail = `${sourcemap.stdout ?? ""}${sourcemap.stderr ?? ""}`.trim();
-      return unavailable(`Rojo sourcemap generation failed${detail ? `: ${detail}` : "."}`);
-    }
-    const sourcemapSource = readFileSync(sourcemapPath, "utf8");
-    const sourcemapHash = hash(sourcemapSource);
-    writeFileSync(
-      sourcemapPath,
-      JSON.stringify(absolutizeSourcemapPaths(JSON.parse(sourcemapSource) as unknown, root)),
+    const rojoTool: ToolRecord = {
+      name: "rojo-sourcemap",
+      command: "rojo sourcemap <project> --include-non-scripts --output <temporary>",
+      configHash: hash(
+        JSON.stringify({
+          executableHash: binaryHash(rojo),
+          includeNonScripts: true,
+          execution: execution.policy,
+          maxBuffer: 10 * 1024 * 1024,
+        }),
+      ),
+    };
+    const sourcemap = execution.run(
+      rojo,
+      ["sourcemap", projectPath, "--include-non-scripts", "--output", sourcemapPath],
+      { cwd: root, maxBuffer: 10 * 1024 * 1024 },
     );
+    if (sourcemap.failure)
+      return {
+        status: "unavailable",
+        tools: [rojoTool],
+        issues: [processFailureIssue("ROBLOX_SOURCEMAP", "Rojo sourcemap", sourcemap.failure)],
+        stdout: sourcemap.stdout,
+        stderr: sourcemap.stderr,
+      };
+    if (sourcemap.status !== 0 || !existsSync(sourcemapPath)) {
+      const detail = `${sourcemap.stdout ?? ""}${sourcemap.stderr ?? ""}`.trim();
+      return unavailable(`Rojo sourcemap generation failed${detail ? `: ${detail}` : "."}`, [
+        rojoTool,
+      ]);
+    }
+    let sourcemapSource: string;
+    try {
+      sourcemapSource = readFileSync(sourcemapPath, "utf8");
+      writeFileSync(
+        sourcemapPath,
+        JSON.stringify(absolutizeSourcemapPaths(JSON.parse(sourcemapSource) as unknown, root)),
+      );
+    } catch {
+      return unavailable("Rojo produced an unreadable or invalid JSON sourcemap.", [rojoTool]);
+    }
+    const sourcemapHash = hash(sourcemapSource);
+    rojoTool.configHash = hash(`${rojoTool.configHash}|${sourcemapHash}`);
     const configPath = resolve(root, ".luaurc");
     const args = [
       "analyze",
@@ -279,21 +343,17 @@ function analyzeRobloxTypes(
     // but a Rokit-managed luau-lsp shim must launch from the Forge tool project
     // that pins it. The generated sourcemap and absolute source paths preserve
     // candidate resolution without making the shim depend on candidate files.
-    const result = spawnSync(executable, args, {
+    const result = execution.run(executable, args, {
       cwd: toolExecutionRoot(),
-      encoding: "utf8",
       maxBuffer: 20 * 1024 * 1024,
     });
     const stdout = result.stdout ?? "";
     const stderr = result.stderr ?? "";
-    const issues = parseLspDiagnostics(`${stdout}${stderr}`, root);
-    if (result.error)
-      issues.push(
-        toolIssue(
-          "ROBLOX_TYPE_ENV_UNAVAILABLE",
-          `luau-lsp failed to start: ${result.error.message}`,
-        ),
-      );
+    // Interrupted output is retained for troubleshooting, not promoted to
+    // authoritative language diagnostics from an unfinished analysis.
+    const issues = result.failure
+      ? [processFailureIssue("ROBLOX_TYPE", "luau-lsp", result.failure)]
+      : parseLspDiagnostics(`${stdout}${stderr}`, root);
     if (result.status !== 0 && issues.length === 0)
       issues.push(
         toolIssue(
@@ -308,6 +368,8 @@ function analyzeRobloxTypes(
         definitionsHash,
         sourcemapHash,
         luaurcHash: existsSync(configPath) ? hash(readFileSync(configPath)) : hash("no-config"),
+        execution: execution.policy,
+        maxBuffer: 20 * 1024 * 1024,
       }),
     );
     const tools: ToolRecord[] = [
@@ -318,11 +380,7 @@ function analyzeRobloxTypes(
         configHash,
       },
       { name: "roblox-global-types", command: metadata.source, configHash: definitionsHash },
-      {
-        name: "rojo-sourcemap",
-        command: "rojo sourcemap <project> --output <temporary>",
-        configHash: hash(`${binaryHash(rojo)}|${sourcemapHash}`),
-      },
+      rojoTool,
     ];
     return {
       status: issues.some((issue) => issue.category === "tooling")
@@ -339,7 +397,10 @@ function analyzeRobloxTypes(
     rmSync(temporaryRoot, { recursive: true, force: true });
   }
 
-  function unavailable(message: string): {
+  function unavailable(
+    message: string,
+    tools: ToolRecord[] = [],
+  ): {
     status: "unavailable";
     tools: ToolRecord[];
     issues: VerificationIssue[];
@@ -348,7 +409,7 @@ function analyzeRobloxTypes(
   } {
     return {
       status: "unavailable",
-      tools: [],
+      tools,
       issues: [toolIssue("ROBLOX_TYPE_ENV_UNAVAILABLE", message)],
       stdout: "",
       stderr: "",
@@ -531,6 +592,17 @@ function toolIssue(ruleId: string, message: string): VerificationIssue {
   };
 }
 
+function processFailureIssue(
+  prefix: string,
+  tool: string,
+  failure: AnalysisProcessFailure,
+): VerificationIssue {
+  return toolIssue(
+    `${prefix}_TOOL_${failure.kind.toUpperCase()}`,
+    `${tool}: ${failure.detail}. Analysis is incomplete; this is not a source diagnostic.`,
+  );
+}
+
 function tier(
   name: LuauAnalysisTier["name"],
   status: TierStatus,
@@ -542,9 +614,18 @@ function tier(
 function resolveExecutable(environmentName: string, command: string): string | null {
   const configured = process.env[environmentName];
   if (configured) return existsSync(configured) ? resolve(configured) : null;
-  const lookup = spawnSync("sh", ["-lc", `command -v ${command}`], { encoding: "utf8" });
-  const candidate = lookup.status === 0 ? lookup.stdout.trim() : "";
-  return candidate && existsSync(candidate) ? candidate : null;
+  // Resolve PATH directly: a login-shell startup is an additional unbounded
+  // process and can execute unrelated host profile code.
+  for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+    const candidate = resolve(directory, process.platform === "win32" ? `${command}.exe` : command);
+    try {
+      if (process.platform !== "win32") accessSync(candidate, constants.X_OK);
+      if (statSync(candidate).isFile()) return candidate;
+    } catch {
+      // Continue to the next PATH entry when this one does not contain the tool.
+    }
+  }
+  return null;
 }
 
 function binaryHash(executable: string): string {
