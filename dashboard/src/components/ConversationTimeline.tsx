@@ -65,6 +65,7 @@ export function ConversationTimeline({
     return (
       <section className="conversation-timeline" aria-label="Project conversation">
         {historyControl}
+        <VisualWorkflowCards workflows={state.visualWorkflows ?? []} />
         {(state.controlView?.turnContract || !state.controlView) &&
         events.every(
           (event) => event.eventType === "project_identity" && event.data.state === "linked",
@@ -87,6 +88,7 @@ export function ConversationTimeline({
         {last ? `${eventLabel(last)} added to the conversation.` : ""}
       </p>
       {historyControl}
+      <VisualWorkflowCards workflows={state.visualWorkflows ?? []} />
       <ol aria-label="Messages">
         {entries.map((entry) => (
           <li key={entry.kind === "event" ? entry.event.id : entry.activity.jobId}>
@@ -115,6 +117,46 @@ export function ConversationTimeline({
         />
       ) : null}
     </section>
+  );
+}
+
+function VisualWorkflowCards({
+  workflows,
+}: {
+  readonly workflows: NonNullable<CreatorDashboardState["visualWorkflows"]>;
+}): React.JSX.Element | null {
+  if (workflows.length === 0) return null;
+  return (
+    <ol className="visual-workflow-list" aria-label="Visual-world workflows">
+      {workflows.map((workflow) => (
+        <li className="visual-workflow-card" key={workflow.workflowId}>
+          <div>
+            <span className="visual-workflow-card__state">
+              {workflow.state.replaceAll("_", " ")}
+            </span>
+            <h2>Visual world</h2>
+            <p>{workflow.detail}</p>
+          </div>
+          <details>
+            <summary>Details</summary>
+            <dl>
+              <dt>Workflow</dt>
+              <dd>{workflow.workflowId}</dd>
+              <dt>Current action</dt>
+              <dd>{workflow.action}</dd>
+              <dt>Event hash</dt>
+              <dd>{workflow.eventHash}</dd>
+              {Object.entries(workflow.artifactHashes).map(([name, hash]) => (
+                <div key={name}>
+                  <dt>{name}</dt>
+                  <dd>{hash}</dd>
+                </div>
+              ))}
+            </dl>
+          </details>
+        </li>
+      ))}
+    </ol>
   );
 }
 

@@ -9,6 +9,7 @@ local Generated = if script ~= nil then require(script.Parent.GeneratedStudioEvi
 local StudioScriptSource = if script ~= nil then require(script.Parent.StudioScriptSource) else require("./StudioScriptSource")
 local Canonical = if script ~= nil then require(script.Parent.StudioProjectIndexCanonical) else require("./StudioProjectIndexCanonical")
 local Constants = if script ~= nil then require(script.Parent.Constants) else require("./Constants")
+local ApprovedSceneImport = if script ~= nil then require(script.Parent.ApprovedSceneImport) else require("./ApprovedSceneImport")
 
 local function changeHistoryService() return game:GetService("ChangeHistoryService") end
 local function httpService() return game:GetService("HttpService") end
@@ -392,6 +393,7 @@ end
 -- recording. Existing targets and source buffers remain exact live checks.
 local function validatePreparedOperation(operation: any, topology: any, registry, resolveBlob: (any) -> string)
 	if typeof(operation) ~= "table" or typeof(operation.id) ~= "string" or operation.id == "" or typeof(operation.kind) ~= "string" then error("invalid creator operation") end
+	if operation.kind ~= "create" and (operation.approvedSceneImport ~= nil or operation.approvedSceneReplacement ~= nil) then error("approved scene loading is valid only on create") end
 	if operation.kind == "create" then
 		if typeof(operation.tempId) ~= "string" or operation.tempId == "" or typeof(operation.className) ~= "string" or typeof(operation.target) ~= "table" or typeof(operation.target.identity) ~= "table" or operation.target.identity.kind ~= "forge_attribute" then error("invalid create operation") end
 		local metadata = Generated.classMetadata(operation.className)
@@ -401,6 +403,15 @@ local function validatePreparedOperation(operation: any, topology: any, registry
 		validatePreparedParent(operation.parent, topology, registry, "create parent precondition mismatch")
 		validateProperties(operation.className, operation.properties, registry, false)
 		Generated.validateAttributes(operation.attributes)
+		if operation.approvedSceneImport ~= nil then
+			ApprovedSceneImport.validateBinding(operation.approvedSceneImport)
+			if operation.className ~= "Model" or next(operation.properties) ~= nil or next(operation.attributes) ~= nil or operation.sourceBlob ~= nil then error("approved scene import must be a property-free Model create") end
+		end
+		if operation.approvedSceneReplacement ~= nil then
+			if operation.approvedSceneImport ~= nil then error("approved scene create cannot import and replace together") end
+			ApprovedSceneImport.validateReplacement(operation.approvedSceneReplacement)
+			if operation.className ~= "Model" or next(operation.properties) ~= nil or next(operation.attributes) ~= nil or operation.sourceBlob ~= nil then error("approved scene replacement must be a property-free Model create") end
+		end
 		if metadata.source ~= "forbidden" then Generated.validateSource(resolveBlob(operation.sourceBlob), true) elseif operation.sourceBlob ~= nil then error("non-script create cannot carry source blob") end
 	elseif operation.kind == "update" then
 		validateExisting(operation, registry)
@@ -429,6 +440,7 @@ end
 -- that already exist in Studio.
 local function validateOperation(operation: any, registry, resolveBlob: (any) -> string, expectedPostTarget: any?, resolveReference: ((any) -> Instance)?)
 	if typeof(operation) ~= "table" or typeof(operation.id) ~= "string" or operation.id == "" or typeof(operation.kind) ~= "string" then error("invalid creator operation") end
+	if operation.kind ~= "create" and (operation.approvedSceneImport ~= nil or operation.approvedSceneReplacement ~= nil) then error("approved scene loading is valid only on create") end
 	if operation.kind == "create" then
 		if typeof(operation.tempId) ~= "string" or operation.tempId == "" or typeof(operation.className) ~= "string" or typeof(operation.target) ~= "table" or typeof(operation.target.identity) ~= "table" or operation.target.identity.kind ~= "forge_attribute" then error("invalid create operation") end
 		local metadata = Generated.classMetadata(operation.className)
@@ -444,6 +456,15 @@ local function validateOperation(operation: any, registry, resolveBlob: (any) ->
 		if parent:FindFirstChild(operation.name) then error("create target collides") end
 		validateProperties(operation.className, operation.properties, registry, nil, resolveReference)
 		Generated.validateAttributes(operation.attributes)
+		if operation.approvedSceneImport ~= nil then
+			ApprovedSceneImport.validateBinding(operation.approvedSceneImport)
+			if operation.className ~= "Model" or next(operation.properties) ~= nil or next(operation.attributes) ~= nil or operation.sourceBlob ~= nil then error("approved scene import must be a property-free Model create") end
+		end
+		if operation.approvedSceneReplacement ~= nil then
+			if operation.approvedSceneImport ~= nil then error("approved scene create cannot import and replace together") end
+			ApprovedSceneImport.validateReplacement(operation.approvedSceneReplacement)
+			if operation.className ~= "Model" or next(operation.properties) ~= nil or next(operation.attributes) ~= nil or operation.sourceBlob ~= nil then error("approved scene replacement must be a property-free Model create") end
+		end
 		if metadata.source ~= "forbidden" then Generated.validateSource(resolveBlob(operation.sourceBlob), true) elseif operation.sourceBlob ~= nil then error("non-script create cannot carry source blob") end
 	elseif operation.kind == "update" then
 		validateProperties(classForOperation(operation), operation.properties, registry, nil, resolveReference); Generated.validateAttributes(operation.attributes); validateRemovedAttributes(operation.removedAttributes, operation.attributes); validateExisting(operation, registry); validateEnrollment(operation)
@@ -487,12 +508,31 @@ local function allocateCreatedHandles(operations: {any}, registry)
 			if operation.kind == "create" then
 				local key = identityKey(operation.target.identity)
 				if handles.byIdentity[key] ~= nil then error("transaction create handles have duplicate identity") end
-				local instance = Instance.new(operation.className)
+				local instance: Instance
+				local importedInstances: {[string]: Instance}? = nil
+				local loadedScene = operation.approvedSceneImport or (operation.approvedSceneReplacement and ApprovedSceneImport.replacementAsset(operation.approvedSceneReplacement))
+				if loadedScene == nil then
+					instance = Instance.new(operation.className)
+				else
+					instance, importedInstances = ApprovedSceneImport.loadDetached(loadedScene)
+				end
 				local handle = { instance = instance, target = operation.target }
 				handles.byOperationId[operation.id] = handle
 				handles.byIdentity[key] = handle
 				handles.byInstance[instance] = handle
 				table.insert(handles.instances, instance)
+				if importedInstances ~= nil then
+					for _, descendant in ipairs(loadedScene.descendants) do
+						local imported = importedInstances[descendant.stableId]
+						if imported == nil then error("approved scene import detached identity is absent") end
+						local descendantTarget = { identity = { kind = "forge_attribute", stableId = descendant.stableId }, path = operation.target.path .. "/" .. descendant.relativePath, className = descendant.className }
+						local descendantHandle = { instance = imported, target = descendantTarget }
+						local descendantKey = identityKey(descendantTarget.identity)
+						if handles.byIdentity[descendantKey] ~= nil then error("approved scene import identity collides") end
+						handles.byIdentity[descendantKey] = descendantHandle
+						handles.byInstance[imported] = descendantHandle
+					end
+				end
 			end
 		end
 	end)
@@ -539,9 +579,26 @@ local function applyOperation(operation: any, registry, resolveBlob: (any) -> st
 		reportExpectedMutationFact(onExpectedMutationFact, exactPropertyStateFact(instance, "Parent", function() return instance.Parent == nil end, function() return instance.Parent == parent end))
 		reportExpectedMutationFact(onExpectedMutationFact, exactHierarchyFact(instance, "added", function() return instance.Parent == nil end, function() return instance.Parent == parent and instance.Name == operation.name end))
 		reportExpectedMutationFact(onExpectedMutationFact, exactHierarchyFact(instance, "removing", function() return instance.Parent == parent and instance.Name == operation.name end, function() return false end))
+		local loadedScene = operation.approvedSceneImport or (operation.approvedSceneReplacement and ApprovedSceneImport.replacementAsset(operation.approvedSceneReplacement))
+		if loadedScene ~= nil then
+			for _, descendant in ipairs(loadedScene.descendants) do
+				local target = { identity = { kind = "forge_attribute", stableId = descendant.stableId }, path = operation.target.path .. "/" .. descendant.relativePath, className = descendant.className, expectedClass = "Instance" }
+				local imported = createdHandles:resolveReference(target)
+				reportExpectedMutationFact(onExpectedMutationFact, exactHierarchyFact(imported, "added", function() return instance.Parent == nil end, function() return instance.Parent == parent and imported:IsDescendantOf(instance) end))
+				reportExpectedMutationFact(onExpectedMutationFact, exactHierarchyFact(imported, "removing", function() return instance.Parent == parent and imported:IsDescendantOf(instance) end, function() return false end))
+			end
+		end
 		instance.Parent = parent
 		reportExpectedMutationFact(onExpectedMutationFact, exactAttributeFact(instance, Constants.IDENTITY_ATTRIBUTE, operation.target.identity.stableId))
 		if not registry:enrollInstance(instance, operation.target.identity.stableId) then error("created instance is outside the generated identity scope") end
+		if loadedScene ~= nil then
+			for _, descendant in ipairs(loadedScene.descendants) do
+				local target = { identity = { kind = "forge_attribute", stableId = descendant.stableId }, path = operation.target.path .. "/" .. descendant.relativePath, className = descendant.className, expectedClass = "Instance" }
+				local imported = createdHandles:resolveReference(target)
+				reportExpectedMutationFact(onExpectedMutationFact, exactAttributeFact(imported, Constants.IDENTITY_ATTRIBUTE, descendant.stableId))
+				if not registry:enrollInstance(imported, descendant.stableId) then error("imported scene descendant is outside the generated identity scope") end
+			end
+		end
 		-- A created object becomes an exact registry target before its approved
 		-- properties are written. This is required for a self-reference and for
 		-- later canonical operations to reference the created object; it remains
@@ -608,6 +665,21 @@ local function canonicalOperations(changeSet: any, topology: any): {any}
 	return ordered
 end
 
+local function validateApprovedSceneReplacementPairs(operations: {any})
+	for _, operation in ipairs(operations) do
+		local replacement = operation.approvedSceneReplacement
+		if replacement ~= nil then
+			ApprovedSceneImport.validateReplacement(replacement)
+			if operation.kind ~= "create" or operation.target.path ~= replacement.previousTarget.path or operation.parent.path ~= replacement.previousTarget.path:match("^(.*)/[^/]+$") then error("approved scene replacement does not preserve its stable wrapper path") end
+			local matched = 0
+			for _, candidate in ipairs(operations) do
+				if candidate.kind == "delete" and identityKey(candidate.target.identity) == identityKey(replacement.previousTarget.identity) and candidate.target.path == replacement.previousTarget.path and candidate.target.className == replacement.previousTarget.className and candidate.beforeHash == replacement.previousBeforeHash then matched += 1 end
+			end
+			if matched ~= 1 then error("approved scene replacement requires one exact hash-guarded subtree delete") end
+		end
+	end
+end
+
 -- A detached graph mirrors only approved authoring targets. Its instances are
 -- never parented into the DataModel, but a child may be parented to an
 -- unparented scratch parent so that nested creates and reference-valued
@@ -666,12 +738,26 @@ local function detachedScratchGraph(prepared: any)
 		for _, operation in ipairs(prepared.operations) do
 			if operation.kind ~= "delete" then
 				local target = operation.target
-				local instance = Instance.new(classForOperation(operation))
+					local instance: Instance
+					local importedInstances: {[string]: Instance}? = nil
+					local loadedScene = if operation.kind == "create" then operation.approvedSceneImport or (operation.approvedSceneReplacement and ApprovedSceneImport.replacementAsset(operation.approvedSceneReplacement)) else nil
+					if loadedScene ~= nil then
+						instance, importedInstances = ApprovedSceneImport.loadDetached(loadedScene)
+					else
+						instance = Instance.new(classForOperation(operation))
+					end
 				-- Retain the handle before any operation that can fail so partial
 				-- allocation cannot leak a scratch instance.
 				table.insert(graph.instances, instance)
 				instance.Name = if operation.kind == "create" then operation.name else target.path:match("([^/]+)$") or instance.Name
-				register(target, instance)
+					register(target, instance)
+					if importedInstances ~= nil then
+						for _, descendant in ipairs(loadedScene.descendants) do
+							local imported = importedInstances[descendant.stableId]
+							if imported == nil then error("approved scene import detached identity is absent") end
+							register({ identity = { kind = "forge_attribute", stableId = descendant.stableId }, path = target.path .. "/" .. descendant.relativePath, className = descendant.className }, imported)
+						end
+					end
 				if operation.kind ~= "create" then
 					local seeded = {}
 					for _, name in ipairs(Generated.sortedMutationPropertyNames(classForOperation(operation), operation.properties or {})) do
@@ -716,9 +802,9 @@ end
 -- member's sealed shape changes: Studio settings outlive both `.forge` and an
 -- installed connector, so reusing a predecessor key would make a clean host
 -- reset ingest incompatible durable state.
-local ACTIVE_RECORDING_SETTING = "ForgeCreatorTransactionCursorV6"
-local FINALIZATION_RECEIPT_SETTING = "ForgeCreatorFinalizationReceiptV6"
-local LAST_COMMIT_SETTING = "ForgeCreatorLastCommitV6"
+local ACTIVE_RECORDING_SETTING = "ForgeCreatorTransactionCursorV7"
+local FINALIZATION_RECEIPT_SETTING = "ForgeCreatorFinalizationReceiptV7"
+local LAST_COMMIT_SETTING = "ForgeCreatorLastCommitV7"
 local MAXIMUM_TRANSACTION_SETTING_MATERIAL_BYTES = 64 * 1024
 
 local function nonEmptyBoundedString(value: any, maximum: number): boolean
@@ -1800,6 +1886,7 @@ function StudioAuthoring:prepare(payload: any, beforeCapture: any)
 	local topology = Generated.compileMutationTransactionTopologyFromIndex(changeSet, beforeCapture)
 	Generated.assertRecompiledMutationProjectionFromIndex(changeSet, projection, beforeCapture)
 	Generated.assertRecompiledMutationProjectionFromIndex(changeSet, preflightProjection, beforeCapture)
+	validateApprovedSceneReplacementPairs(changeSet.operations)
 	local operationIds, planChangeIds, targetIds, createPaths = {}, {}, {}, {}
 	for _, operation in ipairs(changeSet.operations) do
 		if operationIds[operation.id] or typeof(operation.planChangeId) ~= "string" or planChangeIds[operation.planChangeId] then error("operation identity binding is not unique") end

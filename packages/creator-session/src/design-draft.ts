@@ -18,7 +18,7 @@ import {
   resolveCreatorGameComponentInput,
   type CreatorComponentRef,
   type CreatorGameComponentInput,
-  type CreatorGameCatalog,
+  type CreatorGameEnvironment,
 } from "./game-authoring.js";
 
 type Component = GameDesignSpec["components"][number];
@@ -38,13 +38,13 @@ export class CreatorDesignDraft {
   private readonly defineSchema;
   private readonly policy: GameAdmissionPolicy;
   constructor(
-    private readonly catalog: CreatorGameCatalog,
+    private readonly environment: CreatorGameEnvironment,
     policy: GameAdmissionPolicy = DEFAULT_GAME_ADMISSION_POLICY,
   ) {
     this.policy = GAME_ADMISSION_POLICY_SCHEMA.parse(policy);
     this.defineSchema = z
       .object({
-        component: creatorGameComponentSchema(catalog),
+        component: creatorGameComponentSchema(),
       })
       .strict();
   }
@@ -94,7 +94,7 @@ export class CreatorDesignDraft {
       )
         throw new Error("Draft repair no longer matches its retained component version");
       const component = resolveCreatorGameComponentInput(value.component, this.policy);
-      this.catalog.validateComponent?.(component);
+      this.environment.validateComponent(component);
       const next = [...this.entries.values()]
         .filter((entry) => entry.ref.componentId !== component.id)
         .map((entry) => entry.component);

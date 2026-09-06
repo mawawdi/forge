@@ -136,9 +136,6 @@ export function createGameBuildControlView(input: {
                   : "ready",
       provenance: {
         componentKind: component.kind,
-        ...(component.kind === "recipe_instance"
-          ? { definitionId: component.definition.id, definitionHash: component.definition.hash }
-          : {}),
       },
       ...(item.source ? { source: { fileId: item.source.fileId, ...item.source.content } } : {}),
       lockedProperties: item.lockedProperties,

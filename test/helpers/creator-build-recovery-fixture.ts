@@ -28,11 +28,6 @@ import {
 import { creatorBuildRecoveryBinding } from "../../packages/creator-session/src/build-recovery.js";
 import { compileGamePlan } from "../../packages/game-compiler/src/index.js";
 import {
-  createGameDefinitionRegistry,
-  gameRecipeDefinitionLock,
-  type GameRecipeDefinition,
-} from "../../packages/game-ir/src/index.js";
-import {
   createPinnedLuauLspSourceIndex,
   SourceConsultationRecorder,
 } from "../../packages/source-intelligence/src/index.js";
@@ -88,15 +83,6 @@ export function creatorBuildRecoveryFixture(options: { sourceSlots?: number } = 
   );
   const sourceResolver = createTestFixtureSourceResolver([]);
   const sourceConsultation = new SourceConsultationRecorder(sourceIndex, sourceResolver).seal();
-  const definition: GameRecipeDefinition = {
-    kind: "GameRecipeDefinition",
-    id: "test-container",
-    abi: "1",
-    sourceExports: [],
-    configSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
-    ports: [],
-    obligations: [],
-  };
   const change = {
     id: "folder",
     kind: "create" as const,
@@ -113,16 +99,32 @@ export function creatorBuildRecoveryFixture(options: { sourceSlots?: number } = 
       intent: prompt,
       components: [
         {
-          kind: "recipe_instance",
+          kind: "native_graph",
           id: "container",
-          definition: gameRecipeDefinitionLock(definition),
-          config: {},
+          graph: {
+            kind: "studio_objects",
+            operations: [
+              {
+                id: "folder",
+                kind: "create",
+                className: "Folder",
+                parent: { kind: "engine", id: "Workspace" },
+                name: "Folder",
+                properties: [],
+                valueSlots: [],
+                attributes: [],
+                removedAttributes: [],
+                dependencies: [],
+              },
+            ],
+          },
+          ports: [],
+          obligations: [],
         },
       ],
       connections: [],
       artifactDependencies: [],
     },
-    registry: createGameDefinitionRegistry([definition]),
     projectId: ownership.projectId,
     project: projectIndex.project,
     sessionId: session.id,

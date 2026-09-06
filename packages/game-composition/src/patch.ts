@@ -1,17 +1,12 @@
 import {
-  compositionConfigDataSchema,
   COMPOSITION_ID_SCHEMA,
   COMPOSITION_NAME_SCHEMA,
   COMPOSITION_MEMBER_SCHEMA,
 } from "./config-schema.js";
 import { z } from "zod";
 import { contentHash, stableJson } from "../../contracts/src/index.js";
-import {
-  DEFAULT_GAME_ADMISSION_POLICY,
-  gameRecipeDefinitionLock,
-  type GameRecipeDefinition,
-} from "../../game-ir/src/index.js";
-import { GAME_DATA_SCHEMA, canonicalGameDataSchema } from "../../game-ir/src/recipes.js";
+import { DEFAULT_GAME_ADMISSION_POLICY } from "../../game-ir/src/index.js";
+import { GAME_DATA_SCHEMA, canonicalGameDataSchema } from "../../game-ir/src/data-contracts.js";
 import {
   STUDIO_CAPABILITY_MANIFEST,
   assertStudioValue,
@@ -112,23 +107,6 @@ export const STUDIO_PATCH_CONFIG_SCHEMA = z
   .object({ operations: z.array(operationSchema).min(1).max(4096) })
   .strict();
 export type StudioPatchConfig = z.infer<typeof STUDIO_PATCH_CONFIG_SCHEMA>;
-export const STUDIO_PATCH_DEFINITION: GameRecipeDefinition = {
-  kind: "GameRecipeDefinition",
-  sourceExports: [],
-  id: "studio-patch",
-  abi: "1",
-  configSchema: compositionConfigDataSchema(STUDIO_PATCH_CONFIG_SCHEMA),
-  ports: [],
-  obligations: [
-    {
-      id: "direct-editor-readback",
-      description:
-        "Reconcile the exact authorized editor mutation and preserved surrounding state using canonical Studio receipts.",
-      evidence: "studio_edit",
-    },
-  ],
-};
-
 /** JSON strings carry exact canonical StudioValue / GameDataSchema data, never expressions or source. */
 export function compileStudioPatch(
   context: CompositionContext & { observation?: CreatorProjectIndexView },
@@ -348,18 +326,9 @@ export function compileStudioPatch(
   return {
     inventory,
     sources: [],
-    obligations: STUDIO_PATCH_DEFINITION.obligations.map((obligation) => ({
-      componentId: context.componentId,
-      ...obligation,
-    })),
+    obligations: [],
     limitations: [
       "Patch expansion uses host-supplied observed identities. It grants no approval and performs no mutation; the shared compiler, ownership checks and native preflight/readback remain authoritative.",
     ],
   };
 }
-export const STUDIO_PATCH_EXPANDER = {
-  definition: gameRecipeDefinitionLock(STUDIO_PATCH_DEFINITION),
-  expand: (
-    input: CompositionContext & { config: unknown; observation?: CreatorProjectIndexView },
-  ) => compileStudioPatch(input, input.config).inventory,
-};

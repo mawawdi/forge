@@ -791,35 +791,6 @@ export function assertCubeJobIntent(intent: unknown): asserts intent is CubeJobI
   validateAssetSpec(parsed.spec);
 }
 
-export function connectedAssetProviderStatus(provider: "generation_service" | "open_cloud"): {
-  status: "unavailable";
-  provider: string;
-  reason: string;
-  recovery: string;
-} {
-  return {
-    status: "unavailable",
-    provider,
-    reason: "No credential/native-context admission is configured for this adapter.",
-    recovery:
-      "Obtain an exact provider operation ID after an ambiguous submission and reconcile it before retrying; no external request has been made by this adapter.",
-  };
-}
-export function externalAssetJobRecovery(input: {
-  submittedIntentHash: string;
-  providerOperationId?: string;
-  receiptState: "absent" | "pending" | "unknown";
-}): { status: "recovery_required"; mayResubmit: false; action: string } {
-  hashSchema.parse(input.submittedIntentHash);
-  return {
-    status: "recovery_required",
-    mayResubmit: false,
-    action: input.providerOperationId
-      ? "Query the existing provider operation and reconcile its exact output hashes."
-      : "Recover the provider operation identity or establish non-submission before creating another job.",
-  };
-}
-
 function validateInspectionPolicy(policy: AssetInspectionPolicy): void {
   if (Object.values(policy).some((value) => !Number.isSafeInteger(value) || value < 1))
     throw new AssetError("invalid_policy", "Inspection limits must be positive safe integers");

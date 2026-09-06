@@ -2607,11 +2607,17 @@ export function compileMutationEvidenceProjectionForManifest(
     }
     const manifestClass = manifest.classes.find((entry) => entry.name === target.className);
     if (operation.consequentialStructureOnly === true) {
+      const validDelete =
+        operation.kind === "delete" &&
+        operation.structureStatus === "absent" &&
+        operation.structure === undefined;
+      const validImportDescendant =
+        operation.kind === "create" &&
+        operation.structureStatus === "observed" &&
+        operation.structure !== undefined;
       if (
-        operation.kind !== "delete" ||
+        (!validDelete && !validImportDescendant) ||
         operation.beforeTarget !== undefined ||
-        operation.structureStatus !== "absent" ||
-        operation.structure !== undefined ||
         operation.properties !== undefined ||
         operation.attributes !== undefined ||
         operation.removedAttributes !== undefined ||
@@ -2622,7 +2628,8 @@ export function compileMutationEvidenceProjectionForManifest(
         key: studioEvidenceFactKey("structure", target),
         kind: "structure",
         target,
-        expectedStatus: "absent",
+        expectedStatus: operation.structureStatus!,
+        ...(validImportDescendant ? { expected: operation.structure! } : {}),
       });
       continue;
     }

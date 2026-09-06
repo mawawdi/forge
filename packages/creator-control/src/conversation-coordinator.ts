@@ -3,6 +3,7 @@ import {
   type CompactConversation,
 } from "../../creator-conversation/src/compaction.js";
 import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import { CreatorTurnNotAdmittedError } from "./turn-admission-error.js";
 import { validateVisualObservationInputs } from "../../visual-evidence/src/index.js";
 import {
@@ -122,6 +123,16 @@ import {
 } from "./agent-failure.js";
 import { creatorTerminalOutputKey } from "../../creator-conversation/src/contracts.js";
 import { HostPhaseRecorder } from "../../flight-recorder/src/host-phase.js";
+import {
+  VisualWorldAuthoringStore,
+  createProceduralSceneAuthority,
+  type VisualWorldDraftBinding,
+  type VisualWorldSolvedDraftBinding,
+} from "../../visual-world/src/index.js";
+import {
+  currentBlenderWorkerIdentity,
+  type BlenderCompilerInstallation,
+} from "../../blender-compiler/src/index.js";
 import { activityDetail, failedActivityDetail } from "./agent-activity.js";
 import { WorkspaceLabels, workspaceProjectKey, workspaceRenameSchema } from "./workspace-labels.js";
 
@@ -188,6 +199,7 @@ type JobExecutionAssessment =
 export class CreatorConversationCoordinator {
   private readonly timings: HostPhaseRecorder;
   private readonly workspaceLabels: WorkspaceLabels;
+  private readonly visualWorldAuthoring: VisualWorldAuthoringStore;
   private readonly store: CreatorConversationStore;
   private readonly identityJobStore: CreatorProjectIdentityJobStore;
   private readonly modelRegistry: CreatorModelRegistry;
@@ -230,6 +242,7 @@ export class CreatorConversationCoordinator {
       readonly timeoutMs?: number;
       readonly compactConversation?: CompactConversation;
       readonly now?: () => Date;
+      readonly visualCompilerInstallation?: BlenderCompilerInstallation;
       /** Test-only immutable-head publication boundary. */
       readonly conversationStoreOptions?: CreatorConversationStoreOptions;
     },
@@ -237,6 +250,9 @@ export class CreatorConversationCoordinator {
     this.store = new CreatorConversationStore(options.directory, options.conversationStoreOptions);
     this.timings = new HostPhaseRecorder(options.directory);
     this.workspaceLabels = new WorkspaceLabels(options.directory);
+    this.visualWorldAuthoring = new VisualWorldAuthoringStore(
+      resolve(options.directory, "visual-world-v2"),
+    );
     this.identityJobStore = new CreatorProjectIdentityJobStore(this.store.artifactStore);
     this.modelRegistry = materializeModelRegistry(
       options.defaultModelId,
@@ -285,6 +301,146 @@ export class CreatorConversationCoordinator {
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  async visualWorldState(workflowId: string): Promise<{
+    current: import("../../visual-world/src/index.js").VisualWorldWorkflowEvent;
+    history: readonly import("../../visual-world/src/index.js").VisualWorldWorkflowEvent[];
+  }> {
+    this.assertInitialized();
+    assertVisualControlId(workflowId, "visual workflow");
+    const current = await this.visualWorldAuthoring.workflow.current(workflowId);
+    return {
+      current,
+      history: await this.visualWorldAuthoring.workflow.history(workflowId),
+    };
+  }
+
+  async submitVisualWorldAction(value: unknown): Promise<unknown> {
+    this.assertInitialized();
+    const input = visualControlRecord(value);
+    const action = requiredVisualString(input.action, "visual action");
+    const workflowId = requiredVisualString(input.workflowId, "visual workflow");
+    const actionInstanceId = requiredVisualString(input.actionInstanceId, "visual action instance");
+    assertVisualControlId(workflowId, "visual workflow");
+    assertVisualControlId(actionInstanceId, "visual action instance");
+    const paired = this.options.transaction.pairedStudio();
+    if (!paired) throw new Error("Visual authoring requires one currently paired Studio project");
+    if (input.authority !== undefined)
+      throw new Error("Visual compiler, provenance, budget, and output authority is host-derived");
+    let result: unknown;
+    if (action === "create_draft") {
+      const projectId = requiredVisualString(input.projectId, "visual project");
+      if (projectId !== paired.conversationProjectId)
+        throw new Error("Visual draft project differs from the paired creator project");
+      const authority = await this.proceduralVisualAuthority({
+        declaration: input.declaration,
+        projectId,
+        creatorRequestHash: requiredVisualHash(input.creatorRequestHash, "creator request"),
+        referenceHashes: await this.authorizedVisualReferenceHashes(input.referenceHashes),
+        revision: 1,
+      });
+      result = await this.visualWorldAuthoring.createDraft({
+        workflowId,
+        projectId,
+        actionInstanceId,
+        creatorRequestHash: authority.creatorRequestHash,
+        declaration: input.declaration,
+        authority,
+        retainedAt: requiredVisualTimestamp(input.occurredAt, "visual draft time"),
+      });
+    } else if (action === "revise_draft") {
+      const prior = input.prior as VisualWorldDraftBinding;
+      const retained = await this.visualWorldAuthoring.readDraft(prior);
+      const authority = await this.proceduralVisualAuthority({
+        declaration: input.declaration,
+        projectId: retained.projectId,
+        creatorRequestHash: retained.creatorRequestHash,
+        referenceHashes: await this.authorizedVisualReferenceHashes(input.referenceHashes),
+        revision: retained.authority.revision + 1,
+      });
+      result = await this.visualWorldAuthoring.reviseDraft({
+        workflowId,
+        expectedEventHash: requiredVisualHash(input.expectedEventHash, "workflow event"),
+        actionInstanceId,
+        prior,
+        declaration: input.declaration,
+        authority,
+        retainedAt: requiredVisualTimestamp(input.occurredAt, "visual revision time"),
+      });
+    } else if (action === "solve_draft") {
+      result = await this.visualWorldAuthoring.solveDraft({
+        workflowId,
+        expectedEventHash: requiredVisualHash(input.expectedEventHash, "workflow event"),
+        actionInstanceId,
+        draft: input.draft as VisualWorldDraftBinding,
+        solvedAt: requiredVisualTimestamp(input.occurredAt, "visual solve time"),
+      });
+    } else if (action === "propose") {
+      result = await this.visualWorldAuthoring.propose({
+        workflowId,
+        expectedEventHash: requiredVisualHash(input.expectedEventHash, "workflow event"),
+        actionInstanceId,
+        solved: input.solved as VisualWorldSolvedDraftBinding,
+        projectRevisionHash: requiredVisualHash(input.projectRevisionHash, "project revision"),
+        agentRunId: requiredVisualString(input.agentRunId, "planner AgentRun"),
+        agentRunHash: requiredVisualHash(input.agentRunHash, "planner AgentRun"),
+        sourceConsultationHash: requiredVisualHash(
+          input.sourceConsultationHash,
+          "source consultation",
+        ),
+        intendedImplementation: requiredVisualString(
+          input.intendedImplementation,
+          "intended implementation",
+        ),
+        proposedAt: requiredVisualTimestamp(input.occurredAt, "visual proposal time"),
+      });
+    } else {
+      throw new Error(`Unsupported creator visual action: ${action}`);
+    }
+    this.emit();
+    return result;
+  }
+
+  private async authorizedVisualReferenceHashes(value: unknown): Promise<string[]> {
+    if (value === undefined) return [];
+    if (!Array.isArray(value) || value.length > 4)
+      throw new Error("Visual references must contain at most four retained artifact hashes");
+    const hashes = value.map((entry) => requiredVisualHash(entry, "visual reference"));
+    if (new Set(hashes).size !== hashes.length)
+      throw new Error("Visual reference artifact hashes must be unique");
+    await Promise.all(hashes.map((hash) => this.readAuthorizedArtifact(hash)));
+    return hashes;
+  }
+
+  private async proceduralVisualAuthority(input: {
+    declaration: unknown;
+    projectId: string;
+    creatorRequestHash: string;
+    referenceHashes: readonly string[];
+    revision: number;
+  }) {
+    const installation = this.options.visualCompilerInstallation;
+    if (!installation)
+      throw new Error(
+        "Visual compiler qualification is unavailable; retain a current Blender installation qualification before authoring",
+      );
+    const worker = await currentBlenderWorkerIdentity();
+    if (
+      installation.workerSha256 !== worker.workerSha256 ||
+      installation.inspectorSha256 !== worker.inspectorSha256 ||
+      installation.operationSetSha256 !== worker.operationSetSha256 ||
+      installation.exportProfileSha256 !== worker.exportProfileSha256
+    )
+      throw new Error("Visual compiler qualification is stale for the current fixed worker");
+    return createProceduralSceneAuthority({
+      ...input,
+      compiler: {
+        blenderVersion: installation.blenderVersion,
+        blenderBinarySha256: installation.executableSha256,
+        ...worker,
+      },
+    });
   }
 
   async dashboardState(conversationId?: string): Promise<CreatorDashboardState> {
@@ -417,9 +573,29 @@ export class CreatorConversationCoordinator {
         ).filter((activity) => activity !== undefined)
       : [];
     const preferences = selected ? this.projectMemoryOwner(selected) : undefined;
+    const visualWorkflows =
+      selected && selectedIsPaired && pairedSession
+        ? (await this.visualWorldAuthoring.workflow.listCurrent())
+            .filter((event) => event.projectId === pairedSession.conversationProjectId)
+            .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
+            .map((event) => ({
+              workflowId: event.workflowId,
+              projectId: event.projectId,
+              eventId: event.id,
+              eventHash: event.hash,
+              sequence: event.sequence,
+              state: event.to,
+              action: event.action,
+              actor: event.actor,
+              artifactHashes: event.artifacts,
+              detail: event.detail,
+              occurredAt: event.occurredAt,
+            }))
+        : [];
     return {
       kind: "CreatorDashboardState",
       agentActivities,
+      visualWorkflows,
       ...(preferences
         ? {
             projectSettings: {
@@ -6963,4 +7139,40 @@ function boundedError(error: unknown): string {
     bounded += character;
   }
   return bounded || "Foreground creator work failed";
+}
+
+function visualControlRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Visual creator action must be a JSON object");
+  const record = value as Record<string, unknown>;
+  if (Object.keys(record).length > 16) throw new Error("Visual creator action has too many fields");
+  return record;
+}
+
+function requiredVisualString(value: unknown, label: string): string {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value !== value.normalize("NFC") ||
+    Buffer.byteLength(value, "utf8") > 4096
+  )
+    throw new Error(`${label} is invalid`);
+  return value;
+}
+
+function assertVisualControlId(value: string, label: string): void {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u.test(value))
+    throw new Error(`${label} identity is invalid`);
+}
+
+function requiredVisualHash(value: unknown, label: string): string {
+  const hash = requiredVisualString(value, label);
+  if (!/^[a-f0-9]{64}$/u.test(hash)) throw new Error(`${label} hash is invalid`);
+  return hash;
+}
+
+function requiredVisualTimestamp(value: unknown, label: string): string {
+  const timestamp = requiredVisualString(value, label);
+  if (!Number.isFinite(Date.parse(timestamp))) throw new Error(`${label} is invalid`);
+  return timestamp;
 }

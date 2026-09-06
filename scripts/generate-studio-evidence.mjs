@@ -2285,8 +2285,20 @@ function Generated.compileMutationRequirements(changeSet: any, deleteDescendants
 			sourceBlobBinding(operation.sourceBlob, metadata.source ~= "forbidden")
 			local originalParentIdentity = parentIdentities ~= nil and parentIdentities[operationId] or (operation.parent.kind == "instance" and operation.parent.identity or nil)
 			if originalParentIdentity == nil then error("mutation create has no exact parent identity") end
-			local parent = postParentTarget(operation, originalParentIdentity, enrollments, topology)
-			appendMutationRequirements(requirements, operation, target, { identity = target.identity, path = target.path, className = target.className, parentIdentity = parent.identity, parentPath = parent.path }, "observed", enrollments, topology)
+				local parent = postParentTarget(operation, originalParentIdentity, enrollments, topology)
+				appendMutationRequirements(requirements, operation, target, { identity = target.identity, path = target.path, className = target.className, parentIdentity = parent.identity, parentPath = parent.path }, "observed", enrollments, topology)
+				local loadedScene = operation.approvedSceneImport or (operation.approvedSceneReplacement and operation.approvedSceneReplacement.next)
+				if loadedScene ~= nil then
+					sequence(loadedScene.descendants, "invalid approved scene import descendants")
+					if #loadedScene.descendants > Generated.manifest.limits.maximumProjectionFacts then error("approved scene import descendants exceed projection bound") end
+					for _, value in ipairs(loadedScene.descendants) do
+						if typeof(value) ~= "table" or typeof(value.stableId) ~= "string" or value.stableId == "" or typeof(value.relativePath) ~= "string" or value.relativePath == "" or typeof(value.className) ~= "string" or value.className == "" then error("invalid approved scene import descendant") end
+						local descendant = if topology == nil then indexedTarget({ kind = "forge_attribute", stableId = value.stableId }, target.path .. "/" .. value.relativePath, value.className) else topology.postTargets[studioObjectIdentityKey({ kind = "forge_attribute", stableId = value.stableId })]
+						if descendant == nil then error("approved scene import descendant is absent from virtual topology") end
+						local structure = { identity = descendant.identity, path = descendant.path, className = descendant.className }
+						table.insert(requirements, { key = Generated.factKey("structure", descendant), kind = "structure", target = descendant, expectedStatus = "observed", expected = structure })
+					end
+				end
 		elseif kind == "update" then
 			appendMutationRequirements(requirements, operation, postMutationTarget(operation, operation.target.path, operation.target.className, enrollments, topology), nil, nil, enrollments, topology)
 		elseif kind == "move" then
@@ -2471,11 +2483,32 @@ local function buildVirtualMutationTopology(changeSet: any, index: any, enrollme
 			if entries[targetKey] ~= nil then error("create target already exists in virtual project topology") end
 			if enrollments.byStableId[target.identity.stableId] ~= nil then error("create target collides with mutation enrollment stable identity") end
 			if target.path ~= operation.target.path or target.className ~= operation.target.className then error("create target structure mismatch") end
-			entries[targetKey] = { target = target, path = target.path, className = target.className, name = studioInstanceName(operation.name, "invalid mutation name"), parentKey = nil, initialParentKey = nil, initial = false, topologyChanged = true }
+				entries[targetKey] = { target = target, path = target.path, className = target.className, name = studioInstanceName(operation.name, "invalid mutation name"), parentKey = nil, initialParentKey = nil, initial = false, topologyChanged = true }
 			createdTargetKeys[targetKey] = true
 			operationTargets[operationId] = targetKey
 			bindOperationTarget(operation, targetKey)
 			pendingParents[operationId] = operation.parent
+			local loadedScene = operation.approvedSceneImport or (operation.approvedSceneReplacement and operation.approvedSceneReplacement.next)
+			if loadedScene ~= nil then
+				sequence(loadedScene.descendants, "invalid approved scene import descendants")
+				if #loadedScene.descendants > Generated.manifest.limits.maximumProjectionFacts then error("approved scene import descendants exceed projection bound") end
+				local importKeys = {}
+				for _, value in ipairs(loadedScene.descendants) do
+					if typeof(value) ~= "table" or typeof(value.stableId) ~= "string" or value.stableId == "" or typeof(value.relativePath) ~= "string" or value.relativePath == "" or typeof(value.name) ~= "string" or typeof(value.className) ~= "string" or value.className == "" then error("invalid approved scene import descendant") end
+					local identity = { kind = "forge_attribute", stableId = value.stableId }
+					local key = studioObjectIdentityKey(identity)
+					if entries[key] ~= nil or importKeys[value.stableId] ~= nil or enrollments.byStableId[value.stableId] ~= nil then error("approved scene import descendant identity collides") end
+					importKeys[value.stableId] = key
+				end
+				for _, value in ipairs(loadedScene.descendants) do
+					local key = importKeys[value.stableId]
+					local parentKey = if value.parentStableId == nil then targetKey else importKeys[value.parentStableId]
+					if parentKey == nil then error("approved scene import descendant parent is absent") end
+					local descendant = indexedTarget({ kind = "forge_attribute", stableId = value.stableId }, target.path .. "/" .. value.relativePath, value.className)
+					entries[key] = { target = descendant, path = descendant.path, className = descendant.className, name = studioInstanceName(value.name, "invalid approved scene import name"), parentKey = parentKey, initialParentKey = nil, initial = false, topologyChanged = true }
+					createdTargetKeys[key] = true
+				end
+			end
 		elseif kind == "update" or kind == "edit_source" or kind == "delete" or kind == "move" then
 			local target = mutationTarget(operation.target.identity, operation.target.path, operation.target.className)
 			assertIndexedInstance(index, target, "mutation target missing from project index")

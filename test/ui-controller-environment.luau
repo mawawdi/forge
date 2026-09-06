@@ -132,7 +132,7 @@ function env.root()
   local self = observable({Enabled = true, Parent = {}, children = {}, Destroying = signal(), DescendantRemoving = signal(),
     AbsolutePosition = {X = 0, Y = 30}, AbsoluteSize = {X = 390, Y = 794},
     ScreenInsets = {Name = "CoreUISafeInsets"}, ClipToDeviceSafeArea = true,
-    attributes = {UiRecipeAbi = "5", UiComponentId = "interface"}, signals = {}})
+    attributes = {UiGraphAbi = "1", UiComponentId = "interface"}, signals = {}})
   function self:GetAttribute(name) return self.attributes[name] end
   function self:IsA(name) return name == "ScreenGui" or name == "LayerCollector" end
   function self:GetPropertyChangedSignal(name)

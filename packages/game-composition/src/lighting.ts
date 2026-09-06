@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { gameRecipeDefinitionLock, type GameRecipeDefinition } from "../../game-ir/src/index.js";
 import { STUDIO_CAPABILITY_MANIFEST } from "../../studio-evidence/src/index.js";
 import {
   bool,
@@ -16,11 +15,7 @@ import {
   type CompositionContext,
   type CompositionOutput,
 } from "./common.js";
-import {
-  COMPOSITION_ID_SCHEMA,
-  COMPOSITION_NAME_SCHEMA,
-  compositionConfigDataSchema,
-} from "./config-schema.js";
+import { COMPOSITION_ID_SCHEMA, COMPOSITION_NAME_SCHEMA } from "./config-schema.js";
 import { sceneEulerXyz } from "./scene-geometry.js";
 
 /** Authored resource bounds, not frame-time predictions or a visual-quality score. */
@@ -66,7 +61,7 @@ const lightFields = {
   brightness: admittedNumber("PointLight", "Brightness"),
   range: admittedNumber("PointLight", "Range")
     .max(SCENE_LIGHTING_LIMITS.range)
-    .describe("Authored illumination range in studs, bounded to 60 by this recipe profile."),
+    .describe("Authored illumination range in studs, bounded to 60 by this compiler profile."),
   enabled: z.boolean(),
   shadows: z.boolean().describe("Explicit shadow cost choice; review actual client frame cost."),
 };
@@ -169,29 +164,6 @@ export const SCENE_LIGHTING_CONFIG_SCHEMA = z
   })
   .strict();
 export type SceneLightingConfig = z.infer<typeof SCENE_LIGHTING_CONFIG_SCHEMA>;
-
-export const SCENE_LIGHTING_DEFINITION: GameRecipeDefinition = {
-  kind: "GameRecipeDefinition",
-  id: "scene-lighting",
-  abi: "1",
-  configSchema: compositionConfigDataSchema(SCENE_LIGHTING_CONFIG_SCHEMA),
-  sourceExports: [],
-  ports: [],
-  obligations: [
-    {
-      id: "lighting-visual-review",
-      evidence: "creator_review",
-      description:
-        "Inspect the requested views for intended light direction, material readability, atmosphere visibility and combined existing effects at target graphics quality levels. Local declarations do not observe rendering.",
-    },
-    {
-      id: "lighting-client-performance",
-      evidence: "studio_play",
-      description:
-        "Measure client frame cost in the intended camera views and device/quality profiles; counts, ranges and shadow flags do not prove performance.",
-    },
-  ],
-};
 
 /** The draft and compiler share semantic admission before emitting any inventory. */
 export function validateSceneLightingConfig(input: unknown): SceneLightingConfig {
@@ -368,10 +340,7 @@ export function compileSceneLighting(
   return {
     inventory,
     sources: [],
-    obligations: SCENE_LIGHTING_DEFINITION.obligations.map((entry) => ({
-      componentId: context.componentId,
-      ...entry,
-    })),
+    obligations: [],
     limitations: [
       "Owned fixtures and effects only. Lighting service properties, existing effects, camera state and art direction are not rewritten.",
       "At most 128 fixtures (each one invisible Part and one light), one Folder and three effects: 260 editor objects. Each light range is at most 60 studs. These are authored resource bounds, not GPU, draw-call, lighting coverage or frame-rate guarantees.",
@@ -379,9 +348,3 @@ export function compileSceneLighting(
     ],
   };
 }
-
-export const SCENE_LIGHTING_EXPANDER = {
-  definition: gameRecipeDefinitionLock(SCENE_LIGHTING_DEFINITION),
-  expand: (input: CompositionContext & { config: unknown }) =>
-    compileSceneLighting(input, input.config).inventory,
-};

@@ -24,23 +24,32 @@ import {
   DEFAULT_GAME_ADMISSION_POLICY,
   validateGameDesignSpec,
   type GameAdmissionPolicy,
-  type GameDefinitionRegistry,
   type GameDesignSpec,
   type GameSourceFile,
 } from "../../game-ir/src/index.js";
 import { assertBoundedGameJson, compareGameStrings } from "../../game-ir/src/primitives.js";
-import { canonicalGameDataSchema, resolveGameDefinition } from "../../game-ir/src/recipes.js";
+import { canonicalGameDataSchema } from "../../game-ir/src/data-contracts.js";
 import { GAME_COMPONENT_OUTPUT_ID_SCHEMA } from "../../game-ir/src/source.js";
+import { compileNativeGraph, compileUiGraph } from "../../game-composition/src/index.js";
+import {
+  compileApprovedSceneComponent,
+  type ApprovedSceneCompilationAuthorities,
+} from "../../native-scene/src/index.js";
+import {
+  GAME_PLAN_VISUAL_BINDINGS_SCHEMA,
+  assertSealedWorkflowArtifact,
+  type BlenderSceneSpec,
+  type GamePlanVisualBindings,
+} from "../../visual-world/src/index.js";
 import { gameActivationOperations } from "./activation.js";
 import type {
   GameCompilerPolicy,
   GameInventoryItem,
   GameObservedSourceArtifact,
   GamePlan,
-  GameRecipeExpander,
 } from "./types.js";
 
-export const GAME_COMPILER_ABI = "forge-game-compiler@5";
+export const GAME_COMPILER_ABI = "forge-game-compiler@6";
 export const DEFAULT_GAME_COMPILER_POLICY: Readonly<GameCompilerPolicy> = Object.freeze({
   maximumOperations: 8192,
   maximumCanonicalBytes: 64 * 1024 * 1024,
@@ -120,15 +129,19 @@ export function gameGeneratedTarget(input: {
 
 interface DesignInput {
   readonly design: GameDesignSpec;
-  readonly registry: GameDefinitionRegistry;
   readonly admissionPolicy?: GameAdmissionPolicy;
   readonly projectId: string;
   readonly project: StudioProjectIdentity;
   readonly initialTopology: readonly CreatorTransactionTopologyNode[];
   readonly observation?: CreatorProjectIndexView;
+  readonly visualScenes?: readonly {
+    readonly componentId: string;
+    readonly scene: BlenderSceneSpec;
+    readonly authority: ApprovedSceneCompilationAuthorities;
+  }[];
 }
 
-function recipeOutputInventory(
+function componentOutputInventory(
   inventory: readonly GameInventoryItem[],
   design: GameDesignSpec,
 ): Map<string, GameInventoryItem> {
@@ -138,84 +151,110 @@ function recipeOutputInventory(
     if (item.outputId === undefined) continue;
     if (
       !GAME_COMPONENT_OUTPUT_ID_SCHEMA.safeParse(item.outputId).success ||
-      components.get(item.componentId)?.kind !== "recipe_instance" ||
+      components.get(item.componentId)?.kind === "source_package" ||
       item.change.kind !== "create"
     )
       throw new Error(
-        "Recipe output alias requires a valid local ID and an exact created recipe object",
+        "Component output alias requires a valid local ID and an exact created component object",
       );
     const key = stableJson([item.componentId, item.outputId]);
     if (outputs.has(key))
-      throw new Error("Duplicate recipe output alias: " + item.componentId + "/" + item.outputId);
+      throw new Error(
+        "Duplicate component output alias: " + item.componentId + "/" + item.outputId,
+      );
     outputs.set(key, item);
   }
   return outputs;
 }
 
-function resolveRecipeOutput(
+function resolveComponentOutput(
   outputs: ReadonlyMap<string, GameInventoryItem>,
   componentId: string,
   outputId: string,
 ): GameInventoryItem {
   const item = outputs.get(stableJson([componentId, outputId]));
-  if (!item) throw new Error("Unknown recipe component output: " + componentId + "/" + outputId);
+  if (!item) throw new Error("Unknown component output: " + componentId + "/" + outputId);
   return item;
 }
 
-export function expandGameDesign(
-  input: DesignInput & {
-    readonly recipeExpanders?: readonly GameRecipeExpander[];
-    readonly additionalInventory?: readonly GameInventoryItem[];
-  },
-): {
+export function expandGameDesign(input: DesignInput): {
   inventory: GameInventoryItem[];
   observedSources: GameObservedSourceArtifact[];
+  visualBindings: GamePlanVisualBindings[];
   design: GameDesignSpec;
   designHash: string;
 } {
   const admitted = validateGameDesignSpec(input.design, {
-    registry: input.registry,
     policy: input.admissionPolicy ?? DEFAULT_GAME_ADMISSION_POLICY,
   });
   if (admitted.status !== "eligible")
     throw new Error("Game design admission failed: " + stableJson(admitted.diagnostics));
-  const inventory = [...(input.additionalInventory ?? [])];
+  const inventory: GameInventoryItem[] = [];
   const observedSources: GameObservedSourceArtifact[] = [];
-  const expanders = new Map<string, GameRecipeExpander>();
-  for (const expander of input.recipeExpanders ?? []) {
-    const pin = stableJson(expander.definition);
-    if (expanders.has(pin)) throw new Error("Duplicate trusted recipe expander");
-    expanders.set(pin, expander);
-  }
+  const visualBindings: GamePlanVisualBindings[] = [];
+  const visualScenes = new Map(
+    (input.visualScenes ?? []).map((entry) => [entry.componentId, entry] as const),
+  );
+  if (visualScenes.size !== (input.visualScenes ?? []).length)
+    throw new Error("Visual scene compilation authorities contain duplicate component IDs");
   for (const component of admitted.spec.components) {
-    if (component.kind !== "recipe_instance") continue;
-    const expander = expanders.get(stableJson(component.definition));
-    if (!expander)
-      throw new Error(
-        "Recipe has no admitted compiler for its exact definition pin: " + component.id,
-      );
+    if (component.kind === "source_package") continue;
     const context = {
       componentId: component.id,
-      config: component.config,
       projectId: input.projectId,
       project: input.project,
       designHash: admitted.hash,
       initialTopology: input.initialTopology,
       ...(input.observation ? { observation: input.observation } : {}),
     };
-    const expanded = expander.expand(context);
-    const observed = expander.observedSources?.(context) ?? [];
+    const compilation =
+      component.kind === "native_graph"
+        ? compileNativeGraph(context, component.graph)
+        : component.kind === "ui_graph"
+          ? compileUiGraph(context, component.ui)
+          : (() => {
+              const visual = visualScenes.get(component.id);
+              if (!visual)
+                throw new Error(
+                  `Scene handle has no exact approved visual bindings: ${component.id}`,
+                );
+              visualScenes.delete(component.id);
+              visualBindings.push(visual.authority.bindings);
+              return compileApprovedSceneComponent({
+                context,
+                component,
+                scene: visual.scene,
+                authority: visual.authority,
+              });
+            })();
+    const expanded = compilation.inventory;
+    const observed = compilation.observedSources;
     if (observed.some((item) => item.componentId !== component.id))
-      throw new Error("Recipe compiler emitted another component's source dependencies");
+      throw new Error("Component compiler emitted another component's source dependencies");
     validateObservedSources(observed, input);
     observedSources.push(...observed);
     if (expanded.some((item) => item.componentId !== component.id))
-      throw new Error("Recipe compiler emitted another component's inventory");
+      throw new Error("Component compiler emitted another component's inventory");
     inventory.push(...expanded);
+  }
+  for (const view of admitted.spec.visualDirection?.views ?? []) {
+    if (!view.sceneViewId) continue;
+    const sceneComponents = view.componentIds.filter(
+      (componentId) =>
+        admitted.spec.components.find((component) => component.id === componentId)?.kind ===
+        "scene_handle",
+    );
+    if (sceneComponents.length !== 1)
+      throw new Error(`Visual view ${view.id} must bind one exact scene handle`);
+    const scene = (input.visualScenes ?? []).find(
+      (entry) => entry.componentId === sceneComponents[0],
+    )?.scene;
+    if (!scene?.reviewViews.some((candidate) => candidate.id === view.sceneViewId))
+      throw new Error(`Visual view ${view.id} references an unknown scene review view`);
   }
   const byId = new Map(inventory.map((item) => [item.id, item]));
   if (byId.size !== inventory.length) throw new Error("Duplicate compiler inventory ID");
-  const outputs = recipeOutputInventory(inventory, admitted.spec);
+  const outputs = componentOutputInventory(inventory, admitted.spec);
   const sources = new Map<string, { componentId: string; file: GameSourceFile }>();
   for (const component of admitted.spec.components) {
     if (component.kind !== "source_package") continue;
@@ -268,7 +307,7 @@ export function expandGameDesign(
         const generated =
           parent.kind === "generated"
             ? resolveSource(parent.operationId)
-            : resolveRecipeOutput(outputs, parent.componentId, parent.outputId);
+            : resolveComponentOutput(outputs, parent.componentId, parent.outputId);
         if (generated.change.kind !== "create")
           throw new Error("Generated parent must be a create");
         dependencies.push(generated.id);
@@ -330,6 +369,8 @@ export function expandGameDesign(
     return item;
   };
   for (const id of sources.keys()) resolveSource(id);
+  if (visualScenes.size)
+    throw new Error("Visual scene authorities were supplied for undeclared scene handles");
   for (let index = 0; index < inventory.length; index++) {
     const item = inventory[index]!;
     const dependencies = new Set(item.dependencies);
@@ -350,6 +391,9 @@ export function expandGameDesign(
   return {
     inventory: inventory.sort((a, b) => compareGameStrings(a.id, b.id)),
     observedSources,
+    visualBindings: visualBindings.sort((a, b) =>
+      compareGameStrings(a.scene.sceneId, b.scene.sceneId),
+    ),
     design: admitted.spec,
     designHash: admitted.hash,
   };
@@ -361,6 +405,7 @@ export function compileGamePlan(
     readonly observedRevisionHash: string;
     readonly inventory: readonly GameInventoryItem[];
     readonly observedSources?: readonly GameObservedSourceArtifact[];
+    readonly visualBindings?: readonly GamePlanVisualBindings[];
     readonly policy?: GameCompilerPolicy;
   },
 ): GamePlan {
@@ -375,7 +420,6 @@ export function compileGamePlan(
     maximumJsonNodes: 1_000_000,
   });
   const admitted = validateGameDesignSpec(input.design, {
-    registry: input.registry,
     policy: input.admissionPolicy ?? DEFAULT_GAME_ADMISSION_POLICY,
   });
   if (admitted.status !== "eligible")
@@ -410,6 +454,9 @@ export function compileGamePlan(
       .sort((a, b) =>
         compareGameStrings(a.componentId + "/" + a.fileId, b.componentId + "/" + b.fileId),
       ),
+    visualBindings: [...(input.visualBindings ?? [])].sort((a, b) =>
+      compareGameStrings(a.scene.sceneId, b.scene.sceneId),
+    ),
     inventory: input.inventory
       .map((item) => ({
         ...item,
@@ -454,7 +501,8 @@ export function assertGamePlan(value: unknown): asserts value is GamePlan {
     !plan.sessionId ||
     !Array.isArray(plan.inventory) ||
     !Array.isArray(plan.initialTopology) ||
-    !Array.isArray(plan.observedSources)
+    !Array.isArray(plan.observedSources) ||
+    !Array.isArray(plan.visualBindings)
   )
     throw new Error("Invalid GamePlan envelope");
   const policy = POLICY_SCHEMA.parse(plan.policy);
@@ -473,7 +521,25 @@ export function assertGamePlan(value: unknown): asserts value is GamePlan {
   const ids = new Set<string>();
   const slots = new Set<string>();
   const components = new Map(plan.design.components.map((component) => [component.id, component]));
-  const outputs = recipeOutputInventory(plan.inventory, plan.design);
+  const sceneComponents = plan.design.components.filter(
+    (component) => component.kind === "scene_handle",
+  );
+  if (sceneComponents.length !== plan.visualBindings.length)
+    throw new Error("GamePlan visual binding coverage mismatch");
+  const visualSceneIds = new Set<string>();
+  for (const binding of plan.visualBindings) {
+    assertSealedWorkflowArtifact(GAME_PLAN_VISUAL_BINDINGS_SCHEMA, binding);
+    if (visualSceneIds.has(binding.scene.sceneId))
+      throw new Error("GamePlan has duplicate visual scene bindings");
+    visualSceneIds.add(binding.scene.sceneId);
+    if (
+      !sceneComponents.some(
+        (component) => stableJson(component.scene) === stableJson(binding.scene),
+      )
+    )
+      throw new Error("GamePlan visual binding has no exact scene_handle component");
+  }
+  const outputs = componentOutputInventory(plan.inventory, plan.design);
   const sourcePlacements = new Map<string, { componentId: string; file: GameSourceFile }>();
   for (const component of plan.design.components)
     if (component.kind === "source_package")
@@ -552,6 +618,28 @@ export function assertGamePlan(value: unknown): asserts value is GamePlan {
       (propertyNames.size || Object.keys(item.attributes).length || item.removedAttributes.length)
     )
       throw new Error("Operation has incompatible property payload");
+    if (
+      item.change.kind === "create" &&
+      item.change.initialization === "initial_properties" &&
+      (item.change.approvedSceneImport !== undefined ||
+        item.change.approvedSceneReplacement !== undefined) &&
+      (item.change.className !== "Model" ||
+        components.get(item.componentId)?.kind !== "scene_handle" ||
+        Object.keys(item.lockedProperties).length !== 0 ||
+        item.valueSlots.length !== 0 ||
+        item.source !== undefined)
+    )
+      throw new Error("Approved scene imports require an exact property-free scene Model create");
+    if (
+      components.get(item.componentId)?.kind === "scene_handle" &&
+      item.change.kind === "create" &&
+      item.change.className === "Model" &&
+      item.outputId?.startsWith("partition/") &&
+      (item.change.initialization !== "initial_properties" ||
+        (item.change.approvedSceneImport === undefined &&
+          item.change.approvedSceneReplacement === undefined))
+    )
+      throw new Error("Visual partition Model is missing its closed approved import binding");
     const sourceBearing =
       item.change.kind === "edit_source" ||
       (item.change.kind === "create" &&
@@ -582,12 +670,13 @@ export function assertGamePlan(value: unknown): asserts value is GamePlan {
       declaredPlacement?.kind === "create" &&
       declaredPlacement.parent.kind === "component_output"
     ) {
-      const output = resolveRecipeOutput(
+      const output = resolveComponentOutput(
         outputs,
         declaredPlacement.parent.componentId,
         declaredPlacement.parent.outputId,
       );
-      if (output.change.kind !== "create") throw new Error("Recipe output parent must be created");
+      if (output.change.kind !== "create")
+        throw new Error("Component output parent must be created");
       const target = gameGeneratedTarget({
         projectId: plan.projectId,
         operationId: output.id,
@@ -601,7 +690,7 @@ export function assertGamePlan(value: unknown): asserts value is GamePlan {
         stableJson(item.change.parent) !== stableJson(target) ||
         !item.dependencies.includes(output.id)
       )
-        throw new Error("Source placement differs from its exact recipe output parent binding");
+        throw new Error("Source placement differs from its exact component output parent binding");
     }
     sourcePlacements.delete(item.id);
     if (
@@ -686,9 +775,7 @@ export function assertGamePlan(value: unknown): asserts value is GamePlan {
       for (const file of component.files)
         for (const imported of file.imports)
           if (!materializedSources.has(imported.componentId + "/" + imported.fileId))
-            throw new Error(
-              "Requested source export was not materialized by its exact recipe/package",
-            );
+            throw new Error("Requested source export was not materialized by its exact package");
   const dependencies = new Map<string, Set<string>>(
     plan.inventory.map((item: GameInventoryItem) => [item.id, new Set(item.dependencies)]),
   );
@@ -725,16 +812,7 @@ function validateObservedSources(
   for (const source of sources) {
     const component = input.design.components.find((entry) => entry.id === source.componentId);
     let expectedContext: "shared" | "server" | "client";
-    if (component?.kind === "recipe_instance") {
-      const exported = resolveGameDefinition(
-        input.registry,
-        component.definition,
-        input.admissionPolicy ?? DEFAULT_GAME_ADMISSION_POLICY,
-      ).sourceExports.find((entry) => entry.id === source.fileId);
-      if (!exported)
-        throw new Error("Observed source is not an export of its exact trusted recipe definition");
-      expectedContext = exported.context;
-    } else if (component?.kind === "source_package") {
+    if (component?.kind === "source_package") {
       const file = component.files.find((entry) => entry.id === source.fileId);
       if (
         !file ||
@@ -748,7 +826,7 @@ function validateObservedSources(
       )
         throw new Error("Observed source differs from the exact locked source package file");
       expectedContext = file.context;
-    } else throw new Error("Observed source component is undeclared");
+    } else throw new Error("Observed source must belong to a declared source package");
     const instances =
       input.observation?.instances.filter(
         (instance) =>
@@ -804,6 +882,13 @@ export function gameInventoryOperation(
       name: change.path.split("/").at(-1)!,
       properties: { ...item.lockedProperties },
       attributes: { ...item.attributes },
+      ...(change.initialization !== "initial_properties" || change.approvedSceneImport === undefined
+        ? {}
+        : { approvedSceneImport: structuredClone(change.approvedSceneImport) }),
+      ...(change.initialization !== "initial_properties" ||
+      change.approvedSceneReplacement === undefined
+        ? {}
+        : { approvedSceneReplacement: structuredClone(change.approvedSceneReplacement) }),
     };
   const common = {
     id: operationId,

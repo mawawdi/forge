@@ -74,10 +74,12 @@ test("CLI help exposes the conversation control surface and registered experimen
   const result = spawnSync(process.execPath, [cli, "--help"], { encoding: "utf8" });
   assert.equal(result.status, 0);
   const lines = result.stdout.split("\n").filter((line) => /^  forge /.test(line));
-  assert.equal(lines.length, 23);
+  assert.equal(lines.length, 29);
   assert.match(result.stdout, /Forge commands/);
   assert.match(result.stdout, /forge creator serve \[--default-model/);
   assert.match(result.stdout, /forge creator state/);
+  assert.match(result.stdout, /forge creator visual-state/);
+  assert.match(result.stdout, /forge creator visual-act/);
   assert.match(result.stdout, /forge creator turn/);
   assert.match(result.stdout, /forge creator act/);
   assert.match(result.stdout, /--memory-item-id/);
@@ -88,6 +90,9 @@ test("CLI help exposes the conversation control surface and registered experimen
   assert.match(result.stdout, /forge creator asset prepare --request-file/);
   assert.match(result.stdout, /forge creator asset doctor --installation/);
   assert.match(result.stdout, /forge creator asset run\|status\|fetch <job-id>/);
+  assert.match(result.stdout, /forge visual solve <scene-intent\.json>/);
+  assert.match(result.stdout, /forge visual blender-status --installation/);
+  assert.match(result.stdout, /forge visual compile <scene-spec\.json>/);
   assert.match(result.stdout, /forge creator asset preview <job-id> --output <absolute.html>/);
   assert.match(result.stdout, /forge creator asset reconcile <job-id> --output-sha256/);
   assert.match(result.stdout, /forge creator asset review <job-id> --lock-hash/);

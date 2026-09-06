@@ -23,7 +23,7 @@ export interface SceneValidationIssue {
 }
 export interface SceneValidationDiagnostics {
   componentId: string;
-  recipeId: "scene-primitives";
+  backendId: "scene-primitives-internal";
   issues: SceneValidationIssue[];
   validIds: { nodes: string[] };
   validParentPaths: string[];
@@ -37,7 +37,7 @@ export interface ResolvedScene {
   parentOrder: readonly string[];
 }
 
-/** Pure recipe-local checks. No inventory, editor reads, or native geometry claims. */
+/** Pure internal-backend checks. No inventory, editor reads, or native geometry claims. */
 function analyzeScene(config: ScenePrimitivesConfig, componentId: string) {
   const issues: SceneValidationIssue[] = [];
   const counts = new Map<string, number>();
@@ -253,7 +253,7 @@ function analyzeScene(config: ScenePrimitivesConfig, componentId: string) {
   return {
     diagnostics: {
       componentId,
-      recipeId: "scene-primitives" as const,
+      backendId: "scene-primitives-internal" as const,
       issues,
       validIds,
       validParentPaths,

@@ -6,11 +6,7 @@ import {
   validateCreatorGameComponent,
 } from "../packages/creator-session/src/game-authoring.js";
 import { CompositionError } from "../packages/game-composition/src/config-schema.js";
-import {
-  createGameDefinitionRegistry,
-  type GameDesignSpec,
-  type GamePlacementParent,
-} from "../packages/game-ir/src/index.js";
+import type { GameDesignSpec, GamePlacementParent } from "../packages/game-ir/src/index.js";
 import {
   STUDIO_CAPABILITY_MANIFEST,
   STUDIO_CAPABILITY_MANIFEST_HASH,
@@ -41,10 +37,9 @@ function component(parents: GamePlacementParent[]): GameDesignSpec["components"]
 }
 function draft() {
   return new CreatorDesignDraft({
-    definitions: [],
-    registry: createGameDefinitionRegistry([]),
-    expanders: [],
+    capabilities: {} as never,
     lockedSources: new Map(),
+    visualSceneAuthority: { resolve: () => undefined },
     validateComponent: validateCreatorGameComponent,
   });
 }

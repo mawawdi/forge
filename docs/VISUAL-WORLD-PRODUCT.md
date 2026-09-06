@@ -130,7 +130,8 @@ The composition model contains:
 - **Zones:** coherent areas with a purpose, density, style, and local frame.
 - **Landmarks:** dominant visual objects that orient the player and structure views.
 - **Routes:** playable paths with clearance, pacing, sightline, and connection rules.
-- **Assets and motifs:** reusable, licensed visual modules or fixed parametric recipes.
+- **Assets and scene nodes:** reusable, licensed visual modules and arbitrary
+  creator-authored scene-graph nodes; no themed templates or recipe IDs.
 - **Objects and instances:** stable logical identities, measured bounds, pivots,
   transforms, material roles, and controlled variation.
 - **Sockets:** explicit connection points for props, cables, doors, lights, and
@@ -240,5 +241,5 @@ The final system should arrive in this order:
    collision/anchor/effect assembly, and save/reopen evidence.
 3. Named native visual reviews, device/performance checks, partition-level repair,
    and one complete Forge-generated game world.
-4. Optional visual critics, richer fixed procedural recipes, and qualified
+4. Optional visual critics, broader generic Blender operation support, and qualified
    Cube/CubePart assets only after the core evidence loop is working.

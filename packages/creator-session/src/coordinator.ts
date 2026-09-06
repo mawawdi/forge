@@ -165,7 +165,7 @@ import {
 } from "../../game-compiler/src/index.js";
 import { createGameBuildControlView } from "./game-build-view.js";
 import { captureCreatorOfflineRegression } from "./offline-regression.js";
-import { creatorGameCatalog } from "./game-authoring.js";
+import { loadCreatorGameEnvironment, type CreatorVisualSceneAuthority } from "./game-authoring.js";
 import { recompileRetainedCreatorPlan } from "./plan-recompilation.js";
 import {
   creatorPlanRefreshIsReadOnly,
@@ -579,6 +579,7 @@ export class CreatorSessionCoordinator {
       sourceAnalysisHost: CreatorSourceAnalysisHost;
       timeoutMs?: number;
       projectAuthority?: ProjectAuthorityHostContext;
+      visualSceneAuthority?: CreatorVisualSceneAuthority;
     },
   ) {
     if (input.projectAuthority !== undefined)
@@ -3374,6 +3375,9 @@ export class CreatorSessionCoordinator {
         initialImages: creatorVisualModelImages(visualObservations),
         budgets: DEFAULT_AGENT_BUDGETS,
         execution,
+        ...(this.input.visualSceneAuthority
+          ? { visualSceneAuthority: this.input.visualSceneAuthority }
+          : {}),
       });
       if (
         planned.source.index.id !== analyzed.index.id ||
@@ -3554,6 +3558,9 @@ export class CreatorSessionCoordinator {
         initialImages: creatorVisualModelImages(request.visualObservations),
         budgets: DEFAULT_AGENT_BUDGETS,
         execution,
+        ...(this.input.visualSceneAuthority
+          ? { visualSceneAuthority: this.input.visualSceneAuthority }
+          : {}),
         resume: true,
       });
       if (
@@ -3854,7 +3861,11 @@ export class CreatorSessionCoordinator {
           sourceIndex: analyzed.index,
           sourceConsultation: consultation,
           creatorPrompt,
-          catalog: await creatorGameCatalog(),
+          environment: await loadCreatorGameEnvironment(
+            this.input.visualSceneAuthority
+              ? { visualSceneAuthority: this.input.visualSceneAuthority }
+              : {},
+          ),
         });
         const artifact = await this.artifactStore.write(compiled.recompilation);
         successor = {
@@ -4052,6 +4063,9 @@ export class CreatorSessionCoordinator {
       contextCitations,
       budgets: DEFAULT_AGENT_BUDGETS,
       execution,
+      ...(this.input.visualSceneAuthority
+        ? { visualSceneAuthority: this.input.visualSceneAuthority }
+        : {}),
     });
     if (
       planned.source.index.id !== analyzed.index.id ||

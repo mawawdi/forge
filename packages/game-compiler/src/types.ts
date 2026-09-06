@@ -11,13 +11,7 @@ import type {
   StudioProjectIdentity,
   StudioValue,
 } from "../../studio-evidence/src/index.js";
-import type {
-  GameDataSchema,
-  GameDefinitionLock,
-  GameDesignSpec,
-  GameJsonValue,
-  GameSourceContent,
-} from "../../game-ir/src/index.js";
+import type { GameDataSchema, GameDesignSpec, GameSourceContent } from "../../game-ir/src/index.js";
 
 export interface GameValueSlot {
   readonly id: string;
@@ -29,7 +23,7 @@ export interface GameValueSlot {
 export interface GameInventoryItem {
   readonly id: string;
   readonly componentId: string;
-  /** Trusted recipe output alias, unique within the component; never a Studio identity. */
+  /** Stable component output alias, unique within the component; never a Studio identity. */
   readonly outputId?: string;
   readonly change: CreatorPlanChange;
   readonly lockedProperties: Readonly<Record<string, StudioValue>>;
@@ -46,22 +40,26 @@ export interface GameInventoryItem {
   readonly beforeSourceBytes?: number;
 }
 
-export interface GameRecipeExpanderInput {
+export interface GameComponentCompilerInput {
   readonly componentId: string;
-  readonly config: GameJsonValue;
   readonly projectId: string;
   readonly project: StudioProjectIdentity;
   readonly designHash: string;
   readonly initialTopology: readonly CreatorTransactionTopologyNode[];
   readonly observation?: CreatorProjectIndexView;
 }
-/** Registered by trusted host code; never decoded from model-provided JSON. */
-export interface GameRecipeExpander {
-  readonly definition: GameDefinitionLock;
-  expand(input: GameRecipeExpanderInput): readonly GameInventoryItem[];
-  observedSources?(input: GameRecipeExpanderInput): readonly GameObservedSourceArtifact[];
+
+export interface GameComponentOutput {
+  readonly id: string;
+  readonly operationId: string;
 }
 
+/** The sole direct-component compiler result shape. */
+export interface GameComponentCompilation {
+  readonly inventory: readonly GameInventoryItem[];
+  readonly outputs: readonly GameComponentOutput[];
+  readonly observedSources: readonly GameObservedSourceArtifact[];
+}
 /** Revision-bound source dependencies already present in the observed editor. */
 export interface GameObservedSourceArtifact {
   readonly componentId: string;
@@ -98,6 +96,7 @@ export interface GamePlan {
   readonly initialTopology: readonly CreatorTransactionTopologyNode[];
   readonly inventory: readonly GameInventoryItem[];
   readonly observedSources: readonly GameObservedSourceArtifact[];
+  readonly visualBindings: readonly import("../../visual-world/src/index.js").GamePlanVisualBindings[];
 }
 
 export interface GameBuildArtifact {

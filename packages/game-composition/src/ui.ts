@@ -1,14 +1,9 @@
-import {
-  compositionConfigDataSchema,
-  COMPOSITION_ID_SCHEMA,
-  COMPOSITION_NAME_SCHEMA,
-} from "./config-schema.js";
+import { COMPOSITION_ID_SCHEMA, COMPOSITION_NAME_SCHEMA } from "./config-schema.js";
 import { z } from "zod";
 import { UI_CONTROLLER_SOURCE } from "./ui-runtime.js";
 import { assertUiValid } from "./ui-validation.js";
 export { UI_CONTROLLER_SOURCE } from "./ui-runtime.js";
 import { contentHash } from "../../contracts/src/index.js";
-import { gameRecipeDefinitionLock, type GameRecipeDefinition } from "../../game-ir/src/index.js";
 import type { GameInventoryItem } from "../../game-compiler/src/index.js";
 import {
   CompositionError,
@@ -246,29 +241,6 @@ export const RESPONSIVE_UI_CONFIG_SCHEMA = z
   })
   .strict();
 export type ResponsiveUiConfig = z.infer<typeof RESPONSIVE_UI_CONFIG_SCHEMA>;
-export const RESPONSIVE_UI_DEFINITION: GameRecipeDefinition = {
-  kind: "GameRecipeDefinition",
-  sourceExports: [{ id: "controller", context: "client" }],
-  id: "responsive-ui",
-  abi: "5",
-  configSchema: compositionConfigDataSchema(RESPONSIVE_UI_CONFIG_SCHEMA),
-  ports: [],
-  obligations: [
-    {
-      id: "native-ui-fit",
-      description:
-        "Measure actual TextBounds, safe-area behavior and layout at the requested viewports, larger text settings and input modes.",
-      evidence: "studio_play",
-    },
-    {
-      id: "ui-interaction-review",
-      description:
-        "Inspect visible focus, touch activation, labels, contrast and any caller-supplied action handlers; the binding module does not implement those handlers.",
-      evidence: "creator_review",
-    },
-  ],
-};
-
 export function compileResponsiveUi(
   context: CompositionContext,
   input: unknown,
@@ -310,7 +282,7 @@ export function compileResponsiveUi(
   const root = {
     ...rootItem,
     outputId: "root",
-    attributes: { UiRecipeAbi: "5", UiComponentId: context.componentId },
+    attributes: { UiGraphAbi: "1", UiComponentId: context.componentId },
   };
   const inventory: GameInventoryItem[] = [root];
   const created = new Map<string, GameInventoryItem>();
@@ -635,10 +607,7 @@ export function compileResponsiveUi(
   return {
     inventory,
     sources,
-    obligations: RESPONSIVE_UI_DEFINITION.obligations.map((obligation) => ({
-      componentId: context.componentId,
-      ...obligation,
-    })),
+    obligations: [],
     limitations: [
       "Static viewport checks cover only unrotated rectangles outside layout/padding/aspect/automatic-size subtrees. Those subtrees, actual TextBounds, preferred text size and input focus require native evidence.",
       "The Controller library is emitted in ReplicatedStorage as ForgeUI_<componentId>_Controller. The caller passes the actual PlayerGui screen to Mount with complete declared state and synchronous action handlers, updates it, and unmounts it. It owns existing materialized nodes only; future descendants and application state remain caller responsibilities. Group fades are opt-in, cancel previous tweens, and honor reduced motion; no other animations are introduced.",
@@ -648,9 +617,3 @@ export function compileResponsiveUi(
     ],
   };
 }
-
-export const RESPONSIVE_UI_EXPANDER = {
-  definition: gameRecipeDefinitionLock(RESPONSIVE_UI_DEFINITION),
-  expand: (input: CompositionContext & { config: unknown }) =>
-    compileResponsiveUi(input, input.config).inventory,
-};

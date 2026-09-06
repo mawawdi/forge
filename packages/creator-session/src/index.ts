@@ -10,7 +10,6 @@ import {
   GAME_DESIGN_SPEC_SCHEMA,
   validateGameDesignSpec,
   DEFAULT_GAME_ADMISSION_POLICY,
-  gameRecipeDefinitionLock,
   gameVisualReviewStatements,
 } from "../../game-ir/src/index.js";
 import {
@@ -26,12 +25,12 @@ import {
   type GameCheckpointReceipt,
 } from "../../game-compiler/src/index.js";
 import {
-  creatorGameCatalog,
+  loadCreatorGameEnvironment,
   creatorGameComponentEnvelopeSchema,
   creatorGameComponentSchema,
   creatorGameProposalDesignSchema,
-  creatorRecipeConfigSchema,
-  type CreatorGameCatalog,
+  resolveCreatorApprovedVisualScenes,
+  type CreatorGameEnvironment,
 } from "./game-authoring.js";
 import { CreatorDesignDraft } from "./design-draft.js";
 import { readCreatorRecordingRecoveryAuthority } from "./recording-recovery-authority.js";
@@ -196,7 +195,7 @@ export * from "./source-write.js";
 export * from "./transaction-topology.js";
 
 export const CREATOR_SESSION_POLICY = "compiler_backed_creation" as const;
-export const CREATOR_DEFAULT_STORE = ".forge/creator-compiled-v4";
+export const CREATOR_DEFAULT_STORE = ".forge/creator-compiled-v5";
 export const CREATOR_MODEL = "openai/gpt-5.6-luna" as const;
 export const CREATOR_MAX_REPAIRS = 2;
 export const CREATOR_MAX_INSPECTION_PATHS = 64;
@@ -381,6 +380,8 @@ export type CreatorPlanChange =
       parent: StudioMutationParent;
       className: StudioNonScriptWritableClass;
       initialization: "initial_properties";
+      approvedSceneImport?: ApprovedSceneImportBinding;
+      approvedSceneReplacement?: ApprovedSceneReplacementBinding;
     }
   | {
       id: string;
@@ -530,6 +531,8 @@ export type StudioChangeOperation =
       properties: Record<string, StudioValue>;
       attributes: Record<string, string | number | boolean>;
       sourceBlob?: CreatorSourceWriteBlobBinding;
+      approvedSceneImport?: ApprovedSceneImportBinding;
+      approvedSceneReplacement?: ApprovedSceneReplacementBinding;
     }
   | {
       id: string;
@@ -576,6 +579,61 @@ export type StudioChangeOperation =
       finalSourceHash: string;
       finalByteCount: number;
     };
+
+/**
+ * Closed native-loading authority attached only to a non-script Model create.
+ * Every field is copied from retained proposal, review, upload, receipt and
+ * detached-inspection artifacts; Studio never receives a model-authored URL,
+ * path, class allowance or executable payload.
+ */
+export interface ApprovedSceneImportBinding {
+  readonly kind: "import_approved_scene";
+  readonly abi: "import_approved_scene@2";
+  readonly scene: { readonly sceneId: string; readonly revision: number; readonly hash: string };
+  readonly bundleManifestHash: string;
+  readonly sceneReviewHash: string;
+  readonly uploadAuthorizationHash: string;
+  readonly capabilityProfileHash: string;
+  readonly inspectionHash: string;
+  readonly partitionId: string;
+  readonly partitionRole:
+    "WorldStatic" | "WorldCollision" | "GameplayAnchors" | "InteractiveProps" | "Effects";
+  readonly sourceArtifactHash: string;
+  readonly receiptHash: string;
+  readonly assetId: string;
+  readonly versionNumber: number;
+  readonly contentHash: string;
+  readonly platformEnvelopeHash: string;
+  readonly descendants: readonly ApprovedSceneImportDescendant[];
+}
+
+/**
+ * Closed replacement authority for one imported visual partition. The old
+ * subtree is removed by one exact, hash-guarded delete in the same atomic
+ * transaction; the next subtree is loaded and validated while detached.
+ */
+export interface ApprovedSceneReplacementBinding {
+  readonly kind: "replace_approved_scene";
+  readonly abi: "replace_approved_scene@2";
+  readonly previous: ApprovedSceneImportBinding;
+  readonly next: ApprovedSceneImportBinding;
+  readonly previousTarget: StudioInstanceTarget & { readonly className: "Model" };
+  readonly previousBeforeHash: string;
+  readonly repairDeltaHash: string;
+}
+
+export interface ApprovedSceneImportDescendant {
+  readonly stableId: string;
+  readonly relativePath: string;
+  readonly parentStableId?: string | undefined;
+  readonly name: string;
+  readonly className: string;
+  readonly contentIdentity?: string | undefined;
+  readonly materialIdentity?: string | undefined;
+  readonly pivotHash: string;
+  readonly transformHash: string;
+  readonly boundsHash: string;
+}
 
 export interface CreatorSourceEdit {
   startByte: number;
@@ -692,6 +750,8 @@ export type CreatorBuildContractChange =
       className: StudioWritableClass;
       tempId: string;
       propertyPolicy: CreatorPropertyPolicy;
+      approvedSceneImport?: ApprovedSceneImportBinding;
+      approvedSceneReplacement?: ApprovedSceneReplacementBinding;
     }
   | {
       planChangeId: string;
@@ -2169,6 +2229,20 @@ function assertBuildContractChangePolicies(
     const className = target.data.className;
     if (change.kind === "create" && change.className !== className)
       throw new Error("CreatorBuildContract create class differs from its target");
+    if (change.approvedSceneImport !== undefined) {
+      APPROVED_SCENE_IMPORT_BINDING_SCHEMA.parse(change.approvedSceneImport);
+      if (change.kind !== "create" || change.className !== "Model")
+        throw new Error("CreatorBuildContract approved scene import must create a Model");
+    }
+    if (change.approvedSceneReplacement !== undefined) {
+      APPROVED_SCENE_REPLACEMENT_BINDING_SCHEMA.parse(change.approvedSceneReplacement);
+      if (
+        change.kind !== "create" ||
+        change.className !== "Model" ||
+        change.approvedSceneImport !== undefined
+      )
+        throw new Error("CreatorBuildContract approved scene replacement must create one Model");
+    }
     if (
       change.kind === "edit_source" &&
       !(STUDIO_SCRIPT_CLASSES as readonly string[]).includes(className)
@@ -2226,6 +2300,7 @@ export function createCreatorChangeSet(
       input.operations,
     ),
   );
+  assertApprovedSceneReplacementPairs(input.operations, observation);
   const sourceWriteBlobs = [...input.sourceWriteBlobs];
   if (
     sourceWriteBlobs.some((binding) => {
@@ -3140,29 +3215,25 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
       sourceIndex: StudioSourceIndex;
       sourceResolver: VerifiedSourceResolver;
       prompt: string;
-      catalog: CreatorGameCatalog;
+      environment: CreatorGameEnvironment;
       contextCitations?: readonly CreatorAgentContextCitation[];
       budgets?: BudgetPolicy;
     },
   ) {
     super(input.budgets);
     this.componentInputShape = {
-      component: creatorGameComponentSchema(input.catalog),
+      component: creatorGameComponentSchema(),
       activity: creatorActivitySchema(),
     };
     this.componentRepairInputShape = {
       ...CREATOR_COMPONENT_REPAIR_SHAPE,
       activity: creatorActivitySchema(),
     };
-    this.designDraft = new CreatorDesignDraft(input.catalog);
+    this.designDraft = new CreatorDesignDraft(input.environment);
     this.componentRepairs = new CreatorComponentRepairStore({
       sessionId: input.session.id,
       projectCaptureHash: input.session.currentProjectCaptureHash,
-      catalogHash: contentHash(
-        stableJson(
-          input.catalog.definitions.map((definition) => gameRecipeDefinitionLock(definition)),
-        ),
-      ),
+      capabilitiesHash: contentHash(stableJson(input.environment.capabilities)),
     });
     this.checkpointDraftHash = this.designDraft.hash;
     assertProductionStudioSourceIndex(input.sourceIndex);
@@ -3345,7 +3416,7 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
         "source.references",
         "source.dependencies",
         "studio.api_lookup",
-        "game.catalog",
+        "game.capabilities",
         "creator.read_components",
       ].includes(name)
     ) {
@@ -3758,26 +3829,20 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
         },
       ),
       definition(
-        "game.catalog",
-        "Read the host's pinned optional recipe locks, ports, source exports and verification obligations. Pass the selected definitionIds to receive only those definitions with their exact configuration schemas before authoring recipe instances. Omit definitionIds for the compact catalog summary. Ordinary Luau source packages are the general extension path; no recipe, round, genre, countdown, interface, or world structure is mandatory.",
-        {
-          definitionIds: z
-            .array(z.enum(this.input.catalog.definitions.map((entry) => entry.id)))
-            .min(1)
-            .max(this.input.catalog.definitions.length)
-            .optional(),
-        },
+        "game.capabilities",
+        "Read the fixed direct-component declarations, operation families, compiler identity, and pinned utility-source interfaces available to this creator workflow.",
+        {},
       ),
       definition(
         "creator.define_component",
         "Save one structurally validated design component for later full-plan compilation. A stable component ID creates or replaces that planning declaration; Forge owns draft version checks. Forge resolves new script classes from file role/context and engine-parent classes from their offered paths before hashing the canonical component. This saves read-only planning data; it does not stage a candidate, publish a plan, or mutate Studio. Batch independent component calls with distinct component IDs. Failed replacements preserve prior components. Cross-component consistency is checked when proposing the complete plan. Return references identify the exact saved versions; do not resubmit unchanged components.",
         {
-          component: creatorGameComponentEnvelopeSchema(this.input.catalog),
+          component: creatorGameComponentEnvelopeSchema(),
         },
       ),
       definition(
         "creator.repair_component",
-        "Repair retained failed input using its exact attemptId and 1–64 explicit edits totaling at most 32 KiB of JSON. op replace supplies value for an existing path; op remove deletes an existing field or array entry; op add supplies value for an absent named property under an existing object (no array insertion or implicit parent creation). Paths start with component and use zero-based original array indices. Replacements occur before array removals, which run in descending index order per array. No overlapping paths, component identity changes, or recipe-lock changes. Every complete result passes ordinary schema, recipe and draft checks before receiving a saved reference. creator.read_components with attemptId inspects exact rejected input; reading a componentId reads only a saved declaration. A changed current component invalidates old attempts. No Studio mutation occurs.",
+        "Repair retained failed input using its exact attemptId and 1–64 explicit edits totaling at most 32 KiB of JSON. op replace supplies value for an existing path; op remove deletes an existing field or array entry; op add supplies value for an absent named property under an existing object. Every complete result passes the current direct-component schema and draft checks before receiving a saved reference. No Studio mutation occurs.",
         CREATOR_COMPONENT_REPAIR_ENVELOPE_SHAPE,
       ),
       definition(
@@ -3836,37 +3901,7 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
         };
   }
   protected override async dispatch(name: string, input: unknown): Promise<unknown> {
-    if (name === "game.catalog") {
-      const catalog = this.input.catalog;
-      const definitionIds = (input as { definitionIds?: string[] }).definitionIds;
-      if (definitionIds && new Set(definitionIds).size !== definitionIds.length)
-        throw new ToolFailure(
-          "CATALOG_DEFINITION_ID_DUPLICATE",
-          "Each requested recipe definition ID must appear once",
-        );
-      const selected = definitionIds ? new Set(definitionIds) : undefined;
-      return {
-        definitions: catalog.definitions
-          .filter((definition) => !selected || selected.has(definition.id))
-          .map((definition) => ({
-            lock: gameRecipeDefinitionLock(definition),
-            id: definition.id,
-            ports: definition.ports,
-            sourceExports: definition.sourceExports,
-            obligations: definition.obligations,
-            ...(selected
-              ? {
-                  configSchema: z.toJSONSchema(creatorRecipeConfigSchema(definition), {
-                    reused: "ref",
-                  }),
-                }
-              : {}),
-          })),
-        configurationSchemasIncluded: selected !== undefined,
-        sourceExtension: "source_package",
-        limits: { maximumCompiledOperations: 8192, maximumOperationsPerTransaction: 128 },
-      };
-    }
+    if (name === "game.capabilities") return structuredClone(this.input.environment.capabilities);
     if (name === "creator.define_component") {
       this.requireNoOutcome();
       return this.designDraft.define(input as Parameters<CreatorDesignDraft["define"]>[0]);
@@ -4018,20 +4053,17 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
       );
     try {
       const value = { ...proposed, design: this.designDraft.assemble(proposed.design) };
-      const catalog = this.input.catalog;
       const admitted = validateGameDesignSpec(value.design, {
-        registry: catalog.registry,
         policy: DEFAULT_GAME_ADMISSION_POLICY,
       });
       if (admitted.status !== "eligible") throw new Error(stableJson(admitted.diagnostics));
       const compilerInput = {
         design: admitted.spec,
-        registry: catalog.registry,
         projectId: this.input.session.projectId,
         project: this.input.projectIndex.project,
         initialTopology: this.input.projectIndex.instances,
         observation: this.input.projectIndex,
-        recipeExpanders: catalog.expanders,
+        visualScenes: resolveCreatorApprovedVisualScenes(admitted.spec, this.input.environment),
       };
       const expanded = expandGameDesign(compilerInput);
       for (const item of expanded.inventory) {
@@ -4054,6 +4086,7 @@ export class CreatorPlannerToolHost extends BaseCreatorToolHost {
         design: expanded.design,
         inventory: expanded.inventory,
         observedSources: expanded.observedSources,
+        visualBindings: expanded.visualBindings,
         sessionId: this.input.session.id,
         observedRevisionHash: this.input.session.currentRevisionHash,
       });
@@ -5041,7 +5074,7 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
         this.budgets.maxChangedSourceBytes
     )
       throw new Error("Custom source material exceeds the active model authoring budget");
-    const catalog = await creatorGameCatalog();
+    const environment = await loadCreatorGameEnvironment();
     const editable = new Set(
       this.input.plan.compiled.inventory
         .filter((item) => item.source?.content.kind === "slot")
@@ -5053,7 +5086,7 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
     for (const item of this.input.plan.compiled.inventory) {
       if (item.source?.content.kind !== "locked") continue;
       const lock = item.source.content;
-      let source = catalog.lockedSources.get(lock.sourceHash);
+      let source = environment.lockedSources.get(lock.sourceHash);
       if (source === undefined) {
         const document = this.input.sourceIndex.documents.find(
           (document) =>
@@ -5263,8 +5296,8 @@ export class CreatorBuilderToolHost extends BaseCreatorToolHost {
       );
       if (item?.source?.content.kind !== "locked")
         throw new Error("Only an accepted locked source can be read through this tool");
-      const catalog = await creatorGameCatalog();
-      const source = catalog.lockedSources.get(item.source.content.sourceHash);
+      const environment = await loadCreatorGameEnvironment();
+      const source = environment.lockedSources.get(item.source.content.sourceHash);
       if (source === undefined) throw new Error("The locked module source is unavailable");
       result = creatorDraftPage(source, request.startLine, request.lineCount);
     } else if (name === "studio.api_lookup") {
@@ -6044,6 +6077,7 @@ export async function runCreatorPlanner(input: {
   contextCitations?: readonly CreatorAgentContextCitation[];
   runtime: AgentRuntime;
   executionJournal: AgentExecutionJournalSink;
+  environment?: CreatorGameEnvironment;
   /** Exact durable response boundary authorized by the creator to continue. */
   resumeFromJournal?: AgentExecutionJournalResume;
   budgets?: BudgetPolicy;
@@ -6051,7 +6085,7 @@ export async function runCreatorPlanner(input: {
   if (contentHash(input.creatorPrompt) !== input.session.promptHash)
     throw new Error("Creator prompt does not match the session");
   const host = new CreatorPlannerToolHost({
-    catalog: await creatorGameCatalog(),
+    environment: input.environment ?? (await loadCreatorGameEnvironment()),
     session: input.session,
     ownership: input.ownership,
     projectIndex: input.projectIndex,
@@ -6144,7 +6178,7 @@ export async function runCreatorBuilder(input: {
     throw new Error("Prepared builder differs from the exact accepted build contract");
   const sourceBrief = await createGameSourceBrief(
     input.plan.compiled,
-    (await creatorGameCatalog()).lockedSources,
+    (await loadCreatorGameEnvironment()).lockedSources,
   );
   const systemPrompt =
     creatorBuilderSystemPrompt(
@@ -6386,7 +6420,7 @@ export async function verifyCreatorBundleArtifacts(
       sourceIndex,
       sourceConsultation,
       creatorPrompt: creatorRequest.creatorText,
-      catalog: await creatorGameCatalog(),
+      environment: await loadCreatorGameEnvironment(),
     });
     if (
       stableJson(reproduced.plan) !== stableJson(value.plan) ||
@@ -8081,14 +8115,24 @@ export const PLAN_CHANGE_SCHEMA = z.union([
     className: z.enum(STUDIO_SCRIPT_CLASSES),
     initialization: z.literal("inline_source_required"),
   }),
-  z.object({
-    id: z.string().min(1),
-    kind: z.literal("create"),
-    path: z.string().min(1),
-    parent: STUDIO_MUTATION_PARENT_SCHEMA,
-    className: z.enum(STUDIO_NON_SCRIPT_CREATABLE_CLASSES),
-    initialization: z.literal("initial_properties"),
-  }),
+  z
+    .object({
+      id: z.string().min(1),
+      kind: z.literal("create"),
+      path: z.string().min(1),
+      parent: STUDIO_MUTATION_PARENT_SCHEMA,
+      className: z.enum(STUDIO_NON_SCRIPT_CREATABLE_CLASSES),
+      initialization: z.literal("initial_properties"),
+      approvedSceneImport: z.lazy(() => APPROVED_SCENE_IMPORT_BINDING_SCHEMA).optional(),
+      approvedSceneReplacement: z.lazy(() => APPROVED_SCENE_REPLACEMENT_BINDING_SCHEMA).optional(),
+    })
+    .superRefine((value, context) => {
+      if (value.approvedSceneImport !== undefined && value.approvedSceneReplacement !== undefined)
+        context.addIssue({
+          code: "custom",
+          message: "A plan create cannot import and replace an approved scene simultaneously",
+        });
+    }),
   z.object({
     id: z.string().min(1),
     kind: z.literal("update"),
@@ -8247,20 +8291,165 @@ const CREATOR_SOURCE_WRITE_BLOB_BINDING_SCHEMA: z.ZodType<CreatorSourceWriteBlob
       .max(CREATOR_DEFAULT_RESOURCE_POLICY.maximumSourceBlobBytes),
   })
   .strict();
-export const CHANGE_OPERATION_SCHEMA = z.discriminatedUnion("kind", [
-  z.object({
-    id: z.string().min(1),
-    planChangeId: z.string().min(1),
-    kind: z.literal("create"),
-    tempId: z.string().min(1),
-    target: STUDIO_CREATABLE_INSTANCE_TARGET_SCHEMA,
-    parent: STUDIO_MUTATION_PARENT_SCHEMA,
-    className: z.enum(STUDIO_CREATABLE_CLASSES),
+const APPROVED_SCENE_IMPORT_DESCENDANT_SCHEMA: z.ZodType<ApprovedSceneImportDescendant> = z
+  .object({
+    stableId: z.string().min(1).max(512),
+    relativePath: z
+      .string()
+      .min(1)
+      .max(2048)
+      .regex(/^[^/\u0000-\u001f]+(?:\/[^/\u0000-\u001f]+)*$/u),
+    parentStableId: z.string().min(1).max(512).optional(),
     name: STUDIO_INSTANCE_NAME_SCHEMA,
-    properties: z.record(z.string(), STUDIO_VALUE_SCHEMA),
-    attributes: z.record(z.string(), PRIMITIVE_SCHEMA),
-    sourceBlob: CREATOR_SOURCE_WRITE_BLOB_BINDING_SCHEMA.optional(),
-  }),
+    className: z.string().min(1).max(100),
+    contentIdentity: z.string().min(1).max(4096).optional(),
+    materialIdentity: z.string().min(1).max(4096).optional(),
+    pivotHash: z.string().regex(/^[0-9a-f]{64}$/),
+    transformHash: z.string().regex(/^[0-9a-f]{64}$/),
+    boundsHash: z.string().regex(/^[0-9a-f]{64}$/),
+  })
+  .strict();
+export const APPROVED_SCENE_IMPORT_BINDING_SCHEMA: z.ZodType<ApprovedSceneImportBinding> = z
+  .object({
+    kind: z.literal("import_approved_scene"),
+    abi: z.literal("import_approved_scene@2"),
+    scene: z
+      .object({
+        sceneId: z.string().min(1).max(512),
+        revision: z.number().int().positive().safe(),
+        hash: z.string().regex(/^[0-9a-f]{64}$/),
+      })
+      .strict(),
+    bundleManifestHash: z.string().regex(/^[0-9a-f]{64}$/),
+    sceneReviewHash: z.string().regex(/^[0-9a-f]{64}$/),
+    uploadAuthorizationHash: z.string().regex(/^[0-9a-f]{64}$/),
+    capabilityProfileHash: z.string().regex(/^[0-9a-f]{64}$/),
+    inspectionHash: z.string().regex(/^[0-9a-f]{64}$/),
+    partitionId: z.string().min(1).max(512),
+    partitionRole: z.enum([
+      "WorldStatic",
+      "WorldCollision",
+      "GameplayAnchors",
+      "InteractiveProps",
+      "Effects",
+    ]),
+    sourceArtifactHash: z.string().regex(/^[0-9a-f]{64}$/),
+    receiptHash: z.string().regex(/^[0-9a-f]{64}$/),
+    assetId: z.string().regex(/^[1-9][0-9]{0,15}$/),
+    versionNumber: z.number().int().positive().safe(),
+    contentHash: z.string().regex(/^[0-9a-f]{64}$/),
+    platformEnvelopeHash: z.string().regex(/^[0-9a-f]{64}$/),
+    descendants: z.array(APPROVED_SCENE_IMPORT_DESCENDANT_SCHEMA).max(65_536),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const identities = new Set<string>();
+    const paths = new Set<string>();
+    for (const descendant of value.descendants) {
+      if (identities.has(descendant.stableId))
+        context.addIssue({
+          code: "custom",
+          message: `Duplicate imported stable ID: ${descendant.stableId}`,
+        });
+      if (paths.has(descendant.relativePath))
+        context.addIssue({
+          code: "custom",
+          message: `Duplicate imported relative path: ${descendant.relativePath}`,
+        });
+      if (descendant.relativePath.split("/").at(-1) !== descendant.name)
+        context.addIssue({
+          code: "custom",
+          message: `Imported relative path/name mismatch: ${descendant.relativePath}`,
+        });
+      if (/Script$/u.test(descendant.className) || descendant.className === "PackageLink")
+        context.addIssue({
+          code: "custom",
+          message: `Imported executable or package descendant is forbidden: ${descendant.className}`,
+        });
+      identities.add(descendant.stableId);
+      paths.add(descendant.relativePath);
+    }
+    for (const descendant of value.descendants)
+      if (descendant.parentStableId !== undefined) {
+        if (!identities.has(descendant.parentStableId))
+          context.addIssue({
+            code: "custom",
+            message: `Unknown imported parent stable ID: ${descendant.parentStableId}`,
+          });
+        else {
+          const parent = value.descendants.find(
+            (entry) => entry.stableId === descendant.parentStableId,
+          )!;
+          if (descendant.relativePath !== `${parent.relativePath}/${descendant.name}`)
+            context.addIssue({
+              code: "custom",
+              message: `Imported hierarchy/path mismatch: ${descendant.relativePath}`,
+            });
+        }
+      } else if (descendant.relativePath.includes("/"))
+        context.addIssue({
+          code: "custom",
+          message: `Imported root child path is nested: ${descendant.relativePath}`,
+        });
+  });
+export const APPROVED_SCENE_REPLACEMENT_BINDING_SCHEMA: z.ZodType<ApprovedSceneReplacementBinding> =
+  z
+    .object({
+      kind: z.literal("replace_approved_scene"),
+      abi: z.literal("replace_approved_scene@2"),
+      previous: APPROVED_SCENE_IMPORT_BINDING_SCHEMA,
+      next: APPROVED_SCENE_IMPORT_BINDING_SCHEMA,
+      previousTarget: STUDIO_WRITABLE_INSTANCE_TARGET_SCHEMA.extend({
+        className: z.literal("Model"),
+      }),
+      previousBeforeHash: z.string().regex(/^[0-9a-f]{64}$/),
+      repairDeltaHash: z.string().regex(/^[0-9a-f]{64}$/),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      if (
+        value.previous.partitionId !== value.next.partitionId ||
+        value.previous.partitionRole !== value.next.partitionRole
+      )
+        context.addIssue({
+          code: "custom",
+          message: "Approved scene replacement changed its partition identity or role",
+        });
+      if (value.previous.scene.sceneId !== value.next.scene.sceneId)
+        context.addIssue({
+          code: "custom",
+          message: "Approved scene replacement changed its scene identity",
+        });
+      if (value.previous.scene.revision >= value.next.scene.revision)
+        context.addIssue({
+          code: "custom",
+          message: "Approved scene replacement must advance the scene revision",
+        });
+    });
+export const CHANGE_OPERATION_SCHEMA = z.discriminatedUnion("kind", [
+  z
+    .object({
+      id: z.string().min(1),
+      planChangeId: z.string().min(1),
+      kind: z.literal("create"),
+      tempId: z.string().min(1),
+      target: STUDIO_CREATABLE_INSTANCE_TARGET_SCHEMA,
+      parent: STUDIO_MUTATION_PARENT_SCHEMA,
+      className: z.enum(STUDIO_CREATABLE_CLASSES),
+      name: STUDIO_INSTANCE_NAME_SCHEMA,
+      properties: z.record(z.string(), STUDIO_VALUE_SCHEMA),
+      attributes: z.record(z.string(), PRIMITIVE_SCHEMA),
+      sourceBlob: CREATOR_SOURCE_WRITE_BLOB_BINDING_SCHEMA.optional(),
+      approvedSceneImport: APPROVED_SCENE_IMPORT_BINDING_SCHEMA.optional(),
+      approvedSceneReplacement: APPROVED_SCENE_REPLACEMENT_BINDING_SCHEMA.optional(),
+    })
+    .superRefine((value, context) => {
+      if (value.approvedSceneImport !== undefined && value.approvedSceneReplacement !== undefined)
+        context.addIssue({
+          code: "custom",
+          message: "A create cannot import and replace an approved scene simultaneously",
+        });
+    }),
   z.object({
     id: z.string().min(1),
     planChangeId: z.string().min(1),
@@ -9769,6 +9958,13 @@ function materializeBuildContractChange(
       className: change.className,
       tempId: identity("creator_temp"),
       propertyPolicy: policyFor(change.className),
+      ...(change.initialization !== "initial_properties" || change.approvedSceneImport === undefined
+        ? {}
+        : { approvedSceneImport: structuredClone(change.approvedSceneImport) }),
+      ...(change.initialization !== "initial_properties" ||
+      change.approvedSceneReplacement === undefined
+        ? {}
+        : { approvedSceneReplacement: structuredClone(change.approvedSceneReplacement) }),
     };
   }
   const sourcePath = change.target.path;
@@ -9887,6 +10083,17 @@ function deriveStudioOperation(
     });
   };
   if (
+    contractChange.kind === "create" &&
+    (contractChange.approvedSceneImport !== undefined ||
+      contractChange.approvedSceneReplacement !== undefined) &&
+    (Object.keys(propertyInputs).length > 0 ||
+      Object.keys(attributes).length > 0 ||
+      removedAttributes.length > 0 ||
+      payload.source !== undefined ||
+      payload.sourceEdits !== undefined)
+  )
+    rejectCreativePayload("approved scene loading has no model-authored creative payload");
+  if (
     contractChange.kind === "delete" &&
     (Object.keys(propertyInputs).length > 0 ||
       Object.keys(attributes).length > 0 ||
@@ -9959,6 +10166,14 @@ function deriveStudioOperation(
       properties,
       attributes: attributes as Record<string, string | number | boolean>,
       ...(payload.source === undefined ? {} : { sourceBlob: sourceWriteBlob(payload.source) }),
+      ...(contractChange.approvedSceneImport === undefined
+        ? {}
+        : { approvedSceneImport: structuredClone(contractChange.approvedSceneImport) }),
+      ...(contractChange.approvedSceneReplacement === undefined
+        ? {}
+        : {
+            approvedSceneReplacement: structuredClone(contractChange.approvedSceneReplacement),
+          }),
     };
   if (contractChange.kind === "update")
     return {
@@ -10586,7 +10801,15 @@ function assertOperationMatchesPlan(
       change.kind !== "create" ||
       change.path !== operation.target.path ||
       stableJson(change.parent) !== stableJson(operation.parent) ||
-      change.className !== operation.className
+      change.className !== operation.className ||
+      stableJson(
+        change.initialization === "initial_properties" ? change.approvedSceneImport : undefined,
+      ) !== stableJson(operation.approvedSceneImport) ||
+      stableJson(
+        change.initialization === "initial_properties"
+          ? change.approvedSceneReplacement
+          : undefined,
+      ) !== stableJson(operation.approvedSceneReplacement)
     )
       throw new Error("Create operation does not match its approved path and class");
     if (
@@ -10666,7 +10889,10 @@ function assertOperationsMatchContract(
         stableJson(operation.target) !== stableJson(change.target) ||
         stableJson(operation.parent) !== stableJson(change.parent) ||
         operation.name !== change.name ||
-        operation.className !== change.className)
+        operation.className !== change.className ||
+        stableJson(operation.approvedSceneImport) !== stableJson(change.approvedSceneImport) ||
+        stableJson(operation.approvedSceneReplacement) !==
+          stableJson(change.approvedSceneReplacement))
     )
       throw new Error("Creator create operation does not match its build contract");
     if (
@@ -10764,6 +10990,20 @@ function assertStudioChangeOperation(
     if (isScriptClass(operation.className) !== (operation.sourceBlob !== undefined))
       throw new Error("Created scripts require source and non-scripts cannot carry source");
     if (isScriptClass(operation.className)) assertRequiredSource(operation.sourceBlob);
+    if (
+      (operation.approvedSceneImport !== undefined ||
+        operation.approvedSceneReplacement !== undefined) &&
+      (operation.className !== "Model" ||
+        operation.sourceBlob !== undefined ||
+        Object.keys(operation.properties).length !== 0 ||
+        Object.keys(operation.attributes).length !== 0)
+    )
+      throw new Error("Approved scene loading requires a property-free non-script Model create");
+    if (
+      operation.approvedSceneImport !== undefined &&
+      operation.approvedSceneReplacement !== undefined
+    )
+      throw new Error("A Studio create cannot import and replace an approved scene together");
     assertProperties(operation.className, operation.properties);
     assertInstanceReferenceProperties(
       operation.properties,
@@ -10830,6 +11070,47 @@ function assertStudioChangeOperation(
     assertRemovedAttributes(operation.removedAttributes);
     if (operation.removedAttributes.some((name) => Object.hasOwn(operation.attributes, name)))
       throw new Error("Updated attributes cannot be both set and removed");
+  }
+}
+
+function assertApprovedSceneReplacementPairs(
+  operations: readonly StudioChangeOperation[],
+  observation: CreatorProjectIndexView,
+): void {
+  for (const operation of operations) {
+    if (operation.kind !== "create" || operation.approvedSceneReplacement === undefined) continue;
+    const replacement = APPROVED_SCENE_REPLACEMENT_BINDING_SCHEMA.parse(
+      operation.approvedSceneReplacement,
+    );
+    if (
+      operation.target.path !== replacement.previousTarget.path ||
+      operation.parent.path !== pathParent(replacement.previousTarget.path) ||
+      operation.className !== "Model"
+    )
+      throw new Error("Approved scene replacement does not preserve its exact wrapper path");
+    const deletions = operations.filter(
+      (candidate): candidate is Extract<StudioChangeOperation, { kind: "delete" }> =>
+        candidate.kind === "delete" &&
+        stableJson(candidate.target) === stableJson(replacement.previousTarget) &&
+        candidate.beforeHash === replacement.previousBeforeHash,
+    );
+    if (deletions.length !== 1)
+      throw new Error("Approved scene replacement requires one exact hash-guarded subtree delete");
+    const previousNodes = [
+      replacement.previousTarget,
+      ...replacement.previous.descendants.map((descendant) => ({
+        kind: "instance" as const,
+        identity: { kind: "forge_attribute" as const, stableId: descendant.stableId },
+        path: `${replacement.previousTarget.path}/${descendant.relativePath}`,
+        className: descendant.className,
+      })),
+    ];
+    for (const target of previousNodes) {
+      const key = studioObjectIdentityKey(target.identity);
+      const observed = observation.instances.find((entry) => entry.objectId === key);
+      if (!observed || observed.path !== target.path || observed.className !== target.className)
+        throw new Error("Approved scene replacement previous subtree differs from observation");
+    }
   }
 }
 
@@ -11487,25 +11768,25 @@ const CREATOR_PRESENTATION_GUIDANCE =
 const CREATOR_API_LOOKUP_GUIDANCE =
   "Use studio.api_lookup for a missing or uncertain Roblox API fact needed by the current declaration or source slot. When a member is known, supply ownerName and query; Forge resolves its catalog kind. When the member is unknown, browse its owner. Batch independent lookups and reuse returned signatures instead of repeating a query to change its category. ownerName accepts a class, datatype, enum or library name. Reuse returned facts; follow nextCursor with the same filters only when a needed member is absent. source_only describes catalog members outside Forge's edit-time writer; it does not prohibit their lawful use in generated game source. Catalog facts do not grant editor mutation authority or prove gameplay behavior.";
 
-export const CREATOR_PLANNER_SYSTEM_PROMPT = `You are Forge, the creator's Roblox project collaborator. Explore current facts with project.search, project.children and project.inspect; batch independent reads. creator.define_component exposes a compact portable component envelope and the exact installed recipe locks; Forge still validates every complete declaration against its canonical host schema. Read the compact game.catalog when needed for recipe capabilities, then query it with the selected definitionIds to obtain their exact configuration schemas before defining recipe instances. Compose a GameDesignSpec from ordinary source_package nodes and optional recipe_instance nodes. There is no required genre, round, countdown, terminal state, reset, scene or UI. New mechanics use normal Luau source packages; use a recipe only when its documented semantics fit the request.
+export const CREATOR_PLANNER_SYSTEM_PROMPT = `You are Forge, the creator's Roblox project collaborator. Explore current facts with project.search, project.children and project.inspect; batch independent reads. Read game.capabilities for the current direct-component schemas, operation families, compiler identity, and pinned utility-source interfaces. Compose a GameDesignSpec from source_package, native_graph, ui_graph, and scene_handle components. New mechanics use ordinary Luau source packages; native_graph directly declares owned Studio objects, collections, instances, references, and lighting; ui_graph directly declares responsive UI; scene_handle selects one exact retained visual-world revision.
 
 For a game request, include architecture describing the actual game concepts the creator will recognize. Give the game a name and each system or component a stable ID, readable name, purpose, and exact componentIds for its implementation. Organize substantial gameplay systems with their concrete player-facing components as children so the creator can expand them on the game map. Relationships explain how those systems interact. Optionally choose a single Unicode emoji as icon for the game and each concept. Choose concepts from the request and planned behavior, without a fixed genre or system vocabulary. Do not present file names, hashes, runtime packages, build stages or implementation categories as game systems. Every leaf must bind declared implementation components. This map is reviewed design intent, not proof that its behavior works. Standalone utility or source-only edits may omit architecture when no game map is relevant.
 
 Declare worldAuthoring for every proposal. Use persistent for an ordinary creator-visible 3D scene and name the exact Workspace roots that will contain it after the plan. Those roots must contain authored spatial geometry in the compiled editor inventory or the observed place. Treat "procedural" geometry as author-time procedural compilation into persistent Studio instances unless the creator explicitly asks for a world that exists only during Play. Use runtime_generated only for that explicit request and state its concrete rationale. Use none only when no 3D world is in scope. Never hide a primary environment, set, lighting structure or landmark inside a runtime initializer while describing it as built in Workspace.
 
-For substantial visual work, include optional visualDirection: a concise artDirection and a small set of named views tied to their exact componentIds, setup and observable criteria. Forge retains those criteria for later creator verification; they are not displayed in the proposed plan. Choose views from the actual experience, including relevant interface states and viewport sizes; a world camera is optional. Make deliberate choices about major silhouettes, scale, foreground/background separation, color/material roles, light sources and detail concentration. Visual complexity should support composition and readable interaction. Do not substitute more objects, more bloom or generic decoration for those decisions. Carry the direction into actual scene/UI declarations and source slots. Use scene-arrangement for repeated authored geometry: define local motifs once, share named surfaces, and place explicit stable members with linear, radial or explicit patterns. Member IDs determine identity; order in linear/radial memberIds determines placement. Individual generated Parts remain addressable through documented component_output aliases. Use project-assembly for general typed hierarchy and ordinary Luau for dynamic presentation; neither requires a thematic kit. Read each recipe's exact current capabilities before choosing it. Asset generation is available only through explicitly supplied reviewed host assets; never invent Cube output, asset IDs, textures or native readiness. A local mesh preview can establish geometry and fit only. Local checks do not see the rendered Roblox scene.
+For substantial visual work, include visualDirection with named views tied to exact component IDs and observable criteria. Use a scene_handle only after Forge has retained and solved the matching canonical visual-world scene. Scene geometry, materials, objects, arbitrary collections, instances, routes, anchors, collision, interactions, effects, and cameras belong in that scene system. Individual native gameplay structures remain direct native_graph operations. Asset generation is available only through explicitly supplied reviewed host assets; never invent Cube output, asset IDs, textures, upload receipts, or native readiness. Local checks do not see the rendered Roblox scene.
 
 Planning is read-only. First call creator.define_component for each design component, batching independent calls with distinct component IDs. Supply only the semantic component declaration; its stable ID creates or replaces it, and Forge owns draft version checks. Each successful definition returns its saved identity. Then publish creator.propose_plan with design, inspectionObjectIds, ordered steps and checks. Inside design put worldAuthoring, the selected componentIds, connections, artifactDependencies and optional architecture and visualDirection. Each selected componentId must appear in exactly one plan step. Use at least two steps for a two-component design and at least three for a design with three or more components; group related components only when that makes the implementation sequence clearer. Do not copy hashes, inline components in the final proposal, or repeat unchanged definitions after a rejection. creator.read_components can recover saved IDs and selectively read a component for repair. The host binds the current selected versions and checks the complete design and step coverage before acceptance; the reviewed plan records exact immutable bytes and hashes.
 
-When a component rejection includes repair.attemptId, use that exact host-issued handle with creator.repair_component. Each edit declares op: replace an existing value, remove an existing field or array entry, or add an absent named property under an existing object. Add cannot create parent paths or insert array entries. Paths start with component and array indices address the original attempt. Read exact rejected input through the error's inspect action (creator.read_components with attemptId); componentIds only read successfully saved declarations. Structured issues identify exact current values and paths; omitted fields are explicitly marked. An object/array replacement supplies its complete corrected value. The whole declaration is revalidated before saving. Correct all independent issues together without resending unchanged bodies. Define again only for changed identity/recipe locks, expired handles or changes beyond repair bounds. Never invent a handle.
+When a component rejection includes repair.attemptId, use that exact host-issued handle with creator.repair_component. Each edit replaces an existing value, removes an existing field or array entry, or adds an absent named property under an existing object. The whole current declaration is revalidated before saving. Correct independent issues together without resending unchanged bodies. Never invent a handle.
 
-Every source file declares its own context, role, imports, content and editor placement. imports is the approved upper bound of modules that this file may require, not a list of mandatory runtime calls. Declare anticipated dependencies; unused declarations are warnings and remain conservative build dependencies. Its path is a relative .luau filename, such as Services/Interaction.luau; placement declares its Roblox parent and instance name. Use source slots with sufficient byte budgets for code that Build will author. Closed string enums are already bounded: omit maxLength when the enum lists every allowed value; Forge derives its Unicode code-point bound. Open strings require an explicit maxLength. Copy locked hashes and recipe locks only from the supplied host contracts; never invent future source hashes or package exports. Forge supplies the exact locked runtime and UI module source. Configure recipe structure and locked values now; declare constrained value slots only where Build must choose a value. Build fills only approved slots. Runtime Instance creation by installed game code is separate from editor mutation authority.
+Every source file declares its context, role, imports, content, and editor placement. imports is the approved upper bound of modules that the file may require. Its path is a relative .luau filename; placement declares its Roblox parent and instance name. Use source slots with sufficient byte budgets for Build. Copy locked hashes only from game.capabilities; never invent future source hashes or package exports. Forge supplies the exact pinned runtime and UI utility source. Runtime Instance creation by installed game code is separate from editor mutation authority.
 
-Follow the selected recipe's exact configuration schema and each field's identifier pattern. Design, component, file, port, connection and local IDs are opaque case-sensitive keys: 1–64 ASCII characters, starting with a letter, followed by letters, digits, underscores or hyphens. Preserve exact spelling in every reference; never normalize case or substitute underscores and hyphens. Select recipe definitions by their exact installed ID, ABI and hash. Scene and responsive UI recipe RGB fields are integer 0–255; Luau Color3.new and the typed property writer use 0–1. UI layout offsets are integer Roblox pixels. In responsive-ui, semantic color/size entries point to primitive IDs; styles point to semantic IDs; nodes point to style IDs. Padding, list gaps, scrolling and gradients also resolve semantic IDs. Declare every referenced ID in the appropriate token collection. Include required arrays even when empty, but do not create empty recipe instances whose schema requires content. Source-only components can extend behavior without forcing it into a recipe.
+Follow each direct declaration schema and identifier pattern exactly. IDs are opaque case-sensitive keys: 1–64 ASCII characters, starting with a letter, followed by letters, digits, underscores, or hyphens. Preserve spelling in every reference. Responsive UI RGB fields are integer 0–255; Luau Color3.new and the typed property writer use 0–1. Declare every referenced UI token. Include required arrays even when empty.
 
 For responsive-ui, explicitly choose type hierarchy, readable alignment and wrapping, borders and button interaction states using the current schema. Native font, focus-ring, hover, press and disabled properties are materialized under the reviewed inventory. Avoid automatic-size dependencies that cycle through scaled children. Actual font fit and preferred text-size behavior require native TextBounds observations; estimates or geometry previews do not establish rendered UI quality.
 
-For a source file inside a new recipe-created container, use placement.parent with kind component_output, the recipe instance's componentId and its documented outputId alias. Forge resolves that alias into the exact generated parent before review. Do not calculate or guess compiler-generated operation hashes. Use kind generated with an authored operationId for another new source placement. Existing parents use the inspected host identity or an observed engine container.
+For a source file inside a new component-created container, use placement.parent with kind component_output, the componentId, and its declared outputId. Forge resolves that alias before review. Do not calculate compiler-generated operation hashes. Use kind generated with an authored source operationId for another new source placement. Existing parents use an inspected identity or observed engine container.
 
 Inspect existing targets and parent anchors before selecting them. project.inspect returns exact target identities and before hashes; copy those values rather than reconstructing them. Source edits require hash-verified source inspection and dependency closure. When scriptCount is zero there is no existing source to search. Save independently resolved components while investigating unresolved ones. During structural planning, inspect APIs needed to select structure or source interfaces; leave implementation-only API details to Build. For UI changes inspect existing container sizing and layout. Plan responsive sizing, readable contrast, spacing, focus and viewport fit alongside behavior. Put visual judgment and play-behavior criteria in visualDirection views when fixed observers cannot establish them; keep proposed-plan steps focused on implementation work.
 
@@ -11517,14 +11798,14 @@ ${CREATOR_PRESENTATION_GUIDANCE}`;
 export const CREATOR_BUILDER_SYSTEM_PROMPT = `You are Forge's Studio builder. Implement the accepted modular design in its declared source and value slots. Forge compiles the complete graph and applies bounded transactions under the creator's exact plan acceptance.
 
 WORKFLOW
-- Use acceptedHierarchy for planned instance paths, classes and declared recipe output IDs. It covers accepted inventory targets after all moves; removed lists approved deletions by prior path. These are compiled plans, not live observations: omitted properties are unobserved, never absent. Use game.inspect_inventory only for particular component properties or source facts missing from the initial context. Runtime copies, reparenting and streaming still need lifecycle handling.
+- Use acceptedHierarchy for planned instance paths, classes and declared component output IDs. It covers accepted inventory targets after all moves; removed lists approved deletions by prior path. These are compiled plans, not live observations: omitted properties are unobserved, never absent. Use game.inspect_inventory only for particular component properties or source facts missing from the initial context.
 - The approved observedObjects contain bounded evidence pages from the exact revision inspected during planning. Use supplied facts directly. Only when a needed fact is absent, use studio.read_observations with observationRevisionHash and its nextCursor or exact field names (property:Color, attribute:Purpose, tags); it retrieves immutable approved evidence without querying Studio. An incomplete page never proves an omitted field absent. source.read is present only when the approved consultation closure contains readable source.
 - Start with forge_source_reference: it supplies accepted import paths and exact locked-module declaration excerpts. Reuse supplied facts directly. Use game.source_context for deferred slots/pages and game.read_locked_source only for behavior or signatures the excerpts do not establish. Copy host-derived require expressions and choose meaningful local binding names; relative expressions preserve sibling imports when Starter containers are copied. These observations cannot add an import or change the accepted inventory.
 - Use only imports approved for each source file. You may omit unused approved imports; never add a require merely to silence an unused-declaration warning, because requiring a module can execute its code. New import authority requires a revised plan.
 - Call studio.build once with sources and values arrays covering each custom slot exactly once, plus a concise final Markdown summary. A collection with zero approved slots is optional; otherwise submit the complete required collection. Locked package sources, geometry and component internals are supplied by Forge. A complete virtual build runs local review before Studio writes.
 - Treat the generated studio.build schema as the only property-input format. Each offered property has one exact JSON shape; copy its lower-case field names and do not invent engine component aliases. Use {changeId} when one new object references another object created in this Build.
 - An eligible studio.build result completes Build without another model request. After a rejected or incomplete review, use the grouped diagnostics and supplied excerpts to address actionable source issues. Read multiple missing draft ranges together with studio.read_drafts only when the excerpts are insufficient, then apply every independent correction together in one studio.repair call. An eligible repair also completes Build immediately.
-- Source slots take complete source for both new scripts and reviewed replacements. Forge checks the approved previous source hash and converts replacements into the fixed source-write contract. Ordinary Luau modules can implement any declared behavior; rounds, countdowns, terminal states, scene recipes, UI and networking are optional.
+- Source slots take complete source for both new scripts and reviewed replacements. Forge checks the approved previous source hash and converts replacements into the fixed source-write contract. Ordinary Luau modules implement the declared behavior.
 - studio.repair preserves omitted properties and source lines. Use the latest operationHash or sourceHash exactly; stale or invalid repair batches change nothing. Do not repeat accepted work already present in the current Build checkpoint.
 
 LUAU AND SECURITY
@@ -11541,7 +11822,7 @@ LUAU AND SECURITY
 GUI AND CAPABILITIES
 - Preserve the accepted design.visualDirection in actual presentation code and values. Its named views and criteria describe rendered creator review, not passing local tests. Implement the planned visual states, feedback and owned transitions within approved source/value slots. A needed structural or asset change requires a revised plan; do not silently reduce the art direction or claim visual success from instance counts and hashes.
 - Use inspected parent bounds. UDim2 scale is a fraction of the parent, offset is pixels. Set the approved container's Size/Position/AnchorPoint, account for every row and spacing, and use responsive child widths plus padding. Never leave controls inside a zero-size fixed parent. Set distinct LayoutOrder values, legible fonts, deliberate button colors, and room for wrapping.
-- The typed property writer's Color3 channels and Luau Color3.new are 0..1; accepted scene/UI recipe RGB tokens use integer 0..255. Use the exact input format supplied for the current slot.
+- The typed property writer's Color3 channels and Luau Color3.new are 0..1; accepted UI RGB tokens use integer 0..255. Use the exact input format supplied for the current slot.
 - ${CREATOR_API_LOOKUP_GUIDANCE}
 - Author source through the approved source slots; do not request arbitrary execution through Studio tools, invent structural fields, read outside approved scope, or claim a passed Play test from local analysis.
 

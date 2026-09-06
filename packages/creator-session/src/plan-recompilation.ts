@@ -32,7 +32,10 @@ import {
   type StudioOwnershipMap,
   type VerificationCharterProposalClause,
 } from "./index.js";
-import type { CreatorGameCatalog } from "./game-authoring.js";
+import {
+  resolveCreatorApprovedVisualScenes,
+  type CreatorGameEnvironment,
+} from "./game-authoring.js";
 import { DEFAULT_GAME_ADMISSION_POLICY } from "../../game-ir/src/index.js";
 import { assertBoundedGameJson } from "../../game-ir/src/primitives.js";
 
@@ -414,7 +417,7 @@ export function recompileRetainedCreatorPlan(input: {
   sourceIndex: StudioSourceIndex;
   sourceConsultation: CreatorSourceConsultation;
   creatorPrompt: string;
-  catalog: CreatorGameCatalog;
+  environment: CreatorGameEnvironment;
 }): { plan: CreatorPlan; recompilation: CreatorPlanRecompilation } {
   const prior = input.previousPlan;
   assertCreatorPlan(prior);
@@ -462,15 +465,14 @@ export function recompileRetainedCreatorPlan(input: {
     throw new Error("Fresh recompilation consultation must not claim model inspections");
   const observation = studioProjectIndexMetadataView(input.afterCapture);
   for (const component of prior.compiled.design.components)
-    input.catalog.validateComponent?.(component);
+    input.environment.validateComponent(component);
   const compilerInput = {
     design: prior.compiled.design,
-    registry: input.catalog.registry,
     projectId: input.session.projectId,
     project: observation.project,
     initialTopology: observation.instances,
     observation,
-    recipeExpanders: input.catalog.expanders,
+    visualScenes: resolveCreatorApprovedVisualScenes(prior.compiled.design, input.environment),
   };
   const expanded = expandGameDesign(compilerInput);
   const compiled = compileGamePlan({
@@ -478,6 +480,7 @@ export function recompileRetainedCreatorPlan(input: {
     design: expanded.design,
     inventory: expanded.inventory,
     observedSources: expanded.observedSources,
+    visualBindings: expanded.visualBindings,
     sessionId: input.session.id,
     observedRevisionHash: input.session.currentRevisionHash,
     policy: DEFAULT_GAME_COMPILER_POLICY,
@@ -486,7 +489,7 @@ export function recompileRetainedCreatorPlan(input: {
   for (const item of compiled.inventory) {
     if (item.source?.content.kind !== "locked") continue;
     const locked = item.source.content;
-    const source = input.catalog.lockedSources.get(locked.sourceHash);
+    const source = input.environment.lockedSources.get(locked.sourceHash);
     if (
       source === undefined ||
       contentHash(source) !== locked.sourceHash ||

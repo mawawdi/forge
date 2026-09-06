@@ -59,6 +59,72 @@ const projectIdentity = createStudioProjectIdentityState({
   project,
   reservedAttribute: { status: "absent" },
 });
+
+test("approved scene inspection commands bind canonical documents and exact observations", () => {
+  const documentJson = stableJson({
+    abi: "inspect-approved-scene-asset@2",
+    binding: { kind: "fixture" },
+    kind: "InspectApprovedSceneAsset",
+  });
+  const command = {
+    kind: "StudioProtocolMessage" as const,
+    direction: "backend_to_plugin" as const,
+    type: "InspectApprovedSceneAssets" as const,
+    messageId: "inspect-approved-scene-command",
+    requestId: "inspect-approved-scene-request",
+    sessionId: "inspect-approved-scene-session",
+    sentAt,
+    payload: {
+      requestId: "inspect-approved-scene-request",
+      challengeId: "inspect-approved-scene-challenge",
+      challengeHash: "1".repeat(64),
+      connectorBuildHash: STUDIO_CONNECTOR_BUILD_HASH,
+      targetProjectId: "inspect-approved-scene-project",
+      expectedProjectRevisionHash: "2".repeat(64),
+      sceneHash: "3".repeat(64),
+      bundleManifestHash: "4".repeat(64),
+      uploadAuthorizationHash: "5".repeat(64),
+      capabilityProfileHash: "6".repeat(64),
+      inspectionDocumentJson: documentJson,
+      inspectionDocumentJsonHash: contentHash(documentJson),
+    },
+  };
+  assertBackendToPluginMessage(command);
+  assert.throws(() =>
+    assertBackendToPluginMessage({
+      ...command,
+      payload: { ...command.payload, inspectionDocumentJson: `${documentJson} ` },
+    }),
+  );
+
+  const observationJson = stableJson({ kind: "ApprovedSceneAssetObservation", status: "eligible" });
+  assertPluginToBackendMessage({
+    kind: "StudioProtocolMessage",
+    direction: "plugin_to_backend",
+    type: "ApprovedSceneAssetsInspected",
+    messageId: "inspect-approved-scene-result",
+    requestId: command.requestId,
+    sessionId: command.sessionId,
+    sentAt,
+    payload: {
+      requestId: command.requestId,
+      challengeId: command.payload.challengeId,
+      challengeHash: command.payload.challengeHash,
+      connectorBuildHash: command.payload.connectorBuildHash,
+      targetProjectId: command.payload.targetProjectId,
+      projectRevisionHash: command.payload.expectedProjectRevisionHash,
+      sceneHash: command.payload.sceneHash,
+      bundleManifestHash: command.payload.bundleManifestHash,
+      uploadAuthorizationHash: command.payload.uploadAuthorizationHash,
+      capabilityProfileHash: command.payload.capabilityProfileHash,
+      inspectionDocumentJsonHash: command.payload.inspectionDocumentJsonHash,
+      status: "eligible",
+      observationJson,
+      observationJsonHash: contentHash(observationJson),
+      inspectedAt: sentAt,
+    },
+  });
+});
 const localProject = { name: "Local Identity Place", placeId: 0, universeId: 0 };
 const localUnlinkedIdentity = createStudioProjectIdentityState({
   project: localProject,

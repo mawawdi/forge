@@ -214,37 +214,33 @@ post-Apply failure.
 
 ## Planning and virtual building
 
-`game-ir` admits ordinary Luau source packages and optional exactly pinned recipe
-instances, typed connections, static import/artifact dependencies and an explicit
-resource policy. It requires no round, countdown, scene, UI, player mode or reset.
-The planner reads `game.catalog` and proposes this `GameDesignSpec`; the host's
-read-only `game-compiler` resolves the exact `GamePlan` before review. Generic source
-packages provide the extension path for unfamiliar mechanics. Optional host recipes
-currently provide primitive scenes, responsive UI, project assemblies, typed Studio edits and the
-content-addressed ForgeRuntime bundle. Recipes are trusted host code, never model
-supplied compiler implementations.
+`game-ir` admits four direct component kinds: `source_package`, `native_graph`,
+`ui_graph`, and `scene_handle`. They retain typed ports and obligations, static
+source/artifact dependencies, and the explicit resource policy. A `scene_handle`
+binds one retained `{sceneId, revision, hash}`. The planner reads the immutable
+`game.capabilities` response and proposes a `GameDesignSpec`; the fixed
+`game-compiler` resolves the exact `GamePlan` before review. There is no definition
+registry, model-selectable compiler, injectable expander, configuration envelope, or
+catalog command. Generic source packages remain the extension path for unfamiliar
+mechanics.
 
 Declaration IDs are case-sensitive ASCII keys of at most 64 characters: a letter,
 then letters, digits, underscores or hyphens. Component, source-file, port and local
-recipe references preserve exact spelling; IDs are never normalized into aliases.
-Source paths and Studio instance names retain their separate contracts. Scene
-constraints may be omitted: their declared empty-array default is materialized
-before draft retention and design/plan hashing, including constraints inside scene
-motifs. Explicit constraints still receive full validation. Other optional values
-are not inferred; default expansion is bounded and ambiguous union defaults reject.
+graph references preserve exact spelling; IDs are never normalized into aliases.
+Source paths and Studio instance names retain their separate contracts. Optional
+values are not inferred unless their current schema declares a single bounded
+default.
 
-The host pins one compiler catalog before the planner's first model request.
-`creator.define_component` advertises a compact, non-recursive provider envelope with
-each installed recipe's exact lock. `game.catalog` returns compact capabilities by
-default and the exact configuration schemas for explicitly selected recipe definition
-IDs. Those detail schemas and host admission come from the same Zod validators used by
-the compiler. The provider envelope is guidance, not semantic authority: batch
-admission, repair diagnostics, draft retention and canonical hashing all use the exact
-host schema. Source manifest paths expose their relative `.luau` constraint in the
-tool schema; source role and execution context belong to each file. Tool schemas remain
-unchanged for the run and are cached by the planner host. UI token/reference failures
-are collected together with their field paths and valid target IDs before instance
-expansion.
+The host pins one capability profile before the planner's first model request.
+`game.capabilities` exposes the four declaration schemas, fixed operation families,
+compiler ABI, Studio capability-manifest identity, and exact ForgeRuntime/UI-controller
+source interfaces. The response is read-only and contains no executable registration.
+Those schemas and host admission use the same validators as the compiler. The
+provider envelope is guidance, not semantic authority: batch admission, repair
+diagnostics, draft retention, and canonical hashing use the exact host schema.
+Source manifest paths expose their relative `.luau` constraint; source role and
+execution context belong to each file. UI token/reference failures are collected with
+their field paths and valid target IDs before instance expansion.
 Planning stores structurally validated components under stable IDs and content hashes.
 The model supplies a component declaration; the host resolves its stable ID to the
 current private draft and guards the replacement synchronously. Model-authored
@@ -297,7 +293,7 @@ addresses an existing field or array entry; addition requires an absent named fi
 under an existing object. Paths address the original attempt. Array removals run in
 descending index order after replacements, preserving the meaning of every target.
 Array insertion, implicit parent creation, overlapping paths and prototype path keys
-reject. Identity/recipe changes require a new declaration. Failed repairs provide
+reject. Identity or component-kind changes require a new declaration. Failed repairs provide
 the current attempt's exact inspection action; no rejected input becomes accepted
 without ordinary full validation.
 After a changed component definition, the planner can checkpoint the complete current
@@ -321,8 +317,8 @@ Creator tool results preserve complete JSON under each reader's own page bounds 
 the aggregate result budget; there is no generic 64 KiB preview truncation. Locked
 module and draft reads allow up to 2,000 lines per page, and final build summaries
 allow up to 64 KiB of text.
-Source placements can address a recipe-created parent by `component_output`,
-`componentId` and the recipe's documented `outputId`. The generic compiler resolves
+Source placements can address a direct component's created parent by
+`component_output`, `componentId`, and its documented `outputId`. The compiler resolves
 unique aliases to exact created inventory objects and dependencies before review;
 the model does not reconstruct compiler-generated identity hashes.
 
@@ -344,16 +340,16 @@ general lifecycle guarantee.
 through the existing Studio patch and topology compilers. Stable copy/node IDs bind
 each generated identity. Local references are remapped per copy; named shared
 references retain exact observed or generated targets. Explicit placements, property
-overrides and source-package parent anchors require no new content-specific recipe.
+overrides, and source-package parent anchors remain direct declarations.
 The current expansion profile bounds the result to 4,096 operations. Installed copies
 are updated through reviewed patches/source replacements; there is no automatic
 propagation or curated kit requirement.
 
-Optional scene, lighting, and responsive-UI recipes share their model-visible
-configuration schemas with compiler validation, aggregate structural/design
-diagnostics before expansion, and lower only to admitted canonical inventory.
-Their behavior, limits, and native-evidence gaps are centralized in
-[Visual generation](VISUALS.md#implemented-visual-foundation).
+`native_graph` dispatches only the closed `studio_objects`, `collections`, and
+`lighting` schemas. `ui_graph` dispatches only the responsive UI schema. Both lower
+to the common `GameComponentCompilation` contract of inventory, output aliases, and
+observed sources. Their behavior, limits, and native-evidence gaps are centralized in
+[Visual generation](VISUALS.md#implemented-visual-world-compiler).
 Plans contain every editor operation, generated parent/reference, source/value slot,
 dependency, identity and capability/compiler lock. Generated three-level hierarchies
 use the existing transaction topology compiler. Stable entity identities bind the
@@ -447,17 +443,103 @@ of exact plan identity and describes intended behavior, not behavioral verificat
 
 Visual authoring is an optional layer over the same generic plan and transaction.
 `GameDesignSpec.visualDirection` carries art direction and named review views;
-creator turns can retain up to four image attachments; and the `scene-primitives`,
-`scene-arrangement`, `scene-lighting`, and `responsive-ui` recipes lower admitted
-declarations into ordinary canonical inventory. The dashboard's Game map renders
+creator turns can retain up to four image attachments. Direct native and UI graphs
+lower admitted declarations into ordinary canonical inventory, while a scene handle
+requires the exact approved visual binding chain. The dashboard's Game map renders
 the declared semantic architecture separately from technical mutation state.
 None of these declarations captures a frame or proves appearance. Their exact
 contracts, limits, UI behavior, and Blender/Cube relationship are centralized in
 [Visual generation](VISUALS.md).
-The compiler ABI `@5` world-authoring cutover uses `.forge/creator-compiled-v4` as the
-default store. Earlier creator stores are retained without a compatibility reader or
-migration. Accepted plans from an earlier compiler require a new plan and acceptance
-in the current store.
+
+`visual-world` owns strict `BlenderSceneSpec ABI 2`. The model-facing
+`BlenderSceneDeclaration` excludes revision ancestry, project/request/reference
+bindings, compiler identity, source/license records, budgets, provenance, and output
+inventory. The host binds those fields through one strict authority envelope before
+solving. Forge then resolves frames, instance distributions, placements, world
+transforms, native semantics, and review framing. Admission rejects non-plain
+or oversized JSON, unknown fields, invalid Unicode/numbers, duplicate or unresolved
+identity, dependency cycles, incomplete partition coverage, unqualified provenance,
+and unsupported operation surfaces. The geometry vocabulary is a fixed union of
+indexed meshes, solids, profiles, curves, external hash-pinned GLBs, construction
+operations, modifiers, deformation, collections, and bounded instance distributions.
+It has no Python, `bpy`, expression, callback, URL, file-path, shader-program, driver,
+add-on, or authored node-graph field.
+
+The deterministic solver uses stable-ID ordering, finite domains, seeded tie breaks,
+a 0.25-stud free-placement lattice, 15-degree default yaw candidates, and bounded
+backtracking. It validates containment, separation, support, swept route clearance,
+reachability, sightlines, camera framing, density, negative space, and budgets before
+and after float32 transform resolution. Exhausted admitted search resources produce
+`incomplete`; a completed search without an assignment produces `rejected`. Scene
+coordinates are Roblox Y-up studs and map to Blender as `(x, -z, y)`.
+
+`blender-compiler` binds Blender 5.2.1 macOS arm64, its official distribution
+checksum, signed application inventory, Forge worker and inspector bytes, operation
+implementation, host artifact-validation profile, export profile, and Cycles CPU
+render settings. It launches only the fixed worker with factory/background/offline
+arguments inside a qualified Seatbelt profile, a stripped environment, private
+working directory, durable cross-process lease, process-group deadline, and bounded
+output. The immutable binary store publishes verified regular files atomically. The
+compiler independently parses GLB JSON/buffers/accessors/hierarchy, composes node
+transforms, measures actual vertices, normals and UVs, validates extension and texture
+references, and checks names, materials, partitions, envelopes, and aggregate budgets
+before sealing a manifest. Its outputs
+are one `.blend`, GLB visual partitions, explicit native semantics, reports, and PNG
+review renders. An absent executable retains the explicit `incomplete /
+missing_blender` classification. The current Mac development host has qualified the
+checksum-matched, signed and notarized Blender 5.2.1 arm64 DMG without installing it,
+and has produced one locally eligible predecessor Last Light bundle. `forge visual solve`,
+`forge visual blender-qualify`, `forge visual blender-status`, and
+`forge visual compile` expose the same strict
+local contracts without accepting a Blender path or arguments from scene JSON.
+
+Visual workflow artifacts bind proposal, acceptance, exact scene review, upload
+authorization, retained operation responses, native receipts, detached inspection,
+and final plan visual bindings. Canonical scene bytes are immutable JSON artifacts;
+the durable scene-authority resolver reconstructs and verifies the retained chain by
+exact scene hash, so an unknown or stale `scene_handle` cannot enter plan compilation. The current
+Roblox asset capability profile admits GLB as an Open Cloud `Model` upload under an
+exact `NativeUploadAuthorization`. The credential-bearing transport stays outside
+artifacts and model context; Forge retains intent before its single dispatch, stores
+the bounded raw response, and polls only the returned operation identity. A manual
+packet remains available for the same reviewed GLB hashes. `native-scene` lowers an
+eligible binding into one closed
+`import_approved_scene` operation per visual GLB plus native collision, anchors,
+interaction wrappers, and effects. The plugin loads authorized asset IDs only into
+detached instances, removes the fixed package link, rejects executable or unexpected
+descendants and hierarchy/name/content/material/pivot/transform/bounds mismatches,
+then disables render-mesh collision. All network loading and inspection complete
+before ChangeHistory recording begins. Imported descendants participate in topology,
+readback, reconciliation, replay, and recovery.
+
+`SceneRepairProposal` computes dependency closure across geometry, instances,
+materials, partitions, sockets, support, collision, routes, and views. It freezes
+unaffected placements, forks shared geometry for a single-instance edit, validates
+neighbor interfaces, and reuses unaffected GLB and review-render bytes. A bounded
+host directive tells the fixed worker which approved parent outputs to omit; the host
+reads those bytes from the immutable store and revalidates them against the next spec.
+A compiler-identity change conservatively invalidates every partition and view. A new
+`.blend`, manifest, provenance record, affected renders, review, and native authority
+remain required.
+
+Prepared Last Light revision 14 is retained as predecessor evidence outside the clean
+seed. Its 192×144-stud, seed-42017 scene solves 28 fixed objects in 28 candidates with
+no backtracking. The current ABI 2 qualification produced one inspected `.blend`, 12
+partitioned visual GLBs, native semantics, three reports, and four named Cycles
+renders under manifest
+`d6dc495e6735b433e954f4020a975f26e8edfe16afd5024651de785d9d755f4e`.
+An earlier compiler identity also retained a targeted warning-camera repair that
+reused unchanged artifacts; it remains historical evidence and is not promoted into
+the current workflow. `examples/last-light/default.project.json` is now an empty seed,
+while the prepared scene and Luau live under `examples/last-light/predecessor` and are
+excluded from ordinary creator context. No fresh creator AgentRun, scene approval,
+upload authority, asset receipt, native import, save/reopen capture, Play cycle, or
+creator visual judgment exists for the product proof, so it remains `incomplete`.
+
+The compiler ABI `forge-game-compiler@6` visual-world cutover uses
+`.forge/creator-compiled-v5` as the default store. Earlier stores have no reader or
+migration. Accepted plans from an earlier compiler require a new current plan and
+acceptance.
 
 The local gate uses the real pinned Luau tools and a strict analysis configuration.
 Staged sourcemaps include non-script objects so their represented classes reach
@@ -703,7 +785,7 @@ uncertain dispatch remains recoverable and never auto-retries. Reviewed bindings
 still report native import as `incomplete` and cannot instantiate Studio content.
 The visual pipeline, OBJ review limits, remote worker, commands, and Blender reuse
 boundary are centralized in [Visual generation](VISUALS.md#cube-and-cubepart).
-The private current store is `.forge/creator-compiled-v4`. Immutable artifacts bind source,
+The private current store is `.forge/creator-compiled-v5`. Immutable artifacts bind source,
 observations, plans, approvals, runs, traces, transactions, and checkpoints. Readers
 verify regular-file safety, canonical hashes, graph bindings, and commit order.
 Schema changes replace the format outright; there are no migration readers or

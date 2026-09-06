@@ -74,6 +74,26 @@ export type CreatorMutationStudioOperation =
       readonly properties: Readonly<Record<string, StudioValue>>;
       readonly attributes: Readonly<Record<string, string | number | boolean>>;
       readonly sourceBlob?: CreatorSourceWriteBlobBinding;
+      readonly approvedSceneImport?: {
+        readonly descendants: readonly {
+          readonly stableId: string;
+          readonly relativePath: string;
+          readonly parentStableId?: string | undefined;
+          readonly name: string;
+          readonly className: string;
+        }[];
+      };
+      readonly approvedSceneReplacement?: {
+        readonly next: {
+          readonly descendants: readonly {
+            readonly stableId: string;
+            readonly relativePath: string;
+            readonly parentStableId?: string | undefined;
+            readonly name: string;
+            readonly className: string;
+          }[];
+        };
+      };
     }
   | {
       readonly id: string;
@@ -387,6 +407,33 @@ export function adaptCreatorChangeSetMutationOperations(
         postStateTargets,
       ),
     );
+    const loadedDescendants =
+      operation.kind === "create"
+        ? (operation.approvedSceneImport?.descendants ??
+          operation.approvedSceneReplacement?.next.descendants)
+        : undefined;
+    if (loadedDescendants !== undefined) {
+      for (const descendant of loadedDescendants) {
+        const target: StudioInstanceEvidenceTarget = {
+          kind: "instance",
+          identity: { kind: "forge_attribute", stableId: descendant.stableId },
+          path: `${operation.target.path}/${descendant.relativePath}`,
+          className: descendant.className,
+        };
+        operations.push({
+          id: `${operation.id}:import:${descendant.stableId}`,
+          kind: "create",
+          target,
+          structure: {
+            identity: target.identity,
+            path: target.path,
+            className: target.className,
+          },
+          structureStatus: "observed",
+          consequentialStructureOnly: true,
+        });
+      }
+    }
     if (operation.kind !== "delete") continue;
     for (const descendant of subtreeByOperation.get(operation.id) ?? []) {
       if (

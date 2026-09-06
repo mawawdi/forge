@@ -1,0 +1,257 @@
+{
+  "kind": "GameDesignSpec",
+  "id": "last-light-proof",
+  "intent": "Restore three power cells under timed conduit hazards, reactivate the central reactor, and extract by shuttle before emergency power expires.",
+  "worldAuthoring": {
+    "mode": "persistent",
+    "roots": ["Workspace/ForgeVisualWorld_last-light"]
+  },
+  "architecture": {
+    "name": "Last Light",
+    "icon": "⚡",
+    "nodes": [
+      {
+        "id": "world",
+        "name": "Station World",
+        "description": "Approved visual scene, native collision, anchors, interaction wrappers, and effects.",
+        "componentIds": ["last-light-scene"]
+      },
+      {
+        "id": "loop",
+        "name": "Power Recovery Loop",
+        "description": "Server-authoritative countdown, cell carrying, deposits, hazards, scoring, extraction, failure, and replay.",
+        "componentIds": ["last-light-sources"]
+      },
+      {
+        "id": "presentation",
+        "name": "Responsive Mission UI",
+        "description": "Safe-area-aware menu, HUD, feedback, result, touch activation, keyboard, and gamepad input.",
+        "componentIds": ["last-light-sources"]
+      },
+      {
+        "id": "runtime-root",
+        "name": "Runtime Interface Root",
+        "description": "Direct native declaration for the bounded shared runtime container.",
+        "componentIds": ["last-light-runtime-root"]
+      }
+    ],
+    "relationships": [
+      {
+        "id": "loop-uses-world",
+        "from": "loop",
+        "to": "world",
+        "label": "resolves approved native anchors"
+      },
+      {
+        "id": "presentation-observes-loop",
+        "from": "presentation",
+        "to": "loop",
+        "label": "renders server-owned public state"
+      }
+    ]
+  },
+  "visualDirection": {
+    "artDirection": "A cold graphite station uses cyan reactor light as orientation, amber for actionable cells, red for conduit danger, and pale shuttle surfaces for extraction. The reactor dominates the center; distinct asymmetrical bays and layered hull silhouettes keep the 192 by 144 stud route readable. UI uses the same restrained dark, cyan, amber, red, and pale hierarchy with large safe-area-aware targets.",
+    "views": [
+      {
+        "id": "opening",
+        "name": "Opening View",
+        "componentIds": ["last-light-scene"],
+        "setup": "Capture the first playable frame before the countdown begins.",
+        "criteria": [
+          "The central reactor is the primary landmark and the shuttle is a readable secondary destination.",
+          "The three bay silhouettes are distinct without obscuring the mission route."
+        ],
+        "sceneViewId": "opening-view"
+      },
+      {
+        "id": "approach",
+        "name": "Reactor and Shuttle Approach",
+        "componentIds": ["last-light-scene"],
+        "setup": "Capture the route as the player leaves the reactor for extraction.",
+        "criteria": [
+          "The route remains clear and the shuttle reads as the next objective.",
+          "Static chunks meet without visible seams or blocked clearance."
+        ],
+        "sceneViewId": "reactor-shuttle-approach"
+      },
+      {
+        "id": "warning",
+        "name": "Warning Interaction",
+        "componentIds": ["last-light-scene", "last-light-sources"],
+        "setup": "Capture a carried cell beside a conduit during its warning phase.",
+        "criteria": [
+          "Danger red is distinct from the amber pickup and cyan objective roles.",
+          "The warning remains legible without covering the route or carried-cell feedback."
+        ],
+        "sceneViewId": "warning-interaction"
+      },
+      {
+        "id": "restored",
+        "name": "Power Restoration",
+        "componentIds": ["last-light-scene", "last-light-sources"],
+        "setup": "Capture the reactor after the third cell deposit and before extraction.",
+        "criteria": [
+          "Restoration feedback changes the world-state hierarchy clearly.",
+          "The extraction direction remains readable from the reactor."
+        ],
+        "sceneViewId": "reactor-restored"
+      },
+      {
+        "id": "phone-ui",
+        "name": "Phone UI",
+        "componentIds": ["last-light-sources"],
+        "setup": "Capture menu, active HUD, warning, and result states with touch input enabled.",
+        "criteria": [
+          "The primary action remains at least 48 pixels and inside safe-area insets.",
+          "Timer, cells, integrity, score, and feedback remain readable without overlap."
+        ],
+        "viewport": { "width": 390, "height": 844 }
+      },
+      {
+        "id": "desktop-ui",
+        "name": "Desktop UI",
+        "componentIds": ["last-light-sources"],
+        "setup": "Capture menu, active HUD, warning, and result states with keyboard or gamepad selection.",
+        "criteria": [
+          "The hierarchy stays compact at desktop width and the world remains visible.",
+          "Keyboard and gamepad prompts match the available actions."
+        ],
+        "viewport": { "width": 1920, "height": 1080 }
+      }
+    ]
+  },
+  "components": [
+    {
+      "kind": "scene_handle",
+      "id": "last-light-scene",
+      "scene": {
+        "sceneId": "last-light",
+        "revision": 14,
+        "hash": "f29ea71de5187c5124bdde75dbc0a07d225060f996b820050dcbb4718e1c908b"
+      },
+      "ports": [],
+      "obligations": [
+        {
+          "id": "visual-approval",
+          "description": "Creator approves the exact compiled GLBs and named renders for this scene revision.",
+          "evidence": "creator_review"
+        },
+        {
+          "id": "native-inspection",
+          "description": "Detached Studio inspection proves exact asset version, hierarchy, transforms, materials, pivots, and bounds.",
+          "evidence": "studio_edit"
+        }
+      ]
+    },
+    {
+      "kind": "native_graph",
+      "id": "last-light-runtime-root",
+      "graph": {
+        "kind": "studio_objects",
+        "operations": [
+          {
+            "id": "shared-root",
+            "kind": "create",
+            "className": "Folder",
+            "parent": { "kind": "engine", "id": "ReplicatedStorage" },
+            "name": "LastLight",
+            "properties": [],
+            "valueSlots": [],
+            "attributes": [],
+            "removedAttributes": [],
+            "dependencies": []
+          }
+        ]
+      },
+      "ports": [],
+      "obligations": []
+    },
+    {
+      "kind": "source_package",
+      "id": "last-light-sources",
+      "files": [
+        {
+          "id": "config",
+          "path": "shared/Config.luau",
+          "context": "shared",
+          "role": "module",
+          "content": { "kind": "slot", "maximumUtf8Bytes": 8192 },
+          "placement": {
+            "operationId": "create-last-light-config",
+            "kind": "create",
+            "parent": {
+              "kind": "component_output",
+              "componentId": "last-light-runtime-root",
+              "outputId": "shared-root"
+            },
+            "name": "Config",
+            "className": "ModuleScript"
+          },
+          "imports": []
+        },
+        {
+          "id": "server",
+          "path": "server/LastLightServer.server.luau",
+          "context": "server",
+          "role": "entrypoint",
+          "content": { "kind": "slot", "maximumUtf8Bytes": 32768 },
+          "placement": {
+            "operationId": "create-last-light-server",
+            "kind": "create",
+            "parent": {
+              "kind": "engine_container",
+              "path": "ServerScriptService",
+              "className": "ServerScriptService"
+            },
+            "name": "LastLightServer",
+            "className": "Script"
+          },
+          "imports": [{ "componentId": "last-light-sources", "fileId": "config" }]
+        },
+        {
+          "id": "client",
+          "path": "client/LastLightClient.client.luau",
+          "context": "client",
+          "role": "entrypoint",
+          "content": { "kind": "slot", "maximumUtf8Bytes": 32768 },
+          "placement": {
+            "operationId": "create-last-light-client",
+            "kind": "create",
+            "parent": {
+              "kind": "engine_container",
+              "path": "StarterPlayer/StarterPlayerScripts",
+              "className": "StarterPlayerScripts"
+            },
+            "name": "LastLightClient",
+            "className": "LocalScript"
+          },
+          "imports": []
+        }
+      ],
+      "ports": [],
+      "obligations": [
+        {
+          "id": "server-authority",
+          "description": "Remote intents cannot write timers, integrity, deposits, hazards, score, extraction, or results.",
+          "evidence": "source_analysis"
+        },
+        {
+          "id": "ten-cycle-play",
+          "description": "Creator completes ten win, loss, and replay cycles in Studio after save and reopen.",
+          "evidence": "studio_play"
+        },
+        {
+          "id": "responsive-ui-review",
+          "description": "Creator reviews the named phone and desktop UI views and their feedback states.",
+          "evidence": "creator_review"
+        }
+      ]
+    }
+  ],
+  "connections": [],
+  "artifactDependencies": [
+    { "from": "last-light-sources", "to": "last-light-runtime-root" },
+    { "from": "last-light-sources", "to": "last-light-scene" }
+  ]
+}

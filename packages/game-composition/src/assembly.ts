@@ -1,17 +1,12 @@
-import {
-  compositionConfigDataSchema,
-  COMPOSITION_NAME_SCHEMA,
-  COMPOSITION_MEMBER_SCHEMA,
-} from "./config-schema.js";
+import { COMPOSITION_NAME_SCHEMA, COMPOSITION_MEMBER_SCHEMA } from "./config-schema.js";
 import { z } from "zod";
 import { contentHash, stableJson } from "../../contracts/src/index.js";
-import { gameRecipeDefinitionLock, type GameRecipeDefinition } from "../../game-ir/src/index.js";
 import { entityId } from "../../game-ir/src/primitives.js";
 import {
   gameGeneratedTarget,
   gameDependencyOrder,
   gameInventoryOperation,
-  type GameRecipeExpanderInput,
+  type GameComponentCompilerInput,
 } from "../../game-compiler/src/index.js";
 import { compileCreatorTransactionTopology } from "../../creator-session/src/transaction-topology.js";
 import type { StudioInstanceTarget } from "../../creator-session/src/index.js";
@@ -118,23 +113,6 @@ export const PROJECT_ASSEMBLY_CONFIG_SCHEMA = z
   .strict();
 export type GameAssemblyConfig = z.infer<typeof PROJECT_ASSEMBLY_CONFIG_SCHEMA>;
 
-export const PROJECT_ASSEMBLY_DEFINITION: GameRecipeDefinition = {
-  kind: "GameRecipeDefinition",
-  id: "project-assembly",
-  abi: "1",
-  sourceExports: [],
-  ports: [],
-  configSchema: compositionConfigDataSchema(PROJECT_ASSEMBLY_CONFIG_SCHEMA),
-  obligations: [
-    {
-      id: "assembly-readback",
-      description:
-        "Reconcile every independently placed copy, remapped reference and approved override against exact editor readback.",
-      evidence: "studio_edit",
-    },
-  ],
-};
-
 function patchId(copyId: string, nodeId: string): string {
   entityId.parse(copyId);
   entityId.parse(nodeId);
@@ -151,7 +129,7 @@ export function gameAssemblyOperationId(
 }
 
 type AssemblyContext = Pick<
-  GameRecipeExpanderInput,
+  GameComponentCompilerInput,
   "componentId" | "projectId" | "designHash" | "initialTopology" | "observation"
 >;
 type Node = z.infer<typeof node>;
@@ -451,10 +429,7 @@ export function compileProjectAssembly(
         valueSlots: [...item.valueSlots].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
       }))
       .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
-    obligations: PROJECT_ASSEMBLY_DEFINITION.obligations.map((obligation) => ({
-      componentId: context.componentId,
-      ...obligation,
-    })),
+    obligations: [],
     limitations: [
       "Copies are independently owned editor allocations; later template changes do not propagate into installed copies automatically.",
       "Sources remain ordinary source_package declarations placed under gameAssemblyOperationId anchors; source text and imports are never rewritten.",
@@ -462,8 +437,3 @@ export function compileProjectAssembly(
     ],
   };
 }
-
-export const PROJECT_ASSEMBLY_EXPANDER = {
-  definition: gameRecipeDefinitionLock(PROJECT_ASSEMBLY_DEFINITION),
-  expand: (input: GameRecipeExpanderInput) => compileProjectAssembly(input, input.config).inventory,
-};

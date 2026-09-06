@@ -15,6 +15,7 @@ import { HostPhaseRecorder } from "../../flight-recorder/src/host-phase.js";
 import type { ArtifactReference } from "../../artifact-store/src/index.js";
 import { creatorBuildRecoveryBinding, loadCreatorBuildRecovery } from "./build-recovery.js";
 import { loadCreatorBuildProposal } from "./build-proposal.js";
+import { loadCreatorGameEnvironment, type CreatorVisualSceneAuthority } from "./game-authoring.js";
 import type {
   CreatorSourceConsultation,
   StudioSourceIndex,
@@ -53,6 +54,7 @@ export interface CreatorAgentWorker {
     contextCitations?: readonly CreatorAgentContextCitation[];
     budgets: BudgetPolicy;
     execution: AgentExecutionSlot;
+    visualSceneAuthority?: CreatorVisualSceneAuthority;
     /** Continue a durable response boundary in this exact journal. */
     resume?: true;
   }): Promise<CreatorWorkerPlanResult>;
@@ -142,6 +144,7 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
     budgets: BudgetPolicy;
     execution: AgentExecutionSlot;
     resume?: true;
+    visualSceneAuthority?: CreatorVisualSceneAuthority;
   }): Promise<CreatorWorkerPlanResult> {
     assertWorkerExecution(input.execution, "planner");
     const artifactStore = new ImmutableJsonArtifactStore(resolve(this.directory));
@@ -164,6 +167,9 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
       runtime: this.runtime,
       budgets: input.budgets,
       executionJournal: journalStore.sink(input.execution.journalId),
+      environment: await loadCreatorGameEnvironment(
+        input.visualSceneAuthority ? { visualSceneAuthority: input.visualSceneAuthority } : {},
+      ),
       ...(resumeFromJournal ? { resumeFromJournal } : {}),
     });
     const executionJournal = await journalStore.load(input.execution.journalId);

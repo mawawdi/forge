@@ -14,34 +14,20 @@ import {
   GAME_ADMISSION_POLICY_SCHEMA,
   hashSchema,
   type GameAdmissionPolicy,
-  type GameJsonValue,
 } from "./primitives.js";
 import {
-  assertGameDefinitionRegistry,
   canonicalGamePorts,
-  canonicalGameConfig,
   GAME_DATA_SCHEMA,
   GAME_OBLIGATION_SCHEMA,
-  gameDataMatchesSchema,
-  resolveGameDefinition,
+  GAME_PORT_SCHEMA,
   uniqueGameIds,
-  type GameDefinitionLock,
-  type GameDefinitionRegistry,
   type GameObligation,
   type GamePort,
-} from "./recipes.js";
+} from "./data-contracts.js";
 
 export { DEFAULT_GAME_ADMISSION_POLICY, GameAdmissionError } from "./primitives.js";
 export type { GameAdmissionPolicy, GameJsonValue } from "./primitives.js";
-export { createGameDefinitionRegistry, gameRecipeDefinitionLock } from "./recipes.js";
-export type {
-  GameDataSchema,
-  GameDefinitionLock,
-  GameDefinitionRegistry,
-  GameObligation,
-  GamePort,
-  GameRecipeDefinition,
-} from "./recipes.js";
+export type { GameDataSchema, GameObligation, GamePort } from "./data-contracts.js";
 
 const FILE_REFERENCE_SCHEMA = z.object({ componentId: entityId, fileId: entityId }).strict();
 const sourcePath = z
@@ -87,14 +73,34 @@ export const GAME_SOURCE_PACKAGE_SCHEMA = z
     obligations: z.array(GAME_OBLIGATION_SCHEMA),
   })
   .strict();
-export const GAME_RECIPE_INSTANCE_SCHEMA = z
+const DIRECT_COMPONENT_INTERFACE_FIELDS = {
+  ports: z.array(GAME_PORT_SCHEMA),
+  obligations: z.array(GAME_OBLIGATION_SCHEMA),
+};
+export const GAME_NATIVE_GRAPH_SCHEMA = z
   .object({
-    kind: z.literal("recipe_instance"),
+    kind: z.literal("native_graph"),
     id: entityId,
-    definition: z
-      .object({ id: entityId, abi: z.string().min(1).max(128), hash: hashSchema })
+    graph: z.record(z.string(), z.unknown()),
+    ...DIRECT_COMPONENT_INTERFACE_FIELDS,
+  })
+  .strict();
+export const GAME_UI_GRAPH_SCHEMA = z
+  .object({
+    kind: z.literal("ui_graph"),
+    id: entityId,
+    ui: z.record(z.string(), z.unknown()),
+    ...DIRECT_COMPONENT_INTERFACE_FIELDS,
+  })
+  .strict();
+export const GAME_SCENE_HANDLE_COMPONENT_SCHEMA = z
+  .object({
+    kind: z.literal("scene_handle"),
+    id: entityId,
+    scene: z
+      .object({ sceneId: entityId, revision: z.number().int().positive(), hash: hashSchema })
       .strict(),
-    config: z.unknown(),
+    ...DIRECT_COMPONENT_INTERFACE_FIELDS,
   })
   .strict();
 const PORT_REFERENCE_SCHEMA = z.object({ componentId: entityId, portId: entityId }).strict();
@@ -179,7 +185,12 @@ export const GAME_DESIGN_SPEC_SCHEMA = z
     visualDirection: GAME_VISUAL_DIRECTION_SCHEMA.optional(),
     components: z
       .array(
-        z.discriminatedUnion("kind", [GAME_SOURCE_PACKAGE_SCHEMA, GAME_RECIPE_INSTANCE_SCHEMA]),
+        z.discriminatedUnion("kind", [
+          GAME_SOURCE_PACKAGE_SCHEMA,
+          GAME_NATIVE_GRAPH_SCHEMA,
+          GAME_UI_GRAPH_SCHEMA,
+          GAME_SCENE_HANDLE_COMPONENT_SCHEMA,
+        ]),
       )
       .min(1),
     connections: z.array(
@@ -191,12 +202,10 @@ export const GAME_DESIGN_SPEC_SCHEMA = z
 type ParsedGameDesignSpec = z.infer<typeof GAME_DESIGN_SPEC_SCHEMA>;
 export type GameSourcePackage = z.infer<typeof GAME_SOURCE_PACKAGE_SCHEMA>;
 export type GameSourceFile = z.infer<typeof SOURCE_FILE_SCHEMA>;
-export type GameRecipeInstance = Omit<z.infer<typeof GAME_RECIPE_INSTANCE_SCHEMA>, "config"> & {
-  config: GameJsonValue;
-};
-export type GameDesignSpec = Omit<ParsedGameDesignSpec, "components"> & {
-  components: Array<GameSourcePackage | GameRecipeInstance>;
-};
+export type GameNativeGraph = z.infer<typeof GAME_NATIVE_GRAPH_SCHEMA>;
+export type GameUiGraph = z.infer<typeof GAME_UI_GRAPH_SCHEMA>;
+export type GameSceneHandleComponent = z.infer<typeof GAME_SCENE_HANDLE_COMPONENT_SCHEMA>;
+export type GameDesignSpec = ParsedGameDesignSpec;
 export interface GameDesignDiagnostic {
   code: string;
   subject: string;
@@ -211,7 +220,6 @@ export type GameDesignValidation =
       scope: "composition_declarations";
       spec: GameDesignSpec;
       hash: string;
-      resolvedDefinitions: GameDefinitionLock[];
       obligations: GameDesignObligation[];
       limitations: string[];
     }
@@ -223,18 +231,16 @@ const LIMITATIONS = [
   "Composition admission grants no creator approval, editor mutation authority or Studio verification.",
 ];
 
-/** Pure declaration admission. No candidate source or definition code is executed. */
+/** Pure declaration admission. No candidate source or compiler code is executed. */
 export function validateGameDesignSpec(
   input: unknown,
   options: {
-    registry: GameDefinitionRegistry;
     policy: GameAdmissionPolicy;
   },
 ): GameDesignValidation {
   try {
     const policy = GAME_ADMISSION_POLICY_SCHEMA.parse(options.policy);
     assertBoundedGameJson(input, policy);
-    assertGameDefinitionRegistry(options.registry);
     const parsed = GAME_DESIGN_SPEC_SCHEMA.safeParse(input);
     if (!parsed.success)
       return {
@@ -341,36 +347,16 @@ export function validateGameDesignSpec(
     const artifactEdges = new Map(
       spec.components.map((component) => [component.id, new Set<string>()]),
     );
-    const resolvedDefinitions = new Map<string, GameDefinitionLock>();
     const obligations: GameDesignObligation[] = [];
     let fileCount = 0;
     let sourceBytes = 0;
 
     for (const component of spec.components) {
-      let componentPorts: GamePort[];
-      let componentObligations: GameObligation[];
-      if (component.kind === "recipe_instance") {
-        const definition = resolveGameDefinition(options.registry, component.definition, policy);
-        if (!gameDataMatchesSchema(component.config, definition.configSchema))
-          throw new GameAdmissionError(
-            "invalid_recipe_config",
-            component.id,
-            "Recipe configuration does not match its exact admitted definition",
-          );
-        component.config = canonicalGameConfig(component.config, definition.configSchema, policy);
-        componentPorts = definition.ports;
-        componentObligations = definition.obligations;
-        for (const exported of definition.sourceExports) {
-          const key = fileKey(component.id, exported.id);
-          files.set(key, { role: "module", context: exported.context });
-          sourceEdges.set(key, new Set());
-        }
-        resolvedDefinitions.set(stableJson(component.definition), { ...component.definition });
-      } else {
+      uniqueGameIds(component.obligations, component.id + ".obligations");
+      const componentPorts = canonicalGamePorts(component.ports, policy);
+      const componentObligations: GameObligation[] = component.obligations;
+      if (component.kind === "source_package") {
         uniqueGameIds(component.files, component.id + ".files");
-        uniqueGameIds(component.obligations, component.id + ".obligations");
-        componentPorts = canonicalGamePorts(component.ports, policy);
-        componentObligations = component.obligations;
         const paths = new Set<string>();
         for (const file of component.files) {
           if (paths.has(file.path))
@@ -442,19 +428,15 @@ export function validateGameDesignSpec(
           }))
           .sort(byId);
         component.obligations = [...component.obligations].sort(byId);
+      } else {
+        component.ports = componentPorts;
+        component.obligations = [...component.obligations].sort(byId);
       }
       for (const port of componentPorts) ports.set(portKey(component.id, port.id), port);
       obligations.push(
         ...componentObligations.map((obligation) => ({ componentId: component.id, ...obligation })),
       );
     }
-    if (resolvedDefinitions.size > policy.maximumDefinitions)
-      throw new GameAdmissionError(
-        "resource_limit",
-        "definitions",
-        "Resolved definition count exceeds admission policy",
-      );
-
     // Approved import bounds are conservative source dependencies, not runtime event connections.
     for (const component of spec.components) {
       if (component.kind !== "source_package") continue;
@@ -535,9 +517,6 @@ export function validateGameDesignSpec(
       scope: "composition_declarations",
       spec: JSON.parse(canonical) as GameDesignSpec,
       hash: contentHash(canonical),
-      resolvedDefinitions: [...resolvedDefinitions.values()].sort((a, b) =>
-        compareGameStrings(stableJson(a), stableJson(b)),
-      ),
       obligations: obligations.sort(
         (a, b) => compareGameStrings(a.componentId, b.componentId) || byId(a, b),
       ),

@@ -78,6 +78,7 @@ export type PluginMessageType =
   | "CreatorRecordingRecovery"
   | "CreatorClosedRecordingAcknowledged"
   | "CreatorCheckpointRolledBack"
+  | "ApprovedSceneAssetsInspected"
   | "StudioProjectIdentityFinalized"
   | "PluginError"
   | "StudioPlaytestObserved"
@@ -102,6 +103,7 @@ export type BackendMessageType =
   | "CancelInterruptedRecording"
   | "AcknowledgeCreatorChangeFinalization"
   | "RollbackCreatorCheckpoint"
+  | "InspectApprovedSceneAssets"
   | "LinkStudioProject"
   | "ForkStudioProject"
   | "AbandonOpeningStudioProjectIdentity"
@@ -938,6 +940,45 @@ export interface RequestStudioEvidencePayload {
   projectionJsonHash: string;
   projectionHash: string;
 }
+
+/**
+ * One detached native conversion inspection. The canonical request document
+ * contains exactly one closed import binding produced from retained host
+ * authority. Keeping it as hash-bound JSON prevents this protocol package
+ * from acquiring a dependency on creator planning contracts.
+ */
+export interface InspectApprovedSceneAssetsPayload {
+  readonly requestId: string;
+  readonly challengeId: string;
+  readonly challengeHash: string;
+  readonly connectorBuildHash: string;
+  readonly targetProjectId: string;
+  readonly expectedProjectRevisionHash: string;
+  readonly sceneHash: string;
+  readonly bundleManifestHash: string;
+  readonly uploadAuthorizationHash: string;
+  readonly capabilityProfileHash: string;
+  readonly inspectionDocumentJson: string;
+  readonly inspectionDocumentJsonHash: string;
+}
+
+export interface ApprovedSceneAssetsInspectedPayload {
+  readonly requestId: string;
+  readonly challengeId: string;
+  readonly challengeHash: string;
+  readonly connectorBuildHash: string;
+  readonly targetProjectId: string;
+  readonly projectRevisionHash: string;
+  readonly sceneHash: string;
+  readonly bundleManifestHash: string;
+  readonly uploadAuthorizationHash: string;
+  readonly capabilityProfileHash: string;
+  readonly inspectionDocumentJsonHash: string;
+  readonly status: "eligible" | "rejected" | "incomplete";
+  readonly observationJson: string;
+  readonly observationJsonHash: string;
+  readonly inspectedAt: string;
+}
 /** Canonical plan JSON remains data interpreted by a fixed runner. */
 export interface ExecuteRuntimeEvalPlanPayload {
   requestId: string;
@@ -1326,6 +1367,11 @@ export type PluginToBackendMessage =
     >
   | StudioMessageBase<
       "plugin_to_backend",
+      "ApprovedSceneAssetsInspected",
+      ApprovedSceneAssetsInspectedPayload
+    >
+  | StudioMessageBase<
+      "plugin_to_backend",
       "StudioProjectIdentityFinalized",
       StudioProjectIdentityFinalizedPayload
     >
@@ -1411,6 +1457,11 @@ export type BackendToPluginMessage =
       "RollbackCreatorCheckpoint",
       RollbackCreatorCheckpointPayload
     >
+  | StudioMessageBase<
+      "backend_to_plugin",
+      "InspectApprovedSceneAssets",
+      InspectApprovedSceneAssetsPayload
+    >
   | StudioMessageBase<"backend_to_plugin", "LinkStudioProject", StudioProjectIdentityCommandPayload>
   | StudioMessageBase<"backend_to_plugin", "ForkStudioProject", StudioProjectIdentityCommandPayload>
   | StudioMessageBase<
@@ -1483,6 +1534,7 @@ const PLUGIN_MESSAGE_TYPES = new Set<PluginMessageType>([
   "CreatorRecordingRecovery",
   "CreatorClosedRecordingAcknowledged",
   "CreatorCheckpointRolledBack",
+  "ApprovedSceneAssetsInspected",
   "StudioProjectIdentityFinalized",
   "PluginError",
   "StudioPlaytestObserved",
@@ -1507,6 +1559,7 @@ const BACKEND_MESSAGE_TYPES = new Set<BackendMessageType>([
   "CancelInterruptedRecording",
   "AcknowledgeCreatorChangeFinalization",
   "RollbackCreatorCheckpoint",
+  "InspectApprovedSceneAssets",
   "LinkStudioProject",
   "ForkStudioProject",
   "AbandonOpeningStudioProjectIdentity",
@@ -2101,6 +2154,78 @@ function validatePayload(type: string, payload: Record<string, unknown>): void {
       payload.projectionJsonHash,
       payload.projectionHash,
     );
+    return;
+  }
+  if (type === "InspectApprovedSceneAssets") {
+    if (
+      !hasOnlyKeys(payload, [
+        "bundleManifestHash",
+        "capabilityProfileHash",
+        "challengeHash",
+        "challengeId",
+        "connectorBuildHash",
+        "expectedProjectRevisionHash",
+        "inspectionDocumentJson",
+        "inspectionDocumentJsonHash",
+        "requestId",
+        "sceneHash",
+        "targetProjectId",
+        "uploadAuthorizationHash",
+      ]) ||
+      !isId(payload.requestId) ||
+      !isBoundedIdentifier(payload.challengeId, 256) ||
+      !isHash(payload.challengeHash) ||
+      !isHash(payload.connectorBuildHash) ||
+      !isBoundedIdentifier(payload.targetProjectId, 512) ||
+      !isHash(payload.expectedProjectRevisionHash) ||
+      !isHash(payload.sceneHash) ||
+      !isHash(payload.bundleManifestHash) ||
+      !isHash(payload.uploadAuthorizationHash) ||
+      !isHash(payload.capabilityProfileHash) ||
+      !isCanonicalBoundedJson(payload.inspectionDocumentJson, 768 * 1024) ||
+      !isHash(payload.inspectionDocumentJsonHash) ||
+      contentHash(payload.inspectionDocumentJson) !== payload.inspectionDocumentJsonHash
+    )
+      fail(type);
+    return;
+  }
+  if (type === "ApprovedSceneAssetsInspected") {
+    if (
+      !hasOnlyKeys(payload, [
+        "bundleManifestHash",
+        "capabilityProfileHash",
+        "challengeHash",
+        "challengeId",
+        "connectorBuildHash",
+        "inspectedAt",
+        "inspectionDocumentJsonHash",
+        "observationJson",
+        "observationJsonHash",
+        "projectRevisionHash",
+        "requestId",
+        "sceneHash",
+        "status",
+        "targetProjectId",
+        "uploadAuthorizationHash",
+      ]) ||
+      !isId(payload.requestId) ||
+      !isBoundedIdentifier(payload.challengeId, 256) ||
+      !isHash(payload.challengeHash) ||
+      !isHash(payload.connectorBuildHash) ||
+      !isBoundedIdentifier(payload.targetProjectId, 512) ||
+      !isHash(payload.projectRevisionHash) ||
+      !isHash(payload.sceneHash) ||
+      !isHash(payload.bundleManifestHash) ||
+      !isHash(payload.uploadAuthorizationHash) ||
+      !isHash(payload.capabilityProfileHash) ||
+      !isHash(payload.inspectionDocumentJsonHash) ||
+      !["eligible", "rejected", "incomplete"].includes(String(payload.status)) ||
+      !isCanonicalBoundedJson(payload.observationJson, 768 * 1024) ||
+      !isHash(payload.observationJsonHash) ||
+      contentHash(payload.observationJson) !== payload.observationJsonHash ||
+      !isIso(payload.inspectedAt)
+    )
+      fail(type);
     return;
   }
   if (type === "ExecuteRuntimeEvalPlan") {
@@ -2835,6 +2960,14 @@ function isBoundedIdentifier(value: unknown, maximumBytes: number): value is str
 }
 function isHash(value: unknown): value is string {
   return isString(value) && /^[0-9a-f]{64}$/.test(value);
+}
+function isCanonicalBoundedJson(value: unknown, maximumBytes: number): value is string {
+  if (!isBoundedText(value, 2, maximumBytes)) return false;
+  try {
+    return stableJson(JSON.parse(value)) === value;
+  } catch {
+    return false;
+  }
 }
 function isIso(value: unknown): value is string {
   return isString(value) && Number.isFinite(Date.parse(value));

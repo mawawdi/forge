@@ -1,0 +1,3751 @@
+{
+  "kind": "BlenderSceneSpec",
+  "abi": "blender-scene-spec@2",
+  "sceneId": "last-light",
+  "revision": 14,
+  "parent": {
+    "revision": 13,
+    "hash": "5f10fe24bb11187c43d604c80c6e3d3e90339a863eabc74a4644f56225a5f9c0"
+  },
+  "projectId": "last-light-proof",
+  "creatorRequestHash": "d1342b5070fcbae0fda6b68d648b1753d0a31afdd3ecbde933629096bed57501",
+  "visualBriefHash": "77970514d829a9a5d6bd499e333176e2ac02d65ea89435e0761090bdb64f7f5d",
+  "referenceHashes": [],
+  "seed": 42017,
+  "compiler": {
+    "profile": "forge-blender-macos-arm64@2",
+    "blenderVersion": "5.2.1",
+    "blenderBinarySha256": "ea651e507c6b197df0e234bfa04e5ed43e7f4d498267a7df93fcb38f21928a5c",
+    "workerSha256": "ef9ab25d07e6fcafdbda75a3a4a9b989dcf6aa9a99051bbe1e11f0366b1026ec",
+    "inspectorSha256": "44a7de2c35e9dde1c2f106cade73eeaaae95247b8cd58591786771619dc66d64",
+    "operationSetSha256": "9565ec12f9165ab41bb8b72c5ff16b1bc7b43dc39ef57d76ae5da16505739af9",
+    "exportProfileSha256": "d1aa3a1cdc173bf84c94eb7fcd9e274a9cfda6622548b43f332fb2028a8652bf"
+  },
+  "visualBrief": "A failing orbital station with a dominant cyan reactor, three materially and structurally distinct cell bays, a readable ceramic shuttle, layered industrial silhouettes, amber interactions, and red conduit danger. Concentrate detail around the route and keep its negative space open.",
+  "sources": [],
+  "textures": [],
+  "frames": [
+    {
+      "id": "world-frame",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    }
+  ],
+  "zones": [
+    {
+      "id": "world-zone",
+      "name": "Station Hull",
+      "purpose": "Contains the station envelope, route structures, and boundary walls",
+      "frameId": "world-frame",
+      "footprint": [
+        {
+          "x": -100,
+          "y": -76
+        },
+        {
+          "x": 100,
+          "y": -76
+        },
+        {
+          "x": 100,
+          "y": 76
+        },
+        {
+          "x": -100,
+          "y": 76
+        }
+      ],
+      "verticalRange": {
+        "minimum": -2,
+        "maximum": 48
+      },
+      "densityTarget": 0.22
+    },
+    {
+      "id": "reactor-zone",
+      "name": "Reactor Atrium",
+      "purpose": "Primary orientation and deposit space",
+      "frameId": "world-frame",
+      "footprint": [
+        {
+          "x": -32,
+          "y": -32
+        },
+        {
+          "x": 32,
+          "y": -32
+        },
+        {
+          "x": 32,
+          "y": 32
+        },
+        {
+          "x": -32,
+          "y": 32
+        }
+      ],
+      "verticalRange": {
+        "minimum": -2,
+        "maximum": 48
+      },
+      "densityTarget": 0.38
+    },
+    {
+      "id": "bay-a-zone",
+      "name": "Foundry Cell Bay",
+      "purpose": "Low angular amber cell bay",
+      "frameId": "world-frame",
+      "footprint": [
+        {
+          "x": -92,
+          "y": -68
+        },
+        {
+          "x": -30,
+          "y": -68
+        },
+        {
+          "x": -30,
+          "y": -8
+        },
+        {
+          "x": -92,
+          "y": -8
+        }
+      ],
+      "verticalRange": {
+        "minimum": -2,
+        "maximum": 48
+      },
+      "densityTarget": 0.28
+    },
+    {
+      "id": "bay-b-zone",
+      "name": "Cryo Cell Bay",
+      "purpose": "Circular violet cell bay",
+      "frameId": "world-frame",
+      "footprint": [
+        {
+          "x": 30,
+          "y": -68
+        },
+        {
+          "x": 92,
+          "y": -68
+        },
+        {
+          "x": 92,
+          "y": -8
+        },
+        {
+          "x": 30,
+          "y": -8
+        }
+      ],
+      "verticalRange": {
+        "minimum": -2,
+        "maximum": 48
+      },
+      "densityTarget": 0.26
+    },
+    {
+      "id": "bay-c-zone",
+      "name": "Capacitor Cell Bay",
+      "purpose": "Twisted teal vertical cell bay",
+      "frameId": "world-frame",
+      "footprint": [
+        {
+          "x": -82,
+          "y": 30
+        },
+        {
+          "x": -18,
+          "y": 30
+        },
+        {
+          "x": -18,
+          "y": 68
+        },
+        {
+          "x": -82,
+          "y": 68
+        }
+      ],
+      "verticalRange": {
+        "minimum": -2,
+        "maximum": 48
+      },
+      "densityTarget": 0.25
+    },
+    {
+      "id": "shuttle-zone",
+      "name": "Shuttle Apron",
+      "purpose": "Extraction destination",
+      "frameId": "world-frame",
+      "footprint": [
+        {
+          "x": 18,
+          "y": 28
+        },
+        {
+          "x": 92,
+          "y": 28
+        },
+        {
+          "x": 92,
+          "y": 68
+        },
+        {
+          "x": 18,
+          "y": 68
+        }
+      ],
+      "verticalRange": {
+        "minimum": -2,
+        "maximum": 48
+      },
+      "densityTarget": 0.3
+    }
+  ],
+  "verticalLayers": [
+    {
+      "id": "deck-layer",
+      "zoneId": "reactor-zone",
+      "minimum": -2,
+      "maximum": 8
+    },
+    {
+      "id": "machinery-layer",
+      "zoneId": "reactor-zone",
+      "minimum": 8,
+      "maximum": 48
+    }
+  ],
+  "routes": [
+    {
+      "id": "mission-route",
+      "name": "Cell Recovery Route",
+      "zoneIds": ["reactor-zone", "bay-a-zone", "bay-b-zone", "bay-c-zone", "shuttle-zone"],
+      "points": [
+        {
+          "x": 0,
+          "y": 1,
+          "z": -58
+        },
+        {
+          "x": -62,
+          "y": 1,
+          "z": -38
+        },
+        {
+          "x": 0,
+          "y": 1,
+          "z": 0
+        },
+        {
+          "x": 60,
+          "y": 1,
+          "z": -40
+        },
+        {
+          "x": 0,
+          "y": 1,
+          "z": 0
+        },
+        {
+          "x": -48,
+          "y": 1,
+          "z": 45
+        },
+        {
+          "x": 0,
+          "y": 1,
+          "z": 0
+        },
+        {
+          "x": 60,
+          "y": 1,
+          "z": 44
+        }
+      ],
+      "width": 8,
+      "heightClearance": 10,
+      "closed": false
+    }
+  ],
+  "landmarks": [
+    {
+      "id": "reactor-landmark",
+      "objectId": "reactor-core",
+      "hierarchy": "primary",
+      "requiredViewIds": ["opening-view", "reactor-restored"],
+      "silhouette": "Tall luminous cylinder nested in two broad rings and four dark towers."
+    },
+    {
+      "id": "shuttle-landmark",
+      "objectId": "shuttle-body",
+      "hierarchy": "secondary",
+      "requiredViewIds": ["opening-view", "reactor-shuttle-approach"],
+      "silhouette": "Low ceramic body with a pointed nose and amber vertical fin."
+    }
+  ],
+  "geometries": [
+    {
+      "kind": "solid",
+      "id": "deck-geo",
+      "shape": "box",
+      "size": {
+        "x": 192,
+        "y": 2,
+        "z": 144
+      },
+      "segments": 8
+    },
+    {
+      "kind": "solid",
+      "id": "wall-long-geo",
+      "shape": "box",
+      "size": {
+        "x": 192,
+        "y": 22,
+        "z": 4
+      },
+      "segments": 8
+    },
+    {
+      "kind": "solid",
+      "id": "wall-short-geo",
+      "shape": "box",
+      "size": {
+        "x": 4,
+        "y": 22,
+        "z": 136
+      },
+      "segments": 8
+    },
+    {
+      "kind": "solid",
+      "id": "reactor-core-geo",
+      "shape": "cylinder",
+      "size": {
+        "x": 18,
+        "y": 28,
+        "z": 18
+      },
+      "segments": 48
+    },
+    {
+      "kind": "solid",
+      "id": "reactor-ring-geo",
+      "shape": "torus",
+      "size": {
+        "x": 34,
+        "y": 5,
+        "z": 34
+      },
+      "segments": 48,
+      "minorRadius": 2.2
+    },
+    {
+      "kind": "solid",
+      "id": "tower-geo",
+      "shape": "box",
+      "size": {
+        "x": 8,
+        "y": 36,
+        "z": 8
+      },
+      "segments": 8
+    },
+    {
+      "kind": "solid",
+      "id": "bay-a-geo",
+      "shape": "box",
+      "size": {
+        "x": 28,
+        "y": 12,
+        "z": 22
+      },
+      "segments": 8
+    },
+    {
+      "kind": "bevel",
+      "id": "bay-a-bevel",
+      "operandId": "bay-a-geo",
+      "width": 1.25,
+      "segments": 3
+    },
+    {
+      "kind": "solid",
+      "id": "bay-b-geo",
+      "shape": "cylinder",
+      "size": {
+        "x": 24,
+        "y": 16,
+        "z": 24
+      },
+      "segments": 12
+    },
+    {
+      "kind": "solid",
+      "id": "bay-c-geo",
+      "shape": "box",
+      "size": {
+        "x": 20,
+        "y": 20,
+        "z": 20
+      },
+      "segments": 8
+    },
+    {
+      "kind": "deform",
+      "id": "bay-c-twist",
+      "operandId": "bay-c-geo",
+      "mode": "twist",
+      "axis": "y",
+      "amount": 12
+    },
+    {
+      "kind": "solid",
+      "id": "shuttle-body-geo",
+      "shape": "box",
+      "size": {
+        "x": 32,
+        "y": 10,
+        "z": 18
+      },
+      "segments": 8
+    },
+    {
+      "kind": "bevel",
+      "id": "shuttle-body-bevel",
+      "operandId": "shuttle-body-geo",
+      "width": 2,
+      "segments": 4
+    },
+    {
+      "kind": "solid",
+      "id": "shuttle-nose-geo",
+      "shape": "cone",
+      "size": {
+        "x": 18,
+        "y": 16,
+        "z": 18
+      },
+      "segments": 24
+    },
+    {
+      "kind": "solid",
+      "id": "conduit-cylinder-geo",
+      "shape": "cylinder",
+      "size": {
+        "x": 4,
+        "y": 28,
+        "z": 4
+      },
+      "segments": 16
+    },
+    {
+      "kind": "transform_geometry",
+      "id": "conduit-geo",
+      "operandId": "conduit-cylinder-geo",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "xDegrees": 90,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    },
+    {
+      "kind": "solid",
+      "id": "cell-geo",
+      "shape": "cylinder",
+      "size": {
+        "x": 4,
+        "y": 7,
+        "z": 4
+      },
+      "segments": 16
+    },
+    {
+      "kind": "bevel",
+      "id": "cell-bevel",
+      "operandId": "cell-geo",
+      "width": 0.3,
+      "segments": 2
+    },
+    {
+      "kind": "solid",
+      "id": "catwalk-geo",
+      "shape": "box",
+      "size": {
+        "x": 40,
+        "y": 2,
+        "z": 8
+      },
+      "segments": 8
+    },
+    {
+      "kind": "profile",
+      "id": "fin-profile",
+      "points": [
+        {
+          "x": -5,
+          "y": 0
+        },
+        {
+          "x": 5,
+          "y": 0
+        },
+        {
+          "x": 2,
+          "y": 10
+        },
+        {
+          "x": -2,
+          "y": 10
+        }
+      ],
+      "closed": true
+    },
+    {
+      "kind": "extrude",
+      "id": "fin-extruded-geo",
+      "profileId": "fin-profile",
+      "depth": 2
+    },
+    {
+      "kind": "transform_geometry",
+      "id": "fin-geo",
+      "operandId": "fin-extruded-geo",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 5,
+          "z": 0
+        },
+        "rotation": {
+          "xDegrees": 90,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    }
+  ],
+  "materials": [
+    {
+      "id": "station-dark",
+      "name": "Station Dark",
+      "baseColor": {
+        "r": 0.045,
+        "g": 0.065,
+        "b": 0.1,
+        "a": 1
+      },
+      "metallic": 0.8,
+      "roughness": 0.32,
+      "emissive": {
+        "r": 0,
+        "g": 0,
+        "b": 0,
+        "a": 1
+      },
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "textureIds": []
+    },
+    {
+      "id": "station-mid",
+      "name": "Station Mid",
+      "baseColor": {
+        "r": 0.12,
+        "g": 0.16,
+        "b": 0.22,
+        "a": 1
+      },
+      "metallic": 0.7,
+      "roughness": 0.42,
+      "emissive": {
+        "r": 0,
+        "g": 0,
+        "b": 0,
+        "a": 1
+      },
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "textureIds": []
+    },
+    {
+      "id": "reactor-cyan",
+      "name": "Reactor Cyan",
+      "baseColor": {
+        "r": 0.03,
+        "g": 0.2,
+        "b": 0.25,
+        "a": 1
+      },
+      "metallic": 0.35,
+      "roughness": 0.22,
+      "emissive": {
+        "r": 0,
+        "g": 0.8,
+        "b": 1,
+        "a": 1
+      },
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "textureIds": []
+    },
+    {
+      "id": "interaction-amber",
+      "name": "Interaction Amber",
+      "baseColor": {
+        "r": 0.55,
+        "g": 0.25,
+        "b": 0.025,
+        "a": 1
+      },
+      "metallic": 0.5,
+      "roughness": 0.3,
+      "emissive": {
+        "r": 1,
+        "g": 0.32,
+        "b": 0.02,
+        "a": 1
+      },
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "textureIds": []
+    },
+    {
+      "id": "hazard-red",
+      "name": "Hazard Red",
+      "baseColor": {
+        "r": 0.45,
+        "g": 0.025,
+        "b": 0.02,
+        "a": 1
+      },
+      "metallic": 0.4,
+      "roughness": 0.28,
+      "emissive": {
+        "r": 1,
+        "g": 0.015,
+        "b": 0.005,
+        "a": 1
+      },
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "textureIds": []
+    },
+    {
+      "id": "bay-a-mat",
+      "name": "Bay A Amber",
+      "baseColor": {
+        "r": 0.3,
+        "g": 0.15,
+        "b": 0.035,
+        "a": 1
+      },
+      "metallic": 0.65,
+      "roughness": 0.4,
+      "emissive": {
+        "r": 0.45,
+        "g": 0.08,
+        "b": 0,
+        "a": 1
+      },
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "textureIds": []
+    },
+    {
+      "id": "bay-b-mat",
+      "name": "Bay B Violet",
+      "baseColor": {
+        "r": 0.14,
+        "g": 0.05,
+        "b": 0.28,
+        "a": 1
+      },
+      "metallic": 0.55,
+      "roughness": 0.35,
+      "emissive": {
+        "r": 0.18,
+        "g": 0.03,
+        "b": 0.55,
+        "a": 1
+      },
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "textureIds": []
+    },
+    {
+      "id": "bay-c-mat",
+      "name": "Bay C Teal",
+      "baseColor": {
+        "r": 0.02,
+        "g": 0.24,
+        "b": 0.2,
+        "a": 1
+      },
+      "metallic": 0.55,
+      "roughness": 0.38,
+      "emissive": {
+        "r": 0,
+        "g": 0.35,
+        "b": 0.23,
+        "a": 1
+      },
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "textureIds": []
+    },
+    {
+      "id": "shuttle-white",
+      "name": "Shuttle Ceramic",
+      "baseColor": {
+        "r": 0.42,
+        "g": 0.5,
+        "b": 0.62,
+        "a": 1
+      },
+      "metallic": 0.55,
+      "roughness": 0.24,
+      "emissive": {
+        "r": 0.05,
+        "g": 0.08,
+        "b": 0.13,
+        "a": 1
+      },
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "textureIds": []
+    }
+  ],
+  "objects": [
+    {
+      "id": "main-deck",
+      "name": "Main Deck",
+      "geometryId": "deck-geo",
+      "materialIds": ["station-dark"],
+      "zoneId": "world-zone",
+      "partitionId": "static-core",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 192,
+          "y": 2,
+          "z": 144
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -1,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 0,
+            "y": -1,
+            "z": 0
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "ground",
+      "visible": true
+    },
+    {
+      "id": "north-wall",
+      "name": "North Window Wall",
+      "geometryId": "wall-long-geo",
+      "materialIds": ["station-mid"],
+      "zoneId": "world-zone",
+      "partitionId": "static-north",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 192,
+          "y": 22,
+          "z": 4
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -11,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 0,
+            "y": 11,
+            "z": -70
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "structure",
+      "visible": true
+    },
+    {
+      "id": "south-wall",
+      "name": "South Service Wall",
+      "geometryId": "wall-long-geo",
+      "materialIds": ["station-mid"],
+      "zoneId": "world-zone",
+      "partitionId": "static-south",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 192,
+          "y": 22,
+          "z": 4
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -11,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 0,
+            "y": 11,
+            "z": 70
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "structure",
+      "visible": true
+    },
+    {
+      "id": "west-wall",
+      "name": "West Hull Wall",
+      "geometryId": "wall-short-geo",
+      "materialIds": ["station-mid"],
+      "zoneId": "world-zone",
+      "partitionId": "static-west",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 4,
+          "y": 22,
+          "z": 136
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -11,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": -94,
+            "y": 11,
+            "z": 0
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "structure",
+      "visible": true
+    },
+    {
+      "id": "east-wall",
+      "name": "East Hull Wall",
+      "geometryId": "wall-short-geo",
+      "materialIds": ["station-mid"],
+      "zoneId": "world-zone",
+      "partitionId": "static-east",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 4,
+          "y": 22,
+          "z": 136
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -11,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 94,
+            "y": 11,
+            "z": 0
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "structure",
+      "visible": true
+    },
+    {
+      "id": "reactor-core",
+      "name": "Central Reactor",
+      "geometryId": "reactor-core-geo",
+      "materialIds": ["reactor-cyan"],
+      "zoneId": "reactor-zone",
+      "partitionId": "static-core",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 18,
+          "y": 28,
+          "z": 18
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -14,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 0,
+            "y": 14,
+            "z": 0
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "primary-landmark",
+      "visible": true
+    },
+    {
+      "id": "reactor-ring-low",
+      "name": "Lower Reactor Ring",
+      "geometryId": "reactor-ring-geo",
+      "materialIds": ["station-mid"],
+      "zoneId": "reactor-zone",
+      "partitionId": "static-core",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 34,
+          "y": 5,
+          "z": 34
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -2.5,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 0,
+            "y": 5,
+            "z": 0
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "silhouette",
+      "visible": true
+    },
+    {
+      "id": "reactor-ring-high",
+      "name": "Upper Reactor Ring",
+      "geometryId": "reactor-ring-geo",
+      "materialIds": ["reactor-cyan"],
+      "zoneId": "reactor-zone",
+      "partitionId": "static-core",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 34,
+          "y": 5,
+          "z": 34
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -2.5,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 0,
+            "y": 23,
+            "z": 0
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "silhouette",
+      "visible": true
+    },
+    {
+      "id": "reactor-tower-1",
+      "name": "Reactor Tower 1",
+      "geometryId": "tower-geo",
+      "materialIds": ["station-dark"],
+      "zoneId": "reactor-zone",
+      "partitionId": "static-core",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 8,
+          "y": 36,
+          "z": 8
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -18,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": -20,
+            "y": 18,
+            "z": -20
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "vertical-silhouette",
+      "visible": true
+    },
+    {
+      "id": "reactor-tower-2",
+      "name": "Reactor Tower 2",
+      "geometryId": "tower-geo",
+      "materialIds": ["station-dark"],
+      "zoneId": "reactor-zone",
+      "partitionId": "static-core",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 8,
+          "y": 36,
+          "z": 8
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -18,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 20,
+            "y": 18,
+            "z": -20
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "vertical-silhouette",
+      "visible": true
+    },
+    {
+      "id": "reactor-tower-3",
+      "name": "Reactor Tower 3",
+      "geometryId": "tower-geo",
+      "materialIds": ["station-dark"],
+      "zoneId": "reactor-zone",
+      "partitionId": "static-core",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 8,
+          "y": 36,
+          "z": 8
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -18,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": -20,
+            "y": 18,
+            "z": 20
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "vertical-silhouette",
+      "visible": true
+    },
+    {
+      "id": "reactor-tower-4",
+      "name": "Reactor Tower 4",
+      "geometryId": "tower-geo",
+      "materialIds": ["station-dark"],
+      "zoneId": "reactor-zone",
+      "partitionId": "static-core",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 8,
+          "y": 36,
+          "z": 8
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -18,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 20,
+            "y": 18,
+            "z": 20
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "vertical-silhouette",
+      "visible": true
+    },
+    {
+      "id": "bay-a",
+      "name": "Cell Bay A",
+      "geometryId": "bay-a-bevel",
+      "materialIds": ["bay-a-mat"],
+      "zoneId": "bay-a-zone",
+      "partitionId": "static-west",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 30,
+          "y": 14,
+          "z": 24
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -7,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": -62,
+            "y": 6,
+            "z": -38
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "cell-bay",
+      "visible": true
+    },
+    {
+      "id": "bay-b",
+      "name": "Cell Bay B",
+      "geometryId": "bay-b-geo",
+      "materialIds": ["bay-b-mat"],
+      "zoneId": "bay-b-zone",
+      "partitionId": "static-east",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 24,
+          "y": 16,
+          "z": 24
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -8,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 60,
+            "y": 8,
+            "z": -40
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "cell-bay",
+      "visible": true
+    },
+    {
+      "id": "bay-c",
+      "name": "Cell Bay C",
+      "geometryId": "bay-c-twist",
+      "materialIds": ["bay-c-mat"],
+      "zoneId": "bay-c-zone",
+      "partitionId": "static-south",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 29,
+          "y": 22,
+          "z": 29
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -11,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": -48,
+            "y": 10,
+            "z": 45
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "cell-bay",
+      "visible": true
+    },
+    {
+      "id": "shuttle-body",
+      "name": "Extraction Shuttle",
+      "geometryId": "shuttle-body-bevel",
+      "materialIds": ["shuttle-white"],
+      "zoneId": "shuttle-zone",
+      "partitionId": "interactive-shuttle",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 36,
+          "y": 14,
+          "z": 22
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -7,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 60,
+            "y": 5,
+            "z": 44
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "secondary-landmark",
+      "visible": true
+    },
+    {
+      "id": "shuttle-nose",
+      "name": "Shuttle Nose",
+      "geometryId": "shuttle-nose-geo",
+      "materialIds": ["shuttle-white"],
+      "zoneId": "shuttle-zone",
+      "partitionId": "interactive-shuttle",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 18,
+          "y": 16,
+          "z": 18
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -8,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 42,
+            "y": 6,
+            "z": 44
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "secondary-landmark",
+      "visible": true
+    },
+    {
+      "id": "shuttle-fin",
+      "name": "Shuttle Fin",
+      "geometryId": "fin-geo",
+      "materialIds": ["interaction-amber"],
+      "zoneId": "shuttle-zone",
+      "partitionId": "interactive-shuttle",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 10,
+          "y": 10,
+          "z": 2
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -5,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 64,
+            "y": 9,
+            "z": 44
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "silhouette",
+      "visible": true
+    },
+    {
+      "id": "conduit-1",
+      "name": "Hazard Conduit 1",
+      "geometryId": "conduit-geo",
+      "materialIds": ["hazard-red"],
+      "zoneId": "world-zone",
+      "partitionId": "interactive-conduit-1",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 4,
+          "y": 4,
+          "z": 28
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": -28,
+            "y": 2,
+            "z": -18
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 90
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "hazard",
+      "visible": true
+    },
+    {
+      "id": "conduit-2",
+      "name": "Hazard Conduit 2",
+      "geometryId": "conduit-geo",
+      "materialIds": ["hazard-red"],
+      "zoneId": "world-zone",
+      "partitionId": "interactive-conduit-2",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 4,
+          "y": 4,
+          "z": 28
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 28,
+            "y": 2,
+            "z": -18
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 90
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "hazard",
+      "visible": true
+    },
+    {
+      "id": "conduit-3",
+      "name": "Hazard Conduit 3",
+      "geometryId": "conduit-geo",
+      "materialIds": ["hazard-red"],
+      "zoneId": "world-zone",
+      "partitionId": "interactive-conduit-3",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 4,
+          "y": 4,
+          "z": 28
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": -28,
+            "y": 2,
+            "z": 22
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 90,
+            "zDegrees": 90
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "hazard",
+      "visible": true
+    },
+    {
+      "id": "cell-1",
+      "name": "Power Cell 1",
+      "geometryId": "cell-bevel",
+      "materialIds": ["bay-a-mat"],
+      "zoneId": "bay-a-zone",
+      "partitionId": "interactive-cell-1",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 5,
+          "y": 8,
+          "z": 5
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -4,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": -62,
+            "y": 6,
+            "z": -38
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "pickup",
+      "visible": true
+    },
+    {
+      "id": "cell-2",
+      "name": "Power Cell 2",
+      "geometryId": "cell-bevel",
+      "materialIds": ["bay-b-mat"],
+      "zoneId": "bay-b-zone",
+      "partitionId": "interactive-cell-2",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 5,
+          "y": 8,
+          "z": 5
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -4,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 60,
+            "y": 6,
+            "z": -40
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "pickup",
+      "visible": true
+    },
+    {
+      "id": "cell-3",
+      "name": "Power Cell 3",
+      "geometryId": "cell-bevel",
+      "materialIds": ["bay-c-mat"],
+      "zoneId": "bay-c-zone",
+      "partitionId": "interactive-cell-3",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 5,
+          "y": 8,
+          "z": 5
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -4,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": -48,
+            "y": 6,
+            "z": 45
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "pickup",
+      "visible": true
+    },
+    {
+      "id": "catwalk-1",
+      "name": "Route Catwalk 1",
+      "geometryId": "catwalk-geo",
+      "materialIds": ["station-mid"],
+      "zoneId": "world-zone",
+      "partitionId": "static-core",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 40,
+          "y": 2,
+          "z": 8
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -1,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": -42,
+            "y": 2,
+            "z": -20
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "route-structure",
+      "visible": true
+    },
+    {
+      "id": "catwalk-2",
+      "name": "Route Catwalk 2",
+      "geometryId": "catwalk-geo",
+      "materialIds": ["station-mid"],
+      "zoneId": "world-zone",
+      "partitionId": "static-core",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 40,
+          "y": 2,
+          "z": 8
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -1,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 42,
+            "y": 2,
+            "z": -20
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 0,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "route-structure",
+      "visible": true
+    },
+    {
+      "id": "catwalk-3",
+      "name": "Route Catwalk 3",
+      "geometryId": "catwalk-geo",
+      "materialIds": ["station-mid"],
+      "zoneId": "world-zone",
+      "partitionId": "static-core",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 40,
+          "y": 2,
+          "z": 8
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -1,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": -24,
+            "y": 2,
+            "z": 34
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 90,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "route-structure",
+      "visible": true
+    },
+    {
+      "id": "catwalk-4",
+      "name": "Route Catwalk 4",
+      "geometryId": "catwalk-geo",
+      "materialIds": ["station-mid"],
+      "zoneId": "world-zone",
+      "partitionId": "static-core",
+      "localBounds": {
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 40,
+          "y": 2,
+          "z": 8
+        }
+      },
+      "pivot": {
+        "x": 0,
+        "y": -1,
+        "z": 0
+      },
+      "placement": {
+        "kind": "fixed",
+        "frameId": "world-frame",
+        "transform": {
+          "position": {
+            "x": 30,
+            "y": 2,
+            "z": 34
+          },
+          "rotation": {
+            "xDegrees": 0,
+            "yDegrees": 90,
+            "zDegrees": 0
+          },
+          "scale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      },
+      "semanticRole": "route-structure",
+      "visible": true
+    }
+  ],
+  "instances": [],
+  "collections": [],
+  "sockets": [
+    {
+      "id": "cell-socket-1",
+      "ownerObjectId": "cell-1",
+      "type": "pickup",
+      "localTransform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "clearance": 3
+    },
+    {
+      "id": "cell-socket-2",
+      "ownerObjectId": "cell-2",
+      "type": "pickup",
+      "localTransform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "clearance": 3
+    },
+    {
+      "id": "cell-socket-3",
+      "ownerObjectId": "cell-3",
+      "type": "pickup",
+      "localTransform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "clearance": 3
+    },
+    {
+      "id": "shuttle-socket",
+      "ownerObjectId": "shuttle-body",
+      "type": "extraction",
+      "localTransform": {
+        "position": {
+          "x": -15,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "clearance": 5
+    }
+  ],
+  "partitions": [
+    {
+      "id": "static-core",
+      "role": "WorldStatic",
+      "localOrigin": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "objectIds": [
+        "main-deck",
+        "reactor-core",
+        "reactor-ring-low",
+        "reactor-ring-high",
+        "reactor-tower-1",
+        "reactor-tower-2",
+        "reactor-tower-3",
+        "reactor-tower-4",
+        "catwalk-1",
+        "catwalk-2",
+        "catwalk-3",
+        "catwalk-4"
+      ],
+      "dependencyIds": ["collision"]
+    },
+    {
+      "id": "static-west",
+      "role": "WorldStatic",
+      "localOrigin": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "objectIds": ["west-wall", "bay-a"],
+      "dependencyIds": ["collision"]
+    },
+    {
+      "id": "static-east",
+      "role": "WorldStatic",
+      "localOrigin": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "objectIds": ["east-wall", "bay-b"],
+      "dependencyIds": ["collision"]
+    },
+    {
+      "id": "static-north",
+      "role": "WorldStatic",
+      "localOrigin": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "objectIds": ["north-wall"],
+      "dependencyIds": ["collision"]
+    },
+    {
+      "id": "static-south",
+      "role": "WorldStatic",
+      "localOrigin": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "objectIds": ["south-wall", "bay-c"],
+      "dependencyIds": ["collision"]
+    },
+    {
+      "id": "collision",
+      "role": "WorldCollision",
+      "localOrigin": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "objectIds": [],
+      "dependencyIds": []
+    },
+    {
+      "id": "anchors",
+      "role": "GameplayAnchors",
+      "localOrigin": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "objectIds": [],
+      "dependencyIds": []
+    },
+    {
+      "id": "interactive-cell-1",
+      "role": "InteractiveProps",
+      "localOrigin": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "objectIds": ["cell-1"],
+      "dependencyIds": ["static-core", "collision"]
+    },
+    {
+      "id": "interactive-cell-2",
+      "role": "InteractiveProps",
+      "localOrigin": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "objectIds": ["cell-2"],
+      "dependencyIds": ["static-core", "collision"]
+    },
+    {
+      "id": "interactive-cell-3",
+      "role": "InteractiveProps",
+      "localOrigin": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "objectIds": ["cell-3"],
+      "dependencyIds": ["static-core", "collision"]
+    },
+    {
+      "id": "interactive-shuttle",
+      "role": "InteractiveProps",
+      "localOrigin": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "objectIds": ["shuttle-body", "shuttle-nose", "shuttle-fin"],
+      "dependencyIds": ["static-core", "collision"]
+    },
+    {
+      "id": "interactive-conduit-1",
+      "role": "InteractiveProps",
+      "localOrigin": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "objectIds": ["conduit-1"],
+      "dependencyIds": ["static-core", "collision"]
+    },
+    {
+      "id": "interactive-conduit-2",
+      "role": "InteractiveProps",
+      "localOrigin": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "objectIds": ["conduit-2"],
+      "dependencyIds": ["static-core", "collision"]
+    },
+    {
+      "id": "interactive-conduit-3",
+      "role": "InteractiveProps",
+      "localOrigin": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "objectIds": ["conduit-3"],
+      "dependencyIds": ["static-core", "collision"]
+    },
+    {
+      "id": "effects",
+      "role": "Effects",
+      "localOrigin": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "objectIds": [],
+      "dependencyIds": []
+    }
+  ],
+  "collisionProxies": [
+    {
+      "id": "deck-collision",
+      "partitionId": "collision",
+      "shape": "box",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -1,
+          "z": 0
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "size": {
+        "x": 192,
+        "y": 2,
+        "z": 144
+      },
+      "canCollide": true,
+      "canTouch": false,
+      "canQuery": true
+    },
+    {
+      "id": "wall-collision-1",
+      "partitionId": "collision",
+      "shape": "box",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 11,
+          "z": -70
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "size": {
+        "x": 192,
+        "y": 22,
+        "z": 4
+      },
+      "canCollide": true,
+      "canTouch": false,
+      "canQuery": true
+    },
+    {
+      "id": "wall-collision-2",
+      "partitionId": "collision",
+      "shape": "box",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 11,
+          "z": 70
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "size": {
+        "x": 192,
+        "y": 22,
+        "z": 4
+      },
+      "canCollide": true,
+      "canTouch": false,
+      "canQuery": true
+    },
+    {
+      "id": "wall-collision-3",
+      "partitionId": "collision",
+      "shape": "box",
+      "transform": {
+        "position": {
+          "x": -94,
+          "y": 11,
+          "z": 0
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "size": {
+        "x": 4,
+        "y": 22,
+        "z": 136
+      },
+      "canCollide": true,
+      "canTouch": false,
+      "canQuery": true
+    },
+    {
+      "id": "wall-collision-4",
+      "partitionId": "collision",
+      "shape": "box",
+      "transform": {
+        "position": {
+          "x": 94,
+          "y": 11,
+          "z": 0
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "size": {
+        "x": 4,
+        "y": 22,
+        "z": 136
+      },
+      "canCollide": true,
+      "canTouch": false,
+      "canQuery": true
+    }
+  ],
+  "gameplayAnchors": [
+    {
+      "id": "player-spawn",
+      "type": "spawn",
+      "partitionId": "anchors",
+      "zoneId": "reactor-zone",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 2,
+          "z": -56
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "extent": {
+        "x": 4,
+        "y": 4,
+        "z": 4
+      },
+      "bindingName": "PlayerSpawn"
+    },
+    {
+      "id": "reactor-deposit",
+      "type": "objective",
+      "partitionId": "anchors",
+      "zoneId": "reactor-zone",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 2,
+          "z": -11
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "extent": {
+        "x": 5,
+        "y": 5,
+        "z": 5
+      },
+      "bindingName": "ReactorDeposit"
+    },
+    {
+      "id": "shuttle-extraction",
+      "type": "objective",
+      "partitionId": "anchors",
+      "zoneId": "shuttle-zone",
+      "transform": {
+        "position": {
+          "x": 60,
+          "y": 2,
+          "z": 44
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "extent": {
+        "x": 8,
+        "y": 5,
+        "z": 8
+      },
+      "bindingName": "ShuttleExtraction"
+    },
+    {
+      "id": "cell-anchor-1",
+      "type": "interaction",
+      "partitionId": "anchors",
+      "zoneId": "bay-a-zone",
+      "transform": {
+        "position": {
+          "x": -62,
+          "y": 3,
+          "z": -38
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "extent": {
+        "x": 4,
+        "y": 4,
+        "z": 4
+      },
+      "bindingName": "CellPickup1"
+    },
+    {
+      "id": "cell-anchor-2",
+      "type": "interaction",
+      "partitionId": "anchors",
+      "zoneId": "bay-b-zone",
+      "transform": {
+        "position": {
+          "x": 60,
+          "y": 3,
+          "z": -40
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "extent": {
+        "x": 4,
+        "y": 4,
+        "z": 4
+      },
+      "bindingName": "CellPickup2"
+    },
+    {
+      "id": "cell-anchor-3",
+      "type": "interaction",
+      "partitionId": "anchors",
+      "zoneId": "bay-c-zone",
+      "transform": {
+        "position": {
+          "x": -48,
+          "y": 3,
+          "z": 45
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "extent": {
+        "x": 4,
+        "y": 4,
+        "z": 4
+      },
+      "bindingName": "CellPickup3"
+    },
+    {
+      "id": "hazard-anchor-1",
+      "type": "hazard",
+      "partitionId": "anchors",
+      "zoneId": "reactor-zone",
+      "transform": {
+        "position": {
+          "x": -28,
+          "y": 2,
+          "z": -18
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "extent": {
+        "x": 8,
+        "y": 5,
+        "z": 28
+      },
+      "bindingName": "ConduitHazard1"
+    },
+    {
+      "id": "hazard-anchor-2",
+      "type": "hazard",
+      "partitionId": "anchors",
+      "zoneId": "reactor-zone",
+      "transform": {
+        "position": {
+          "x": 28,
+          "y": 2,
+          "z": -18
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "extent": {
+        "x": 8,
+        "y": 5,
+        "z": 28
+      },
+      "bindingName": "ConduitHazard2"
+    },
+    {
+      "id": "hazard-anchor-3",
+      "type": "hazard",
+      "partitionId": "anchors",
+      "zoneId": "reactor-zone",
+      "transform": {
+        "position": {
+          "x": -28,
+          "y": 2,
+          "z": 22
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "extent": {
+        "x": 8,
+        "y": 5,
+        "z": 28
+      },
+      "bindingName": "ConduitHazard3"
+    }
+  ],
+  "interactiveProps": [
+    {
+      "id": "cell-interaction-1",
+      "objectId": "cell-1",
+      "partitionId": "interactive-cell-1",
+      "pivot": {
+        "position": {
+          "x": -62,
+          "y": 6,
+          "z": -38
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "socketIds": ["cell-socket-1"],
+      "bindingNames": ["CellPickup1"],
+      "visualObjectIds": ["cell-1"]
+    },
+    {
+      "id": "cell-interaction-2",
+      "objectId": "cell-2",
+      "partitionId": "interactive-cell-2",
+      "pivot": {
+        "position": {
+          "x": 60,
+          "y": 6,
+          "z": -40
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "socketIds": ["cell-socket-2"],
+      "bindingNames": ["CellPickup2"],
+      "visualObjectIds": ["cell-2"]
+    },
+    {
+      "id": "cell-interaction-3",
+      "objectId": "cell-3",
+      "partitionId": "interactive-cell-3",
+      "pivot": {
+        "position": {
+          "x": -48,
+          "y": 6,
+          "z": 45
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "socketIds": ["cell-socket-3"],
+      "bindingNames": ["CellPickup3"],
+      "visualObjectIds": ["cell-3"]
+    },
+    {
+      "id": "shuttle-interaction",
+      "objectId": "shuttle-body",
+      "partitionId": "interactive-shuttle",
+      "pivot": {
+        "position": {
+          "x": 60,
+          "y": 5,
+          "z": 44
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "socketIds": ["shuttle-socket"],
+      "bindingNames": ["ShuttleExtraction"],
+      "visualObjectIds": ["shuttle-body", "shuttle-nose", "shuttle-fin"]
+    },
+    {
+      "id": "conduit-interaction-1",
+      "objectId": "conduit-1",
+      "visualObjectIds": ["conduit-1"],
+      "partitionId": "interactive-conduit-1",
+      "pivot": {
+        "position": {
+          "x": -28,
+          "y": 2,
+          "z": -18
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 90
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "socketIds": [],
+      "bindingNames": ["ConduitState1"]
+    },
+    {
+      "id": "conduit-interaction-2",
+      "objectId": "conduit-2",
+      "visualObjectIds": ["conduit-2"],
+      "partitionId": "interactive-conduit-2",
+      "pivot": {
+        "position": {
+          "x": 28,
+          "y": 2,
+          "z": -18
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 90
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "socketIds": [],
+      "bindingNames": ["ConduitState2"]
+    },
+    {
+      "id": "conduit-interaction-3",
+      "objectId": "conduit-3",
+      "visualObjectIds": ["conduit-3"],
+      "partitionId": "interactive-conduit-3",
+      "pivot": {
+        "position": {
+          "x": -28,
+          "y": 2,
+          "z": 22
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 90,
+          "zDegrees": 90
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "socketIds": [],
+      "bindingNames": ["ConduitState3"]
+    }
+  ],
+  "effects": [
+    {
+      "id": "reactor-light",
+      "partitionId": "effects",
+      "kind": "point_light",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 18,
+          "z": 0
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "color": {
+        "r": 0,
+        "g": 0.8,
+        "b": 1,
+        "a": 1
+      },
+      "intensity": 6,
+      "range": 50,
+      "shadows": false
+    },
+    {
+      "id": "bay-a-light",
+      "partitionId": "effects",
+      "kind": "spot_light",
+      "transform": {
+        "position": {
+          "x": -62,
+          "y": 14,
+          "z": -38
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "color": {
+        "r": 1,
+        "g": 0.28,
+        "b": 0.02,
+        "a": 1
+      },
+      "intensity": 4,
+      "range": 28,
+      "shadows": false,
+      "angleDegrees": 70,
+      "face": "Bottom"
+    },
+    {
+      "id": "bay-b-light",
+      "partitionId": "effects",
+      "kind": "spot_light",
+      "transform": {
+        "position": {
+          "x": 60,
+          "y": 16,
+          "z": -40
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "color": {
+        "r": 0.35,
+        "g": 0.08,
+        "b": 1,
+        "a": 1
+      },
+      "intensity": 4,
+      "range": 28,
+      "shadows": false,
+      "angleDegrees": 70,
+      "face": "Bottom"
+    },
+    {
+      "id": "bay-c-light",
+      "partitionId": "effects",
+      "kind": "spot_light",
+      "transform": {
+        "position": {
+          "x": -48,
+          "y": 18,
+          "z": 45
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "color": {
+        "r": 0,
+        "g": 1,
+        "b": 0.55,
+        "a": 1
+      },
+      "intensity": 4,
+      "range": 28,
+      "shadows": false,
+      "angleDegrees": 70,
+      "face": "Bottom"
+    },
+    {
+      "id": "shuttle-light",
+      "partitionId": "effects",
+      "kind": "point_light",
+      "transform": {
+        "position": {
+          "x": 60,
+          "y": 10,
+          "z": 44
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "color": {
+        "r": 0.25,
+        "g": 0.55,
+        "b": 1,
+        "a": 1
+      },
+      "intensity": 5,
+      "range": 36,
+      "shadows": false
+    },
+    {
+      "id": "hazard-light-1",
+      "partitionId": "effects",
+      "kind": "point_light",
+      "transform": {
+        "position": {
+          "x": -28,
+          "y": 4,
+          "z": -18
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "color": {
+        "r": 1,
+        "g": 0.02,
+        "b": 0.01,
+        "a": 1
+      },
+      "intensity": 5,
+      "range": 20,
+      "shadows": false
+    },
+    {
+      "id": "hazard-light-2",
+      "partitionId": "effects",
+      "kind": "point_light",
+      "transform": {
+        "position": {
+          "x": 28,
+          "y": 4,
+          "z": -18
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "color": {
+        "r": 1,
+        "g": 0.02,
+        "b": 0.01,
+        "a": 1
+      },
+      "intensity": 5,
+      "range": 20,
+      "shadows": false
+    },
+    {
+      "id": "hazard-light-3",
+      "partitionId": "effects",
+      "kind": "point_light",
+      "transform": {
+        "position": {
+          "x": -28,
+          "y": 4,
+          "z": 22
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "color": {
+        "r": 1,
+        "g": 0.02,
+        "b": 0.01,
+        "a": 1
+      },
+      "intensity": 5,
+      "range": 20,
+      "shadows": false
+    },
+    {
+      "id": "station-atmosphere",
+      "partitionId": "effects",
+      "kind": "atmosphere",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "xDegrees": 0,
+          "yDegrees": 0,
+          "zDegrees": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "color": {
+        "r": 0.08,
+        "g": 0.12,
+        "b": 0.2,
+        "a": 1
+      },
+      "decay": {
+        "r": 0.02,
+        "g": 0.04,
+        "b": 0.08,
+        "a": 1
+      },
+      "density": 0.2,
+      "offset": 0.1,
+      "haze": 1.2,
+      "glare": 0.15
+    }
+  ],
+  "reviewViews": [
+    {
+      "id": "opening-view",
+      "name": "First Playable View",
+      "position": {
+        "x": 0,
+        "y": 38,
+        "z": -105
+      },
+      "lookAt": {
+        "x": 15,
+        "y": 10,
+        "z": 10
+      },
+      "fieldOfViewDegrees": 75,
+      "width": 1280,
+      "height": 720,
+      "targetIds": ["reactor-core", "shuttle-body"]
+    },
+    {
+      "id": "reactor-shuttle-approach",
+      "name": "Reactor and Shuttle Approach",
+      "position": {
+        "x": -15,
+        "y": 38,
+        "z": -85
+      },
+      "lookAt": {
+        "x": 30,
+        "y": 10,
+        "z": 22
+      },
+      "fieldOfViewDegrees": 85,
+      "width": 1280,
+      "height": 720,
+      "targetIds": ["reactor-core", "shuttle-body"]
+    },
+    {
+      "id": "warning-interaction",
+      "name": "Warning Interaction",
+      "position": {
+        "x": -45,
+        "y": 30,
+        "z": -62
+      },
+      "lookAt": {
+        "x": -45,
+        "y": 6,
+        "z": -28
+      },
+      "fieldOfViewDegrees": 105,
+      "width": 1280,
+      "height": 720,
+      "targetIds": ["conduit-1", "cell-1"]
+    },
+    {
+      "id": "reactor-restored",
+      "name": "Restored Reactor Extraction",
+      "position": {
+        "x": 0,
+        "y": 55,
+        "z": -45
+      },
+      "lookAt": {
+        "x": 0,
+        "y": 12,
+        "z": 0
+      },
+      "fieldOfViewDegrees": 75,
+      "width": 1280,
+      "height": 720,
+      "targetIds": ["reactor-core", "reactor-ring-high"]
+    }
+  ],
+  "constraints": [
+    {
+      "id": "contain-main-deck",
+      "kind": "containment",
+      "objectId": "main-deck",
+      "zoneId": "world-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-north-wall",
+      "kind": "containment",
+      "objectId": "north-wall",
+      "zoneId": "world-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-south-wall",
+      "kind": "containment",
+      "objectId": "south-wall",
+      "zoneId": "world-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-west-wall",
+      "kind": "containment",
+      "objectId": "west-wall",
+      "zoneId": "world-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-east-wall",
+      "kind": "containment",
+      "objectId": "east-wall",
+      "zoneId": "world-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-reactor-core",
+      "kind": "containment",
+      "objectId": "reactor-core",
+      "zoneId": "reactor-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-reactor-ring-low",
+      "kind": "containment",
+      "objectId": "reactor-ring-low",
+      "zoneId": "reactor-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-reactor-ring-high",
+      "kind": "containment",
+      "objectId": "reactor-ring-high",
+      "zoneId": "reactor-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-reactor-tower-1",
+      "kind": "containment",
+      "objectId": "reactor-tower-1",
+      "zoneId": "reactor-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-reactor-tower-2",
+      "kind": "containment",
+      "objectId": "reactor-tower-2",
+      "zoneId": "reactor-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-reactor-tower-3",
+      "kind": "containment",
+      "objectId": "reactor-tower-3",
+      "zoneId": "reactor-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-reactor-tower-4",
+      "kind": "containment",
+      "objectId": "reactor-tower-4",
+      "zoneId": "reactor-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-bay-a",
+      "kind": "containment",
+      "objectId": "bay-a",
+      "zoneId": "bay-a-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-bay-b",
+      "kind": "containment",
+      "objectId": "bay-b",
+      "zoneId": "bay-b-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-bay-c",
+      "kind": "containment",
+      "objectId": "bay-c",
+      "zoneId": "bay-c-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-shuttle-body",
+      "kind": "containment",
+      "objectId": "shuttle-body",
+      "zoneId": "shuttle-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-shuttle-nose",
+      "kind": "containment",
+      "objectId": "shuttle-nose",
+      "zoneId": "shuttle-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-shuttle-fin",
+      "kind": "containment",
+      "objectId": "shuttle-fin",
+      "zoneId": "shuttle-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-conduit-1",
+      "kind": "containment",
+      "objectId": "conduit-1",
+      "zoneId": "reactor-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-conduit-2",
+      "kind": "containment",
+      "objectId": "conduit-2",
+      "zoneId": "reactor-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-conduit-3",
+      "kind": "containment",
+      "objectId": "conduit-3",
+      "zoneId": "world-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-cell-1",
+      "kind": "containment",
+      "objectId": "cell-1",
+      "zoneId": "bay-a-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-cell-2",
+      "kind": "containment",
+      "objectId": "cell-2",
+      "zoneId": "bay-b-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-cell-3",
+      "kind": "containment",
+      "objectId": "cell-3",
+      "zoneId": "bay-c-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-catwalk-1",
+      "kind": "containment",
+      "objectId": "catwalk-1",
+      "zoneId": "world-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-catwalk-2",
+      "kind": "containment",
+      "objectId": "catwalk-2",
+      "zoneId": "world-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-catwalk-3",
+      "kind": "containment",
+      "objectId": "catwalk-3",
+      "zoneId": "world-zone",
+      "clearance": 0
+    },
+    {
+      "id": "contain-catwalk-4",
+      "kind": "containment",
+      "objectId": "catwalk-4",
+      "zoneId": "world-zone",
+      "clearance": 0
+    },
+    {
+      "id": "route-reachability",
+      "kind": "reachability",
+      "routeId": "mission-route",
+      "anchorIds": [
+        "player-spawn",
+        "reactor-deposit",
+        "shuttle-extraction",
+        "cell-anchor-1",
+        "cell-anchor-2",
+        "cell-anchor-3",
+        "hazard-anchor-1",
+        "hazard-anchor-2",
+        "hazard-anchor-3"
+      ],
+      "maximumDistance": 18
+    },
+    {
+      "id": "route-clearance",
+      "kind": "clearance",
+      "routeId": "mission-route",
+      "objectIds": [],
+      "clearance": 1
+    },
+    {
+      "id": "frame-opening-view",
+      "kind": "camera_framing",
+      "viewId": "opening-view",
+      "objectIds": ["reactor-core", "shuttle-body"],
+      "margin": 0.02
+    },
+    {
+      "id": "frame-reactor-shuttle-approach",
+      "kind": "camera_framing",
+      "viewId": "reactor-shuttle-approach",
+      "objectIds": ["reactor-core", "shuttle-body"],
+      "margin": 0
+    },
+    {
+      "id": "frame-warning-interaction",
+      "kind": "camera_framing",
+      "viewId": "warning-interaction",
+      "objectIds": ["conduit-1", "cell-1"],
+      "margin": 0
+    },
+    {
+      "id": "frame-reactor-restored",
+      "kind": "camera_framing",
+      "viewId": "reactor-restored",
+      "objectIds": ["reactor-core", "reactor-ring-high"],
+      "margin": 0.02
+    },
+    {
+      "id": "world-budget",
+      "kind": "budget",
+      "maximumTriangles": 180000,
+      "maximumObjects": 128
+    }
+  ],
+  "provenance": [
+    {
+      "id": "creator-brief",
+      "authority": "creator",
+      "subjectId": "last-light",
+      "artifactHash": "d1342b5070fcbae0fda6b68d648b1753d0a31afdd3ecbde933629096bed57501",
+      "statement": "Model-authored general scene graph bound to the retained Last Light product brief; no prepared visual substrate."
+    },
+    {
+      "id": "compiler-installation",
+      "authority": "forge",
+      "subjectId": "last-light",
+      "artifactHash": "27677003c41f44e78325960789a883f804671db9cb392e3911dc6178f33bf454",
+      "statement": "Verified Blender 5.2.1 macOS arm64 installation and fixed Forge worker identity."
+    }
+  ],
+  "budgets": {
+    "maximumObjects": 128,
+    "maximumExpandedInstances": 256,
+    "maximumTriangles": 180000,
+    "maximumTrianglesPerMesh": 20000,
+    "maximumMaterials": 32,
+    "maximumTextures": 32,
+    "maximumTexturePixels": 16777216,
+    "maximumGlbBytes": 20971520,
+    "maximumSolverCandidates": 200000,
+    "maximumBacktracks": 10000
+  },
+  "expectedOutputs": [
+    {
+      "id": "blend-source",
+      "kind": "blend",
+      "relativePath": "last-light.blend"
+    },
+    {
+      "id": "native-semantics",
+      "kind": "native_semantics",
+      "relativePath": "native-semantics.json"
+    },
+    {
+      "id": "geometry-report",
+      "kind": "geometry_report",
+      "relativePath": "geometry-report.json"
+    },
+    {
+      "id": "material-report",
+      "kind": "material_report",
+      "relativePath": "material-report.json"
+    },
+    {
+      "id": "budget-report",
+      "kind": "budget_report",
+      "relativePath": "budget-report.json"
+    },
+    {
+      "id": "scene-manifest",
+      "kind": "manifest",
+      "relativePath": "scene-manifest.json"
+    },
+    {
+      "id": "glb-static-core",
+      "kind": "glb",
+      "partitionId": "static-core",
+      "relativePath": "glb/static-core.glb"
+    },
+    {
+      "id": "glb-static-west",
+      "kind": "glb",
+      "partitionId": "static-west",
+      "relativePath": "glb/static-west.glb"
+    },
+    {
+      "id": "glb-static-east",
+      "kind": "glb",
+      "partitionId": "static-east",
+      "relativePath": "glb/static-east.glb"
+    },
+    {
+      "id": "glb-static-north",
+      "kind": "glb",
+      "partitionId": "static-north",
+      "relativePath": "glb/static-north.glb"
+    },
+    {
+      "id": "glb-static-south",
+      "kind": "glb",
+      "partitionId": "static-south",
+      "relativePath": "glb/static-south.glb"
+    },
+    {
+      "id": "interactive-cell-1-glb",
+      "kind": "glb",
+      "partitionId": "interactive-cell-1",
+      "relativePath": "exports/interactive-cell-1.glb"
+    },
+    {
+      "id": "interactive-cell-2-glb",
+      "kind": "glb",
+      "partitionId": "interactive-cell-2",
+      "relativePath": "exports/interactive-cell-2.glb"
+    },
+    {
+      "id": "interactive-cell-3-glb",
+      "kind": "glb",
+      "partitionId": "interactive-cell-3",
+      "relativePath": "exports/interactive-cell-3.glb"
+    },
+    {
+      "id": "interactive-shuttle-glb",
+      "kind": "glb",
+      "partitionId": "interactive-shuttle",
+      "relativePath": "exports/interactive-shuttle.glb"
+    },
+    {
+      "id": "interactive-conduit-1-glb",
+      "kind": "glb",
+      "partitionId": "interactive-conduit-1",
+      "relativePath": "exports/interactive-conduit-1.glb"
+    },
+    {
+      "id": "interactive-conduit-2-glb",
+      "kind": "glb",
+      "partitionId": "interactive-conduit-2",
+      "relativePath": "exports/interactive-conduit-2.glb"
+    },
+    {
+      "id": "interactive-conduit-3-glb",
+      "kind": "glb",
+      "partitionId": "interactive-conduit-3",
+      "relativePath": "exports/interactive-conduit-3.glb"
+    },
+    {
+      "id": "render-opening-view",
+      "kind": "review_render",
+      "viewId": "opening-view",
+      "relativePath": "renders/opening-view.png"
+    },
+    {
+      "id": "render-reactor-shuttle-approach",
+      "kind": "review_render",
+      "viewId": "reactor-shuttle-approach",
+      "relativePath": "renders/reactor-shuttle-approach.png"
+    },
+    {
+      "id": "render-warning-interaction",
+      "kind": "review_render",
+      "viewId": "warning-interaction",
+      "relativePath": "renders/warning-interaction.png"
+    },
+    {
+      "id": "render-reactor-restored",
+      "kind": "review_render",
+      "viewId": "reactor-restored",
+      "relativePath": "renders/reactor-restored.png"
+    }
+  ]
+}

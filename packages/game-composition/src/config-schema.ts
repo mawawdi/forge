@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { DEFAULT_GAME_ADMISSION_POLICY, entityId } from "../../game-ir/src/primitives.js";
-import type { GameDataSchema } from "../../game-ir/src/recipes.js";
-import { canonicalGameDataSchema, GAME_DATA_SCHEMA } from "../../game-ir/src/recipes.js";
+import type { GameDataSchema } from "../../game-ir/src/data-contracts.js";
+import { canonicalGameDataSchema, GAME_DATA_SCHEMA } from "../../game-ir/src/data-contracts.js";
 
 export class CompositionError extends Error {
   constructor(
@@ -69,7 +69,7 @@ export function compositionConfigDataSchema(schema: z.ZodType): GameDataSchema {
       )
         throw new CompositionError(
           "unsupported_config_schema",
-          "Recipe schemas must validate plain input without coercion, transforms or undeclared defaults",
+          "Declaration schemas must validate plain input without coercion, transforms or undeclared defaults",
         );
       if (
         definition.type === "union" &&
@@ -84,7 +84,7 @@ export function compositionConfigDataSchema(schema: z.ZodType): GameDataSchema {
       if (zodSchema._zod.def.checks?.some((check) => check._zod.def.check === "custom"))
         throw new CompositionError(
           "unsupported_config_schema",
-          "Custom refinements cannot be advertised as structural recipe constraints",
+          "Custom refinements cannot be advertised as structural declaration constraints",
         );
     },
   });
@@ -121,7 +121,7 @@ export function compositionConfigDataSchema(schema: z.ZodType): GameDataSchema {
     )
       throw new CompositionError(
         "unsupported_config_schema",
-        "Recipe config uses an unsupported JSON Schema construct",
+        "Component declaration uses an unsupported JSON Schema construct",
       );
     const { $schema: _dialect, description: _description, ...value } = node;
     if (value.oneOf !== undefined || value.anyOf !== undefined) {
@@ -129,7 +129,7 @@ export function compositionConfigDataSchema(schema: z.ZodType): GameDataSchema {
       if (Object.keys(value).length !== 1 || !Array.isArray(alternatives))
         throw new CompositionError(
           "unsupported_config_schema",
-          "Recipe alternatives must be standalone branches",
+          "Component alternatives must be standalone branches",
         );
       return { type: "union", anyOf: alternatives.map(convert) };
     }
@@ -144,7 +144,7 @@ export function compositionConfigDataSchema(schema: z.ZodType): GameDataSchema {
       if (maxLength === undefined)
         throw new CompositionError(
           "unsupported_config_schema",
-          "Every recipe string needs an explicit maximum length",
+          "Every declaration string needs an explicit maximum length",
         );
       return {
         ...rest,
@@ -161,7 +161,7 @@ export function compositionConfigDataSchema(schema: z.ZodType): GameDataSchema {
       )
         throw new CompositionError(
           "unsupported_config_schema",
-          "Recipe objects require explicit properties",
+          "Component objects require explicit properties",
         );
       return {
         ...value,

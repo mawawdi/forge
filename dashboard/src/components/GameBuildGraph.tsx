@@ -532,9 +532,7 @@ function NodeDetails({
   readonly partition: GameBuildControlView["partitions"][number] | undefined;
 }): React.JSX.Element {
   const byId = new Map(view.nodes.map((item) => [item.id, item]));
-  const hasIdentifiers = Boolean(
-    node.provenance.definitionHash || node.source?.sourceHash || partition?.receiptHash,
-  );
+  const hasIdentifiers = Boolean(node.source?.sourceHash || partition?.receiptHash);
   return (
     <section className="build-inspector__details" aria-label="Selected object details">
       <header>
@@ -561,11 +559,7 @@ function NodeDetails({
         </div>
         <div>
           <dt>Origin</dt>
-          <dd>
-            {node.provenance.componentKind === "source_package"
-              ? "Source package"
-              : node.provenance.definitionId}
-          </dd>
+          <dd>{node.provenance.componentKind.replaceAll("_", " ")}</dd>
         </div>
         {partition ? (
           <div>
@@ -688,7 +682,6 @@ function NodeDetails({
           </summary>
           <dl className="build-inspector__facts">
             {[
-              { label: "Recipe hash", value: node.provenance.definitionHash },
               { label: "Source hash", value: node.source?.sourceHash },
               { label: "Checkpoint receipt", value: partition?.receiptHash },
             ]

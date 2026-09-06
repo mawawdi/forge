@@ -26,6 +26,14 @@ export interface ArtifactReference {
   bytes: number;
 }
 
+/** A content-addressed immutable binary artifact. */
+export interface BinaryArtifactReference {
+  locator: string;
+  artifactHash: string;
+  bytes: number;
+  mediaType: string;
+}
+
 export interface ImmutableJsonArtifactStoreOptions {
   /** Maximum serialized artifact size accepted by this store. */
   maxBytes?: number;
@@ -35,7 +43,9 @@ export type JsonArtifactAssertion<T> = (value: unknown) => asserts value is T;
 
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024;
 const ARTIFACT_DIRECTORY = "artifacts";
+const BINARY_DIRECTORY = "binary-artifacts";
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
+const MEDIA_TYPE_PATTERN = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/;
 
 /**
  * A local, immutable JSON evidence store. It has no process-working-directory
@@ -156,6 +166,68 @@ export class ImmutableJsonArtifactStore {
   }
 }
 
+/**
+ * Immutable storage for retained .blend, GLB, PNG, and other exact binary build
+ * products. The media type is evidence metadata; the bytes remain authoritative.
+ */
+export class ImmutableBinaryArtifactStore {
+  public readonly root: string;
+  public readonly maxBytes: number;
+
+  constructor(root: string, options: ImmutableJsonArtifactStoreOptions = {}) {
+    if (typeof root !== "string" || root.trim().length === 0)
+      throw new Error("Artifact store root must be a non-empty path");
+    const maxBytes = options.maxBytes ?? 256 * 1024 * 1024;
+    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0)
+      throw new Error("Artifact store maxBytes must be a positive safe integer");
+    this.root = resolve(root);
+    this.maxBytes = maxBytes;
+  }
+
+  async write(bytes: Uint8Array, mediaType: string): Promise<BinaryArtifactReference> {
+    if (!(bytes instanceof Uint8Array)) throw new Error("Binary artifact must be bytes");
+    assertMediaType(mediaType);
+    if (bytes.byteLength <= 0 || bytes.byteLength > this.maxBytes)
+      throw new Error(`Artifact exceeds byte limit (${bytes.byteLength} > ${this.maxBytes})`);
+    const artifactHash = createHash("sha256").update(bytes).digest("hex");
+    const locator = `${BINARY_DIRECTORY}/${artifactHash}.bin`;
+    const reference = { locator, artifactHash, bytes: bytes.byteLength, mediaType };
+    await ensureSafeAbsoluteDirectory(this.root);
+    const destination = resolveLocator(this.root, locator);
+    await ensureSafeDirectoryWithinRoot(this.root, dirname(destination));
+    try {
+      await createNewBinaryArtifact(destination, bytes);
+    } catch (error: unknown) {
+      if (!isAlreadyExists(error)) throw error;
+      await this.read(reference);
+    }
+    return reference;
+  }
+
+  async read(reference: BinaryArtifactReference): Promise<Uint8Array> {
+    assertBinaryArtifactReference(reference);
+    if (reference.bytes > this.maxBytes)
+      throw new Error(
+        `Artifact reference exceeds byte limit (${reference.bytes} > ${this.maxBytes})`,
+      );
+    await assertSafeAbsoluteDirectory(this.root);
+    const destination = resolveLocator(this.root, reference.locator);
+    await assertSafeExistingPathWithinRoot(this.root, destination, true);
+    const bytes = await readRegularBytesWithoutFollowingTarget(
+      destination,
+      reference.bytes,
+      this.maxBytes,
+    );
+    if (createHash("sha256").update(bytes).digest("hex") !== reference.artifactHash)
+      throw new Error("Artifact SHA-256 mismatch");
+    return bytes;
+  }
+
+  async verify(reference: BinaryArtifactReference): Promise<void> {
+    await this.read(reference);
+  }
+}
+
 export function assertArtifactReference(value: unknown): asserts value is ArtifactReference {
   if (!isRecord(value)) throw new Error("Invalid ArtifactReference");
   const { locator, artifactHash, bytes } = value;
@@ -171,6 +243,30 @@ export function assertArtifactReference(value: unknown): asserts value is Artifa
   ) {
     throw new Error("Invalid ArtifactReference");
   }
+}
+
+export function assertBinaryArtifactReference(
+  value: unknown,
+): asserts value is BinaryArtifactReference {
+  if (!isRecord(value)) throw new Error("Invalid BinaryArtifactReference");
+  const { locator, artifactHash, bytes, mediaType } = value;
+  if (
+    typeof locator !== "string" ||
+    typeof artifactHash !== "string" ||
+    !HASH_PATTERN.test(artifactHash) ||
+    locator !== `${BINARY_DIRECTORY}/${artifactHash}.bin` ||
+    typeof bytes !== "number" ||
+    !Number.isSafeInteger(bytes) ||
+    bytes <= 0 ||
+    typeof mediaType !== "string"
+  )
+    throw new Error("Invalid BinaryArtifactReference");
+  assertMediaType(mediaType);
+}
+
+function assertMediaType(value: string): void {
+  if (value.length > 127 || !MEDIA_TYPE_PATTERN.test(value))
+    throw new Error("Invalid binary artifact media type");
 }
 
 /** Exact UTF-8 artifact representation, including its terminating newline. */
@@ -370,6 +466,37 @@ async function readRegularFileWithoutFollowingTarget(
     return await descriptor.readFile({ encoding: "utf8" });
   } finally {
     await descriptor.close();
+  }
+}
+
+async function readRegularBytesWithoutFollowingTarget(
+  path: string,
+  expectedBytes: number,
+  maxBytes: number,
+): Promise<Uint8Array> {
+  const descriptor = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const info = await descriptor.stat();
+    if (!info.isFile()) throw new Error("Artifact target is not a regular file");
+    if (info.size > maxBytes)
+      throw new Error(`Artifact exceeds byte limit (${info.size} > ${maxBytes})`);
+    if (info.size !== expectedBytes) throw new Error("Artifact byte count mismatch");
+    return await descriptor.readFile();
+  } finally {
+    await descriptor.close();
+  }
+}
+
+async function createNewBinaryArtifact(destination: string, bytes: Uint8Array): Promise<void> {
+  const temporary = `${dirname(destination)}/.${basename(destination)}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, bytes, { mode: 0o600, flag: "wx" });
+    await chmod(temporary, 0o600);
+    await link(temporary, destination);
+  } finally {
+    await unlink(temporary).catch((error: unknown) => {
+      if (!isMissing(error)) throw error;
+    });
   }
 }
 

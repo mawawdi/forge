@@ -734,6 +734,35 @@ export interface CreatorDashboardState {
   readonly eventPage?: CreatorConversationEventPage;
   readonly episodes: readonly CreatorWorkEpisodeSummary[];
   readonly memories: readonly CreatorMemorySummary[];
+  readonly visualWorkflows?: readonly {
+    readonly workflowId: string;
+    readonly projectId: string;
+    readonly eventId: string;
+    readonly eventHash: string;
+    readonly sequence: number;
+    readonly state:
+      | "draft"
+      | "proposed"
+      | "accepted"
+      | "compiling"
+      | "bundle_review"
+      | "upload_authorization"
+      | "asset_processing"
+      | "native_inspection"
+      | "native_plan_review"
+      | "building"
+      | "awaiting_studio_apply"
+      | "reconciled"
+      | "rejected"
+      | "superseded"
+      | "incomplete"
+      | "uncertain";
+    readonly action: string;
+    readonly actor: "creator" | "forge_host" | "studio_connector" | "platform";
+    readonly artifactHashes: Readonly<Record<string, string>>;
+    readonly detail: string;
+    readonly occurredAt: string;
+  }[];
   readonly projectSettings?: {
     readonly controlView: CreatorControlView;
     readonly memories: readonly CreatorMemorySummary[];
@@ -1543,6 +1572,59 @@ export function assertCreatorDashboardState(
   if (!Array.isArray(record.memories) || record.memories.length > 100_000)
     throw new Error("Invalid dashboard memories");
   for (const memory of record.memories) assertMemorySummary(memory);
+  if (record.visualWorkflows !== undefined) {
+    if (!Array.isArray(record.visualWorkflows) || record.visualWorkflows.length > 256)
+      throw new Error("Invalid dashboard visual workflows");
+    const workflowIds = new Set<string>();
+    for (const value of record.visualWorkflows) {
+      const workflow = assertRecord(value, "visual workflow summary");
+      assertId(workflow.workflowId, "visual workflow");
+      assertId(workflow.projectId, "visual workflow project");
+      assertId(workflow.eventId, "visual workflow event");
+      assertHash(workflow.eventHash, "visual workflow event");
+      assertNonNegativeInteger(workflow.sequence, "visual workflow sequence");
+      assertOneOf(
+        workflow.state,
+        [
+          "draft",
+          "proposed",
+          "accepted",
+          "compiling",
+          "bundle_review",
+          "upload_authorization",
+          "asset_processing",
+          "native_inspection",
+          "native_plan_review",
+          "building",
+          "awaiting_studio_apply",
+          "reconciled",
+          "rejected",
+          "superseded",
+          "incomplete",
+          "uncertain",
+        ],
+        "visual workflow state",
+      );
+      assertBoundedText(workflow.action, "visual workflow action", 1, 128);
+      assertOneOf(
+        workflow.actor,
+        ["creator", "forge_host", "studio_connector", "platform"],
+        "visual workflow actor",
+      );
+      const artifacts = assertRecord(workflow.artifactHashes, "visual workflow artifacts");
+      if (Object.keys(artifacts).length > 64)
+        throw new Error("Invalid visual workflow artifact count");
+      for (const [name, artifactHash] of Object.entries(artifacts)) {
+        assertBoundedText(name, "visual workflow artifact name", 1, 512);
+        assertHash(artifactHash, "visual workflow artifact");
+      }
+      assertBoundedText(workflow.detail, "visual workflow detail", 1, 4096);
+      assertCanonicalIso(workflow.occurredAt, "visual workflow time");
+      if (workflowIds.has(workflow.workflowId))
+        throw new Error("Duplicate dashboard visual workflow");
+      workflowIds.add(workflow.workflowId);
+    }
+  }
   if (record.projectSettings !== undefined) {
     const settings = assertRecord(record.projectSettings, "project settings");
     assertCreatorControlView(settings.controlView);

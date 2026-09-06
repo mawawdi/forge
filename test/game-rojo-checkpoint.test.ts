@@ -21,10 +21,7 @@ import {
 import { createTestFixtureSourceResolver } from "./helpers/source-fixtures.js";
 import { writeCreatorSourceWriteArtifacts } from "../packages/creator-session/src/source-write.js";
 import { ImmutableJsonArtifactStore } from "../packages/artifact-store/src/index.js";
-import {
-  createGameDefinitionRegistry,
-  type GameDesignSpec,
-} from "../packages/game-ir/src/index.js";
+import { type GameDesignSpec } from "../packages/game-ir/src/index.js";
 import {
   compileGamePlan,
   expandGameDesign,
@@ -247,7 +244,6 @@ test("Rojo graph checkpoints replay guarded source receipts and independently ca
     };
     const input = {
       design,
-      registry: createGameDefinitionRegistry([]),
       projectId: PROJECT_ID,
       project: PROJECT,
       initialTopology: gameTopologyFromCapture(before),
@@ -472,7 +468,6 @@ async function exerciseRojoCoordinator(input: {
     };
     const compileInput = {
       design,
-      registry: createGameDefinitionRegistry([]),
       projectId: PROJECT_ID,
       project: PROJECT,
       initialTopology: gameTopologyFromCapture(before),

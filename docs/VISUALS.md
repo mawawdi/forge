@@ -1,17 +1,17 @@
 # Forge Visual Generation
 
 This document owns Forge's visual-world direction, visual authoring contracts,
-Cube/CubePart research path, and visual evidence boundary. It separates what is
-implemented from the Blender pipeline that should replace the current world-building
-center of gravity. [Architecture](ARCHITECTURE.md) remains authoritative for the
+Cube/CubePart research path, and visual evidence boundary. It separates implemented
+compiler behavior from future creator and platform qualification work.
+[Architecture](ARCHITECTURE.md) remains authoritative for the
 running system, [Roadmap](ROADMAP.md) sequences future work, and
 [Research](RESEARCH.md) preserves exact historical runs.
 
-## Direction: Blender-backed scene compilation
+## Blender-backed scene compilation
 
-Forge should generate visually coherent Roblox worlds through a fixed Blender
-compiler. It should not import one opaque scene mesh and call it a game. The output
-is a reviewed scene bundle in which Blender supplies visual massing and Forge keeps
+Forge's implemented contract generates Roblox worlds through a fixed Blender
+compiler once its pinned installation is available. It does not treat one opaque
+scene mesh as a game. The output is a reviewed scene bundle in which Blender supplies visual massing and Forge keeps
 gameplay structure, stable identities, repairability, bounded authority, and
 evidence.
 
@@ -33,22 +33,38 @@ invoke an importer, upload an asset, load it in a target universe, or preserve i
 across save/reopen. See [Roblox's Blender workflow](https://create.roblox.com/docs/art/blender)
 and [DCC import overview](https://create.roblox.com/docs/art/overview-dcc).
 
-There is currently no `BlenderSceneSpec`, fixed Blender compiler, `.blend`/GLB
-artifact path, or admitted native mesh importer in this repository. `blender` is
-also absent from this machine's command line as of September 6, 2026. The first
-work is therefore a new bounded compiler capability, not a relabeling of the Cube
-worker or current scene recipes.
+The repository now implements strict `BlenderSceneSpec ABI 2`, the deterministic
+solver, a fixed Blender worker interface, immutable binary artifacts, GLB inspection,
+review and upload authority artifacts, a closed native import operation, and targeted
+repair planning. The checksum-matched, signed, and notarized Blender 5.2.1 macOS
+arm64 DMG was qualified from a read-only mount on September 7, 2026. It produced the
+locally eligible predecessor Last Light revision 14 `.blend`, 12 partitioned GLBs, reports, and named
+review renders. An absent or unqualified executable still fails closed as
+`incomplete / missing_blender`; the local result supplies no creator approval or
+Studio evidence.
 
 ### Authority boundary
 
-The model may author only declarative `BlenderSceneSpec` data. Forge-owned Python
-interprets that data through a closed operation set. Never execute model-authored
-`bpy`, arbitrary expressions, callbacks, scripts, paths, URLs, or Blender add-ons.
+The model may author only declarative `BlenderSceneDeclaration` data and bounded
+generic Blender operation requests. It cannot author revision or project bindings,
+compiler hashes, source/license authority, provenance, budgets, or output inventory.
+The host binds those fields before solving, and Forge-owned Python interprets the
+resulting `BlenderSceneSpec` through a closed, general Blender operation protocol.
+Never execute model-authored `bpy`, arbitrary
+expressions, callbacks, scripts, paths, URLs, or Blender add-ons.
 
-The specification should bind:
+Forge has no recipe catalog, themed generator IDs, curated visual kits, or
+model-facing implementation templates. A recipe is a hidden claim that Forge knows
+the content structure before the creator does. It narrows creative expression and
+forces the model to fit a world into a host-defined vocabulary. The compiler instead
+accepts a general scene graph: objects, collections, geometry, transforms,
+materials, lights, curves, instances, constraints, and semantic anchors. Fixed
+operations enforce authority and safety; they do not prescribe what a world is.
+
+The specification binds:
 
 - zones, footprints, vertical layers, landmarks, routes, and review cameras;
-- resolved asset references, parametric motifs, sockets, and repetition rules;
+- resolved asset references, scene nodes, sockets, and repetition rules;
 - material roles, palette, lighting intent, and effect anchors;
 - walkable regions, collision proxies, hazards, objectives, spawns, and interaction
   anchors;
@@ -76,18 +92,19 @@ Every exported object maps back to one admitted stable ID and role. A repair sho
 replace only affected partitions and recheck their neighboring interfaces, rather
 than regenerate an unrelated world.
 
-## Spatial composer
+## Deterministic spatial solver
 
-The model should choose spatial intent; Forge should solve and validate placement.
+The model chooses spatial intent; Forge solves and validates placement.
 A model directly assigning hundreds of Roblox positions from prose is expensive,
-brittle, and hard to repair. The fixed pipeline should use five passes:
+brittle, and hard to repair. The fixed pipeline uses five passes:
 
 1. **Design:** establish zones, landmarks, player route, visual hierarchy, style,
    constraints, and named review views.
 2. **Layout:** solve zone placement, footprints, connectors, containment,
    reachability, clearance, and camera framing.
-3. **Population:** place bounded repeated props through deterministic rules,
-   controlled variation, sockets, and measured asset bounds.
+3. **Population:** place bounded repeated props through declared instances,
+   controlled variation, sockets, and measured asset bounds; never through named
+   thematic templates.
 4. **Presentation:** compile materials, lighting, atmosphere, effects, UI language,
    and low-graphics fallbacks.
 5. **Review:** render fixed named views and check overlap, dead space, landmark
@@ -108,36 +125,55 @@ playable-world authority. They may provide references or individual assets, but
 the admitted scene model must remain editable, deterministic at the compiler
 boundary, performant, and understandable to Studio reconciliation.
 
-## Implemented visual foundation
+## Implemented visual-world compiler
 
-The present repository supplies useful inputs to the Blender direction, but not
-the compiler or importer itself.
+The present repository supplies the bounded contracts and compiler/import machinery.
+Local tests exercise the deterministic and recorded-fixture paths; Blender execution
+and authoritative Studio results remain separate evidence.
 
-| Capability                       | Implemented boundary                                                                                                         |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `GameDesignSpec.worldAuthoring`  | Persistent worlds bind exact Workspace roots with authored geometry; Play-only generation is an explicit creator choice      |
-| `GameDesignSpec.visualDirection` | Art direction and named review views survive draft, plan, and builder context; declaring a view captures nothing             |
-| `scene-primitives` ABI 2         | Parts and wedges, XYZ rotation, reference frames, materials, transparency, reflectance, shadows, and conservative bounds     |
-| `scene-arrangement` ABI 1        | Project-authored motifs, surfaces, explicit/linear/radial repetition, stable member IDs, and float32 separation checks       |
-| `scene-lighting`                 | Explicit local light fixtures and selected Atmosphere/Bloom/ColorCorrection objects; no unrestricted Lighting-service writes |
-| `responsive-ui` ABI 5            | Tokenized native UI, typography, button states, scrolling, fixed controller, and bounded current-frame observations          |
-| Visual attachments               | Up to four PNG/JPEG/WebP inputs retained as provider-neutral image parts with project/revision provenance                    |
-| Asset registry                   | Exact Cube/CubePart job, OBJ inspection, local WebGL review, fit, sockets, review, and composition binding                   |
+| Capability                 | Implemented boundary                                                                                                                                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `BlenderSceneSpec ABI 2`   | Strict model declaration, host authority envelope, host-bound intent, and resolved worker schemas with stable IDs, geometry, materials, instances, native semantics, constraints, provenance, partitions, and expected outputs |
+| Spatial solver             | Stable-ID ordering, 0.25-stud lattice, 15-degree yaw defaults, seeded tie-breaking, bounded backtracking, constraint validation, and float32 revalidation                                                                      |
+| `forge-blender-compiler@2` | Blender 5.2.1 macOS arm64, exact signed inventory, fixed worker/inspector, Seatbelt confinement, Cycles CPU with four threads, durable lease, independent output inspection, and retained invocation evidence                  |
+| Review/import workflow     | Exact proposal, acceptance, bundle review, upload authority, operation response, receipt, detached inspection, plan bindings, and manual packet schemas                                                                        |
+| Native scene import        | Closed per-GLB operation, detached validation, executable rejection, stable descendant identity, render collision disablement, and explicit native semantics                                                                   |
+| Targeted repair            | Dependency closure, frozen unaffected placement, single-instance geometry fork, neighboring-interface validation, and unchanged-artifact reuse                                                                                 |
+| Direct native/UI graphs    | Object edits, collection instancing/reference remapping, lighting, responsive UI, the fixed UI controller, and common component outputs                                                                                        |
+| Visual attachments         | Up to four PNG/JPEG/WebP inputs retained as provider-neutral image parts with project/revision provenance                                                                                                                      |
+| Asset registry             | Exact Cube/CubePart job, OBJ inspection, local WebGL review, fit, sockets, review, and composition binding for individual-prop research only                                                                                   |
 
-### Scene composition
+### Scene composition and compilation
 
-`scene-arrangement` expands a project-authored motif through the primitive compiler.
-Surfaces centralize color, material, transparency, reflectance, and shadow choices.
-Each arrangement has its own frame and explicit members or a bounded linear/radial
-sequence. Final operations retain motif/arrangement/member/node/surface provenance.
-Constraints run at the motif origin and again after final float32 placement so a
-small gap cannot silently disappear at a large coordinate. The profile admits at
-most 8,192 objects and 65,536 constraint checks.
+The model declaration, host-bound intent, and resolved worker spec are phases of one
+scene system. Retained scene handles resolve only through exact immutable canonical
+bytes and explicit host-owned approval authority. `forge visual solve`,
+`forge visual blender-qualify`, `forge visual blender-status`, and
+`forge visual compile` expose the same admission, qualification, fixed worker, and
+artifact paths for local operation.
+Geometry admits indexed triangles, mathematical solids, polygon profiles, extrusion,
+revolution, lofting, curves, profile sweeps, joins, typed modifiers, transforms,
+bounded deformation, approved external GLBs, and explicit/linear/radial/curve/seeded
+instances. Every operation declares operands, strict typed parameters, dependency
+identity, and expansion bounds. Materials are supported PBR values and admitted
+texture handles. No themed generator, arbitrary Blender call, authored Python,
+expression, callback, shader program, driver, add-on, or Geometry Nodes graph is an
+input surface.
 
-The disclosed `examples/visual-composition/observatory.scene.json` contains 40
-primitive declarations that expand to 307 primitives and 39 folders. It demonstrates
-declaration reuse only. It is not model-generated, a hidden kit, a native render,
-or evidence of artistic quality.
+The solver resolves frames and geometry dependencies, conservative local envelopes,
+objects and instances, sockets/native semantics, and review framing. It enforces
+containment, separation, support, route and vertical clearance, reachability,
+sightlines, camera bounds, density, negative space, and budgets. Exhausting a finite
+search budget is `incomplete`; proving no assignment within that domain is
+`rejected`. Roblox Y-up studs map to Blender `(x, -z, y)`.
+
+The worker retains one `.blend`, spatially chunked static GLBs, separately replaceable
+interactive GLBs, explicit native semantics, geometry/material/budget reports, named
+PNG views, and an exact manifest. Expected inventory precedes compilation; measured
+hashes are sealed afterward. Independent GLB inspection reads actual buffers,
+accessors, hierarchy, transforms, vertices, materials, textures, bounds, and names.
+Primitive geometry remains internal for native collision proxies, simple gameplay
+structures, and debugging; it is not a competing generated-world component.
 
 `scene-lighting` creates at most 128 explicit PointLight, SpotLight, or SurfaceLight
 fixtures plus one each of Atmosphere, BloomEffect, and ColorCorrectionEffect. It
@@ -159,8 +195,8 @@ Creators attach images and describe the requested change in ordinary language.
 Forge retains original pixels, hashes, dimensions, and submission context. A
 vision-capable model may interpret visible content and suggest an edit, but inferred
 image regions never become Studio identities or proof of capture provenance. Named
-views remain explicit plan data; authoritative rendered capture and comparison are
-still future work.
+views remain explicit plan data; authoritative native capture and comparison require
+creator-run Studio evidence.
 
 ## Cube and CubePart
 
@@ -253,11 +289,11 @@ host polling does not cancel the remote job. Do not purge job history or reuse j
 IDs. The fixed subprocess deadline is 30 minutes; the host may time out earlier
 and require explicit status recovery.
 
-## Native import is the missing bridge
+## Reviewed native import bridge
 
-The next capability must accept only an exact reviewed Blender scene bundle (or a
-reviewed individual mesh), compile a bounded import plan, and retain authoritative
-mapping from source IDs to imported Studio objects. It must prove:
+The implemented bridge accepts only an exact reviewed Blender scene bundle, compiles
+one closed import operation per visual GLB, and retains stable source-to-Studio
+descendant identities. Eligibility requires:
 
 - exact source/export/compiler hashes and target universe ownership;
 - triangle, texture, object, partition, and per-part bounds before import;
@@ -267,25 +303,55 @@ mapping from source IDs to imported Studio objects. It must prove:
 - one named rendered view at stated device/graphics settings; and
 - no unreviewed upload, fallback provider, placeholder geometry, or hidden script.
 
+The plugin recognizes one fixed platform Model envelope, strips its package link while
+detached, rejects scripts and unexpected classes or descendants, and compares the
+exact hierarchy, unique names, content/material identities, transforms, pivots, and
+bounds. It disables native collision on imported render geometry. Collision proxies,
+anchors, wrappers, and effects are created from approved native declarations. Network
+loading and moderation finish before recording; the existing transaction machinery
+owns publication, readback, reconciliation, finalization, replay, and recovery.
+
+The current [Open Cloud Assets contract](https://create.roblox.com/docs/cloud/guides/usage-assets)
+admits Forge GLBs as `Model`
+uploads with `model/gltf-binary`, a 20 MB per-file limit, and the platform package
+envelope. Forge dispatches only after exact upload authorization, retains intent before
+the credential-bearing transport call, bounds the raw response, and polls the returned
+operation identity without automatic resubmission. The manual packet remains available
+and binds absolute paths to the same reviewed artifact hashes and exact importer
+settings. Creator-reported IDs remain declarations until detached native inspection
+proves the asset version and content. A manual import is not an upload receipt.
+
 Generation and review must remain outside an open ChangeHistory recording. Only
 the already-reviewed immutable bundle enters the bounded Studio transaction.
 
-## Last Light vertical slice
+## Last Light product proof
 
-The first proof is a replayable rescue game in a failing orbital station. The clean
-seed under `examples/last-light` contains engine containers only. The target uses
-a 192-by-144-stud footprint, seed 42017, a central reactor, three distinct cell
-bays, a recognizable shuttle, three dangerous conduits, and one readable player
-route.
+The ordinary proof starts from the clean seed under `examples/last-light`; no ordinary
+creator AgentRun has generated it yet. The disclosed prepared predecessor under
+`examples/last-light/predecessor` uses a 192-by-144-stud footprint and seed 42017 with a central reactor,
+three distinct cell bays, a recognizable shuttle, three dangerous conduits, and one
+readable player route. The semantic scene solves locally to 28 objects in 28 candidates
+with no backtracking and binds current scene hash
+`f29ea71de5187c5124bdde75dbc0a07d225060f996b820050dcbb4718e1c908b`
+at revision 14.
 
-Blender should create the station's structural silhouette, contrasting heights,
+The qualified Blender compiler creates the station's structural silhouette, contrasting heights,
 layered reactor, identifiable shuttle, bay identities, restrained dark material
 language, cyan power, amber interaction, red shape-and-motion danger, plausible
 fixtures, and concentrated detail around play. Export collision, anchors,
 interactables, effects, and static scenery separately. Decorative geometry must
 preserve route and interaction clearance.
 
-Ordinary server-authoritative Luau owns a three-second countdown, 120-second run,
+The local revision 14 predecessor bundle is `eligible` under manifest
+`d6dc495e6735b433e954f4020a975f26e8edfe16afd5024651de785d9d755f4e`.
+It retains one `.blend`, 12 GLBs, native semantics, three reports, and four named
+1280×720 PNG renders. An earlier compiler identity retained repair plan
+`4c68b536996606634a5317d97d5634f6f98f6fe8c4980b28a920f18d0003e6a9`
+which changed only the warning view: all partition outputs and the other three renders use
+the exact revision 13 artifacts and were independently revalidated. This is local
+compiler and repair evidence. It is not a `SceneBundleReview` or native result.
+
+Ordinary server-authoritative Luau now owns a three-second countdown, 120-second run,
 one carried cell, 100 points per deposit, two integrity, conduit timing of 1.5
 seconds warning / 2 seconds active / 4.5 seconds rest, and a hit penalty of one
 integrity plus eight seconds. Three deposits unlock a three-second shuttle escape.
@@ -293,21 +359,23 @@ Timeout or depleted integrity loses. Character loss, departure, single resolutio
 validated client requests, and ten consecutive win/loss/replay cycles without stale
 callbacks or duplicate subscriptions are required.
 
-Menu, HUD, and result screens show time, cells, integrity, and score. Start and
+The implemented menu, HUD, and result screens show time, cells, integrity, and score. Start and
 Play Again must work with touch and gamepad; primary targets are at least 48 pixels
 and remain readable on phone and desktop. Carrying, depositing, warning, impact,
 power restoration, and extraction need distinct visible states.
 
-The accepted plan names at least the first playable view, a reactor/shuttle approach,
-a close interaction during warning, and relevant phone/desktop UI states. Completion
-requires the exact reviewed Blender bundle, successful native import and save/reopen,
+The predecessor direct game design names the first playable view, reactor/shuttle
+approach, warning interaction, restored reactor, and phone/desktop UI states. The
+prepared scene, exact Blender bundle, design, and Luau sources are locally compiled
+or tested, but they are excluded from the ordinary proof context. Completion requires
+a fresh creator-authored graph and sources, approval of that exact bundle, successful native import and save/reopen,
 collision and anchor checks, a full creator transaction with no unresolved recording,
 ordinary Play observations for win/loss/replay, and creator review of the named
 rendered views. Static eligibility or a declared camera does not complete the slice.
 
 ## Visual claim boundary
 
-Counts, recipe expansion, a clean local gate, an OBJ preview, a vision-model critique,
+Counts, primitive expansion, a clean local gate, an OBJ preview, a vision-model critique,
 or a successful import do not establish visual quality. Review the same named views
 before and after a change, record viewport/device/graphics settings, and keep frame
 time, memory, gameplay behavior, and subjective appearance as separate observations.

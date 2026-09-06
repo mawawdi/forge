@@ -9,7 +9,7 @@ import {
   GAME_DATA_SCHEMA,
   canonicalGameDataSchema,
   gameDataMatchesSchema,
-} from "../packages/game-ir/src/recipes.js";
+} from "../packages/game-ir/src/data-contracts.js";
 import { resolveCreatorGameComponentInput } from "../packages/creator-session/src/game-authoring.js";
 
 test("closed string enums derive code-point bounds and canonical hashes", () => {

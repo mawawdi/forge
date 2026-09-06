@@ -84,7 +84,7 @@ export function App(): React.JSX.Element {
         : conversation?.status === "awaiting_creator"
           ? "Needs your attention"
           : undefined;
-    document.title = [prefix, conversation?.title, "Forge"].filter(Boolean).join(" · ");
+    document.title = [prefix, "Forge"].filter(Boolean).join(" · ");
   }, [
     state?.conversations,
     state?.selectedConversationId,

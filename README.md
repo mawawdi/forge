@@ -71,15 +71,16 @@ change set.
 
 ## Repository layout
 
-| Path                                      | Purpose                                                                 |
-| ----------------------------------------- | ----------------------------------------------------------------------- |
-| `dashboard`                               | React conversation workspace                                            |
-| `packages/creator-*`                      | Loopback service, durable conversations, and creator orchestration      |
-| `packages/agent-runtime`                  | Provider-neutral model/tool loop, budgets, journals, and compaction     |
-| `packages/game-*`                         | Generic game IR, compiler, composition recipes, and locked Luau runtime |
-| `packages/studio-*`, `plugin`             | Capability policy, protocol, fixed Studio readers/writers, and recovery |
-| `packages/asset-registry`, `workers/cube` | Optional reviewed visual-asset research pipeline                        |
-| `examples`, `test`                        | Disclosed solution-free seeds and fixed offline/native fixtures         |
+| Path                                                 | Purpose                                                                                  |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `dashboard`                                          | React conversation workspace                                                             |
+| `packages/creator-*`                                 | Loopback service, durable conversations, and creator orchestration                       |
+| `packages/agent-runtime`                             | Provider-neutral model/tool loop, budgets, journals, and compaction                      |
+| `packages/game-*`                                    | Generic direct-component IR, compiler, composition, and locked Luau runtime              |
+| `packages/visual-world`, `packages/blender-compiler` | Strict scene admission, deterministic solving, native Blender compilation, and artifacts |
+| `packages/studio-*`, `plugin`                        | Capability policy, protocol, fixed Studio readers/writers, and recovery                  |
+| `packages/asset-registry`, `workers/cube`            | Optional reviewed visual-asset research pipeline                                         |
+| `examples`, `test`                                   | Disclosed solution-free seeds and fixed offline/native fixtures                          |
 
 Generic harness packages must not import examples, evaluator fixtures, generated
 solutions, or Studio registries. Provider SDK types stop at the transport adapter.
@@ -146,10 +147,9 @@ test ! -e /tmp/forge-last-light.rbxlx && rojo build examples/last-light/default.
 Use Door Control for a small prompt/plan/Apply check, Status Beacon for a first
 prompt-only session, and Orbital Freight Airlock for a multi-source authority and
 recovery check. Last Light is the visual-world vertical slice defined in
-[Visual generation](docs/VISUALS.md#last-light-vertical-slice); its clean seed has
-no prepared world or gameplay. The authored observatory JSON under
-`examples/visual-composition` is a disclosed compiler fixture, not a generated or
-native visual result.
+[Visual generation](docs/VISUALS.md#last-light-product-proof); its clean seed has
+no prepared world or gameplay. Prepared predecessor material is isolated under
+`examples/last-light/predecessor` and is excluded from ordinary creator context.
 
 For native capability characterization, build the fixed fixture and connector:
 

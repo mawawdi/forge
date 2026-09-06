@@ -15,3 +15,4 @@ reference-plugin/
 .agents/
 **.png
 **__pycache__/
+*.dmg

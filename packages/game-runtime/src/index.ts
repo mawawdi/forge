@@ -3,7 +3,6 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 import type { GamePlacementParent, GameSourcePackage } from "../../game-ir/src/index.js";
-export { createForgeRuntimeRecipe } from "./recipe.js";
 
 export const FORGE_RUNTIME_ABI = "forge-runtime@2";
 export const FORGE_RUNTIME_MODULE_IDS = [

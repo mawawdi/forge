@@ -6,7 +6,7 @@ export type UiReferenceNamespace =
 
 export interface UiReferenceIssue {
   code: "duplicate_id" | "unknown_reference" | "ambiguous_reference" | "parent_cycle";
-  /** Exact path relative to the parsed responsive-ui recipe config. */
+  /** Exact path relative to the parsed UI graph. */
   path: string;
   value: string;
   namespace: UiReferenceNamespace;
@@ -407,7 +407,7 @@ export function collectUiValidationIssues(
         path: `${path}.layout`,
         actual: { minWidth: l.minWidth, minHeight: l.minHeight },
         expected: { minWidth: 48, minHeight: 48, unit: "pixels" },
-        detail: "This optional UI recipe requires a 48 by 48 minimum button target.",
+        detail: "This UI graph requires a 48 by 48 minimum button target.",
       });
   });
   for (const [field, uses] of bindingUses)

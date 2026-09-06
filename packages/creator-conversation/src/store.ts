@@ -1790,6 +1790,7 @@ export function isEpisodeStatusTransition(
       "building",
       "awaiting_review",
       "awaiting_source_sync",
+      "refresh_required",
       "rejected",
       "recovery_required",
       "incomplete",

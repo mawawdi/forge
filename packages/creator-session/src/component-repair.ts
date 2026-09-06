@@ -54,7 +54,7 @@ export interface CreatorComponentBinding {
 export interface CreatorComponentRepairScope {
   sessionId: string;
   projectCaptureHash: string;
-  catalogHash: string;
+  capabilitiesHash: string;
 }
 export interface CreatorComponentAttempt {
   kind: "CreatorComponentAttempt";
@@ -87,7 +87,7 @@ export class CreatorComponentRepairStore {
     if (
       !scope.sessionId.trim() ||
       !/^[a-f0-9]{64}$/.test(scope.projectCaptureHash) ||
-      !/^[a-f0-9]{64}$/.test(scope.catalogHash)
+      !/^[a-f0-9]{64}$/.test(scope.capabilitiesHash)
     )
       throw new Error("Invalid component repair scope");
     this.scope = structuredClone(scope);
@@ -159,9 +159,7 @@ export class CreatorComponentRepairStore {
     for (let index = 0; index < paths.length; index++) {
       const path = paths[index]!;
       if (path[0] !== "component" || ["id", "kind", "definition"].includes(String(path[1])))
-        throw new Error(
-          "Repair cannot change component identity or recipe locks; redefine the component",
-        );
+        throw new Error("Repair cannot change component identity; redefine the component");
       if (paths.slice(0, index).some((other) => isPrefix(other, path) || isPrefix(path, other)))
         throw new Error("Component repair paths must be distinct and non-overlapping");
     }

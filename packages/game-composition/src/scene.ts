@@ -1,11 +1,9 @@
 import {
-  compositionConfigDataSchema,
   emptyArrayDefault,
   COMPOSITION_ID_SCHEMA,
   COMPOSITION_NAME_SCHEMA,
 } from "./config-schema.js";
 import { z } from "zod";
-import { gameRecipeDefinitionLock, type GameRecipeDefinition } from "../../game-ir/src/index.js";
 import type { GameInventoryItem } from "../../game-compiler/src/index.js";
 import { STUDIO_CAPABILITY_MANIFEST } from "../../studio-evidence/src/index.js";
 import {
@@ -146,23 +144,6 @@ export const SCENE_PRIMITIVES_CONFIG_SCHEMA = z
   .strict();
 export type ScenePrimitivesConfig = z.infer<typeof SCENE_PRIMITIVES_CONFIG_SCHEMA>;
 
-export const SCENE_PRIMITIVES_DEFINITION: GameRecipeDefinition = {
-  kind: "GameRecipeDefinition",
-  sourceExports: [],
-  id: "scene-primitives",
-  abi: "3",
-  configSchema: compositionConfigDataSchema(SCENE_PRIMITIVES_CONFIG_SCHEMA),
-  ports: [],
-  obligations: [
-    {
-      id: "native-spatial-review",
-      description:
-        "Inspect represented geometry, actual collision and any declared navigation in Studio; bounding boxes do not establish traversal.",
-      evidence: "studio_play",
-    },
-  ],
-};
-
 /** Deterministic authored primitive geometry, with explicitly requested bounds constraints. */
 export function compileScenePrimitives(
   context: CompositionContext,
@@ -223,18 +204,9 @@ export function compileScenePrimitives(
   return {
     inventory,
     sources: [],
-    obligations: SCENE_PRIMITIVES_DEFINITION.obligations.map((obligation) => ({
-      componentId: context.componentId,
-      ...obligation,
-    })),
+    obligations: [],
     limitations: [
       "Declared constraints use conservative rotated Size boxes: world AABBs for separation and the outer node's oriented box for containment. Bounds may reject geometrically separated curved/wedge shapes; box containment does not prove physical volume containment, collision fidelity, reachable navigation or visual quality. Those require native evidence.",
     ],
   };
 }
-
-export const SCENE_PRIMITIVES_EXPANDER = {
-  definition: gameRecipeDefinitionLock(SCENE_PRIMITIVES_DEFINITION),
-  expand: (input: CompositionContext & { config: unknown }) =>
-    compileScenePrimitives(input, input.config).inventory,
-};

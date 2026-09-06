@@ -59,9 +59,9 @@ export const GAME_PLACEMENT_PARENT_SCHEMA = z.union([
   z
     .object({
       kind: z.literal("component_output"),
-      componentId: entityId.describe("Existing recipe_instance component ID in this design."),
+      componentId: entityId.describe("Existing component ID in this design."),
       outputId: GAME_COMPONENT_OUTPUT_ID_SCHEMA.describe(
-        "Declared recipe output alias from the selected recipe's config documentation, not an operation hash or Studio path. The host resolves this alias to its exact created object.",
+        "Declared component output alias, not an operation hash or Studio path. The compiler resolves this alias to its exact created object.",
       ),
     })
     .strict(),

@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  createGameDefinitionRegistry,
   DEFAULT_GAME_ADMISSION_POLICY,
   gameVisualReviewStatements,
   validateGameDesignSpec,
   type GameDesignSpec,
 } from "../packages/game-ir/src/index.js";
 import { CreatorDesignDraft } from "../packages/creator-session/src/design-draft.js";
-import { projectCreatorGameComponentInput } from "../packages/creator-session/src/game-authoring.js";
+import {
+  projectCreatorGameComponentInput,
+  validateCreatorGameComponent,
+} from "../packages/creator-session/src/game-authoring.js";
 
-const registry = createGameDefinitionRegistry([]);
-const options = { registry, policy: DEFAULT_GAME_ADMISSION_POLICY };
+const options = { policy: DEFAULT_GAME_ADMISSION_POLICY };
 function design(): GameDesignSpec {
   return {
     kind: "GameDesignSpec",
@@ -83,10 +84,10 @@ function eligible(spec: unknown) {
 test("visual direction survives the actual draft proposal and binds the canonical design without requiring a genre", () => {
   const spec = design();
   const draft = new CreatorDesignDraft({
-    definitions: [],
-    registry,
-    expanders: [],
+    capabilities: {} as never,
     lockedSources: new Map(),
+    visualSceneAuthority: { resolve: () => undefined },
+    validateComponent: validateCreatorGameComponent,
   });
   const ref = draft.define({
     component: projectCreatorGameComponentInput(spec.components[0]!),

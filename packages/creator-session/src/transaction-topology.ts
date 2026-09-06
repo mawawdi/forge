@@ -52,6 +52,26 @@ export type CreatorTransactionTopologyOperation =
       readonly parent: CreatorTransactionTopologyParent;
       readonly name: string;
       readonly properties: Readonly<Record<string, StudioValue>>;
+      readonly approvedSceneImport?: {
+        readonly descendants: readonly {
+          readonly stableId: string;
+          readonly relativePath: string;
+          readonly parentStableId?: string | undefined;
+          readonly name: string;
+          readonly className: string;
+        }[];
+      };
+      readonly approvedSceneReplacement?: {
+        readonly next: {
+          readonly descendants: readonly {
+            readonly stableId: string;
+            readonly relativePath: string;
+            readonly parentStableId?: string | undefined;
+            readonly name: string;
+            readonly className: string;
+          }[];
+        };
+      };
     }
   | {
       readonly id: string;
@@ -205,6 +225,50 @@ export function compileCreatorTransactionTopology<
         name: operation.name,
         properties: operation.properties,
       });
+      const loadedDescendants =
+        operation.approvedSceneImport?.descendants ??
+        operation.approvedSceneReplacement?.next.descendants;
+      if (loadedDescendants !== undefined) {
+        const imported = new Map<
+          string,
+          { identity: StudioObjectIdentity; key: string; relativePath: string }
+        >();
+        for (const descendant of loadedDescendants) {
+          const identity: StudioObjectIdentity = {
+            kind: "forge_attribute",
+            stableId: descendant.stableId,
+          };
+          const key = identityKeyFor(identity, `Imported descendant ${descendant.stableId}`);
+          if (nodes.has(key) || imported.has(descendant.stableId))
+            throw new Error(`Creator transaction imported identity already exists (${key})`);
+          imported.set(descendant.stableId, {
+            identity,
+            key,
+            relativePath: descendant.relativePath,
+          });
+        }
+        for (const descendant of loadedDescendants) {
+          const importedNode = imported.get(descendant.stableId)!;
+          const parentKey =
+            descendant.parentStableId === undefined
+              ? targetKey
+              : imported.get(descendant.parentStableId)?.key;
+          if (parentKey === undefined)
+            throw new Error(
+              `Creator transaction imported parent is absent (${descendant.stableId})`,
+            );
+          nodes.set(importedNode.key, {
+            originalIdentity: importedNode.identity,
+            identity: importedNode.identity,
+            identityKey: importedNode.key,
+            path: `${operation.target.path}/${descendant.relativePath}`,
+            className: descendant.className,
+            parentKey,
+            name: descendant.name,
+            properties: {},
+          });
+        }
+      }
       placementByOperation.set(operation.id, { parentKey, name: operation.name });
       continue;
     }

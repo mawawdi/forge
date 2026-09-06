@@ -4,18 +4,11 @@ import {
   createCreatorSession,
   createStudioOwnershipMap,
 } from "../../packages/creator-session/src/index.js";
-import type { CreatorGameCatalog } from "../../packages/creator-session/src/game-authoring.js";
 import {
-  compileGamePlan,
-  expandGameDesign,
-  gameGeneratedTarget,
-  type GameInventoryItem,
-} from "../../packages/game-compiler/src/index.js";
-import {
-  createGameDefinitionRegistry,
-  gameRecipeDefinitionLock,
-  type GameRecipeDefinition,
-} from "../../packages/game-ir/src/index.js";
+  validateCreatorGameComponent,
+  type CreatorGameEnvironment,
+} from "../../packages/creator-session/src/game-authoring.js";
+import { compileGamePlan, expandGameDesign } from "../../packages/game-compiler/src/index.js";
 import {
   createPinnedLuauLspSourceIndex,
   SourceConsultationRecorder,
@@ -198,90 +191,6 @@ export function creatorPlanRecompilationFixture(
   const creatorPrompt = "Compose a generic nested object graph and a source interface.";
   const previous = recompilationSession(beforeCapture, creatorPrompt);
   const current = recompilationSession(afterCapture, creatorPrompt);
-  const definition: GameRecipeDefinition = {
-    kind: "GameRecipeDefinition",
-    id: "recompilation-fixture",
-    abi: "1",
-    sourceExports: [],
-    ports: [],
-    obligations: [],
-    configSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
-  };
-  const lock = gameRecipeDefinitionLock(definition);
-  const expander = {
-    definition: lock,
-    expand({ projectId }: { projectId: string }): GameInventoryItem[] {
-      const base = {
-        componentId: "objects",
-        lockedProperties: {},
-        valueSlots: [],
-        attributes: {},
-        removedAttributes: [],
-        dependencies: [],
-      };
-      const parent = options.observedParent
-        ? {
-            kind: "instance" as const,
-            identity: previous.observation.instances[0]!.identity,
-            path: previous.observation.instances[0]!.path,
-            className: previous.observation.instances[0]!.className,
-          }
-        : { kind: "engine_container" as const, path: "Workspace", className: "Workspace" };
-      const root = {
-        id: "new-root",
-        kind: "create" as const,
-        path: parent.path + "/NewRoot",
-        parent,
-        className: "Model" as const,
-        initialization: "initial_properties" as const,
-      };
-      const child = gameGeneratedTarget({
-        projectId,
-        operationId: "new-child",
-        path: root.path + "/Child",
-        className: "Part",
-      });
-      const observed = previous.observation.instances.find(
-        (instance) => instance.path === "Workspace/First",
-      )!;
-      const reference = options.observedReference ? observed : child;
-      return [
-        {
-          ...base,
-          id: root.id,
-          change: root,
-          lockedProperties: {
-            PrimaryPart: {
-              kind: "instance_ref",
-              state: "reference",
-              identity: reference.identity,
-              path: reference.path,
-              className: reference.className,
-              expectedClass: "BasePart",
-            },
-          },
-        },
-        {
-          ...base,
-          id: "new-child",
-          dependencies: [root.id],
-          change: {
-            id: "new-child",
-            kind: "create",
-            path: child.path,
-            className: "Part",
-            initialization: "initial_properties",
-            parent: gameGeneratedTarget({
-              projectId,
-              operationId: root.id,
-              path: root.path,
-              className: "Model",
-            }),
-          },
-        },
-      ];
-    },
-  };
   const lockedText = options.observedSource ? "return { value = 1 }\n" : "return {}\n";
   const observedModule = previous.observation.instances.find(
     (instance) => instance.path === "Workspace/ObservedModule",
@@ -289,10 +198,10 @@ export function creatorPlanRecompilationFixture(
   const observedRoot = previous.observation.instances.find(
     (instance) => instance.path === "Workspace",
   )!;
-  const catalog: CreatorGameCatalog = {
-    definitions: [definition],
-    registry: createGameDefinitionRegistry([definition]),
-    expanders: [expander],
+  const environment: CreatorGameEnvironment = {
+    capabilities: {} as never,
+    validateComponent: validateCreatorGameComponent,
+    visualSceneAuthority: { resolve: () => undefined },
     lockedSources: new Map([[contentHash(lockedText), lockedText]]),
   };
   const design = {
@@ -301,7 +210,74 @@ export function creatorPlanRecompilationFixture(
     id: "generic",
     intent: creatorPrompt,
     components: [
-      { kind: "recipe_instance" as const, id: "objects", definition: lock, config: {} },
+      {
+        kind: "native_graph" as const,
+        id: "objects",
+        graph: {
+          kind: "collections" as const,
+          templates: [
+            {
+              id: "fixture",
+              nodes: [
+                {
+                  id: "root",
+                  name: "NewRoot",
+                  className: "Model",
+                  properties: [],
+                  references: [
+                    {
+                      propertyName: "PrimaryPart",
+                      target: options.observedReference
+                        ? { kind: "shared" as const, id: "observed-first" }
+                        : { kind: "local" as const, id: "child" },
+                    },
+                  ],
+                  valueSlots: [],
+                  attributes: [],
+                  dependencies: [],
+                },
+                {
+                  id: "child",
+                  name: "Child",
+                  className: "Part",
+                  parentId: "root",
+                  properties: [],
+                  references: [],
+                  valueSlots: [],
+                  attributes: [],
+                  dependencies: [],
+                },
+              ],
+            },
+          ],
+          copies: [
+            {
+              id: "new",
+              templateId: "fixture",
+              name: "NewRoot",
+              parent: options.observedParent
+                ? { kind: "object" as const, id: previous.observation.instances[0]!.objectId }
+                : { kind: "engine" as const, id: "Workspace" },
+              overrides: [],
+            },
+          ],
+          sharedReferences: options.observedReference
+            ? [
+                {
+                  id: "observed-first",
+                  target: {
+                    kind: "object" as const,
+                    id: previous.observation.instances.find(
+                      (instance) => instance.path === "Workspace/First",
+                    )!.objectId,
+                  },
+                },
+              ]
+            : [],
+        },
+        ports: [],
+        obligations: [],
+      },
       {
         kind: "source_package" as const,
         id: "logic",
@@ -339,7 +315,11 @@ export function creatorPlanRecompilationFixture(
                         path: observedRoot.path,
                         className: observedRoot.className,
                       }
-                    : { kind: "generated" as const, operationId: "new-root" },
+                    : {
+                        kind: "component_output" as const,
+                        componentId: "objects",
+                        outputId: "copy/new/root",
+                      },
                   name: "Module",
                   className: "ModuleScript" as const,
                 },
@@ -355,12 +335,10 @@ export function creatorPlanRecompilationFixture(
   };
   const compilerInput = {
     design,
-    registry: catalog.registry,
     projectId: previous.session.projectId,
     project: previous.observation.project,
     initialTopology: previous.observation.instances,
     observation: previous.observation,
-    recipeExpanders: catalog.expanders,
   };
   const expanded = expandGameDesign(compilerInput);
   const compiled = compileGamePlan({
@@ -421,7 +399,7 @@ export function creatorPlanRecompilationFixture(
     afterCapture,
     ...current,
     creatorPrompt,
-    catalog,
+    environment,
     previous,
   };
 }

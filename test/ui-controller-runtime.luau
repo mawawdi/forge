@@ -70,11 +70,11 @@ end)
 
 test("failed validation creates no connections or partial mount", function()
   local root = scene()
-  root.attributes.UiRecipeAbi = "3"
+  root.attributes.UiGraphAbi = "0"
   fails(function() Controller.Mount(root, state(), {activate = function() end}) end)
   fails(function() Controller.Observe(root) end)
   equal(env.connected(), 0)
-  root.attributes.UiRecipeAbi = "5"
+  root.attributes.UiGraphAbi = "1"
   fails(function() Controller.Mount(root, state(), {}) end)
   equal(env.connected(), 0)
   fails(function() Controller.Mount(root, {}, {activate = function() end}) end)

@@ -2,6 +2,7 @@
 local HttpService = game:GetService("HttpService")
 local StudioTestService = game:GetService("StudioTestService")
 local Constants = require(script.Parent.Constants)
+local ApprovedSceneImport = require(script.Parent.ApprovedSceneImport)
 local ConnectorView = require(script.Parent.ConnectorView)
 local ConnectorPresentation = require(script.Parent.ConnectorPresentation)
 local Generated = require(script.Parent.GeneratedStudioEvidence)
@@ -988,6 +989,46 @@ function Runtime.start(plugin: Plugin)
 			local projection = decodeProjection(message.payload.projectionJson, message.payload.projectionJsonHash, message.payload.projectionHash)
 			local sent, failure = sendEvidence(message.payload.reason, projection, message.requestId)
 			if not sent then error(failure) end
+		elseif message.type == "InspectApprovedSceneAssets" then
+			local payload = message.payload
+			if not currentProjectRevision or payload.expectedProjectRevisionHash ~= currentProjectRevision then error("approved scene inspection requires the current project revision") end
+			if payload.connectorBuildHash ~= Generated.connectorBuildHash then error("approved scene inspection connector build mismatch") end
+			if not projectId or payload.targetProjectId ~= projectId then error("approved scene inspection target project mismatch") end
+			if Hash.sha256(payload.inspectionDocumentJson) ~= payload.inspectionDocumentJsonHash then error("approved scene inspection document hash mismatch") end
+			local decoded, document = pcall(function() return HttpService:JSONDecode(payload.inspectionDocumentJson) end)
+			if not decoded or typeof(document) ~= "table" or StudioProjectIndexCanonical.transportJson(document) ~= payload.inspectionDocumentJson then error("approved scene inspection document is not canonical JSON") end
+			if document.kind ~= "InspectApprovedSceneAsset" or document.abi ~= "inspect-approved-scene-asset@2" or document.challengeId ~= payload.challengeId or document.challengeHash ~= payload.challengeHash or document.targetProjectId ~= payload.targetProjectId or document.sceneHash ~= payload.sceneHash or document.bundleManifestHash ~= payload.bundleManifestHash or document.uploadAuthorizationHash ~= payload.uploadAuthorizationHash or document.capabilityProfileHash ~= payload.capabilityProfileHash or typeof(document.binding) ~= "table" then error("approved scene inspection authority binding mismatch") end
+			if document.binding.challengeHash ~= payload.challengeHash or document.binding.scene.hash ~= payload.sceneHash or document.binding.bundleManifestHash ~= payload.bundleManifestHash or document.binding.uploadAuthorizationHash ~= payload.uploadAuthorizationHash or document.binding.capabilityProfileHash ~= payload.capabilityProfileHash then error("approved scene inspection import binding mismatch") end
+			local result = ApprovedSceneImport.inspectApprovedAsset(document.binding)
+			local observation = {
+				kind = "ApprovedSceneAssetObservation",
+				abi = "approved-scene-asset-observation@2",
+				challengeId = payload.challengeId,
+				challengeHash = payload.challengeHash,
+				sceneHash = payload.sceneHash,
+				bundleManifestHash = payload.bundleManifestHash,
+				uploadAuthorizationHash = payload.uploadAuthorizationHash,
+				capabilityProfileHash = payload.capabilityProfileHash,
+				result = result,
+			}
+			local observationJson = StudioProjectIndexCanonical.transportJson(observation)
+			sendRequired("ApprovedSceneAssetsInspected", {
+				requestId = payload.requestId,
+				challengeId = payload.challengeId,
+				challengeHash = payload.challengeHash,
+				connectorBuildHash = Generated.connectorBuildHash,
+				targetProjectId = payload.targetProjectId,
+				projectRevisionHash = currentProjectRevision,
+				sceneHash = payload.sceneHash,
+				bundleManifestHash = payload.bundleManifestHash,
+				uploadAuthorizationHash = payload.uploadAuthorizationHash,
+				capabilityProfileHash = payload.capabilityProfileHash,
+				inspectionDocumentJsonHash = payload.inspectionDocumentJsonHash,
+				status = result.status,
+				observationJson = observationJson,
+				observationJsonHash = Hash.sha256(observationJson),
+				inspectedAt = iso(),
+			}, message.requestId)
 		elseif message.type == "ExecuteRuntimeEvalPlan" then
 			if not currentProjectRevision or message.payload.expectedProjectRevisionHash ~= currentProjectRevision then error("runtime execution requires current project-index revision") end
 			if not sessionId or not projectId then error("runtime execution requires pairing") end

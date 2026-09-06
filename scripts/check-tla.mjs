@@ -20,6 +20,8 @@ for (const model of [
   "ProjectIndexPublication",
   "CreatorConversation",
   "CreatorProjectIdentity",
+  "VisualWorldApproval",
+  "UploadDispatchFence",
 ]) {
   const metadir = await mkdtemp(join(tmpdir(), "forge-tlc-"));
   try {

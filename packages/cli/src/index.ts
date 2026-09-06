@@ -9,7 +9,19 @@ import {
   ForgeNativeAgentRuntime,
   loadWorkspaceCandidateArtifact,
 } from "../../agent-runtime/src/index.js";
-import { ImmutableJsonArtifactStore } from "../../artifact-store/src/index.js";
+import {
+  ImmutableBinaryArtifactStore,
+  ImmutableJsonArtifactStore,
+} from "../../artifact-store/src/index.js";
+import {
+  BLENDER_COMPILER_INSTALLATION_SCHEMA,
+  compileBlenderScene,
+  currentBlenderWorkerIdentity,
+  inspectBlenderInstallation,
+  qualifyBlenderInstallation,
+  type BlenderSourceInput,
+  type BlenderCompilerInstallation,
+} from "../../blender-compiler/src/index.js";
 import {
   CreatorAssetJobs,
   readCreatorAssetInput,
@@ -110,6 +122,7 @@ import {
   type StudioCapabilityCanaryRun,
 } from "../../studio-runtime/src/index.js";
 import { verifyProject } from "../../verifier/src/index.js";
+import { solveBlenderScene, validateBlenderSceneSpec } from "../../visual-world/src/index.js";
 import { loadCreatorServeOptions, parseCreatorServeOptions } from "./creator-serve-options.js";
 import {
   createCreatorActionCommandRequest,
@@ -130,6 +143,10 @@ async function main(): Promise<void> {
   if (command === "creator" && subcommand === "turn") return creatorTurn(rest);
   if (command === "creator" && subcommand === "state")
     return creatorStateCommand(rest[0], rest.slice(1));
+  if (command === "creator" && subcommand === "visual-state")
+    return creatorVisualState(rest[0], rest.slice(1));
+  if (command === "creator" && subcommand === "visual-act")
+    return creatorVisualAction(rest[0], rest.slice(1));
   if (command === "creator" && subcommand === "act")
     return creatorAction(rest[0], rest[1], rest.slice(2));
   if (command === "creator" && subcommand === "replay-verification")
@@ -152,10 +169,176 @@ async function main(): Promise<void> {
   if (command === "studio" && subcommand === "canary")
     return studioCapabilityCanary(rest[0], rest.slice(1));
   if (command === "studio" && subcommand === "bridge") return studioBridge(rest);
+  if (command === "visual" && subcommand === "solve") return visualSolve(rest[0], rest.slice(1));
+  if (command === "visual" && subcommand === "blender-qualify") return visualBlenderQualify(rest);
+  if (command === "visual" && subcommand === "blender-status") return visualBlenderStatus(rest);
+  if (command === "visual" && subcommand === "compile")
+    return visualCompile(rest[0], rest.slice(1));
   if (command === "verify") return verify(subcommand, rest);
   if (command === "trace" && subcommand === "show") return showTrace(rest[0], rest.slice(1));
   usage();
   process.exitCode = command === "--help" || command === "help" || command === undefined ? 0 : 2;
+}
+
+async function visualSolve(intentPath: string | undefined, values: string[]): Promise<void> {
+  const outputPath = oneOption(values, "--output");
+  if (!intentPath || !outputPath) {
+    process.stderr.write(
+      "Usage: forge visual solve <scene-intent.json> --output <scene-spec.json>\n",
+    );
+    process.exitCode = 2;
+    return;
+  }
+  try {
+    const result = solveBlenderScene(await readJson(intentPath));
+    if (result.status === "eligible") await writeCanonicalJson(outputPath, result.spec);
+    process.stdout.write(
+      `${JSON.stringify({ ...result, ...(result.status === "eligible" ? { output: resolve(outputPath) } : {}) }, null, 2)}\n`,
+    );
+    process.exitCode = result.status === "eligible" ? 0 : result.status === "rejected" ? 1 : 2;
+  } catch (error) {
+    process.stderr.write(`Visual scene solving did not complete: ${message(error)}\n`);
+    process.exitCode = 2;
+  }
+}
+
+async function visualBlenderStatus(values: string[]): Promise<void> {
+  const installationPath = oneOption(values, "--installation");
+  if (!installationPath) {
+    process.stderr.write("Usage: forge visual blender-status --installation <installation.json>\n");
+    process.exitCode = 2;
+    return;
+  }
+  try {
+    const result = await inspectBlenderInstallation(await readJson(installationPath));
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    process.exitCode = result.status === "eligible" ? 0 : result.status === "rejected" ? 1 : 2;
+  } catch (error) {
+    process.stderr.write(`Blender qualification check did not complete: ${message(error)}\n`);
+    process.exitCode = 2;
+  }
+}
+
+async function visualBlenderQualify(values: string[]): Promise<void> {
+  const options = exactOptions(values, ["--distribution", "--application", "--output"]);
+  const distributionPath = options?.get("--distribution");
+  const applicationPath = options?.get("--application");
+  const outputPath = options?.get("--output");
+  if (!distributionPath || !applicationPath || !outputPath) {
+    process.stderr.write(
+      "Usage: forge visual blender-qualify --distribution <blender.dmg> --application <Blender.app> --output <installation.json>\n",
+    );
+    process.exitCode = 2;
+    return;
+  }
+  try {
+    const result = await qualifyBlenderInstallation({
+      distributionPath: resolve(distributionPath),
+      applicationPath: resolve(applicationPath),
+      compilerIdentity: await currentBlenderWorkerIdentity(),
+    });
+    if (result.status === "eligible") await writeCanonicalJson(outputPath, result.qualification);
+    process.stdout.write(
+      `${JSON.stringify(
+        result.status === "eligible" ? { ...result, output: resolve(outputPath) } : result,
+        null,
+        2,
+      )}\n`,
+    );
+    process.exitCode = result.status === "eligible" ? 0 : result.status === "rejected" ? 1 : 2;
+  } catch (error) {
+    process.stderr.write(`Blender qualification did not complete: ${message(error)}\n`);
+    process.exitCode = 2;
+  }
+}
+
+async function visualCompile(specPath: string | undefined, values: string[]): Promise<void> {
+  const options = exactOptions(values, ["--installation", "--store", "--source-root", "--sources"]);
+  const installationPath = options?.get("--installation");
+  const storePath = options?.get("--store");
+  const sourceRoot = options?.get("--source-root");
+  const sourcesPath = options?.get("--sources");
+  if (!specPath || !installationPath || !storePath || !sourceRoot || !sourcesPath) {
+    process.stderr.write(
+      "Usage: forge visual compile <scene-spec.json> --installation <installation.json> --store <directory> --source-root <directory> --sources <source-list.json>\n",
+    );
+    process.exitCode = 2;
+    return;
+  }
+  try {
+    const sourceValue = await readJson(sourcesPath);
+    if (!Array.isArray(sourceValue)) throw new Error("Source list must be a JSON array");
+    const sources: BlenderSourceInput[] = sourceValue.map((entry) => {
+      if (
+        !isRecord(entry) ||
+        Object.keys(entry).some((key) => key !== "sourceId" && key !== "path") ||
+        typeof entry.sourceId !== "string" ||
+        typeof entry.path !== "string"
+      )
+        throw new Error("Each source entry must contain only sourceId and path strings");
+      return { sourceId: entry.sourceId, path: entry.path };
+    });
+    const root = resolve(storePath);
+    const result = await compileBlenderScene({
+      spec: validateBlenderSceneSpec(await readJson(specPath)),
+      installation: BLENDER_COMPILER_INSTALLATION_SCHEMA.parse(await readJson(installationPath)),
+      binaryStore: new ImmutableBinaryArtifactStore(root),
+      allowedSourceRoots: [resolve(sourceRoot)],
+      sources,
+    });
+    const presented =
+      result.status !== "eligible"
+        ? result
+        : {
+            ...result,
+            bundle: {
+              ...result.bundle,
+              manifestPath: resolve(root, result.bundle.manifestArtifact.locator),
+              artifactPaths: result.bundle.artifacts.map(({ output, artifact }) => ({
+                outputId: output.id,
+                path: resolve(root, artifact.locator),
+                hash: artifact.artifactHash,
+              })),
+            },
+          };
+    process.stdout.write(`${JSON.stringify(presented, null, 2)}\n`);
+    process.exitCode = result.status === "eligible" ? 0 : result.status === "rejected" ? 1 : 2;
+  } catch (error) {
+    process.stderr.write(`Visual compilation did not complete: ${message(error)}\n`);
+    process.exitCode = 2;
+  }
+}
+
+function oneOption(values: string[], name: string): string | undefined {
+  if (values.length !== 2 || values[0] !== name || !values[1] || values[1].startsWith("--"))
+    return undefined;
+  return values[1];
+}
+
+function exactOptions(values: string[], names: readonly string[]): Map<string, string> | undefined {
+  if (values.length !== names.length * 2) return undefined;
+  const allowed = new Set(names);
+  const result = new Map<string, string>();
+  for (let index = 0; index < values.length; index += 2) {
+    const name = values[index];
+    const value = values[index + 1];
+    if (!name || !value || !allowed.has(name) || value.startsWith("--") || result.has(name))
+      return undefined;
+    result.set(name, value);
+  }
+  return result.size === names.length ? result : undefined;
+}
+
+async function writeCanonicalJson(pathValue: string, value: unknown): Promise<void> {
+  const destination = resolve(pathValue);
+  await mkdir(dirname(destination), { recursive: true });
+  const temporary = join(dirname(destination), `.${basename(destination)}.${randomUUID()}.tmp`);
+  await writeFile(temporary, `${stableJson(value)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+    flag: "wx",
+  });
+  await rename(temporary, destination);
 }
 
 async function creatorAsset(values: string[]): Promise<void> {
@@ -294,6 +477,7 @@ async function creatorServe(optionArgs: string[]): Promise<void> {
       new OpenRouterModelClient({ apiKey, modelCatalog }),
     );
     const directory = resolve(options.sessionDirectory ?? CREATOR_DEFAULT_STORE);
+    const visualCompilerInstallation = await loadOptionalVisualCompilerInstallation();
     storeLease = await acquireCreatorStoreLease(directory);
     const sourceAnalysisHost = await PinnedSourceAnalysisHost.create({
       root: resolve(process.cwd()),
@@ -314,12 +498,14 @@ async function creatorServe(optionArgs: string[]): Promise<void> {
       defaultModelId: defaultModel,
       modelCatalog,
       compactConversation: (input) => runtime.compact(input),
+      ...(visualCompilerInstallation ? { visualCompilerInstallation } : {}),
       ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
     });
     await conversation.initialize();
     control = new CreatorControlServer({
       coordinator: conversation,
       dashboardDirectory: resolve("dashboard/dist"),
+      artifactRoot: directory,
       ...(options.controlPort ? { port: options.controlPort } : {}),
     });
     bridge.subscribe((messageValue) => {
@@ -372,6 +558,21 @@ async function creatorServe(optionArgs: string[]): Promise<void> {
   }
 }
 
+async function loadOptionalVisualCompilerInstallation(): Promise<
+  BlenderCompilerInstallation | undefined
+> {
+  const path = resolve(".forge/blender/installation-qualification-v2.json");
+  try {
+    const info = await lstat(path);
+    if (!info.isFile() || info.isSymbolicLink())
+      throw new Error("Visual compiler qualification must be a regular file");
+    return BLENDER_COMPILER_INSTALLATION_SCHEMA.parse(JSON.parse(await readFile(path, "utf8")));
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
 async function creatorStateCommand(
   conversationId: string | undefined,
   optionArgs: string[],
@@ -385,6 +586,61 @@ async function creatorStateCommand(
     process.stdout.write(`${JSON.stringify(await creatorState(conversationId), null, 2)}\n`);
   } catch (error) {
     process.stderr.write(`Creator conversation state unavailable: ${message(error)}\n`);
+    process.exitCode = 2;
+  }
+}
+
+async function creatorVisualState(
+  workflowId: string | undefined,
+  optionArgs: string[],
+): Promise<void> {
+  if (!workflowId || optionArgs.length > 0) {
+    process.stderr.write("Usage: forge creator visual-state <workflow-id>\n");
+    process.exitCode = 2;
+    return;
+  }
+  try {
+    const discovery = await readCreatorControlDiscovery();
+    process.stdout.write(
+      `${JSON.stringify(
+        await creatorRequest(discovery, `/api/visual-workflows/${encodeURIComponent(workflowId)}`, {
+          method: "GET",
+        }),
+        null,
+        2,
+      )}\n`,
+    );
+  } catch (error) {
+    process.stderr.write(`Visual workflow state unavailable: ${message(error)}\n`);
+    process.exitCode = 2;
+  }
+}
+
+async function creatorVisualAction(
+  inputPath: string | undefined,
+  optionArgs: string[],
+): Promise<void> {
+  if (!inputPath || optionArgs.length > 0) {
+    process.stderr.write("Usage: forge creator visual-act <action.json|->\n");
+    process.exitCode = 2;
+    return;
+  }
+  try {
+    const text = inputPath === "-" ? await readStdin() : await readFile(resolve(inputPath), "utf8");
+    const action = JSON.parse(text) as unknown;
+    const discovery = await readCreatorControlDiscovery();
+    process.stdout.write(
+      `${JSON.stringify(
+        await creatorRequest(discovery, "/api/control/visual-world", {
+          method: "POST",
+          body: JSON.stringify(action),
+        }),
+        null,
+        2,
+      )}\n`,
+    );
+  } catch (error) {
+    process.stderr.write(`Visual workflow action failed: ${message(error)}\n`);
     process.exitCode = 2;
   }
 }
@@ -1491,7 +1747,7 @@ function parseStudioCanaryOptions(values: string[]): {
 }
 function usage(): void {
   process.stdout.write(
-    `Forge commands:\n  forge creator serve [--default-model <registered-model-id>]\n  forge creator state [conversation-id]\n  forge creator turn [conversation-id] (--prompt <message> | --prompt-file <file-or->) [--model <registered-model-id>] [--kind <turn-kind>]\n  forge creator act <conversation-id> <action-instance-id> [--text <value> | --text-file <file-or-> | --report <value> | --report-file <file-or->] [--model <registered-model-id>] [--memory-item-id <id> --memory-revision-id <id> --memory-revision-hash <hash>] [--memory-category <category>]\n  forge creator replay-verification <session-id> [--verification <id>] [--session-dir <path>]\n  forge creator replay-mutation <session-id> [--attempt <id>] [--session-dir <path>]\n  forge creator replay-regression <manifest-artifact-hash> [--session-dir <path>]\n  forge creator timings <session-id> [--session-dir <path>]\n  forge creator asset doctor --installation <host-json>\n  forge creator asset prepare --request-file <json> --installation <host-json> --store <path>\n  forge creator asset run|status|fetch <job-id> --store <path>\n  forge creator asset reconcile <job-id> --output-sha256 <hash> --store <path>\n  forge creator asset preview <job-id> --output <absolute.html> --store <path>\n  forge creator asset review <job-id> --lock-hash <hash> --store <path>\n  forge experiment register <seed> --prompt-file <file> --requirements <file> --acceptance <file> --runtime-plan <file> --runtime-configuration <file> --model <exact-model-id> --output <registration.json>\n  forge experiment build <seed> --registration <registration.json>\n  forge experiment evaluate <artifact> --registration <registration.json>\n  forge studio api-status\n  forge studio capabilities [--class <RobloxClass>] [--query <text>]\n  forge studio canary <seed> --plan <file>\n  forge studio bridge\n  forge verify <project>\n  forge trace show <trace-id>\n`,
+    `Forge commands:\n  forge creator serve [--default-model <registered-model-id>]\n  forge creator state [conversation-id]\n  forge creator visual-state <workflow-id>\n  forge creator visual-act <action.json|->\n  forge creator turn [conversation-id] (--prompt <message> | --prompt-file <file-or->) [--model <registered-model-id>] [--kind <turn-kind>]\n  forge creator act <conversation-id> <action-instance-id> [--text <value> | --text-file <file-or-> | --report <value> | --report-file <file-or->] [--model <registered-model-id>] [--memory-item-id <id> --memory-revision-id <id> --memory-revision-hash <hash>] [--memory-category <category>]\n  forge creator replay-verification <session-id> [--verification <id>] [--session-dir <path>]\n  forge creator replay-mutation <session-id> [--attempt <id>] [--session-dir <path>]\n  forge creator replay-regression <manifest-artifact-hash> [--session-dir <path>]\n  forge creator timings <session-id> [--session-dir <path>]\n  forge creator asset doctor --installation <host-json>\n  forge creator asset prepare --request-file <json> --installation <host-json> --store <path>\n  forge creator asset run|status|fetch <job-id> --store <path>\n  forge creator asset reconcile <job-id> --output-sha256 <hash> --store <path>\n  forge creator asset preview <job-id> --output <absolute.html> --store <path>\n  forge creator asset review <job-id> --lock-hash <hash> --store <path>\n  forge experiment register <seed> --prompt-file <file> --requirements <file> --acceptance <file> --runtime-plan <file> --runtime-configuration <file> --model <exact-model-id> --output <registration.json>\n  forge experiment build <seed> --registration <registration.json>\n  forge experiment evaluate <artifact> --registration <registration.json>\n  forge studio api-status\n  forge studio capabilities [--class <RobloxClass>] [--query <text>]\n  forge studio canary <seed> --plan <file>\n  forge studio bridge\n  forge visual solve <scene-intent.json> --output <scene-spec.json>\n  forge visual blender-qualify --distribution <blender.dmg> --application <Blender.app> --output <installation.json>\n  forge visual blender-status --installation <installation.json>\n  forge visual compile <scene-spec.json> --installation <installation.json> --store <directory> --source-root <directory> --sources <source-list.json>\n  forge verify <project>\n  forge trace show <trace-id>\n`,
   );
 }
 function message(error: unknown): string {

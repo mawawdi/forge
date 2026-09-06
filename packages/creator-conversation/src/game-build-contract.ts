@@ -14,7 +14,7 @@ export interface GameBuildControlView {
   readonly nodes: readonly GameBuildControlNode[];
   readonly components: readonly {
     readonly id: string;
-    readonly kind: "source_package" | "recipe_instance";
+    readonly kind: "source_package" | "native_graph" | "ui_graph" | "scene_handle";
     readonly observedSources: number;
   }[];
   /** Explicit artifact edges and cross-component source imports; runtime connections are separate. */
@@ -69,9 +69,7 @@ export interface GameBuildControlNode {
   readonly operation: "create" | "update" | "move" | "delete" | "edit_source";
   readonly status: "planned" | "ready" | "applying" | "applied" | "pending" | "stopped";
   readonly provenance: {
-    readonly componentKind: "source_package" | "recipe_instance";
-    readonly definitionId?: string;
-    readonly definitionHash?: string;
+    readonly componentKind: "source_package" | "native_graph" | "ui_graph" | "scene_handle";
   };
   readonly source?: {
     readonly fileId: string;
@@ -130,7 +128,7 @@ export function assertGameBuildControlView(value: unknown): asserts value is Gam
     if (
       !text(component.id, 4096) ||
       componentIds.has(String(component.id)) ||
-      !oneOf(component.kind, ["source_package", "recipe_instance"]) ||
+      !oneOf(component.kind, ["source_package", "native_graph", "ui_graph", "scene_handle"]) ||
       !integer(component.observedSources)
     )
       fail();
@@ -161,9 +159,12 @@ export function assertGameBuildControlView(value: unknown): asserts value is Gam
     ids.add(String(node.id));
     const provenance = object(node.provenance);
     if (
-      !oneOf(provenance.componentKind, ["source_package", "recipe_instance"]) ||
-      (provenance.definitionId !== undefined && !text(provenance.definitionId, 128)) ||
-      (provenance.definitionHash !== undefined && !hash(provenance.definitionHash))
+      !oneOf(provenance.componentKind, [
+        "source_package",
+        "native_graph",
+        "ui_graph",
+        "scene_handle",
+      ])
     )
       fail();
     object(node.lockedProperties);

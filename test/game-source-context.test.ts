@@ -5,11 +5,7 @@ import { createGameSourceContextReader } from "../packages/creator-session/src/g
 import { createGameSourceBrief } from "../packages/creator-session/src/game-source-brief.js";
 import { checkGameSourceImports } from "../packages/creator-session/src/game-source-checks.js";
 import { compileGamePlan, expandGameDesign } from "../packages/game-compiler/src/index.js";
-import {
-  createGameDefinitionRegistry,
-  type GameDesignSpec,
-  type GameSourceFile,
-} from "../packages/game-ir/src/index.js";
+import type { GameDesignSpec, GameSourceFile } from "../packages/game-ir/src/index.js";
 import { PinnedSourceAnalysisHost } from "../packages/source-intelligence/src/index.js";
 import { createTestFixtureSourceResolver } from "./helpers/source-fixtures.js";
 
@@ -99,7 +95,6 @@ function fixture(
   };
   const input = {
     design,
-    registry: createGameDefinitionRegistry([]),
     projectId: "source-context",
     project: { name: "Source context", placeId: 0, universeId: 0 },
     initialTopology: topology,

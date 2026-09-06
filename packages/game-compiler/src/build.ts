@@ -25,7 +25,7 @@ import {
   createCreatorSourceWriteBlobCapture,
   type CreatorSourceWriteBlobCapture,
 } from "../../studio-evidence/src/project-index.js";
-import { gameDataMatchesSchema } from "../../game-ir/src/recipes.js";
+import { gameDataMatchesSchema } from "../../game-ir/src/data-contracts.js";
 import { gameActivationOperations } from "./activation.js";
 import type { GameJsonValue } from "../../game-ir/src/index.js";
 import {

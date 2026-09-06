@@ -7,10 +7,8 @@ import test from "node:test";
 import {
   AssetRegistry,
   DEFAULT_CUBE_EXECUTION_POLICY,
-  connectedAssetProviderStatus,
   createCubeJobIntent,
   cubeArgumentVector,
-  externalAssetJobRecovery,
   fitAssetGeometry,
   inspectObj,
   runCubeJob,
@@ -293,13 +291,6 @@ test("Cube refuses symlinked inputs and connected adapters report unavailable ra
           jobRoot: join(root, "jobs"),
         }),
       /symlink/,
-    );
-    assert.equal(connectedAssetProviderStatus("generation_service").status, "unavailable");
-    assert.equal(connectedAssetProviderStatus("open_cloud").status, "unavailable");
-    assert.deepEqual(
-      externalAssetJobRecovery({ submittedIntentHash: intent.hash, receiptState: "unknown" })
-        .mayResubmit,
-      false,
     );
   } finally {
     await rm(root, { recursive: true, force: true });

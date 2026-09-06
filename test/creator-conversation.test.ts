@@ -184,6 +184,21 @@ test("conversation contracts expose closed browser-safe turn, action, and dashbo
     eventPage: { conversationId: conversation.id, events: [], complete: true },
     episodes: [],
     memories: [],
+    visualWorkflows: [
+      {
+        workflowId: "visual-workflow-contract",
+        projectId: "forge_project_contract",
+        eventId: "visual-workflow-event-contract",
+        eventHash: "a".repeat(64),
+        sequence: 2,
+        state: "bundle_review",
+        action: "review_bundle",
+        actor: "forge_host",
+        artifactHashes: { bundleManifestHash: "b".repeat(64) },
+        detail: "The named review renders are ready for a creator decision.",
+        occurredAt: LATER,
+      },
+    ],
     modelRegistry: registry,
     controlView: view,
     pairedStudio: {

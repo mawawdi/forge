@@ -58,6 +58,11 @@ export const GAME_VISUAL_DIRECTION_SCHEMA = z
               .describe(
                 "Optional world-space review framing in studs, with a vertical field of view. It does not install or move a Camera.",
               ),
+            sceneViewId: entityId
+              .optional()
+              .describe(
+                "Named review view in the bound BlenderSceneSpec. This reference carries no duplicate camera geometry.",
+              ),
           })
           .strict(),
       )
@@ -92,6 +97,12 @@ export function validateGameVisualDirection(
         "Visual views must reference distinct declared components",
       );
     if (view.camera) {
+      if (view.sceneViewId)
+        throw new GameAdmissionError(
+          "duplicate_visual_camera_authority",
+          view.id,
+          "A visual review view cannot declare camera geometry and reference a scene view",
+        );
       const { position, lookAt } = view.camera;
       const distance = Math.hypot(
         position.x - lookAt.x,
@@ -120,7 +131,8 @@ export function gameVisualReviewStatements(direction?: GameVisualDirection): str
       const camera = view.camera
         ? ` Camera position ${JSON.stringify(view.camera.position)}, look at ${JSON.stringify(view.camera.lookAt)}, vertical field of view ${view.camera.fieldOfViewDegrees}°.`
         : "";
-      return `${view.name}: ${view.setup}${viewport}${camera} Review: ${view.criteria.join("; ")}`;
+      const sceneView = view.sceneViewId ? ` Scene view ${view.sceneViewId}.` : "";
+      return `${view.name}: ${view.setup}${viewport}${camera}${sceneView} Review: ${view.criteria.join("; ")}`;
     }) ?? []
   );
 }

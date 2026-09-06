@@ -47,7 +47,7 @@ end
 -- Read-only, immediate client facts. No waits, callbacks, layout writes, readiness verdict,
 -- host attestation, or assumption that fonts/layout/tweens have finished settling.
 function Controller.Observe(root: ScreenGui): Observation
-  assert(root:IsA("ScreenGui") and root:GetAttribute("UiRecipeAbi") == "5", "UI observation requires the materialized ABI 5 ScreenGui")
+  assert(root:IsA("ScreenGui") and root:GetAttribute("UiGraphAbi") == "1", "UI observation requires the materialized UI graph ScreenGui")
   local componentId = root:GetAttribute("UiComponentId")
   assert(typeof(componentId) == "string" and #componentId > 0 and #componentId <= 128, "UI observation requires its component identity")
   local gui = game:GetService("GuiService")
@@ -105,7 +105,7 @@ function Controller.Observe(root: ScreenGui): Observation
 end
 
 function Controller.Mount(root: ScreenGui, initialState: State, handlers: {[string]: Handler}): Handle
-  assert(root:IsA("ScreenGui") and root:GetAttribute("UiRecipeAbi") == "5", "UI mount requires the materialized ABI 5 ScreenGui")
+  assert(root:IsA("ScreenGui") and root:GetAttribute("UiGraphAbi") == "1", "UI mount requires the materialized UI graph ScreenGui")
   assert(not mounted[root], "UI root is already mounted")
   local gui = game:GetService("GuiService")
   local tweens = game:GetService("TweenService")

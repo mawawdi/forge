@@ -729,6 +729,55 @@ p {
 .conversation-current-action h2 {
   font-size: 16px;
 }
+
+.visual-workflow-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.visual-workflow-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.visual-workflow-card h2,
+.visual-workflow-card p {
+  margin: 0;
+}
+
+.visual-workflow-card__state {
+  display: inline-block;
+  margin-bottom: 6px;
+  color: var(--workspace-text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.visual-workflow-card details {
+  overflow-wrap: anywhere;
+}
+
+.visual-workflow-card dl,
+.visual-workflow-card dl div {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.35fr) minmax(0, 1fr);
+  gap: 6px 12px;
+}
+
+.visual-workflow-card dd {
+  margin: 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.78rem;
+}
 .conversation-empty {
   max-width: 600px;
   margin: clamp(36px, 15vh, 150px) auto 45px;

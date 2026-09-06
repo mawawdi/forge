@@ -4,6 +4,10 @@ import { lstat, mkdir, open, readFile, rename, rm, stat, writeFile } from "node:
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { CreatorConversationCoordinator } from "./conversation-coordinator.js";
+import {
+  ImmutableBinaryArtifactStore,
+  assertBinaryArtifactReference,
+} from "../../artifact-store/src/index.js";
 import { CreatorTurnNotAdmittedError } from "./turn-admission-error.js";
 import {
   ROBLOX_API_CATALOG,
@@ -131,6 +135,8 @@ export type CreatorControlCoordinator = Pick<
   | "conversationEvents"
   | "submitTurn"
   | "submitAction"
+  | "visualWorldState"
+  | "submitVisualWorldAction"
   | "renameWorkspace"
   | "readAuthorizedArtifact"
   | "replayVerification"
@@ -152,6 +158,7 @@ export interface CreatorControlServerOptions {
   now?: () => Date;
   launchTtlMs?: number;
   bearerToken?: string;
+  artifactRoot?: string;
 }
 
 export class CreatorControlServer {
@@ -163,6 +170,7 @@ export class CreatorControlServer {
   private readonly browserSession = randomBytes(32).toString("base64url");
   private readonly launches = new Map<string, number>();
   private readonly dashboardDirectory: string;
+  private readonly binaryArtifacts: ImmutableBinaryArtifactStore | undefined;
   private readonly server: Server;
   private readonly subscribers = new Set<ServerResponse>();
   private cursor = 0;
@@ -179,6 +187,11 @@ export class CreatorControlServer {
     this.launchTtlMs = options.launchTtlMs ?? 5 * 60_000;
     this.bearerToken = options.bearerToken ?? randomBytes(32).toString("base64url");
     this.dashboardDirectory = resolve(options.dashboardDirectory);
+    this.binaryArtifacts = options.artifactRoot
+      ? new ImmutableBinaryArtifactStore(resolve(options.artifactRoot), {
+          maxBytes: 1024 * 1024 * 1024,
+        })
+      : undefined;
     this.server = createServer((request, response) => {
       // A client can disconnect while a Studio-backed action is still settling.
       // No request-path exception may escape this callback: doing so would turn a
@@ -271,6 +284,14 @@ export class CreatorControlServer {
           await this.options.coordinator.dashboardState(
             url.searchParams.get("conversationId") ?? undefined,
           ),
+        );
+      }
+      const visualWorkflow = /^\/api\/visual-workflows\/([^/]+)$/.exec(url.pathname);
+      if (request.method === "GET" && visualWorkflow?.[1]) {
+        return writeJson(
+          response,
+          200,
+          await this.options.coordinator.visualWorldState(decodeURIComponent(visualWorkflow[1])),
         );
       }
       const conversationEvents = /^\/api\/conversations\/([^/]+)\/events$/.exec(url.pathname);
@@ -525,6 +546,15 @@ export class CreatorControlServer {
         const body = await readJsonBody(request, "Creator action");
         return writeJson(response, 202, await this.options.coordinator.submitAction(body));
       }
+      if (request.method === "POST" && url.pathname === "/api/control/visual-world") {
+        this.assertSameOrigin(request);
+        const body = await readJsonBody(request, "Visual-world creator action", 72 * 1024 * 1024);
+        return writeJson(
+          response,
+          200,
+          await this.options.coordinator.submitVisualWorldAction(body),
+        );
+      }
       if (request.method === "POST" && url.pathname === "/api/control/rename") {
         this.assertSameOrigin(request);
         return writeJson(
@@ -540,6 +570,26 @@ export class CreatorControlServer {
           200,
           await this.options.coordinator.readAuthorizedArtifact(artifact[1]),
         );
+      const binaryArtifact = /^\/api\/binary-artifacts\/([a-f0-9]{64})$/.exec(url.pathname);
+      if (request.method === "GET" && binaryArtifact?.[1]) {
+        if (!this.binaryArtifacts) throw new HttpError(404, "Binary artifact store is unavailable");
+        const bindingHash = requiredHashQuery(url, "binding");
+        const binding = await this.options.coordinator.readAuthorizedArtifact(bindingHash);
+        const reference = findBoundBinaryArtifact(binding, binaryArtifact[1]);
+        if (!reference)
+          throw new HttpError(
+            404,
+            "Binary artifact is not bound by the authorized retained artifact",
+          );
+        assertBinaryArtifactReference(reference);
+        const bytes = await this.binaryArtifacts.read(reference);
+        response.statusCode = 200;
+        response.setHeader("content-type", reference.mediaType);
+        response.setHeader("content-length", String(reference.bytes));
+        response.setHeader("etag", `"${reference.artifactHash}"`);
+        response.end(bytes);
+        return;
+      }
       const replay = /^\/api\/verifications\/([^/]+)\/replay$/.exec(url.pathname);
       if (request.method === "POST" && replay?.[1]) {
         this.assertSameOrigin(request);
@@ -671,6 +721,49 @@ export class CreatorControlServer {
     const now = this.now().getTime();
     for (const [grant, expiry] of this.launches) if (expiry < now) this.launches.delete(grant);
   }
+}
+
+function findBoundBinaryArtifact(
+  root: unknown,
+  artifactHash: string,
+): { locator: string; artifactHash: string; bytes: number; mediaType: string } | undefined {
+  const pending: Array<{ value: unknown; depth: number }> = [{ value: root, depth: 0 }];
+  const visited = new Set<object>();
+  let nodes = 0;
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    nodes += 1;
+    if (nodes > 100_000 || current.depth > 32)
+      throw new HttpError(400, "Authorized artifact binary-reference graph exceeds its bound");
+    if (typeof current.value !== "object" || current.value === null) continue;
+    if (visited.has(current.value)) continue;
+    visited.add(current.value);
+    if (!Array.isArray(current.value)) {
+      const record = current.value as Record<string, unknown>;
+      if (
+        record.artifactHash === artifactHash &&
+        record.locator === `binary-artifacts/${artifactHash}.bin` &&
+        typeof record.bytes === "number" &&
+        Number.isSafeInteger(record.bytes) &&
+        record.bytes > 0 &&
+        record.bytes <= 1024 * 1024 * 1024 &&
+        typeof record.mediaType === "string" &&
+        record.mediaType.length > 0 &&
+        record.mediaType.length <= 256
+      )
+        return {
+          locator: record.locator,
+          artifactHash,
+          bytes: record.bytes,
+          mediaType: record.mediaType,
+        };
+    }
+    for (const child of Array.isArray(current.value)
+      ? current.value
+      : Object.values(current.value as Record<string, unknown>))
+      pending.push({ value: child, depth: current.depth + 1 });
+  }
+  return undefined;
 }
 
 /** Returns only pinning and aggregate data; catalog entries remain paginated. */

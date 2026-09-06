@@ -17,6 +17,14 @@ Cube/CubePart, mesh review, UI, and image-input work remains useful foundation a
 predecessor evidence; it is not the active world-generation strategy and does not
 prove a native importer or completed game.
 
+The [September 6–7 Last Light local Blender proof](research/last-light-blender-local-proof-2026-09-06.md)
+retains both the current ABI 2 native qualification and the earlier revision 14
+repair identities. Its classification is local compiler evidence from disclosed
+predecessor material, pending ordinary creator authorship and every Roblox-native
+boundary. The [visual-world removal ledger](research/visual-world-removal-ledger.md)
+records the exact external rollback snapshots, deleted callers/tests, replacement
+coverage, and preserved direct-component behavior.
+
 Other foundational findings remain in force:
 
 - **Semantic authority must stay separated.** Creator intent, memory, observed
@@ -33,8 +41,9 @@ Other foundational findings remain in force:
   validation, canonicalization, writing, reading, preflight, comparison, and replay
   agree. Catalog presence is not permission.
 - **Game IR must remain modular.** Ordinary source packages are the open extension
-  mechanism; optional recipes lower declared structure. A generic harness must not
-  prescribe rounds, reset, UI, genre, or a hidden game solution.
+  mechanism; direct native, UI, and scene components lower declared structure through
+  fixed compilers. A generic harness must not prescribe rounds, reset, UI, genre, or
+  a hidden game solution.
 - **Isolation is bounded, not absolute.** Provider adapters are one-turn transports;
   Forge owns orchestration. Static Luau checks do not execute source, and Studio
   remains the authority for engine behavior. Runtime workers are resource-bounded

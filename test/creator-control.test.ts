@@ -11,6 +11,7 @@ import {
   type CreatorControlCoordinator,
 } from "../packages/creator-control/src/index.js";
 import type { CreatorTurnRequest } from "../packages/creator-conversation/src/index.js";
+import { ImmutableBinaryArtifactStore } from "../packages/artifact-store/src/index.js";
 
 function fakeCoordinator(
   overrides: Partial<CreatorControlCoordinator> = {},
@@ -546,4 +547,48 @@ test("creator control drops a backpressured SSE peer", async () => {
   } finally {
     await server.close();
   }
+});
+
+test("binary artifact delivery requires an authorized artifact that binds exact bytes and media type", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "forge-creator-binary-route-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const dashboard = join(root, "dashboard");
+  await mkdir(dashboard);
+  await writeFile(join(dashboard, "index.html"), "<!doctype html><title>Forge</title>");
+  const store = new ImmutableBinaryArtifactStore(root);
+  const bytes = Buffer.from("review-render-fixture");
+  const reference = await store.write(bytes, "image/png");
+  const bindingHash = "d".repeat(64);
+  const server = new CreatorControlServer({
+    coordinator: fakeCoordinator({
+      async readAuthorizedArtifact(hash) {
+        if (hash !== bindingHash) throw new Error("unauthorized");
+        return { kind: "SceneBundleReviewCard", render: reference };
+      },
+    }),
+    dashboardDirectory: dashboard,
+    artifactRoot: root,
+    port: 0,
+    bearerToken: "bearer_token_123456789012345678901234",
+  });
+  const address = await server.listen();
+  t.after(() => server.close());
+  const origin = `http://${address.host}:${address.port}`;
+  const headers = { authorization: `Bearer ${address.bearerToken}` };
+  const missingBinding = await fetch(`${origin}/api/binary-artifacts/${reference.artifactHash}`, {
+    headers,
+  });
+  assert.equal(missingBinding.status, 400);
+  const wrongBinding = await fetch(
+    `${origin}/api/binary-artifacts/${reference.artifactHash}?binding=${"e".repeat(64)}`,
+    { headers },
+  );
+  assert.equal(wrongBinding.status, 400);
+  const delivered = await fetch(
+    `${origin}/api/binary-artifacts/${reference.artifactHash}?binding=${bindingHash}`,
+    { headers },
+  );
+  assert.equal(delivered.status, 200);
+  assert.equal(delivered.headers.get("content-type"), "image/png");
+  assert.deepEqual(Buffer.from(await delivered.arrayBuffer()), bytes);
 });
