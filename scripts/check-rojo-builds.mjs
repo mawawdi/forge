@@ -4,15 +4,15 @@ import { lstat, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertOfficialSourceAnalysisToolchain } from "../dist/packages/source-intelligence/src/index.js";
 
 const execFile = promisify(execFileCallback);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const sourceAnalysisLockPrefix = "49699a17a8536fc0";
-const requiredRojoVersion = "7.7.0";
 const projects = [
   ["plugin", "plugin/default.project.json", "ForgeStudioPlugin.rbxmx"],
   ["status-beacon", "examples/status-beacon/default.project.json", "StatusBeacon.rbxlx"],
   ["door-control", "examples/door-control/default.project.json", "DoorControl.rbxlx"],
+  ["last-light-clean", "examples/last-light/default.project.json", "LastLightClean.rbxlx"],
   [
     "studio-native-conformance",
     "test/fixtures/studio-native-conformance/default.project.json",
@@ -30,17 +30,6 @@ const execOptions = {
   windowsHide: true,
 };
 
-function sourceAnalysisPlatform() {
-  const architecture =
-    process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x64" : undefined;
-  if (!architecture || !["darwin", "linux", "win32"].includes(process.platform)) {
-    throw new Error(
-      `Pinned Rojo 7.7.0 has no supported source-analysis platform for ${process.platform}/${process.arch}`,
-    );
-  }
-  return `${process.platform}-${architecture}`;
-}
-
 async function assertRegular(path, label) {
   const info = await lstat(path).catch(() => undefined);
   if (!info || info.isSymbolicLink() || !info.isFile())
@@ -49,17 +38,11 @@ async function assertRegular(path, label) {
 }
 
 async function main() {
-  const platform = sourceAnalysisPlatform();
-  const binary = resolve(
-    root,
-    ".forge",
-    "tooling",
-    "source-analysis",
-    `lock-${sourceAnalysisLockPrefix}`,
-    platform,
-    "bin",
-    "rojo",
-  );
+  const toolchain = await assertOfficialSourceAnalysisToolchain(root);
+  const rojo = toolchain.tools.find((tool) => tool.name === "rojo");
+  if (!rojo) throw new Error("Verified source-analysis toolchain has no Rojo executable");
+  const binary = rojo.executable;
+  const requiredRojoVersion = rojo.version;
   await assertRegular(binary, "Verified pinned Rojo executable");
   const version = await execFile(binary, ["--version"], execOptions);
   const renderedVersion = `${version.stdout}\n${version.stderr}`.trim();

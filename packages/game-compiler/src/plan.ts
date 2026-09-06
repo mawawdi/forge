@@ -30,6 +30,8 @@ import {
 } from "../../game-ir/src/index.js";
 import { assertBoundedGameJson, compareGameStrings } from "../../game-ir/src/primitives.js";
 import { canonicalGameDataSchema, resolveGameDefinition } from "../../game-ir/src/recipes.js";
+import { GAME_COMPONENT_OUTPUT_ID_SCHEMA } from "../../game-ir/src/source.js";
+import { gameActivationOperations } from "./activation.js";
 import type {
   GameCompilerPolicy,
   GameInventoryItem,
@@ -38,7 +40,7 @@ import type {
   GameRecipeExpander,
 } from "./types.js";
 
-export const GAME_COMPILER_ABI = "forge-game-compiler@1";
+export const GAME_COMPILER_ABI = "forge-game-compiler@5";
 export const DEFAULT_GAME_COMPILER_POLICY: Readonly<GameCompilerPolicy> = Object.freeze({
   maximumOperations: 8192,
   maximumCanonicalBytes: 64 * 1024 * 1024,
@@ -64,6 +66,43 @@ const POLICY_SCHEMA = z
   })
   .strict();
 
+const PERSISTENT_SPATIAL_CLASSES = new Set([
+  "CornerWedgePart",
+  "MeshPart",
+  "Part",
+  "Seat",
+  "SpawnLocation",
+  "TrussPart",
+  "UnionOperation",
+  "VehicleSeat",
+  "WedgePart",
+]);
+
+function assertWorldAuthoring(
+  design: GameDesignSpec,
+  finalNodes: ReturnType<typeof compileCreatorTransactionTopology>["finalNodes"],
+): void {
+  if (design.worldAuthoring.mode !== "persistent") return;
+  for (const root of design.worldAuthoring.roots) {
+    const rootMatches = finalNodes.filter((node) => node.path === root);
+    if (rootMatches.length !== 1)
+      throw new Error(
+        `Persistent world root must resolve exactly once in the final topology: ${root}`,
+      );
+    const prefix = root + "/";
+    if (
+      !finalNodes.some(
+        (node) =>
+          (node.path === root || node.path.startsWith(prefix)) &&
+          PERSISTENT_SPATIAL_CLASSES.has(node.className),
+      )
+    )
+      throw new Error(
+        `Persistent world root contains no authored spatial geometry in the final topology: ${root}`,
+      );
+  }
+}
+
 export function gameGeneratedTarget(input: {
   projectId: string;
   designHash?: string;
@@ -87,6 +126,40 @@ interface DesignInput {
   readonly project: StudioProjectIdentity;
   readonly initialTopology: readonly CreatorTransactionTopologyNode[];
   readonly observation?: CreatorProjectIndexView;
+}
+
+function recipeOutputInventory(
+  inventory: readonly GameInventoryItem[],
+  design: GameDesignSpec,
+): Map<string, GameInventoryItem> {
+  const components = new Map(design.components.map((component) => [component.id, component]));
+  const outputs = new Map<string, GameInventoryItem>();
+  for (const item of inventory) {
+    if (item.outputId === undefined) continue;
+    if (
+      !GAME_COMPONENT_OUTPUT_ID_SCHEMA.safeParse(item.outputId).success ||
+      components.get(item.componentId)?.kind !== "recipe_instance" ||
+      item.change.kind !== "create"
+    )
+      throw new Error(
+        "Recipe output alias requires a valid local ID and an exact created recipe object",
+      );
+    const key = stableJson([item.componentId, item.outputId]);
+    if (outputs.has(key))
+      throw new Error("Duplicate recipe output alias: " + item.componentId + "/" + item.outputId);
+    outputs.set(key, item);
+  }
+  return outputs;
+}
+
+function resolveRecipeOutput(
+  outputs: ReadonlyMap<string, GameInventoryItem>,
+  componentId: string,
+  outputId: string,
+): GameInventoryItem {
+  const item = outputs.get(stableJson([componentId, outputId]));
+  if (!item) throw new Error("Unknown recipe component output: " + componentId + "/" + outputId);
+  return item;
 }
 
 export function expandGameDesign(
@@ -142,6 +215,7 @@ export function expandGameDesign(
   }
   const byId = new Map(inventory.map((item) => [item.id, item]));
   if (byId.size !== inventory.length) throw new Error("Duplicate compiler inventory ID");
+  const outputs = recipeOutputInventory(inventory, admitted.spec);
   const sources = new Map<string, { componentId: string; file: GameSourceFile }>();
   for (const component of admitted.spec.components) {
     if (component.kind !== "source_package") continue;
@@ -190,8 +264,11 @@ export function expandGameDesign(
     const dependencies: string[] = [];
     if (placement.kind === "create") {
       let parent = placement.parent;
-      if (parent.kind === "generated") {
-        const generated = resolveSource(parent.operationId);
+      if (parent.kind === "generated" || parent.kind === "component_output") {
+        const generated =
+          parent.kind === "generated"
+            ? resolveSource(parent.operationId)
+            : resolveRecipeOutput(outputs, parent.componentId, parent.outputId);
         if (generated.change.kind !== "create")
           throw new Error("Generated parent must be a create");
         dependencies.push(generated.id);
@@ -266,11 +343,8 @@ export function expandGameDesign(
         );
         if (dependency) dependencies.add(dependency.id);
       }
-    // Artifact edges are directed dependencies: `from` consumes `to`.
-    for (const edge of admitted.spec.artifactDependencies)
-      if (edge.from === item.componentId)
-        for (const dependency of inventory)
-          if (dependency.componentId === edge.to) dependencies.add(dependency.id);
+    // Component artifact edges bind content/check inputs in the build DAG.
+    // They do not require activating another component before allocating this one.
     inventory[index] = { ...item, dependencies: [...dependencies].sort() };
   }
   return {
@@ -399,6 +473,7 @@ export function assertGamePlan(value: unknown): asserts value is GamePlan {
   const ids = new Set<string>();
   const slots = new Set<string>();
   const components = new Map(plan.design.components.map((component) => [component.id, component]));
+  const outputs = recipeOutputInventory(plan.inventory, plan.design);
   const sourcePlacements = new Map<string, { componentId: string; file: GameSourceFile }>();
   for (const component of plan.design.components)
     if (component.kind === "source_package")
@@ -423,7 +498,10 @@ export function assertGamePlan(value: unknown): asserts value is GamePlan {
           )
             throw new Error("Compiled observed source differs from its exact package declaration");
         } else
-          sourcePlacements.set(file.placement.operationId, { componentId: component.id, file });
+          sourcePlacements.set(file.placement.operationId, {
+            componentId: component.id,
+            file,
+          });
       }
   for (const item of plan.inventory as readonly GameInventoryItem[]) {
     if (
@@ -499,6 +577,32 @@ export function assertGamePlan(value: unknown): asserts value is GamePlan {
         stableJson(placement.file.content) !== stableJson(item.source.content))
     )
       throw new Error("Source inventory is not bound to its declared package file");
+    const declaredPlacement = placement?.file.placement;
+    if (
+      declaredPlacement?.kind === "create" &&
+      declaredPlacement.parent.kind === "component_output"
+    ) {
+      const output = resolveRecipeOutput(
+        outputs,
+        declaredPlacement.parent.componentId,
+        declaredPlacement.parent.outputId,
+      );
+      if (output.change.kind !== "create") throw new Error("Recipe output parent must be created");
+      const target = gameGeneratedTarget({
+        projectId: plan.projectId,
+        operationId: output.id,
+        path: output.change.path,
+        className: output.change.className,
+      });
+      if (
+        item.change.kind !== "create" ||
+        item.change.className !== declaredPlacement.className ||
+        item.change.path !== output.change.path + "/" + declaredPlacement.name ||
+        stableJson(item.change.parent) !== stableJson(target) ||
+        !item.dependencies.includes(output.id)
+      )
+        throw new Error("Source placement differs from its exact recipe output parent binding");
+    }
     sourcePlacements.delete(item.id);
     if (
       new Set(item.dependencies).size !== item.dependencies.length ||
@@ -595,6 +699,12 @@ export function assertGamePlan(value: unknown): asserts value is GamePlan {
   const topology = compileCreatorTransactionTopology({
     initial: plan.initialTopology,
     operations: plan.inventory.map((item) => gameInventoryOperation(plan, item)),
+  });
+  assertWorldAuthoring(plan.design, topology.finalNodes);
+  gameActivationOperations({
+    inventory: plan.inventory,
+    operations: topology.orderedOperations,
+    maximumPartitionOperations: policy.maximumPartitionOperations,
   });
   for (const source of plan.observedSources) {
     const node = topology.finalNodes.find(
@@ -724,7 +834,12 @@ export function gameInventoryOperation(
     removedAttributes: [...item.removedAttributes],
   };
   if (change.kind === "update") return { ...values, kind: "update" };
-  return { ...values, kind: "move", parent: change.parent, name: change.toPath.split("/").at(-1)! };
+  return {
+    ...values,
+    kind: "move",
+    parent: change.parent,
+    name: change.toPath.split("/").at(-1)!,
+  };
 }
 
 export function gameDependencyOrder(edges: ReadonlyMap<string, ReadonlySet<string>>): string[] {

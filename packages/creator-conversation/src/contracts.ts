@@ -1,6 +1,9 @@
 import type { ArtifactReference } from "../../artifact-store/src/index.js";
 import type { ModelUsage, ModelRequestSizes } from "../../model-client/src/contracts.js";
 import { assertGameBuildControlView, type GameBuildControlView } from "./game-build-contract.js";
+import { VISUAL_OBSERVATION_INPUT_SCHEMA } from "../../visual-evidence/src/contracts.js";
+import type { VisualObservationInput } from "../../visual-evidence/src/contracts.js";
+export type { VisualObservationInput } from "../../visual-evidence/src/contracts.js";
 
 /** Browser-safe reservation shape; lower runtime validates the same closed algebra. */
 export interface CreatorAgentExecutionSlot {
@@ -287,12 +290,14 @@ export interface CreatorModelRegistryEntry {
   readonly id: string;
   readonly displayName: string;
   readonly availability: "available" | "unavailable" | "unknown";
+  readonly imageInput: "supported" | "unsupported" | "unknown";
   readonly requiredCapabilities: readonly ["tools"];
   readonly providerFallback: "disabled";
   readonly detail?: string;
 }
 
 export type CreatorConversationArtifactRole =
+  | "visual_observation"
   | "project_index"
   | "source_consultation"
   | "agent_run"
@@ -384,9 +389,10 @@ export type CreatorConversationEvent =
     })
   | (CreatorConversationEventBase & {
       readonly eventType: "plan_revision";
-      readonly authority: "agent";
+      readonly authority: "agent" | "forge";
       readonly data: {
         readonly planRevision: CreatorArtifactBinding;
+        readonly recompilation?: CreatorArtifactBinding;
         readonly revision: number;
         readonly summary: string;
       };
@@ -402,6 +408,7 @@ export type CreatorConversationEvent =
           | "revise_plan"
           | "reject_plan"
           | "apply"
+          | "resume_build"
           | "reject_change"
           | "retry_play"
           | "cancel_change"
@@ -777,6 +784,8 @@ export interface CreatorTurnRequest {
   readonly text: string;
   readonly selectedModelId: string;
   readonly idempotencyKey: string;
+  /** Original creator-supplied pixels, sealed by the host against submission context. */
+  readonly visualObservations?: readonly VisualObservationInput[];
 }
 
 export interface CreatorActionRequest {
@@ -1132,6 +1141,7 @@ export function assertCreatorModelRegistry(value: unknown): asserts value is Cre
     assertModelId(entry.id, "registry model");
     assertBoundedText(entry.displayName, "model display name", 1, 128);
     assertOneOf(entry.availability, ["available", "unavailable", "unknown"], "model availability");
+    assertOneOf(entry.imageInput, ["supported", "unsupported", "unknown"], "model image input");
     if (
       !Array.isArray(entry.requiredCapabilities) ||
       entry.requiredCapabilities.length !== 1 ||
@@ -1195,7 +1205,13 @@ export function assertCreatorConversationEvent(
       assertBoundedText(data.message, "activity message", 1, 4096);
       break;
     case "plan_revision":
-      requireAuthority(record.authority, "agent", record.eventType);
+      if (record.authority === "forge") {
+        assertArtifactBinding(data.recompilation, "host plan recompilation");
+      } else {
+        requireAuthority(record.authority, "agent", record.eventType);
+        if (data.recompilation !== undefined)
+          throw new Error("Agent plan revisions cannot claim host recompilation authority");
+      }
       assertArtifactBinding(data.planRevision, "plan revision artifact");
       assertPositiveInteger(data.revision, "plan event revision");
       assertBoundedText(data.summary, "plan summary", 1, 16_384);
@@ -1210,6 +1226,7 @@ export function assertCreatorConversationEvent(
           "revise_plan",
           "reject_plan",
           "apply",
+          "resume_build",
           "reject_change",
           "retry_play",
           "cancel_change",
@@ -1587,6 +1604,12 @@ export function assertCreatorTurnRequest(value: unknown): asserts value is Creat
   assertBoundedText(record.text, "turn-request text", 1, MAX_TEXT_BYTES);
   assertModelId(record.selectedModelId, "turn-request model");
   assertBoundedText(record.idempotencyKey, "turn-request idempotency key", 16, 256);
+  if (record.visualObservations !== undefined) {
+    if (!Array.isArray(record.visualObservations) || record.visualObservations.length > 4)
+      throw new Error("A creator turn accepts up to four visual attachments");
+    for (const observation of record.visualObservations)
+      VISUAL_OBSERVATION_INPUT_SCHEMA.parse(observation);
+  }
 }
 
 export function assertCreatorActionRequest(value: unknown): asserts value is CreatorActionRequest {
@@ -2131,6 +2154,7 @@ const EPISODE_STATUSES = [
   "incomplete",
 ] as const;
 const ATTACHMENT_ROLES = [
+  "visual_observation",
   "project_index",
   "source_consultation",
   "agent_run",

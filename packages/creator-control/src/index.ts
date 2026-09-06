@@ -4,6 +4,7 @@ import { lstat, mkdir, open, readFile, rename, rm, stat, writeFile } from "node:
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { CreatorConversationCoordinator } from "./conversation-coordinator.js";
+import { CreatorTurnNotAdmittedError } from "./turn-admission-error.js";
 import {
   ROBLOX_API_CATALOG,
   ROBLOX_API_CATALOG_HASH,
@@ -39,6 +40,7 @@ const MAX_CAPABILITY_QUERY_LENGTH = 160;
 const MAX_CLASS_NAME_LENGTH = 128;
 
 export * from "./conversation-coordinator.js";
+export * from "./turn-admission-error.js";
 export * from "./store-lease.js";
 
 /**
@@ -515,7 +517,7 @@ export class CreatorControlServer {
         return this.openEvents(request, url, response);
       if (request.method === "POST" && url.pathname === "/api/control/turn") {
         this.assertSameOrigin(request);
-        const body = await readJsonBody(request, "Creator turn");
+        const body = await readJsonBody(request, "Creator turn", 12 * 1024 * 1024);
         return writeJson(response, 202, await this.options.coordinator.submitTurn(body));
       }
       if (request.method === "POST" && url.pathname === "/api/control/action") {
@@ -568,6 +570,13 @@ export class CreatorControlServer {
       safeWriteJson(response, status, {
         kind: "CreatorControlError",
         message: error instanceof Error ? error.message : String(error),
+        ...(error instanceof CreatorTurnNotAdmittedError
+          ? {
+              admission: "not_admitted",
+              idempotencyKey: error.idempotencyKey,
+              requestHash: error.requestHash,
+            }
+          : {}),
       });
     }
   }
@@ -963,22 +972,25 @@ function assertCreatorControlDiscovery(value: unknown): asserts value is Creator
     throw new Error("Invalid creator control discovery");
 }
 
-async function readBody(request: IncomingMessage): Promise<string> {
+async function readBody(request: IncomingMessage, maximumBytes: number): Promise<string> {
   const chunks: Buffer[] = [];
   let bytes = 0;
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     bytes += buffer.byteLength;
-    if (bytes > MAX_CREATOR_CONTROL_WIRE_BODY_BYTES)
-      throw new HttpError(413, "Request body too large");
+    if (bytes > maximumBytes) throw new HttpError(413, "Request body too large");
     chunks.push(buffer);
   }
   return Buffer.concat(chunks).toString("utf8");
 }
 
-async function readJsonBody(request: IncomingMessage, label: string): Promise<unknown> {
+async function readJsonBody(
+  request: IncomingMessage,
+  label: string,
+  maximumBytes = MAX_CREATOR_CONTROL_WIRE_BODY_BYTES,
+): Promise<unknown> {
   try {
-    return JSON.parse(await readBody(request)) as unknown;
+    return JSON.parse(await readBody(request, maximumBytes)) as unknown;
   } catch (error) {
     if (error instanceof HttpError) throw error;
     throw new HttpError(400, `${label} body must be valid JSON`);
@@ -992,7 +1004,7 @@ function setSecurityHeaders(response: ServerResponse): void {
   response.setHeader("x-frame-options", "DENY");
   response.setHeader(
     "content-security-policy",
-    "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+    "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
   );
 }
 

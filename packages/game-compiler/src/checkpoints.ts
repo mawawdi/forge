@@ -31,12 +31,12 @@ import {
 import { readCreatorProjectIndexArtifacts } from "../../creator-session/src/project-refresh.js";
 import {
   assertStudioProjectIndexCapture,
-  assertStudioValue,
+  assertStudioProjectIndexNode,
   studioProjectIndexMetadataView,
   STUDIO_CAPABILITY_MANIFEST,
   studioObjectIdentityKey,
   type StudioProjectIndexCapture,
-  type StudioValue,
+  type StudioObservedPropertyValue,
 } from "../../studio-evidence/src/index.js";
 import type { CreatorTransactionTopologyNode } from "../../creator-session/src/transaction-topology.js";
 import type { StudioChangeOperation } from "../../creator-session/src/index.js";
@@ -605,11 +605,10 @@ export function gameTopologyFromCapture(
   return capture.shards
     .flatMap((shard) => shard.nodes)
     .map((node) => {
-      const properties: Record<string, StudioValue> = {};
-      for (const [name, value] of Object.entries(node.coveredProperties)) {
-        assertStudioValue(value);
-        properties[name] = value;
-      }
+      assertStudioProjectIndexNode(node);
+      const properties = node.coveredProperties as Readonly<
+        Record<string, StudioObservedPropertyValue>
+      >;
       return {
         identity: node.identity,
         ...(node.parentIdentity ? { parentIdentity: node.parentIdentity } : {}),

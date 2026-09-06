@@ -1,15 +1,16 @@
 --!strict
 -- Fixed, user-invoked native characterization. This fixture is not part of the
 -- connector and does not expose a model tool, arbitrary call, or evaluation verdict.
+-- Invoke from the Command Bar. Plugin-owned ChangeHistory recordings do not belong
+-- to this entrypoint; it publishes only its new fixture-owned evidence subtree.
 local Generated = require(script.Forge.GeneratedStudioEvidence)
 local Authoring = require(script.Forge.StudioAuthoring)
 local Hash = require(script.Forge.Hash)
 local Cases = require(script.Cases)
 local HttpService = game:GetService("HttpService")
-local ChangeHistoryService = game:GetService("ChangeHistoryService")
 local Runner = {}
 local OUTPUT_NAME = "ForgeNativeConformanceOutput"
-local ranInThisModuleSession = false
+local completedInThisModuleSession = false
 
 local function buildIdentity(): any
 	local sources = { fixture = Hash.sha256(script.Source), cases = Hash.sha256(script.Cases.Source) }
@@ -58,24 +59,24 @@ end
 function Runner.run(): any
 	assert(not game:GetService("RunService"):IsRunning(), "Run this fixture in Edit mode")
 	assert(workspace:FindFirstChild(OUTPUT_NAME) == nil, "Open a fresh generated fixture before another run; existing evidence is preserved")
-	ranInThisModuleSession = true
-	local recording = assert(ChangeHistoryService:TryBeginRecording("ForgeNativeConformance"), "cannot open fixture recording")
 	local output = Instance.new("Folder")
 	output.Name = OUTPUT_NAME
-	local checks = {}
-	local report: any = {
-		kind = "ForgeNativePreflightConformance", authority = "user_run_native_studio", manifestHash = Generated.manifestHash,
-		fixtureBuild = buildIdentity(), engineVersion = version(), stage = "before_save", status = "passed",
-		checks = checks, preflightEnvelopes = {}, persisted = {},
-		note = "Fixed native preflight/codec characterization only; no complete creator transaction, game evaluation, or save/reopen result is implied.",
-	}
-	local function check(name: string, callback: () -> ())
-		local ok, failure = pcall(callback)
-		table.insert(checks, { name = name, passed = ok, detail = if ok then "observed" else tostring(failure) })
-		if not ok then report.status = "failed" end
-	end
+	local report: any
+	local encodedReport = ""
 	local executed, failure = pcall(function()
-		output.Parent = workspace
+		local checks = {}
+		report = {
+			kind = "ForgeNativePreflightConformance", authority = "user_run_native_studio", manifestHash = Generated.manifestHash,
+			fixtureBuild = buildIdentity(), engineVersion = version(), stage = "before_save", status = "passed",
+			executionContext = "command_bar", mutationScope = "new_fixture_output",
+			checks = checks, preflightEnvelopes = {}, persisted = {}, publishedObservations = {},
+			note = "Fixed native preflight/codec characterization only; no plugin recording, undo/redo, complete creator transaction, game evaluation, or save/reopen result is implied.",
+		}
+		local function check(name: string, callback: () -> ())
+			local ok, failure = pcall(callback)
+			table.insert(checks, { name = name, passed = ok, detail = if ok then "observed" else tostring(failure) })
+			if not ok then report.status = "failed" end
+		end
 		for _, className in Generated.writableClasses do
 			check("native detached construction: " .. className, function()
 				local metadata = Generated.classMetadata(className)
@@ -87,6 +88,23 @@ function Runner.run(): any
 		report.admittedClassCount = #Generated.writableClasses
 		check("engine-owned settings rejected", function()
 			assert(not pcall(function() Cases.prepare(Generated, Hash, "Lighting", { Brightness = { kind = "number_f32", value = 2 } }, {}, {}) end))
+		end)
+		check("native unbounded size constraint mutation matching", function()
+			local constraint = Instance.new("UISizeConstraint")
+			constraint.Name = "SizeConstraintSample"
+			constraint.Parent = output
+			local initial = constraint.MaxSize
+			report.sizeConstraintDefault = { unboundedX = initial.X == math.huge, unboundedY = initial.Y == math.huge }
+			assert(initial.X == math.huge and initial.Y == math.huge, "native default differs from the characterized unbounded size")
+			local observedDefault = Generated.readProjectProperty(constraint, "MaxSize")
+			assert(observedDefault.kind == "observed_vector2_f32" and observedDefault.x == "positive_infinity" and observedDefault.y == "positive_infinity", "project observations must preserve the native unbounded default")
+			report.sizeConstraintDefault.observed = observedDefault
+			local expected = { kind = "vector2_f32", x = 640, y = 480 }
+			local fact = Authoring.exactPropertyFactForTest(constraint, "MaxSize", expected)
+			assert(fact.matchesBefore() and not fact.matchesAfter(), "native default must have an exact before-state")
+			Generated.write(constraint, "MaxSize", expected)
+			assert(not fact.matchesBefore() and fact.matchesAfter(), "finite assignment must match the exact approved state")
+			report.persisted.SizeConstraintSample = observedProperties(constraint, { MaxSize = expected })
 		end)
 		local properties = {
 			Anchored = { kind = "boolean", value = true },
@@ -131,6 +149,29 @@ function Runner.run(): any
 				report.persisted[case.name] = observed
 			end)
 		end
+		check("native directed corner writes preserve asymmetric state", function()
+			local function radius(offset) return { kind = "udim", scale = 0, offset = offset } end
+			local before = { BottomLeftRadius = radius(4), BottomRightRadius = radius(8), TopLeftRadius = radius(12), TopRightRadius = radius(16) }
+			for _, name in { "CornerRadius", "TopRightRadius", "TopLeftRadius" } do
+				local requested = { [name] = radius(20) }
+				local envelope = preflight("UICorner", requested, {}, {}, before)
+				table.insert(report.preflightEnvelopes, envelope)
+				assert(envelope.completion == "complete", HttpService:JSONEncode(envelope))
+				local instance = Instance.new("UICorner")
+				instance.Name = "Directed" .. name; instance.Parent = output
+				-- Four independent state setters; never seed the uniform alias.
+				for _, corner in { "BottomLeftRadius", "BottomRightRadius", "TopLeftRadius", "TopRightRadius" } do Generated.write(instance, corner, before[corner]) end
+				Generated.write(instance, name, requested[name])
+				local expected = table.clone(before)
+				for _, fact in envelope.facts do
+					if fact.kind == "property" then assert(fact.result.status == "observed"); expected[fact.propertyName] = fact.result.value end
+				end
+				expected.CornerRadius = expected.TopLeftRadius
+				local observed = observedProperties(instance, expected)
+				assert(sameValues(expected, observed), "native corner write changed an unrelated radius or contradicted final detached evidence")
+				report.persisted[instance.Name] = observed
+			end
+		end)
 		check("native coupled setter observation", function()
 			local gui = Instance.new("ScreenGui")
 			gui.Name = "ScreenSample"
@@ -146,27 +187,43 @@ function Runner.run(): any
 		end)
 		local receipt = Instance.new("StringValue")
 		receipt.Name = "BeforeSaveReport"
-		receipt.Value = HttpService:JSONEncode(report)
 		receipt.Parent = output
+		assert(workspace:FindFirstChild(OUTPUT_NAME) == nil, "fixture output appeared during characterization; existing evidence is preserved")
+		output.Parent = workspace
+		-- Parenting can affect native state. Observe the published subtree without
+		-- corrective writes before completing the report that will be saved.
+		local sampleNames = {}
+		for name in report.persisted do table.insert(sampleNames, name) end
+		table.sort(sampleNames)
+		for _, name in sampleNames do
+			check("published native properties: " .. name, function()
+				local instance = assert(output:FindFirstChild(name), "published sample is missing")
+				local observed = observedProperties(instance, report.persisted[name])
+				report.publishedObservations[name] = observed
+				assert(sameValues(report.persisted[name], observed), "published native readback changed after parenting")
+			end)
+		end
+		encodedReport = HttpService:JSONEncode(report)
+		receipt.Value = encodedReport
 	end)
 	if not executed then
-		ChangeHistoryService:FinishRecording(recording, Enum.FinishRecordingOperation.Cancel)
+		output:Destroy()
 		error(failure)
 	end
-	ChangeHistoryService:FinishRecording(recording, Enum.FinishRecordingOperation.Commit)
-	print("FORGE_NATIVE_CONFORMANCE " .. HttpService:JSONEncode(report))
+	completedInThisModuleSession = true
+	print("FORGE_NATIVE_CONFORMANCE " .. encodedReport)
 	return report
 end
 
 function Runner.verifyReopen(): any
 	assert(not game:GetService("RunService"):IsRunning(), "Reopen the saved fixture in Edit mode")
-	assert(not ranInThisModuleSession, "Close and reopen the saved place before collecting reopen evidence")
-	local output = assert(workspace:FindFirstChild(OUTPUT_NAME), "missing saved fixture output")
+	local output = assert(workspace:FindFirstChild(OUTPUT_NAME), "No completed fixture output exists. Run the corrected fixture successfully before saving and reopening")
 	assert(output:FindFirstChild("ReopenReport") == nil, "existing reopen evidence is preserved")
 	local beforeValue = output:FindFirstChild("BeforeSaveReport")
 	assert(beforeValue and beforeValue:IsA("StringValue"), "missing saved native report")
+	assert(not completedInThisModuleSession, "Close and reopen the saved place before collecting reopen evidence")
 	local before = HttpService:JSONDecode(beforeValue.Value)
-	local report: any = { kind = "ForgeNativePreflightConformance", authority = "user_run_native_studio", stage = "after_reopen", manifestHash = Generated.manifestHash, fixtureBuild = buildIdentity(), engineVersion = version(), beforeReportHash = Hash.sha256(beforeValue.Value), observations = {}, status = "passed", checks = {} }
+	local report: any = { kind = "ForgeNativePreflightConformance", authority = "user_run_native_studio", stage = "after_reopen", executionContext = "command_bar", mutationScope = "new_reopen_receipt", manifestHash = Generated.manifestHash, fixtureBuild = buildIdentity(), engineVersion = version(), beforeReportHash = Hash.sha256(beforeValue.Value), observations = {}, status = "passed", checks = {} }
 	local function verify(name, callback)
 		local ok, failure = pcall(callback)
 		table.insert(report.checks, { name = name, passed = ok, detail = if ok then "observed" else tostring(failure) })
@@ -184,12 +241,17 @@ function Runner.verifyReopen(): any
 			assert(sameValues(expected, observed), "saved property readback changed")
 		end)
 	end
-	local recording = assert(ChangeHistoryService:TryBeginRecording("ForgeNativeConformanceReopen"))
 	local receipt = Instance.new("StringValue")
-	receipt.Name = "ReopenReport"
-	receipt.Value = HttpService:JSONEncode(report)
-	receipt.Parent = output
-	ChangeHistoryService:FinishRecording(recording, Enum.FinishRecordingOperation.Commit)
+	local published, failure = pcall(function()
+		receipt.Name = "ReopenReport"
+		receipt.Value = HttpService:JSONEncode(report)
+		assert(output:FindFirstChild("ReopenReport") == nil, "reopen evidence appeared during readback; existing evidence is preserved")
+		receipt.Parent = output
+	end)
+	if not published then
+		receipt:Destroy()
+		error(failure)
+	end
 	print("FORGE_NATIVE_CONFORMANCE_REOPEN " .. receipt.Value)
 	return report
 end

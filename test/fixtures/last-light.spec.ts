@@ -237,6 +237,7 @@ export async function createLastLightFixture() {
   assertBoundedGameJson(ui, DEFAULT_GAME_ADMISSION_POLICY);
   const spec: GameDesignSpec = {
     kind: "GameDesignSpec",
+    worldAuthoring: { mode: "persistent", roots: ["Workspace/LastLightStation"] },
     id: "last-light",
     intent:
       "Build a replayable rescue game: recover three power cells from a failing orbital station and escape before it goes dark.",
@@ -352,7 +353,7 @@ export async function createLastLightFixture() {
               { componentId: "game-code", fileId: "contract" },
               { componentId: "runtime", fileId: "scope" },
               { componentId: "runtime", fileId: "event" },
-              { componentId: "screens", fileId: "action-bindings" },
+              { componentId: "screens", fileId: "controller" },
             ],
           ),
           source("server-main", "server", "entrypoint", "ServerScriptService", "Script", [

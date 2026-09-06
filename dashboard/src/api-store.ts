@@ -46,6 +46,21 @@ interface RetainedAdmission<T extends CreatorTurnRequest | CreatorActionRequest>
   readonly body: string;
 }
 
+/** The host checked its serialized ledger and proved this exact turn was not admitted. */
+export class AdmissionRejectionError extends Error {
+  constructor(
+    message: string,
+    readonly idempotencyKey: string,
+  ) {
+    super(message);
+    this.name = "AdmissionRejectionError";
+  }
+}
+
+export function isAdmissionRejection(error: unknown): error is AdmissionRejectionError {
+  return error instanceof AdmissionRejectionError;
+}
+
 /**
  * The only browser state owner. One EventSource invalidates this one snapshot;
  * cards and sheets subscribe rather than opening their own streams.
@@ -72,6 +87,8 @@ export class CreatorDashboardStore {
     string,
     RetainedAdmission<CreatorTurnRequest | CreatorActionRequest>
   >();
+  /** Local proof only: a reload requires another exact retry before releasing a request. */
+  private readonly rejectedTurns = new Set<string>();
 
   constructor(private readonly storage?: Storage) {
     if (!storage) return;
@@ -179,12 +196,14 @@ export class CreatorDashboardStore {
     conversationId: string | undefined,
     text: string,
     modelId: string,
+    visualObservations?: CreatorTurnRequest["visualObservations"],
   ): CreatorTurnRequest | undefined =>
     this.snapshot.unconfirmedTurns?.find(
       (request) =>
         request.conversationId === conversationId &&
         request.text === text &&
-        request.selectedModelId === modelId,
+        request.selectedModelId === modelId &&
+        sameVisualObservations(request.visualObservations, visualObservations),
     );
 
   actionDraftFor = (actionKey: string): ActionDraft =>
@@ -229,6 +248,7 @@ export class CreatorDashboardStore {
       input.conversationId,
       input.text,
       input.selectedModelId,
+      input.visualObservations,
     );
     if (unconfirmed) return this.retryTurn(unconfirmed.idempotencyKey);
     const admission = this.retainAdmission(
@@ -245,14 +265,39 @@ export class CreatorDashboardStore {
     this.clearSubmittedTurnDraft(admission.request);
   };
 
-  retryTurn = async (idempotencyKey: string): Promise<void> => {
+  retryTurn = async (
+    idempotencyKey: string,
+    options: { readonly preserveDraft?: boolean; readonly retainOnRejection?: boolean } = {},
+  ): Promise<void> => {
     const admission = [...this.retainedAdmissions.values()].find(
       (entry) => entry.request.idempotencyKey === idempotencyKey,
     );
     if (!admission || admission.request.kind !== "CreatorTurnRequest")
       throw new Error("The original message is no longer available to retry.");
-    await this.admit(admission);
-    this.clearSubmittedTurnDraft(admission.request);
+    await this.admit(admission, options.preserveDraft, options.retainOnRejection);
+    if (!options.preserveDraft) this.clearSubmittedTurnDraft(admission.request);
+  };
+
+  discardRejectedTurn = (idempotencyKey: string): CreatorTurnRequest => {
+    const admission = [...this.retainedAdmissions.values()].find(
+      (entry) => entry.request.idempotencyKey === idempotencyKey,
+    );
+    if (
+      !this.rejectedTurns.has(idempotencyKey) ||
+      this.snapshot.pendingRequest?.id === idempotencyKey ||
+      admission?.request.kind !== "CreatorTurnRequest"
+    )
+      throw new Error("Confirm that this saved message was not admitted before editing it.");
+    this.retainedAdmissions.delete(admission.identity);
+    this.rejectedTurns.delete(idempotencyKey);
+    this.persistDrafts();
+    this.setSnapshot({
+      ...withoutError(this.snapshot),
+      unconfirmedTurns: (this.snapshot.unconfirmedTurns ?? []).filter(
+        (request) => request.idempotencyKey !== idempotencyKey,
+      ),
+    });
+    return admission.request;
   };
 
   submitAction = async (
@@ -315,7 +360,11 @@ export class CreatorDashboardStore {
 
   private async admit(
     admission: RetainedAdmission<CreatorTurnRequest | CreatorActionRequest>,
+    preserveTurnDraft = false,
+    retainOnRejection = false,
   ): Promise<void> {
+    const selectionAtSubmission = this.selectedConversationId;
+    this.rejectedTurns.delete(admission.request.idempotencyKey);
     this.setSnapshot({
       ...withoutError(this.snapshot),
       pendingRequest: { kind: admission.kind, id: admission.request.idempotencyKey },
@@ -332,8 +381,12 @@ export class CreatorDashboardStore {
       responseReceived = true;
       const payload = await readJson(response);
       if (!response.ok) {
-        rejectionReceived = true;
-        throw new Error(readError(payload, response.status));
+        rejectionReceived =
+          admission.kind === "action" || (await provesTurnNotAdmitted(payload, admission.request));
+        const message = readError(payload, response.status);
+        if (rejectionReceived && admission.kind === "turn")
+          throw new AdmissionRejectionError(message, admission.request.idempotencyKey);
+        throw new Error(message);
       }
       if (response.status !== 202)
         throw new Error(
@@ -342,12 +395,13 @@ export class CreatorDashboardStore {
       if (!isWorkAdmission(payload))
         throw new Error("Forge returned an incomplete confirmation. Your draft is saved.");
       if (
-        admission.request.kind === "CreatorTurnRequest" ||
-        payload.conversationId !== admission.request.conversationId
+        this.selectedConversationId === selectionAtSubmission &&
+        (admission.request.kind === "CreatorTurnRequest" ||
+          payload.conversationId !== admission.request.conversationId)
       )
         this.selectedConversationId = payload.conversationId;
       this.retainedAdmissions.delete(admission.identity);
-      if (admission.request.kind === "CreatorTurnRequest")
+      if (admission.request.kind === "CreatorTurnRequest" && !preserveTurnDraft)
         this.clearSubmittedTurnDraft(admission.request);
       this.persistDrafts();
       this.setSnapshot({
@@ -365,16 +419,18 @@ export class CreatorDashboardStore {
       this.setSnapshot(withoutPendingRequest(this.snapshot));
     } catch (error) {
       const message = responseReceived ? errorMessage(error) : AMBIGUOUS_REQUEST_MESSAGE;
+      const discard = rejectionReceived && !retainOnRejection;
       const unconfirmedTurns = (this.snapshot.unconfirmedTurns ?? []).filter(
-        (request) =>
-          !rejectionReceived || request.idempotencyKey !== admission.request.idempotencyKey,
+        (request) => !discard || request.idempotencyKey !== admission.request.idempotencyKey,
       );
-      if (rejectionReceived) {
+      if (discard) {
         this.retainedAdmissions.delete(admission.identity);
         this.persistDrafts();
+      } else if (rejectionReceived) {
+        this.rejectedTurns.add(admission.request.idempotencyKey);
       }
       if (
-        !rejectionReceived &&
+        !discard &&
         admission.request.kind === "CreatorTurnRequest" &&
         !unconfirmedTurns.some(
           (request) => request.idempotencyKey === admission.request.idempotencyKey,
@@ -391,7 +447,7 @@ export class CreatorDashboardStore {
         unconfirmedTurns,
       });
       if (!responseReceived) void this.refresh();
-      throw new Error(message);
+      throw isAdmissionRejection(error) ? error : new Error(message);
     }
   }
 
@@ -583,7 +639,7 @@ export class CreatorDashboardStore {
       this.snapshot = {
         ...this.snapshot,
         draftStorageError:
-          "This browser couldn't save your draft. Keep this tab open or copy your message before reloading.",
+          "This browser couldn't save your message and images. Keep this tab open until delivery is confirmed; copying the text alone won't preserve the images.",
       };
     }
   }
@@ -616,6 +672,52 @@ function isWorkAdmission(value: unknown): value is CreatorWorkAdmission {
 
 function draftKey(conversationId: string | undefined): string {
   return conversationId ?? "new-conversation";
+}
+
+async function provesTurnNotAdmitted(
+  value: unknown,
+  request: CreatorTurnRequest | CreatorActionRequest,
+): Promise<boolean> {
+  if (
+    request.kind !== "CreatorTurnRequest" ||
+    !isRecord(value) ||
+    value.kind !== "CreatorControlError" ||
+    value.admission !== "not_admitted" ||
+    value.idempotencyKey !== request.idempotencyKey ||
+    typeof value.requestHash !== "string" ||
+    !/^[a-f0-9]{64}$/.test(value.requestHash) ||
+    !globalThis.crypto?.subtle
+  )
+    return false;
+  const bytes = new TextEncoder().encode(`${canonicalJson(request)}\n`);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const hash = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+  return value.requestHash === hash;
+}
+
+/** Compare retained image bytes directly instead of reserializing megabytes on every keystroke. */
+function sameVisualObservations(
+  first: CreatorTurnRequest["visualObservations"],
+  second: CreatorTurnRequest["visualObservations"],
+): boolean {
+  if ((first?.length ?? 0) !== (second?.length ?? 0)) return false;
+  return (first ?? []).every((item, index) => {
+    const other = second?.[index];
+    return (
+      other !== undefined &&
+      item.kind === other.kind &&
+      item.caption === other.caption &&
+      item.image.mimeType === other.image.mimeType &&
+      item.image.base64 === other.image.base64 &&
+      (item.kind !== "rendered_view" ||
+        (other.kind === "rendered_view" &&
+          item.viewId === other.viewId &&
+          item.state === other.state &&
+          item.graphicsSettings === other.graphicsSettings))
+    );
+  });
 }
 
 function draftMatchesTurnRequest(
@@ -662,7 +764,7 @@ function canonicalJson(value: unknown): string {
   if (isRecord(value)) {
     const entries = Object.entries(value)
       .filter(([, entry]) => entry !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right));
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
     return `{${entries
       .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
       .join(",")}}`;

@@ -1,9 +1,17 @@
+import {
+  creatorGameCatalog,
+  projectCreatorGameComponentInput,
+} from "../packages/creator-session/src/game-authoring.js";
 import { createTestFixtureSourceResolver } from "./helpers/source-fixtures.js";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import {
+  DEFAULT_AGENT_BUDGETS,
+  ForgeNativeAgentRuntime,
+} from "../packages/agent-runtime/src/index.js";
 import { contentHash, stableJson } from "../packages/contracts/src/index.js";
 import {
   compileGamePlan,
@@ -18,7 +26,11 @@ import {
   type GameSourcePlacement,
   type GameSourceFile,
 } from "../packages/game-ir/src/index.js";
-import { STUDIO_PATCH_DEFINITION } from "../packages/game-composition/src/index.js";
+import {
+  STUDIO_PATCH_DEFINITION,
+  PROJECT_ASSEMBLY_DEFINITION,
+  gameAssemblyOperationId,
+} from "../packages/game-composition/src/index.js";
 import { ImmutableJsonArtifactStore } from "../packages/artifact-store/src/index.js";
 import {
   advanceSession,
@@ -72,6 +84,68 @@ import {
   OpenRouterModelClient,
   DEFAULT_CREATOR_MODEL_ID,
 } from "../packages/model-client/src/index.js";
+
+const plannerCatalog = await creatorGameCatalog();
+
+/** Inspect the advertised schema through local references, without assuming inline storage. */
+function schemaAt(root: unknown, path: readonly (string | number)[]): Record<string, unknown> {
+  const record = (value: unknown): Record<string, unknown> => {
+    assert.ok(value !== null && typeof value === "object", "schema path must resolve to an object");
+    return value as Record<string, unknown>;
+  };
+  const resolve = (value: unknown, active = new Set<string>()): Record<string, unknown> => {
+    const node = record(value);
+    if (typeof node.$ref !== "string") return node;
+    assert.ok(node.$ref.startsWith("#/$defs/"), "tool schemas must use local definitions");
+    assert.equal(active.has(node.$ref), false, "direct schema reference cycles are invalid");
+    const reference = node.$ref;
+    const target = reference
+      .split("/")
+      .slice(1)
+      .reduce<unknown>((parent, key) => {
+        const decoded = key.replaceAll("~1", "/").replaceAll("~0", "~");
+        const object = record(parent);
+        assert.ok(Object.hasOwn(object, decoded), `unresolved schema reference ${reference}`);
+        return object[decoded];
+      }, root);
+    const { $ref: _reference, ...siblings } = node;
+    return { ...resolve(target, new Set([...active, reference])), ...siblings };
+  };
+  return resolve(path.reduce<unknown>((value, key) => resolve(value)[key], root));
+}
+
+/** Submit a full fixture through the model's component authoring protocol. */
+async function submitDesign(
+  host: CreatorPlannerToolHost,
+  proposal: { design: { components: unknown[]; [key: string]: unknown }; [key: string]: unknown },
+) {
+  const componentIds: string[] = [];
+  for (const component of proposal.design.components) {
+    const result = await host.execute("creator.define_component", {
+      component:
+        (component as { kind: string; files?: unknown[] }).kind === "source_package" &&
+        Array.isArray((component as { files?: unknown[] }).files)
+          ? projectCreatorGameComponentInput(component as GameDesignSpec["components"][number])
+          : component,
+    });
+    if (!result.ok) return result;
+    const ref = result.value as { componentId: string; componentHash: string };
+    componentIds.push(ref.componentId);
+  }
+  const { components: _components, ...metadata } = proposal.design;
+  return host.execute("creator.propose_plan", {
+    ...proposal,
+    steps:
+      proposal.steps ??
+      componentIds.map((componentId, index) => ({
+        title: `Implementation area ${index + 1}`,
+        details:
+          "Implement the declared component and connect its exact editor output to the requested experience.",
+        componentIds: [componentId],
+      })),
+    design: { ...metadata, componentIds },
+  });
+}
 
 const revisionHash = contentHash("initial evidence revision");
 
@@ -206,6 +280,7 @@ function createTestPlan(
   const compiled = compileGamePlan({
     design: {
       kind: "GameDesignSpec",
+      worldAuthoring: { mode: "none" },
       id: "fixture",
       intent: input.creatorPrompt,
       components: [
@@ -251,6 +326,7 @@ function sourceDesign(placement: GameSourcePlacement, intent: string): GameDesig
   const className = placement.kind === "create" ? placement.className : placement.target.className;
   return {
     kind: "GameDesignSpec",
+    worldAuthoring: { mode: "none" },
     id: "source-change",
     intent,
     components: [
@@ -284,6 +360,7 @@ function folderDesign(
 ): GameDesignSpec {
   return {
     kind: "GameDesignSpec",
+    worldAuthoring: { mode: "none" },
     id: "folder-change",
     intent: "Create the requested folder.",
     components: [
@@ -349,12 +426,11 @@ test("draft line patches are hash-bound, atomic, unambiguous and Unicode-safe", 
       ]),
     /draft changed/i,
   );
-  assert.throws(
-    () =>
-      patchCreatorDraftSource(source, hash, [
-        { startLine: 2, deleteCount: 1, replacement: "local answer = 2" },
-      ]),
-    /must end with a newline/,
+  assert.equal(
+    patchCreatorDraftSource(source, hash, [
+      { startLine: 2, deleteCount: 1, replacement: "local answer = 2" },
+    ]),
+    source.replace("answer = 1", "answer = 2"),
   );
   assert.throws(
     () =>
@@ -686,6 +762,7 @@ test("compact planning uses inspected handles, rejects stale authority and gener
     ownership,
   });
   const host = new CreatorPlannerToolHost({
+    catalog: plannerCatalog,
     session,
     ownership,
     projectIndex: index,
@@ -711,26 +788,25 @@ test("compact planning uses inspected handles, rejects stale authority and gener
       prompt,
     ),
     checks: [{ check: "playtest_diagnostics", maximumErrors: 0, maximumWarnings: 0 }],
-    reviews: ["Try the requested interaction in Studio."],
   };
-  assert.equal((await host.execute("creator.propose_plan", proposal)).ok, false);
+  assert.equal((await submitDesign(host, proposal)).ok, false);
   await host.execute("project.search", { queries: [{ query: "Script" }] });
   assert.equal(
-    (await host.execute("creator.propose_plan", proposal)).ok,
+    (await submitDesign(host, proposal)).ok,
     false,
     "Search alone does not satisfy inspection",
   );
   await host.execute("project.inspect", { objectIds: [script.objectId] });
-  const unconsulted = await host.execute("creator.propose_plan", proposal);
+  const unconsulted = await submitDesign(host, proposal);
   assert.equal(unconsulted.error?.code, "SOURCE_CONSULTATION_INCOMPLETE");
   await host.execute("source.read", { documentId: script.objectId });
   assert.equal(
-    (await host.execute("creator.propose_plan", proposal)).error?.code,
+    (await submitDesign(host, proposal)).error?.code,
     "SOURCE_CONSULTATION_INCOMPLETE",
     "Reading source must still include its dependency closure",
   );
   await host.execute("source.dependencies", { documentId: script.objectId, direction: "closure" });
-  const unknown = await host.execute("creator.propose_plan", {
+  const unknown = await submitDesign(host, {
     ...proposal,
     design: sourceDesign(
       {
@@ -749,7 +825,7 @@ test("compact planning uses inspected handles, rejects stale authority and gener
     ),
   });
   assert.equal(unknown.ok, false);
-  const result = await host.execute("creator.propose_plan", proposal);
+  const result = await submitDesign(host, proposal);
   assert.equal(result.ok, true, JSON.stringify(result));
   const outcome = host.getOutcome();
   assert.equal(outcome?.kind, "plan_proposed");
@@ -786,10 +862,16 @@ test("compact planning uses inspected handles, rejects stale authority and gener
     sourceConsultation: host.getSourceConsultation(),
   });
   const draftDefinition = builder.definitions().find((tool) => tool.name === "studio.read_drafts")!;
-  const draftSchema = draftDefinition.schema as {
-    properties: { drafts: { items: { properties: { planChangeId: { enum: string[] } } } } };
-  };
-  assert.deepEqual(draftSchema.properties.drafts.items.properties.planChangeId.enum, ["edit"]);
+  assert.deepEqual(
+    schemaAt(draftDefinition.schema, [
+      "properties",
+      "drafts",
+      "items",
+      "properties",
+      "planChangeId",
+    ]).enum,
+    ["edit"],
+  );
   assert.equal(
     builder.definitions().some((tool) => tool.name === "studio.inspect"),
     false,
@@ -805,12 +887,23 @@ test("compact planning uses inspected handles, rejects stale authority and gener
     summary: "Updated the script.",
   });
   assert.equal(sourceShapeError.error?.code, "TOOL_ARGUMENTS_INVALID");
+  const buildRequired = (
+    builder.definitions().find((tool) => tool.name === "studio.build")!.schema as {
+      required: string[];
+    }
+  ).required;
+  assert.ok(buildRequired.includes("sources"));
+  assert.ok(!buildRequired.includes("values"), "No empty collection is required for zero slots");
+  assert.equal(
+    (await builder.execute("studio.build", { summary: "Missing the required source." })).error
+      ?.code,
+    "TOOL_ARGUMENTS_INVALID",
+  );
   const stagedSource = "print('new')\n";
   assert.equal(
     (
       await builder.execute("studio.build", {
         sources: [{ slotId: "edit", source: stagedSource }],
-        values: [],
         summary: "Updated the script.",
       })
     ).ok,
@@ -1316,12 +1409,17 @@ test("project-authority adapter selects exactly one writer per change set", () =
   assert.equal(orientation.content.studioAuthoring.available, true);
   assert.equal(orientation.content.overview.instanceCount, projectIndex.instances.length);
   assert.equal(orientation.content.overview.scriptCount, projectIndex.scripts.length);
-  assert.deepEqual(orientation.content.exploration.projectTools, [
-    "project.search",
-    "project.children",
-    "project.inspect",
-  ]);
-  assert.equal(orientation.content.exploration.exactFactsRequireToolConsultation, true);
+  assert.equal(
+    orientation.content.exploration.projectFacts,
+    "use_supplied_revision_facts_retrieve_missing_through_offered_tools",
+  );
+  assert.equal(orientation.content.exploration.availableTools, "current_phase_tool_schema");
+  assert.equal(orientation.content.studioAuthoring.scope, "edit_mode_transactions_only");
+  assert.equal(
+    orientation.content.gameRuntime.runtimeInstanceCreation,
+    "transient_or_explicit_runtime_generated_world_only",
+  );
+  assert.equal(orientation.content.gameRuntime.grantsEditorMutationAuthority, false);
 
   const sources = sourceEvidence(projectIndex, projectCaptureHash, [
     {
@@ -1597,6 +1695,18 @@ test("creator start keeps exact creator authority separate from host-authored mo
   );
 });
 
+test("resume-build control actions survive transport validation without provider authority", () => {
+  const action = {
+    action: "act" as const,
+    sessionId: "creator_session_resume-build",
+    viewId: "creator_view_resume-build",
+    viewHash: "a".repeat(64),
+    actionId: "transaction_resume_build" as const,
+    agentExecutions: [],
+  };
+  assert.deepEqual(assertCreatorTransactionControlAction(action), action);
+});
+
 test("pasted requests normalize whitespace and retain the dashboard's full byte limit", () => {
   const start = {
     action: "start",
@@ -1655,6 +1765,7 @@ test("creator planner exposes bounded pinned Roblox API context", async () => {
   assert.throws(
     () =>
       new CreatorPlannerToolHost({
+        catalog: plannerCatalog,
         session,
         ownership,
         projectIndex: observation,
@@ -1665,6 +1776,7 @@ test("creator planner exposes bounded pinned Roblox API context", async () => {
     /current project-index capture/,
   );
   const host = new CreatorPlannerToolHost({
+    catalog: plannerCatalog,
     session,
     ownership,
     projectIndex: observation,
@@ -1673,12 +1785,76 @@ test("creator planner exposes bounded pinned Roblox API context", async () => {
     prompt,
   });
   assert.ok(host.definitions().some((entry) => entry.name === "studio.api_lookup"));
+  assert.equal(
+    Object.hasOwn(
+      schemaAt(host.definitions().find((entry) => entry.name === "studio.api_lookup")!.schema, [
+        "properties",
+      ]),
+      "memberKind",
+    ),
+    false,
+  );
+  for (const [ownerName, query, entryKind] of [
+    ["RemoteEvent", "OnServerEvent", "class_event"],
+    ["ProximityPrompt", "Triggered", "class_event"],
+    ["Model", "GetPivot", "class_method"],
+    ["Instance", "new", "datatype_constructor"],
+    ["Vector3", "new", "datatype_constructor"],
+    ["task", "wait", "library_function"],
+  ] as const) {
+    const metadata = await host.execute("studio.api_lookup", { ownerName, query });
+    assert.equal(metadata.ok, true, `${ownerName}.${query}`);
+    const entry = (metadata.value as { entries: Array<{ name: string; entryKind: string }> })
+      .entries[0];
+    assert.equal(entry?.name, query);
+    assert.equal(entry?.entryKind, entryKind);
+  }
+  const oldKind = await host.execute("studio.api_lookup", {
+    ownerName: "RemoteEvent",
+    query: "OnServerEvent",
+    memberKind: "method",
+  });
+  assert.equal(oldKind.ok, false, "The former public classification field is not accepted");
+  const definitionsBeforeCatalog = host.definitions();
+  const catalogResult = await host.execute("game.catalog", {});
+  assert.equal(catalogResult.ok, true);
+  const catalogValue = catalogResult.value as {
+    configurationSchemasIncluded: boolean;
+    definitions: Array<{ id: string; lock: { hash: string }; configSchema?: unknown }>;
+  };
+  assert.equal(catalogValue.configurationSchemasIncluded, false);
+  const componentSchema = JSON.stringify(
+    definitionsBeforeCatalog.find((entry) => entry.name === "creator.define_component")!.schema,
+  );
+  for (const definition of catalogValue.definitions) {
+    assert.ok(componentSchema.includes(definition.lock.hash));
+    assert.equal(
+      definition.configSchema,
+      undefined,
+      "The compact catalog does not repeat configuration schemas",
+    );
+  }
+  const selected = catalogValue.definitions[0]!;
+  const detailResult = await host.execute("game.catalog", { definitionIds: [selected.id] });
+  assert.equal(detailResult.ok, true);
+  const detailValue = detailResult.value as typeof catalogValue;
+  assert.equal(detailValue.configurationSchemasIncluded, true);
+  assert.deepEqual(
+    detailValue.definitions.map(({ id }) => id),
+    [selected.id],
+  );
+  assert.equal(typeof detailValue.definitions[0]!.configSchema, "object");
+  assert.strictEqual(
+    host.definitions(),
+    definitionsBeforeCatalog,
+    "Catalog reads do not rebuild or change the run's schemas",
+  );
   assert.match(
     host.definitions().find((entry) => entry.name === "creator.propose_plan")?.description ?? "",
     /GameDesignSpec/,
   );
   const result = await host.execute("studio.api_lookup", {
-    className: "ProximityPrompt",
+    ownerName: "ProximityPrompt",
     query: "Triggered",
     limit: 2,
   });
@@ -1691,9 +1867,176 @@ test("creator planner exposes bounded pinned Roblox API context", async () => {
   assert.equal(value.entries[0]?.name, "Triggered");
   assert.equal(value.entries[0]?.disposition, "source_only");
 
+  const firstPage = await host.execute("studio.api_lookup", {
+    ownerName: "Instance",
+    limit: 1,
+  });
+  assert.equal(firstPage.ok, true);
+  const page = firstPage.value as {
+    nextCursor: string;
+    entries: Array<{ catalogEntryId: string }>;
+  };
+  assert.ok(page.nextCursor);
+  const nextPage = await host.execute("studio.api_lookup", {
+    ownerName: "Instance",
+    limit: 1,
+    cursor: page.nextCursor,
+  });
+  assert.equal(nextPage.ok, true);
+  assert.notEqual(
+    (nextPage.value as typeof page).entries[0]?.catalogEntryId,
+    page.entries[0]?.catalogEntryId,
+  );
+  const invalidCursor = await host.execute("studio.api_lookup", {
+    ownerName: "Instance",
+    limit: 1,
+    cursor: "invalid-cursor",
+  });
+  assert.equal(invalidCursor.ok, false);
+  if (!invalidCursor.ok) {
+    assert(invalidCursor.error);
+    assert.match(invalidCursor.error.message, /unchanged lookup filters and limit/);
+    assert.doesNotMatch(invalidCursor.error.message, /memberKind/);
+  }
+  const superseded = await host.execute("studio.api_lookup", {
+    className: "Instance",
+    query: "new",
+  });
+  assert.equal(superseded.ok, false);
+
   const invalid = await host.execute("studio.api_lookup", {});
   assert.equal(invalid.ok, false);
   assert.equal(invalid.error?.code, "ROBLOX_API_LOOKUP_INVALID");
+});
+
+test("creator planning and Build materialize arbitrary reused assemblies from one exact accepted design", async () => {
+  const ownership = createStudioOwnershipMap({
+    projectId: "assembly-creator-workflow",
+    revisionHash,
+    projectIndex: observation,
+  });
+  const prompt = "Compose independently placed project objects with local interaction anchors.";
+  const session = createCreatorSession({
+    prompt,
+    projectId: ownership.projectId,
+    revisionHash,
+    projectCaptureHash,
+    ownership,
+  });
+  const sources = sourceEvidence(observation, projectCaptureHash);
+  const planner = new CreatorPlannerToolHost({
+    catalog: plannerCatalog,
+    session,
+    ownership,
+    projectIndex: observation,
+    ...sources,
+    prompt,
+  });
+  const empty = {
+    properties: [],
+    references: [],
+    valueSlots: [],
+    attributes: [],
+    dependencies: [],
+  };
+  const config = {
+    templates: [
+      {
+        id: "project-object",
+        nodes: [
+          {
+            ...empty,
+            id: "root",
+            name: "Object",
+            className: "Model",
+            references: [{ propertyName: "PrimaryPart", target: { kind: "local", id: "anchor" } }],
+          },
+          {
+            ...empty,
+            id: "anchor",
+            parentId: "root",
+            name: "Anchor",
+            className: "Part",
+            properties: [
+              { name: "Anchored", valueJson: stableJson({ kind: "boolean", value: true }) },
+            ],
+          },
+          {
+            ...empty,
+            id: "prompt",
+            parentId: "anchor",
+            name: "Interaction",
+            className: "ProximityPrompt",
+          },
+        ],
+      },
+    ],
+    copies: Array.from({ length: 48 }, (_, index) => ({
+      id: "copy-" + index,
+      templateId: "project-object",
+      name: "Object" + index,
+      parent: { kind: "engine", id: "Workspace" },
+      overrides: [],
+    })),
+    sharedReferences: [],
+  };
+  const proposed = await submitDesign(planner, {
+    inspectionObjectIds: [],
+    citationHandles: [],
+    checks: [],
+    design: {
+      kind: "GameDesignSpec",
+      worldAuthoring: { mode: "none" },
+      id: "project-composition",
+      intent: prompt,
+      components: [
+        {
+          kind: "recipe_instance",
+          id: "objects",
+          definition: gameRecipeDefinitionLock(PROJECT_ASSEMBLY_DEFINITION),
+          config,
+        },
+      ],
+      connections: [],
+      artifactDependencies: [],
+    },
+  });
+  assert.equal(proposed.ok, true, JSON.stringify(proposed));
+  const outcome = planner.getOutcome();
+  assert.ok(outcome?.kind === "plan_proposed");
+  assert.equal(outcome.plan.compiled.inventory.length, 144);
+  const builder = new CreatorBuilderToolHost({
+    session,
+    ownership,
+    projectIndex: observation,
+    ...sources,
+    plan: outcome.plan,
+    sourceConsultation: planner.getSourceConsultation(),
+    planApproval: createCreatorApproval({
+      sessionId: session.id,
+      artifactKind: "plan",
+      artifactId: outcome.plan.id,
+      artifactHash: outcome.plan.hash,
+      decision: "approved",
+      decidedAt: "2026-09-05T00:00:00.000Z",
+    }),
+  });
+  assert.equal(builder.stagedOperations().length, 0);
+  const built = await builder.execute("studio.build", {
+    summary: "Composed the reviewed project objects.",
+  });
+  assert.equal(built.ok, true, JSON.stringify(built));
+  assert.equal(builder.completionStatus().ready, true);
+  const graph = builder.sealedGraph();
+  assert.equal(graph.operations.length, 144);
+  assert.ok(graph.partitions.length > 1);
+  const secondRoot = graph.operations.find(
+    (operation) => operation.planChangeId === gameAssemblyOperationId("objects", "copy-1", "root"),
+  );
+  assert.ok(secondRoot?.kind === "create");
+  const reference = secondRoot.properties.PrimaryPart;
+  assert.ok(reference?.kind === "instance_ref" && reference.state === "reference");
+  assert.equal(reference.path, "Workspace/Object1/Anchor");
 });
 
 test("provider wire preserves omitted planner fields and host-issued pagination without weakening query guards", async () => {
@@ -1728,7 +2071,14 @@ test("provider wire preserves omitted planner fields and host-issued pagination 
     ownership,
   });
   const sources = sourceEvidence(projectIndex, projectCaptureHash);
-  const host = new CreatorPlannerToolHost({ session, ownership, projectIndex, ...sources, prompt });
+  const host = new CreatorPlannerToolHost({
+    catalog: plannerCatalog,
+    session,
+    ownership,
+    projectIndex,
+    ...sources,
+    prompt,
+  });
   let calls = 0;
   const client = new OpenRouterModelClient({
     apiKey: "offline-test-key",
@@ -1739,12 +2089,19 @@ test("provider wire preserves omitted planner fields and host-issued pagination 
         // OpenAI Responses may normalize optional fields when strict is absent.
         // Inspect the actual HTTP payload, after the pinned SDK adapter runs.
         assert.equal(entry.function.strict, false);
+        const definition = host
+          .definitions()
+          .find((tool) => tool.name.replace(/[^A-Za-z0-9_-]/g, "_") === entry.function.name);
+        assert.ok(definition, "the wire tool must come from the installed host schema");
+        assert.deepEqual(entry.function.parameters, definition.schema);
       }
       const searchSchema = body.tools.find(
         (entry: { function: { name: string } }) => entry.function.name === "project_search",
       ).function.parameters;
       assert.deepEqual(searchSchema.required, ["queries"]);
-      assert.deepEqual(searchSchema.properties.queries.items.required, ["query"]);
+      assert.deepEqual(schemaAt(searchSchema, ["properties", "queries", "items"]).required, [
+        "query",
+      ]);
       const childrenSchema = body.tools.find(
         (entry: { function: { name: string } }) => entry.function.name === "project_children",
       ).function.parameters;
@@ -1753,11 +2110,21 @@ test("provider wire preserves omitted planner fields and host-issued pagination 
         (entry: { function: { name: string } }) => entry.function.name === "creator_propose_plan",
       ).function.parameters;
       assert.equal(planSchema.properties.changes, undefined);
-      assert.equal(planSchema.properties.steps, undefined);
-      assert.equal(planSchema.properties.design.type, "object");
-      assert.equal(planSchema.properties.checks.items.anyOf.length, 4);
+      assert.equal(planSchema.properties.reviews, undefined);
+      const planStep = schemaAt(planSchema, ["properties", "steps", "items"]);
+      assert.deepEqual(planStep.required, ["title", "details", "componentIds"]);
+      assert.equal(schemaAt(planStep, ["properties", "details"]).minLength, 48);
+      assert.equal(schemaAt(planStep, ["properties", "componentIds"]).minItems, 1);
+      assert.equal(schemaAt(planSchema, ["properties", "design"]).type, "object");
+      const checks = schemaAt(planSchema, ["properties", "checks", "items"]).anyOf;
+      assert.ok(Array.isArray(checks));
+      assert.equal(checks.length, 4);
       assert.ok(planSchema.required.includes("design"));
-      assert.match(planSchema.properties.checks.description, /native evidence/);
+      assert.ok(planSchema.required.includes("steps"));
+      assert.match(
+        String(schemaAt(planSchema, ["properties", "checks"]).description),
+        /native evidence/,
+      );
       return new Response(
         JSON.stringify({
           id: "offline-inspection-response",
@@ -1912,6 +2279,7 @@ test("broad project exploration cannot overflow a plan outcome's citation bound"
   });
   const sources = sourceEvidence(projectIndex, projectCaptureHash);
   const host = new CreatorPlannerToolHost({
+    catalog: plannerCatalog,
     session,
     ownership,
     projectIndex,
@@ -1931,15 +2299,14 @@ test("broad project exploration cannot overflow a plan outcome's citation bound"
     inspectionObjectIds: [],
     design: folderDesign("NewFolder", { kind: "engine", id: "Workspace" }),
     checks: [{ check: "playtest_diagnostics", maximumErrors: 0, maximumWarnings: 0 }],
-    reviews: [],
   };
-  const malformed = await host.execute("creator.propose_plan", {
+  const malformed = await submitDesign(host, {
     ...proposal,
     design: { ...proposal.design, components: [{ kind: "source_package", id: "malformed" }] },
   });
   assert.equal(malformed.error?.code, "TOOL_ARGUMENTS_INVALID");
-  assert.match(malformed.error?.message ?? "", /design/);
-  const duplicate = await host.execute("creator.propose_plan", {
+  assert.match(malformed.error?.message ?? "", /component/);
+  const duplicate = await submitDesign(host, {
     ...proposal,
     design: {
       ...proposal.design,
@@ -1947,7 +2314,7 @@ test("broad project exploration cannot overflow a plan outcome's citation bound"
     },
   });
   assert.equal(duplicate.ok, false);
-  const result = await host.execute("creator.propose_plan", proposal);
+  const result = await submitDesign(host, proposal);
   assert.equal(result.ok, true, JSON.stringify(result));
   const outcome = host.getOutcome();
   assertCreatorAgentOutcome(outcome);
@@ -2002,6 +2369,7 @@ test("creator planner admits only host-issued memory and prior-evidence citation
     },
   });
   const host = new CreatorPlannerToolHost({
+    catalog: plannerCatalog,
     session,
     ownership,
     projectIndex: observation,
@@ -2024,6 +2392,7 @@ test("creator planner admits only host-issued memory and prior-evidence citation
   );
 
   const isolatedHost = new CreatorPlannerToolHost({
+    catalog: plannerCatalog,
     session,
     ownership,
     projectIndex: observation,
@@ -2250,9 +2619,10 @@ test("engine-owned authoring containers are valid parents without entering mutab
   });
   assert.deepEqual(contract.initialInspectionPaths, []);
   const visiblePlan = creatorPlanSummary(plan);
+  assert.match(visiblePlan, /^World structure:/);
   for (const step of plan.steps) assert.ok(visiblePlan.includes(step.statement));
   for (const clause of plan.charter.clauses)
-    assert.equal(visiblePlan.includes(clause.statement), clause.kind === "creator_review");
+    assert.equal(visiblePlan.includes(clause.statement), false);
   assert.throws(
     () =>
       creatorPlanSummary({ ...plan, steps: [{ ...plan.steps[0]!, statement: "界".repeat(6000) }] }),
@@ -2275,7 +2645,19 @@ test("engine-owned authoring containers are valid parents without entering mutab
   );
   assert.deepEqual(context.valueSlots, []);
   assert.equal(context.propertyPolicies, undefined);
-  assert.deepEqual(context.steps, plan.steps);
+  assert.deepEqual(
+    context.steps,
+    plan.steps.map((step) => ({
+      id: step.id,
+      statement: step.statement,
+      changeCount: step.changeIds.length,
+    })),
+  );
+  assert.equal(context.acceptedHierarchy.available, true);
+  assert.equal(context.acceptedHierarchy.creatorPlanHash, plan.hash);
+  assert.equal(context.acceptedHierarchy.planHash, plan.compiled.hash);
+  assert.equal(context.acceptedHierarchy.operationCount, plan.compiled.inventory.length);
+  assert.match(builderPrompt, /omitted properties are unobserved, never absent/);
   assert.deepEqual(
     context.qualityRequirements,
     plan.charter.clauses
@@ -2293,6 +2675,7 @@ test("engine-owned authoring containers are valid parents without entering mutab
   );
 
   const host = new CreatorPlannerToolHost({
+    catalog: plannerCatalog,
     session,
     ownership,
     projectIndex: platformObservation,
@@ -2300,11 +2683,10 @@ test("engine-owned authoring containers are valid parents without entering mutab
     sourceResolver: sources.sourceResolver,
     prompt,
   });
-  const rejected = await host.execute("creator.propose_plan", {
+  const rejected = await submitDesign(host, {
     inspectionObjectIds: [],
     design: folderDesign("NewFolder", { kind: "object", id: "forge_attribute:missing" }),
     checks: [{ check: "playtest_diagnostics", maximumErrors: 0, maximumWarnings: 0 }],
-    reviews: [],
   });
   assert.equal(rejected.ok, false);
   assert.match(rejected.error?.message ?? "", /observ|object/i);
@@ -2733,10 +3115,34 @@ test("creator verification keeps staged source repair and rejects invalid Luau",
     { line: 3, text: "print(impossible)\n" },
   ]);
 
+  const contextBefore = host.progressToken();
+  const context = await host.execute("game.source_context", {
+    planHash: plan.compiled.hash,
+    operationId: "server",
+    offset: 0,
+  });
+  assert.equal(context.ok, true, JSON.stringify(context));
+  assert.equal(host.progressToken(), contextBefore, "source navigation does not stage changes");
+  const imports = (context.value as { imports: { requireExpression: string }[] }).imports;
+  assert.equal(imports.length, 1);
+  assert.equal(
+    imports[0]!.requireExpression,
+    'require(game:GetService("ReplicatedStorage"):WaitForChild("AirlockSystem"):WaitForChild("Protocol"))',
+  );
+  const staleContext = await host.execute("game.source_context", {
+    planHash: contentHash("another plan"),
+    operationId: "server",
+    offset: 0,
+  });
+  assert.equal(staleContext.ok, false);
+  const outsideContext = await host.execute("game.source_context", {
+    planHash: plan.compiled.hash,
+    operationId: "panel",
+    offset: 0,
+  });
+  assert.equal(outsideContext.ok, false);
   const replacementSource = [
-    'local ReplicatedStorage = game:GetService("ReplicatedStorage")',
-    'local system = ReplicatedStorage:WaitForChild("AirlockSystem")',
-    'local protocol = require(system:WaitForChild("Protocol"))',
+    "local protocol = " + imports[0]!.requireExpression,
     "assert(protocol.Enabled)",
     "",
   ].join("\n");
@@ -3504,4 +3910,464 @@ test("immutable build contracts validate their sealed policy rather than today's
       ...payload,
     }),
   );
+});
+
+test("builder checkpoints retain every read in a provider batch and a later failure while reusing staged source", async () => {
+  const prompt = "Repair one ordinary shared module after consulting the API.";
+  const ownership = createStudioOwnershipMap({
+    projectId: "checkpoint-batch",
+    revisionHash,
+    projectIndex: observation,
+  });
+  const session = createCreatorSession({
+    prompt,
+    projectId: ownership.projectId,
+    revisionHash,
+    projectCaptureHash,
+    ownership,
+  });
+  const sources = sourceEvidence(observation, projectCaptureHash);
+  const plan = createTestPlan(
+    {
+      sessionId: session.id,
+      promptHash: session.promptHash,
+      projectRevisionHash: revisionHash,
+      projectCaptureHash,
+      ownershipMapId: ownership.id,
+      ownershipMapHash: ownership.hash,
+      creatorPrompt: prompt,
+      ...planSourceBinding(sources),
+      inspectionPaths: [],
+      steps: [
+        { id: "module", statement: "Create the ordinary shared module.", changeIds: ["module"] },
+      ],
+      changes: [
+        {
+          id: "module",
+          kind: "create",
+          path: "Workspace/CheckpointModule",
+          parent: { kind: "engine_container", path: "Workspace", className: "Workspace" },
+          className: "ModuleScript",
+          initialization: "inline_source_required",
+        },
+      ],
+      charter: {
+        clauses: [
+          { id: "syntax", kind: "local_check", check: "luau_syntax" },
+          {
+            id: "module-exists",
+            kind: "studio_check",
+            check: "instance_exists",
+            path: "Workspace/CheckpointModule",
+            expectedClass: "ModuleScript",
+          },
+        ],
+      },
+    },
+    observation,
+    ownership,
+  );
+  const builder = new CreatorBuilderToolHost({
+    session,
+    ownership,
+    projectIndex: observation,
+    plan,
+    ...sources,
+    planApproval: createCreatorApproval({
+      sessionId: session.id,
+      artifactKind: "plan",
+      artifactId: plan.id,
+      artifactHash: plan.hash,
+      decision: "approved",
+      decidedAt: "2026-09-05T12:00:00.000Z",
+    }),
+  });
+  const source = "local checkpointSourceSentinel: string = 1\nreturn {}\n";
+  const checkpoint = (body: {
+    messages: Array<{
+      role: string;
+      content: string;
+      tool_call_id?: string;
+      tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
+    }>;
+  }) => {
+    const message = body.messages.find(
+      (entry) => entry.role === "user" && entry.content.startsWith("<forge_semantic_checkpoint>"),
+    );
+    assert.ok(message);
+    const exchanges = body.messages.filter((entry) =>
+      entry.tool_calls?.some((call) => call.id === "initial-build"),
+    );
+    assert.equal(
+      exchanges.length,
+      1,
+      "the exact latest executed assistant exchange is retained once",
+    );
+    assert.equal(exchanges[0]!.tool_calls!.length, 1);
+    const buildCall = exchanges[0]!.tool_calls![0]!;
+    assert.equal(buildCall.function.name, "studio_build");
+    assert.deepEqual(JSON.parse(buildCall.function.arguments).sources, [
+      { slotId: "module", source },
+    ]);
+    const result = body.messages[body.messages.indexOf(exchanges[0]!) + 1]!;
+    assert.equal(result.role, "tool");
+    assert.equal(result.tool_call_id, buildCall.id);
+    assert.equal(body.messages.filter((entry) => entry.tool_call_id === buildCall.id).length, 1);
+    const end = message.content.indexOf("\n</forge_semantic_checkpoint>");
+    assert.ok(end > 0);
+    return JSON.parse(message.content.slice("<forge_semantic_checkpoint>\n".length, end));
+  };
+  let requests = 0;
+  let stagedOperationHash: string | undefined;
+  const client = new OpenRouterModelClient({
+    apiKey: "offline-key",
+    fetchImpl: async (_url, init) => {
+      requests++;
+      const body = JSON.parse(String(init?.body));
+      let calls: Array<{ id: string; name: string; arguments: unknown }>;
+      const reads = body.messages.filter(
+        (entry: { role: string; tool_call_id?: string }) =>
+          entry.role === "tool" && entry.tool_call_id !== "initial-build",
+      );
+      if (requests === 1) {
+        calls = [
+          {
+            id: "initial-build",
+            name: "studio_build",
+            arguments: {
+              sources: [{ slotId: "module", source }],
+              values: [],
+              summary: "Stage the module for local review.",
+            },
+          },
+        ];
+      } else if (requests === 2) {
+        const state = checkpoint(body);
+        assert.equal(builder.gate().status, "rejected");
+        assert.deepEqual(
+          state.latestBatch.map((entry: { toolCallId: string }) => entry.toolCallId),
+          ["initial-build"],
+        );
+        assert.equal(state.operations.length, 1);
+        assert.equal(state.operations[0].sourceHash, contentHash(source));
+        stagedOperationHash = state.operations[0].operationHash;
+        calls = [
+          {
+            id: "read-triggered",
+            name: "studio_api_lookup",
+            arguments: { ownerName: "ProximityPrompt", query: "Triggered", limit: 1 },
+          },
+          {
+            id: "read-enabled",
+            name: "studio_api_lookup",
+            arguments: { ownerName: "ProximityPrompt", query: "Enabled", limit: 1 },
+          },
+        ];
+      } else if (requests === 3) {
+        const state = checkpoint(body);
+        assert.deepEqual(
+          reads.map((entry: { tool_call_id: string }) => entry.tool_call_id),
+          ["read-triggered", "read-enabled"],
+        );
+        assert.deepEqual(
+          reads.map((entry: { content: string }) => {
+            const result = JSON.parse(entry.content);
+            return { ok: result.ok, name: result.value.entries[0]?.name };
+          }),
+          [
+            { ok: true, name: "Triggered" },
+            { ok: true, name: "Enabled" },
+          ],
+        );
+        assert.equal(state.operations[0].operationHash, stagedOperationHash);
+        calls = [
+          {
+            id: "read-shown",
+            name: "studio_api_lookup",
+            arguments: { ownerName: "ProximityPrompt", query: "PromptShown", limit: 1 },
+          },
+        ];
+      } else if (requests === 4) {
+        checkpoint(body);
+        assert.deepEqual(
+          reads.map((entry: { tool_call_id: string }) => entry.tool_call_id),
+          ["read-triggered", "read-enabled", "read-shown"],
+        );
+        // Both optional selector fields are omitted: schema-valid, but the
+        // production lookup rejects the request during tool execution.
+        calls = [{ id: "invalid-read", name: "studio_api_lookup", arguments: {} }];
+      } else if (requests === 5) {
+        const state = checkpoint(body);
+        assert.deepEqual(
+          reads.map((entry: { tool_call_id: string }) => entry.tool_call_id),
+          ["read-triggered", "read-enabled", "read-shown", "invalid-read"],
+        );
+        const failure = JSON.parse(reads.at(-1).content);
+        assert.equal(failure.ok, false);
+        assert.equal(failure.error.code, "ROBLOX_API_LOOKUP_INVALID");
+        assert.equal(state.operations[0].operationHash, stagedOperationHash);
+        assert.equal(state.operations[0].sourceHash, contentHash(source));
+        calls = [
+          {
+            id: "stale-repair",
+            name: "studio_repair",
+            arguments: {
+              repairs: [
+                {
+                  kind: "source",
+                  planChangeId: "module",
+                  expectedSourceHash: contentHash("stale"),
+                  edits: [{ startLine: 1, deleteCount: 2, replacement: "return {}\n" }],
+                },
+              ],
+              summary: "Attempt a stale repair.",
+            },
+          },
+        ];
+      } else {
+        assert.equal(requests, 6);
+        const state = checkpoint(body);
+        assert.deepEqual(
+          reads.map((entry: { tool_call_id: string }) => entry.tool_call_id),
+          ["read-triggered", "read-enabled", "read-shown", "invalid-read", "stale-repair"],
+        );
+        const failure = JSON.parse(reads.at(-1).content);
+        assert.equal(failure.ok, false);
+        assert.match(failure.error.message, /draft changed/);
+        assert.equal(state.operations[0].operationHash, stagedOperationHash);
+        calls = [
+          {
+            id: "repair-module",
+            name: "studio_repair",
+            arguments: {
+              repairs: [
+                {
+                  kind: "source",
+                  planChangeId: "module",
+                  expectedSourceHash: contentHash(source),
+                  edits: [{ startLine: 1, deleteCount: 2, replacement: "return { value = 1 }\n" }],
+                },
+              ],
+              summary: "Corrected the module syntax.",
+            },
+          },
+        ];
+      }
+      return new Response(
+        JSON.stringify({
+          id: `checkpoint-response-${requests}`,
+          model: DEFAULT_CREATOR_MODEL_ID,
+          provider: "OpenAI",
+          choices: [
+            {
+              index: 0,
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: calls.map((call) => ({
+                  id: call.id,
+                  type: "function",
+                  function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                })),
+              },
+            },
+          ],
+          usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    },
+  });
+  const result = await new ForgeNativeAgentRuntime(client).run({
+    systemPrompt: "Use the declared builder tools.",
+    prompt,
+    tools: builder,
+    model: DEFAULT_CREATOR_MODEL_ID,
+    budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 6 },
+  });
+  assert.equal(result.status, "completed", result.error);
+  assert.equal(requests, 6);
+  assert.equal(builder.gate().status, "eligible");
+  assert.deepEqual(
+    result.toolCalls.map((entry) => entry.toolCallId),
+    [
+      "initial-build",
+      "read-triggered",
+      "read-enabled",
+      "read-shown",
+      "invalid-read",
+      "stale-repair",
+      "repair-module",
+    ],
+  );
+});
+
+function diagnosticReviewBuilder() {
+  const prompt = "Create an ordinary module and preserve its exact source diagnostics.";
+  const ownership = createStudioOwnershipMap({
+    projectId: "diagnostic-review",
+    revisionHash,
+    projectIndex: observation,
+  });
+  const session = createCreatorSession({
+    prompt,
+    projectId: ownership.projectId,
+    revisionHash,
+    projectCaptureHash,
+    ownership,
+  });
+  const sources = sourceEvidence(observation, projectCaptureHash);
+  const plan = createTestPlan(
+    {
+      sessionId: session.id,
+      promptHash: session.promptHash,
+      projectRevisionHash: revisionHash,
+      projectCaptureHash,
+      ownershipMapId: ownership.id,
+      ownershipMapHash: ownership.hash,
+      creatorPrompt: prompt,
+      ...planSourceBinding(sources),
+      inspectionPaths: [],
+      steps: [{ id: "module", statement: prompt, changeIds: ["module"] }],
+      changes: [
+        {
+          id: "module",
+          kind: "create",
+          path: "Workspace/DiagnosticModule",
+          parent: { kind: "engine_container", path: "Workspace", className: "Workspace" },
+          className: "ModuleScript",
+          initialization: "inline_source_required",
+        },
+      ],
+      charter: {
+        clauses: [
+          { id: "syntax", kind: "local_check", check: "luau_syntax" },
+          {
+            id: "module-exists",
+            kind: "studio_check",
+            check: "instance_exists",
+            path: "Workspace/DiagnosticModule",
+            expectedClass: "ModuleScript",
+          },
+        ],
+      },
+    },
+    observation,
+    ownership,
+  );
+  return new CreatorBuilderToolHost({
+    session,
+    ownership,
+    projectIndex: observation,
+    plan,
+    ...sources,
+    planApproval: createCreatorApproval({
+      sessionId: session.id,
+      artifactKind: "plan",
+      artifactId: plan.id,
+      artifactHash: plan.hash,
+      decision: "approved",
+      decidedAt: "2026-09-05T15:00:00.000Z",
+    }),
+  });
+}
+
+test("duplicate source diagnostics preserve a rejected review and unique graph evidence identities", async () => {
+  const builder = diagnosticReviewBuilder();
+  const before = builder.progressToken();
+  const source =
+    "local first = require(missing)\nlocal second = require(missing)\nreturn { first, second }\n";
+  const result = await builder.execute("studio.build", {
+    sources: [{ slotId: "module", source }],
+    values: [],
+    summary: "Review the module.",
+  });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  const value = result.value as {
+    review: { status: string; issues: Array<{ ruleId: string; count: number }> };
+  };
+  assert.equal(value.review.status, "rejected");
+  assert.equal(
+    value.review.issues.find((issue) => issue.ruleId === "game_import_dynamic_target")?.count,
+    2,
+    "Repeated source facts remain counted in the review",
+  );
+  assert.equal(builder.gate().issueHashes.length, new Set(builder.gate().issueHashes).size);
+  assert.equal(builder.stagedSourceWriteBlobs()[0]?.manifest.sourceHash, contentHash(source));
+  const checkpoint = builder.contextCheckpoint(
+    [{ toolCallId: "build", name: "studio.build", result }],
+    before,
+  );
+  assert.ok(checkpoint);
+  assert.match(checkpoint, /game_import_dynamic_target/);
+  assert.doesNotMatch(checkpoint, /Invalid graph local-check evidence bindings/);
+  const repair = await builder.execute("studio.repair", {
+    repairs: [
+      {
+        kind: "source",
+        planChangeId: "module",
+        expectedSourceHash: contentHash(source),
+        edits: [{ startLine: 1, deleteCount: 3, replacement: "return {}\n" }],
+      },
+    ],
+    summary: "Repair the source.",
+  });
+  assert.equal(repair.ok, true, JSON.stringify(repair));
+  assert.equal(builder.gate().status, "eligible");
+  assert.doesNotThrow(() => builder.sealedGraph());
+});
+
+test("a post-analysis graph failure retains actionable source review and repairable draft in the checkpoint", async (t) => {
+  const builder = diagnosticReviewBuilder();
+  const before = builder.progressToken();
+  const source = "local value: string = 1\nreturn value\n";
+  const graph = builder as unknown as { compileCurrentGraph(): unknown };
+  const failure = t.mock.method(graph, "compileCurrentGraph", () => {
+    throw new Error("Injected post-analysis graph fault");
+  });
+  const result = await builder.execute("studio.build", {
+    sources: [{ slotId: "module", source }],
+    values: [],
+    summary: "Review source before graph binding.",
+  });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  const value = result.value as {
+    review: {
+      status: string;
+      issues: Array<{ ruleId: string; category: string; message: string }>;
+    };
+  };
+  assert.equal(value.review.status, "incomplete");
+  assert.ok(value.review.issues.some((issue) => issue.category === "language"));
+  assert.ok(
+    value.review.issues.some(
+      (issue) =>
+        issue.ruleId === "CREATOR_GAME_GRAPH_INVALID" &&
+        issue.message === "Injected post-analysis graph fault",
+    ),
+  );
+  assert.equal(builder.gate().status, "incomplete");
+  assert.equal(builder.stagedSourceWriteBlobs()[0]?.manifest.sourceHash, contentHash(source));
+  const checkpoint = builder.contextCheckpoint(
+    [{ toolCallId: "build", name: "studio.build", result }],
+    before,
+  );
+  assert.match(checkpoint ?? "", /CREATOR_GAME_GRAPH_INVALID/);
+  assert.match(checkpoint ?? "", /language/);
+  assert.throws(() => builder.sealedGraph());
+  failure.mock.restore();
+  const repair = await builder.execute("studio.repair", {
+    repairs: [
+      {
+        kind: "source",
+        planChangeId: "module",
+        expectedSourceHash: contentHash(source),
+        edits: [{ startLine: 1, deleteCount: 2, replacement: "return {}\n" }],
+      },
+    ],
+    summary: "Repair the source after graph recovery.",
+  });
+  assert.equal(repair.ok, true, JSON.stringify(repair));
+  assert.equal(builder.gate().status, "eligible");
 });

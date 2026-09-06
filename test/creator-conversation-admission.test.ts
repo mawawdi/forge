@@ -9,6 +9,7 @@ import {
 } from "../packages/artifact-store/src/index.js";
 import { contentHash, stableJson } from "../packages/contracts/src/index.js";
 import { CreatorConversationCoordinator } from "../packages/creator-control/src/conversation-coordinator.js";
+import { CreatorTurnNotAdmittedError } from "../packages/creator-control/src/turn-admission-error.js";
 import {
   CreatorConversationStore,
   sealCreatorConversationEvent,
@@ -17,6 +18,7 @@ import {
   sealCreatorProjectConversation,
   sealCreatorWorkEpisode,
   type CreatorActionRequest,
+  type CreatorTurnRequest,
   type CreatorConversationEvent,
   type CreatorConversationAttachment,
   type CreatorControlView,
@@ -54,6 +56,11 @@ const CONVERSATION_ID = "creator_conversation_admission";
 const PROJECT_ID = "forge_project_0123456789abcdef0123456789abcdef";
 const SESSION_ID = "creator_session_admission";
 const REVISION_HASH = "a".repeat(64);
+// Test-owned static one-pixel PNGs; neither is native rendering evidence.
+const RED_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+const BLUE_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg==";
 
 test("a burst of transaction invalidations coalesces while retaining the final update", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "forge-sync-coalescing-"));
@@ -349,6 +356,184 @@ test("turn admission publishes intent and queued idempotency record at one conve
     await restarted.close();
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("visual turn admission durably retains exact creator upload bytes and includes them in idempotency", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "forge-visual-turn-admission-"));
+  let control: CreatorConversationCoordinator | undefined;
+  let studio: StudioBridgeSession | undefined = pairedStudio();
+  try {
+    await seedPlanEpisode(directory);
+    control = coordinator(directory, undefined, undefined, {
+      imageCapable: true,
+      studio: () => studio,
+    });
+    await control.initialize();
+    const state = await control.dashboardState(CONVERSATION_ID);
+    const contract = state.controlView!.turnContract!;
+    const request: CreatorTurnRequest = {
+      kind: "CreatorTurnRequest",
+      conversationId: CONVERSATION_ID,
+      turnContractId: contract.id,
+      turnContractHash: contract.hash,
+      turnKind: "plan_refinement",
+      text: "Use this creator reference for the planned visual treatment.",
+      selectedModelId: MODEL,
+      idempotencyKey: "visual-admission-exact-0001",
+      visualObservations: [
+        {
+          kind: "reference",
+          caption: "A creator-supplied visual reference: " + "視".repeat(500),
+          image: { mimeType: "image/png", base64: RED_PNG },
+        },
+      ],
+    };
+    const admission = await control.submitTurn(request);
+    studio = undefined;
+    assert.equal((await control.submitTurn(structuredClone(request))).jobId, admission.jobId);
+    await assert.rejects(
+      () =>
+        control!.submitTurn({
+          ...request,
+          visualObservations: [
+            {
+              ...request.visualObservations![0]!,
+              image: { mimeType: "image/png", base64: BLUE_PNG },
+            },
+          ],
+        }),
+      /another admitted request/i,
+    );
+    const store = new CreatorConversationStore(directory);
+    const loaded = await store.load(CONVERSATION_ID);
+    const job = loaded.jobs.find((candidate) => candidate.id === admission.jobId)!;
+    assert.ok(job);
+    const admitted = await store.artifactStore.read<CreatorTurnRequest>(job.admittedRequest);
+    assert.deepEqual(admitted, request);
+    const { event } = admissionCommit(loaded.events, loaded.commits, admission.jobId);
+    const attachment = event.attachments.find((item) => item.role === "visual_observation")!;
+    assert.ok(attachment);
+    assert.ok(Buffer.byteLength(attachment.label, "utf8") <= 256);
+    const upload = await store.artifactStore.read<{
+      kind: string;
+      source: string;
+      evidenceScope: string;
+      observation: unknown;
+    }>(attachment.binding.artifact);
+    assert.equal(upload.kind, "CreatorVisualUpload");
+    assert.equal(upload.source, "creator_upload");
+    assert.equal(upload.evidenceScope, "creator_reported_visual");
+    assert.deepEqual(upload.observation, request.visualObservations![0]);
+    assert.equal(
+      loaded.jobs.filter((candidate) => candidate.idempotencyKey === request.idempotencyKey).length,
+      1,
+    );
+  } finally {
+    await control?.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("pre-write turn rejection proves exact non-admission while persistence failures remain uncertain", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "forge-turn-rejection-proof-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await seedPlanEpisode(directory);
+  const control = coordinator(directory, undefined, {
+    beforePublishHead(head) {
+      if (head.sequence === 2) throw new Error("interrupted durable admission");
+    },
+  });
+  await control.initialize();
+  t.after(() => control.close());
+  const state = await control.dashboardState(CONVERSATION_ID);
+  const contract = state.controlView!.turnContract!;
+  const request: CreatorTurnRequest = {
+    kind: "CreatorTurnRequest",
+    conversationId: CONVERSATION_ID,
+    turnContractId: "stale-contract",
+    turnContractHash: contract.hash,
+    turnKind: "plan_refinement",
+    text: "Review the facade.",
+    selectedModelId: MODEL,
+    idempotencyKey: "proven-not-admitted",
+  };
+  await assert.rejects(control.submitTurn(request), (error: unknown) => {
+    assert.ok(error instanceof CreatorTurnNotAdmittedError);
+    assert.equal(error.idempotencyKey, request.idempotencyKey);
+    assert.match(error.requestHash, /^[a-f0-9]{64}$/);
+    return true;
+  });
+  await assert.rejects(
+    control.submitTurn({ ...request, turnContractId: contract.id }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error instanceof CreatorTurnNotAdmittedError, false);
+      assert.match(error.message, /interrupted durable admission/);
+      return true;
+    },
+  );
+});
+
+test("visual admission rejects unconfirmed model modality, malformed PNG and unknown current view before dispatch or persistence", async () => {
+  for (const scenario of ["unsupported-model", "malformed-image", "unknown-view"] as const) {
+    const directory = await mkdtemp(join(tmpdir(), "forge-visual-rejection-"));
+    let control: CreatorConversationCoordinator | undefined;
+    let dispatches = 0;
+    try {
+      await seedPlanEpisode(directory);
+      control = coordinator(directory, undefined, undefined, {
+        imageCapable: scenario !== "unsupported-model",
+        currentViewIds: ["known-view"],
+        onDispatch: () => {
+          dispatches++;
+        },
+      });
+      await control.initialize();
+      const state = await control.dashboardState(CONVERSATION_ID);
+      const contract = state.controlView!.turnContract!;
+      const request: CreatorTurnRequest = {
+        kind: "CreatorTurnRequest",
+        conversationId: CONVERSATION_ID,
+        turnContractId: contract.id,
+        turnContractHash: contract.hash,
+        turnKind: "plan_refinement",
+        text: "Consider the attached view.",
+        selectedModelId: MODEL,
+        idempotencyKey: `visual-rejected-${scenario}`,
+        visualObservations: [
+          {
+            kind: "rendered_view",
+            caption: "Creator-reported test image",
+            image: {
+              mimeType: "image/png",
+              base64: scenario === "malformed-image" ? "AAAA" : RED_PNG,
+            },
+            ...(scenario === "unknown-view" ? { viewId: "not-in-current-plan" } : {}),
+          },
+        ],
+      };
+      const expected =
+        scenario === "unsupported-model"
+          ? /does not confirm image input/
+          : scenario === "malformed-image"
+            ? /PNG signature/
+            : /outside the current game plan/;
+      await assert.rejects(() => control!.submitTurn(request), expected);
+      const loaded = await new CreatorConversationStore(directory).load(CONVERSATION_ID);
+      assert.equal(loaded.head.sequence, 1);
+      assert.equal(loaded.jobs.length, 0);
+      assert.equal(
+        loaded.events
+          .flatMap((event) => event.attachments)
+          .some((item) => item.role === "visual_observation"),
+        false,
+      );
+      assert.equal(dispatches, 0);
+    } finally {
+      await control?.close();
+      await rm(directory, { recursive: true, force: true });
+    }
   }
 });
 
@@ -921,11 +1106,17 @@ function coordinator(
   directory: string,
   controlView?: TransactionControlView,
   conversationStoreOptions?: ConstructorParameters<typeof CreatorConversationStore>[1],
+  visual?: {
+    imageCapable?: boolean;
+    currentViewIds?: readonly string[];
+    onDispatch?: () => void;
+    studio?: () => StudioBridgeSession | undefined;
+  },
 ): CreatorConversationCoordinator {
   const studio = pairedStudio();
   const transaction = {
     subscribe: () => () => undefined,
-    pairedStudio: () => studio,
+    pairedStudio: visual?.studio ?? (() => studio),
     dashboardState: async () => ({
       kind: "CreatorTransactionState",
       selectedSessionId: SESSION_ID,
@@ -942,8 +1133,24 @@ function coordinator(
       serverTime: NOW,
     }),
     action: async () => {
+      visual?.onDispatch?.();
       throw new Error("test stops before a lower transaction dispatch");
     },
+    ...(visual?.currentViewIds
+      ? {
+          conversationSnapshot: async () => ({
+            bundle: {
+              plan: {
+                compiled: {
+                  design: {
+                    visualDirection: { views: visual.currentViewIds!.map((id) => ({ id })) },
+                  },
+                },
+              },
+            },
+          }),
+        }
+      : {}),
   } as unknown as CreatorSessionCoordinator;
   return new CreatorConversationCoordinator({
     transaction,
@@ -955,7 +1162,7 @@ function coordinator(
     } as StudioBridgeConnection,
     directory,
     defaultModelId: MODEL,
-    modelCatalog: availableCatalog(),
+    modelCatalog: availableCatalog(visual?.imageCapable),
     now: () => new Date(NOW),
     ...(conversationStoreOptions ? { conversationStoreOptions } : {}),
   });
@@ -1156,9 +1363,15 @@ function pairedStudio(): StudioBridgeSession {
   };
 }
 
-function availableCatalog() {
+function availableCatalog(imageCapable = false) {
   return parseOpenRouterModelCatalog(
-    { data: CREATOR_MODEL_IDS.map((id) => ({ id, supported_parameters: ["tools"] })) },
+    {
+      data: CREATOR_MODEL_IDS.map((id) => ({
+        id,
+        supported_parameters: ["tools"],
+        ...(imageCapable ? { architecture: { input_modalities: ["text", "image"] } } : {}),
+      })),
+    },
     NOW,
   );
 }

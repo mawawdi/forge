@@ -1111,7 +1111,7 @@ export interface CreatorFinalizationGate extends RecordingBinding {
   action: "commit" | "cancel";
   /** Distinguishes an ordinary finalization from an explicit recovery cancel. */
   finalizationKind: "ordinary" | "recovery_cancel";
-  /** The action displaced by a recovery cancellation; absent for ordinary finalization. */
+  /** Exact displaced intent action; absent when cancellation starts from an open cursor. */
   replacesAction?: "commit" | "cancel";
   expectedCurrentProjectIndexManifestId: string;
   expectedCurrentProjectRevisionHash: string;
@@ -1159,6 +1159,8 @@ export interface AcknowledgeCreatorChangeFinalizationPayload extends CreatorFina
 export interface RequestCreatorRecordingRecoveryPayload extends RecordingBinding {
   requestId: string;
 }
+export type CreatorRecordingCancellationAuthority =
+  { kind: "open" } | { kind: "replace_intent"; action: "commit" | "cancel" };
 export type CreatorRecordingRecoveryPayload =
   | {
       recordingState: "none";
@@ -1174,12 +1176,8 @@ export type CreatorRecordingRecoveryPayload =
       recoveryProjectRevisionHash: string;
       /** Monitor epoch sampled with the complete recovery project index. */
       recoveryProjectDetectorEpoch: number;
-      /**
-       * Present only when the retained durable cursor is a finalization
-       * intent. A recovery cancellation must name the action it replaces;
-       * Forge never infers that provenance from a session status.
-       */
-      replacesAction?: "commit" | "cancel";
+      /** Exact currently available cancellation authority; absent after an uncertain recovery Finish. */
+      cancellation?: CreatorRecordingCancellationAuthority;
       finalizationRequestId?: string;
     });
 export interface AcknowledgeClosedCreatorRecordingPayload extends RecordingBinding {
@@ -2325,26 +2323,7 @@ function validatePayload(type: string, payload: Record<string, unknown>): void {
     return;
   }
   if (type === "CreatorRecordingRecovery") {
-    if (payload.finalizationRequestId !== undefined && !isId(payload.finalizationRequestId))
-      fail(type);
-    if (payload.recordingState === "none") {
-      const expectedKeys = payload.finalizationRequestId === undefined ? 1 : 2;
-      if (Object.keys(payload).length !== expectedKeys) fail(type);
-      return;
-    }
-    if (
-      !isRecordingBinding(payload) ||
-      !["open", "not_open", "finalizing", "unknown"].includes(String(payload.recordingState))
-    )
-      fail(type);
-    if (
-      !isId(payload.recoveryProjectIndexManifestId) ||
-      !isHash(payload.recoveryProjectRevisionHash) ||
-      !isNonNegativeInteger(payload.recoveryProjectDetectorEpoch) ||
-      (payload.replacesAction !== undefined &&
-        !["commit", "cancel"].includes(String(payload.replacesAction)))
-    )
-      fail(type);
+    assertCreatorRecordingRecoveryPayload(payload);
     return;
   }
   if (type === "CreatorClosedRecordingAcknowledged") {
@@ -2671,7 +2650,13 @@ function assertProjectionJson(
 function assertRecoveryRequest(payload: Record<string, unknown>, cancel: boolean): void {
   if (!isId(payload.requestId) || !isRecordingBinding(payload))
     fail(cancel ? "CancelInterruptedRecording" : "RequestCreatorRecordingRecovery");
-  if (cancel && !isCreatorFinalizationGate(payload)) fail("CancelInterruptedRecording");
+  if (
+    cancel &&
+    (!isCreatorFinalizationGate(payload) ||
+      payload.finalizationKind !== "recovery_cancel" ||
+      payload.action !== "cancel")
+  )
+    fail("CancelInterruptedRecording");
 }
 function isRuntimeBase(payload: Record<string, unknown>): boolean {
   return (
@@ -2704,13 +2689,52 @@ function isRecordingBinding(value: unknown): boolean {
     isId(value.recordingId)
   );
 }
+export function assertCreatorRecordingRecoveryPayload(
+  value: unknown,
+): asserts value is CreatorRecordingRecoveryPayload {
+  if (!isRecord(value)) fail("CreatorRecordingRecovery");
+  const payload = value;
+  if (payload.finalizationRequestId !== undefined && !isId(payload.finalizationRequestId))
+    fail("CreatorRecordingRecovery");
+  if (payload.recordingState === "none") {
+    const expectedKeys = payload.finalizationRequestId === undefined ? 1 : 2;
+    if (Object.keys(payload).length !== expectedKeys) fail("CreatorRecordingRecovery");
+    return;
+  }
+  if (
+    !isRecordingBinding(payload) ||
+    !["open", "not_open", "finalizing", "unknown"].includes(String(payload.recordingState)) ||
+    !isId(payload.recoveryProjectIndexManifestId) ||
+    !isHash(payload.recoveryProjectRevisionHash) ||
+    !isNonNegativeInteger(payload.recoveryProjectDetectorEpoch) ||
+    payload.replacesAction !== undefined ||
+    (payload.cancellation !== undefined &&
+      (payload.recordingState !== "open" ||
+        !isCreatorRecordingCancellationAuthority(payload.cancellation)))
+  )
+    fail("CreatorRecordingRecovery");
+}
+export function isCreatorRecordingCancellationAuthority(
+  value: unknown,
+): value is CreatorRecordingCancellationAuthority {
+  return (
+    isRecord(value) &&
+    ((value.kind === "open" && Object.keys(value).length === 1) ||
+      (value.kind === "replace_intent" &&
+        Object.keys(value).length === 2 &&
+        (value.action === "commit" || value.action === "cancel")))
+  );
+}
 function isCreatorFinalizationGate(value: unknown): value is CreatorFinalizationGate {
   const recoveryCancel = isRecord(value) && value.finalizationKind === "recovery_cancel";
   return (
     isRecordingBinding(value) &&
     isRecord(value) &&
     (recoveryCancel
-      ? value.action === "cancel" && ["commit", "cancel"].includes(String(value.replacesAction))
+      ? value.action === "cancel" &&
+        (value.replacesAction === undefined ||
+          value.replacesAction === "commit" ||
+          value.replacesAction === "cancel")
       : ["commit", "cancel"].includes(String(value.action)) &&
         value.finalizationKind === "ordinary" &&
         value.replacesAction === undefined) &&

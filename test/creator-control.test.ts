@@ -5,10 +5,12 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   CreatorControlServer,
+  CreatorTurnNotAdmittedError,
   readCreatorControlDiscovery,
   writeCreatorControlDiscovery,
   type CreatorControlCoordinator,
 } from "../packages/creator-control/src/index.js";
+import type { CreatorTurnRequest } from "../packages/creator-conversation/src/index.js";
 
 function fakeCoordinator(
   overrides: Partial<CreatorControlCoordinator> = {},
@@ -32,6 +34,7 @@ function fakeCoordinator(
               id: "openai/gpt-5.6-luna",
               displayName: "Luna",
               availability: "available",
+              imageInput: "supported",
               requiredCapabilities: ["tools"],
               providerFallback: "disabled",
             },
@@ -102,6 +105,59 @@ function fakeCoordinator(
   } as CreatorControlCoordinator;
 }
 
+test("HTTP distinguishes ledger-proven turn rejection from generic transport and persistence errors", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "forge-turn-proof-http-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const request: CreatorTurnRequest = {
+    kind: "CreatorTurnRequest",
+    conversationId: "conversation-proof",
+    text: "Review the image.",
+    selectedModelId: "openai/gpt-5.6-luna",
+    turnContractId: "stale-contract",
+    turnContractHash: "a".repeat(64),
+    turnKind: "new_work",
+    idempotencyKey: "saved-proof-request-key",
+  };
+  const proof = new CreatorTurnNotAdmittedError(request, "This turn was not admitted.");
+  let failure: Error = proof;
+  const server = new CreatorControlServer({
+    coordinator: fakeCoordinator({
+      async submitTurn() {
+        throw failure;
+      },
+    }),
+    dashboardDirectory: root,
+    port: 0,
+    bearerToken: "bearer_token_123456789012345678901234",
+  });
+  const address = await server.listen();
+  t.after(() => server.close());
+  const endpoint = `http://${address.host}:${address.port}/api/control/turn`;
+  const options = {
+    method: "POST",
+    headers: { authorization: `Bearer ${address.bearerToken}`, "content-type": "application/json" },
+    body: JSON.stringify(request),
+  };
+  const rejected = await fetch(endpoint, options);
+  assert.equal(rejected.status, 400);
+  assert.deepEqual(await rejected.json(), {
+    kind: "CreatorControlError",
+    message: proof.message,
+    admission: "not_admitted",
+    idempotencyKey: request.idempotencyKey,
+    requestHash: proof.requestHash,
+  });
+  failure = new Error("The persistence acknowledgement is uncertain.");
+  const uncertain = await fetch(endpoint, options);
+  assert.deepEqual(await uncertain.json(), {
+    kind: "CreatorControlError",
+    message: failure.message,
+  });
+  const unauthenticated = await fetch(endpoint, { method: "POST", body: options.body });
+  assert.equal(unauthenticated.status, 401);
+  assert.equal(((await unauthenticated.json()) as { admission?: string }).admission, undefined);
+});
+
 test("creator control authenticates conversation reads and admits turns/actions with 202", async () => {
   const root = await mkdtemp(join(tmpdir(), "forge-creator-control-"));
   const dashboard = join(root, "dashboard");
@@ -135,6 +191,12 @@ test("creator control authenticates conversation reads and admits turns/actions 
     const cookie = exchange.headers.get("set-cookie")?.split(";")[0];
     assert.ok(cookie?.startsWith("forge_creator_session="));
     assert.match(exchange.headers.get("content-security-policy") ?? "", /default-src 'self'/);
+    assert.match(
+      exchange.headers.get("content-security-policy") ?? "",
+      /img-src 'self' data: blob:;/,
+    );
+    assert.match(exchange.headers.get("content-security-policy") ?? "", /script-src 'self';/);
+    assert.match(exchange.headers.get("content-security-policy") ?? "", /connect-src 'self';/);
     assert.equal((await fetch(launch, { redirect: "manual" })).status, 401);
 
     const state = await fetch(`${origin}/api/control/state`, { headers: { cookie: cookie! } });
@@ -215,7 +277,7 @@ test("creator control authenticates conversation reads and admits turns/actions 
         authorization: `Bearer ${address.bearerToken}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ text: "x".repeat(512 * 1024) }),
+      body: JSON.stringify({ text: "x".repeat(12 * 1024 * 1024) }),
     });
     assert.equal(oversized.status, 413);
 
@@ -347,9 +409,81 @@ test("creator control reserves wire framing for the largest advertised text fiel
     const overWire = await fetch(`${origin}/api/control/turn`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ text: "x".repeat(512 * 1024) }),
+      body: JSON.stringify({ text: "x".repeat(12 * 1024 * 1024) }),
     });
     assert.equal(overWire.status, 413);
+  } finally {
+    await server.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("visual turn transport admits complete bodies through 12 MiB while actions retain their 512 KiB boundary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "forge-visual-wire-"));
+  const dashboard = join(root, "dashboard");
+  await mkdir(dashboard);
+  await writeFile(join(dashboard, "index.html"), "<!doctype html><title>Forge</title>");
+  let turnBytes = 0;
+  let turnCalls = 0;
+  let actionCalls = 0;
+  const coordinator = fakeCoordinator({
+    async submitTurn(value) {
+      turnCalls++;
+      turnBytes = Buffer.byteLength(JSON.stringify(value));
+      return {
+        kind: "CreatorWorkAdmission",
+        jobId: "creator_job_visual_wire",
+        conversationId: "creator_conversation_test",
+        acceptedAt: "2026-09-03T00:00:00.000Z",
+      };
+    },
+    async submitAction() {
+      actionCalls++;
+      return {
+        kind: "CreatorWorkAdmission",
+        jobId: "creator_job_action_wire",
+        conversationId: "creator_conversation_test",
+        acceptedAt: "2026-09-03T00:00:00.000Z",
+      };
+    },
+  });
+  const server = new CreatorControlServer({
+    coordinator,
+    dashboardDirectory: dashboard,
+    port: 0,
+    bearerToken: "bearer_token_123456789012345678901234",
+  });
+  try {
+    const address = await server.listen();
+    const origin = `http://${address.host}:${address.port}`;
+    const headers = {
+      authorization: `Bearer ${address.bearerToken}`,
+      "content-type": "application/json",
+    };
+    // This fixture isolates HTTP framing. The real coordinator's PNG/field checks have separate admission coverage.
+    for (const size of [512 * 1024 + 1, 12 * 1024 * 1024]) {
+      const body = JSON.stringify({
+        text: "x".repeat(size - Buffer.byteLength(JSON.stringify({ text: "" }))),
+      });
+      assert.equal(Buffer.byteLength(body), size);
+      const response = await fetch(`${origin}/api/control/turn`, { method: "POST", headers, body });
+      assert.equal(response.status, 202);
+      assert.equal(turnBytes, size);
+    }
+    const tooLarge = await fetch(`${origin}/api/control/turn`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ text: "x".repeat(12 * 1024 * 1024) }),
+    });
+    assert.equal(tooLarge.status, 413);
+    assert.equal(turnCalls, 2);
+    const action = await fetch(`${origin}/api/control/action`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ text: "x".repeat(512 * 1024) }),
+    });
+    assert.equal(action.status, 413);
+    assert.equal(actionCalls, 0);
   } finally {
     await server.close();
     await rm(root, { recursive: true, force: true });

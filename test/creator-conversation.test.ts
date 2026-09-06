@@ -87,8 +87,9 @@ test("Apply, Play and finalization remain readable; invalid snapshots never publ
         );
         assert.equal((await store.load(conversation.id)).head.sequence, current.head.sequence);
       }
-      await store.append({ conversation, episode, event });
+      const result = await store.append({ conversation, episode, event });
       const restarted = await new CreatorConversationStore(root).load(conversation.id);
+      assert.deepEqual(result.loaded, restarted);
       assert.equal(restarted.episodes[0]!.status, status);
     }
   });
@@ -104,6 +105,7 @@ test("conversation contracts expose closed browser-safe turn, action, and dashbo
         id: MODEL,
         displayName: "GPT-5.6 Luna",
         availability: "available",
+        imageInput: "supported",
         requiredCapabilities: ["tools"],
         providerFallback: "disabled",
       },
@@ -287,6 +289,7 @@ test("append persists a private strict hash chain and reconstructs it after rest
   await withConversationStore(async (root, store) => {
     const first = await firstTurnInput(store, "creator_conversation_restart");
     const firstResult = await store.append({ ...first, expectedHead: null });
+    assert.deepEqual(firstResult.loaded, await store.load(first.conversation.id));
     const second = await agentTurnInput(store, first.conversation, first.episode!, 2);
     const secondResult = await store.append({
       ...second,
@@ -303,6 +306,7 @@ test("append persists a private strict hash chain and reconstructs it after rest
 
     const restarted = new CreatorConversationStore(new ImmutableJsonArtifactStore(root));
     const loaded = await restarted.load("creator_conversation_restart");
+    assert.deepEqual(secondResult.loaded, loaded);
     assert.equal(loaded.head.sequence, 2);
     assert.deepEqual(
       loaded.events.map((event) => event.sequence),
@@ -316,6 +320,46 @@ test("append persists a private strict hash chain and reconstructs it after rest
     assert.equal(loaded.citations[0]?.target.kind, "source_range");
     assert.equal(loaded.episodes.length, 1);
     assert.equal(loaded.episodes[0]?.status, "awaiting_plan_decision");
+  });
+});
+
+test("append returns verified history without a second traversal of prior artifacts", async (context) => {
+  await withConversationStore(async (_root, store) => {
+    const first = await firstTurnInput(store, "creator_conversation_append_snapshot");
+    const firstResult = await store.append(first);
+    const second = await agentTurnInput(store, first.conversation, first.episode!, 2);
+    const read = context.mock.method(store.artifactStore, "read");
+    const secondResult = await store.append(second);
+    const priorCommitReads = () =>
+      read.mock.calls.filter(
+        (call) => call.arguments[0].artifactHash === firstResult.references.commit.artifactHash,
+      ).length;
+    // One structural read and one complete graph verification for the prior
+    // head. Returning the next snapshot must not run either traversal again.
+    assert.equal(priorCommitReads(), 2);
+    assert.deepEqual(
+      secondResult.loaded.events.map((event) => event.sequence),
+      [1, 2],
+    );
+    assert.deepEqual(secondResult.loaded, await store.load(first.conversation.id));
+    assert.equal(priorCommitReads(), 4, "an explicit later load verifies disk independently");
+  });
+});
+
+test("append captures its input and returns a detached published snapshot", async () => {
+  await withConversationStore(async (_root, store) => {
+    const input = await firstTurnInput(store, "creator_conversation_detached_snapshot");
+    const original = structuredClone(input);
+    const pending = store.append(input);
+    Object.assign(input.conversation, { title: "Changed while append was queued" });
+    const result = await pending;
+    assert.equal(result.loaded.conversation.title, original.conversation.title);
+    const published = structuredClone(result.loaded);
+    Object.assign(result.head, { sequence: 999 });
+    Object.assign(result.commit, { sequence: 999 });
+    assert.deepEqual(result.loaded, published);
+    Object.assign(result.loaded.conversation, { title: "Changed returned snapshot" });
+    assert.deepEqual(await store.load(original.conversation.id), published);
   });
 });
 
@@ -418,9 +462,13 @@ test("restart quarantines a conversation when transitive evidence is missing", a
       ...stripHash(input.episode!),
       sessionBundle: binding(sessionBody.id, hashOf(stableJson(sessionBody)), sessionArtifact),
     });
-    await store.append({ ...input, episode });
+    const result = await store.append({ ...input, episode });
+    assert.deepEqual(result.loaded, await store.load(input.conversation.id));
     await rm(join(root, nested.locator));
 
+    await assert.rejects(store.load(input.conversation.id), /ENOENT|missing/i);
+    const second = await agentTurnInput(store, input.conversation, episode, 2);
+    await assert.rejects(store.append(second), /ENOENT|missing/i);
     const restarted = new CreatorConversationStore(root);
     await assert.rejects(restarted.load(input.conversation.id), /ENOENT|missing/i);
     const enumeration = await restarted.enumerate();
@@ -519,7 +567,13 @@ test("plan chronology is proposal-only and decisions bind the exact immutable re
         summary: "Build an airlock.",
       },
     });
-    await store.append({ conversation, episode, event: planEvent, planRevision: plan });
+    const result = await store.append({
+      conversation,
+      episode,
+      event: planEvent,
+      planRevision: plan,
+    });
+    assert.deepEqual(result.loaded, await store.load(conversation.id));
 
     const decidedAt = new Date(Date.parse(LATER) + 1000).toISOString();
     const decidedConversation = sealCreatorProjectConversation({
@@ -588,8 +642,14 @@ test("memory revisions are immutable artifacts and current heads reconstruct exa
         operation: "remember",
       },
     });
-    await store.append({ conversation, episode: first.episode!, event, memoryRevision: memory });
+    const result = await store.append({
+      conversation,
+      episode: first.episode!,
+      event,
+      memoryRevision: memory,
+    });
     const loaded = await store.load(conversation.id);
+    assert.deepEqual(result.loaded, loaded);
     assert.equal(loaded.memoryRevisions.length, 1);
     assert.equal(loaded.conversation.memoryHeads[0]?.revisionHash, memory.hash);
   });
@@ -847,9 +907,10 @@ test("restart retains the latest legal work-job snapshot and explicit provider b
       "succeeded",
       "response_persisted",
     );
-    await store.append(completed);
+    const result = await store.append(completed);
     const restarted = new CreatorConversationStore(root);
     const loaded = await restarted.load(first.conversation.id);
+    assert.deepEqual(result.loaded, loaded);
     assert.equal(loaded.jobs.length, 1);
     assert.equal(loaded.jobs[0]?.status, "succeeded");
     assert.equal(loaded.jobs[0]?.providerOutcome, "response_persisted");

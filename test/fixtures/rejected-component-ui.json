@@ -1,0 +1,759 @@
+{
+  "kind": "RejectedComponentInputFixture",
+  "origin": {
+    "runId": "agent_run_a9d757d3-b2bf-4e89-b254-51c45cc03d7b",
+    "toolCompletedArtifact": {
+      "artifactHash": "104d0be51c6360a60ec70f8ce07f07a7f6383496bc0bacdf8abae782cc62290e",
+      "bytes": 13907,
+      "locator": "artifacts/104d0be51c6360a60ec70f8ce07f07a7f6383496bc0bacdf8abae782cc62290e.json"
+    },
+    "inputHash": "52cb6cb80e1bd8bda6005846635dbea1639ccc14c0ff03b9089d022cd161c773"
+  },
+  "input": {
+    "activity": "Building Last Light interface, station geometry and lighting.",
+    "component": {
+      "config": {
+        "nodes": [
+          {
+            "id": "menu-sheet",
+            "kind": "panel",
+            "layout": {
+              "anchorX": 0.5,
+              "anchorY": 0.5,
+              "heightOffset": 0,
+              "heightScale": 0.6,
+              "maxHeight": 640,
+              "maxWidth": 720,
+              "minHeight": 260,
+              "minWidth": 320,
+              "widthOffset": 0,
+              "widthScale": 0.82,
+              "xOffset": 0,
+              "xScale": 0.5,
+              "yOffset": 0,
+              "yScale": 0.5
+            },
+            "list": {
+              "direction": "Vertical",
+              "gap": "ss-gap",
+              "horizontal": "Center",
+              "vertical": "Center"
+            },
+            "name": "MenuSheet",
+            "padding": {
+              "bottom": "ss-pad",
+              "left": "ss-pad",
+              "right": "ss-pad",
+              "top": "ss-pad"
+            },
+            "requireInsideParent": false,
+            "style": "st-panel"
+          },
+          {
+            "id": "menu-title",
+            "kind": "text",
+            "layout": {
+              "anchorX": 0.5,
+              "anchorY": 0.5,
+              "heightOffset": 0,
+              "heightScale": 0,
+              "maxHeight": 200,
+              "maxWidth": 760,
+              "minHeight": 0,
+              "minWidth": 0,
+              "widthOffset": 0,
+              "widthScale": 1,
+              "xOffset": 0,
+              "xScale": 0.5,
+              "yOffset": 0,
+              "yScale": 0.5
+            },
+            "name": "MenuTitle",
+            "parentId": "menu-sheet",
+            "requireInsideParent": true,
+            "style": "st-scrim",
+            "text": "LAST LIGHT"
+          },
+          {
+            "id": "menu-subtitle",
+            "kind": "text",
+            "layout": {
+              "anchorX": 0.5,
+              "anchorY": 0.5,
+              "heightOffset": 0,
+              "heightScale": 0,
+              "maxHeight": 200,
+              "maxWidth": 760,
+              "minHeight": 0,
+              "minWidth": 0,
+              "widthOffset": 0,
+              "widthScale": 1,
+              "xOffset": 0,
+              "xScale": 0.5,
+              "yOffset": 0,
+              "yScale": 0.5
+            },
+            "name": "MenuSubtitle",
+            "parentId": "menu-sheet",
+            "requireInsideParent": true,
+            "style": "st-muted",
+            "text": "Recover three cells. Feed the reactor. Leave before the lights die."
+          },
+          {
+            "action": "start",
+            "id": "menu-start",
+            "kind": "button",
+            "layout": {
+              "anchorX": 0.5,
+              "anchorY": 0.5,
+              "heightOffset": 0,
+              "heightScale": 0,
+              "maxHeight": 0,
+              "maxWidth": 460,
+              "minHeight": 52,
+              "minWidth": 220,
+              "widthOffset": 0,
+              "widthScale": 1,
+              "xOffset": 0,
+              "xScale": 0.5,
+              "yOffset": 0,
+              "yScale": 0.5
+            },
+            "name": "StartRun",
+            "parentId": "menu-sheet",
+            "requireInsideParent": true,
+            "style": "st-button",
+            "text": "Start"
+          },
+          {
+            "id": "menu-hint",
+            "kind": "text",
+            "layout": {
+              "anchorX": 0.5,
+              "anchorY": 0.5,
+              "heightOffset": 0,
+              "heightScale": 0,
+              "maxHeight": 0,
+              "maxWidth": 760,
+              "minHeight": 0,
+              "minWidth": 0,
+              "widthOffset": 0,
+              "widthScale": 1,
+              "xOffset": 0,
+              "xScale": 0.5,
+              "yOffset": 0,
+              "yScale": 0.5
+            },
+            "name": "MenuHint",
+            "parentId": "menu-sheet",
+            "requireInsideParent": true,
+            "style": "st-muted",
+            "text": "Carry one cell. Deposits earn 100. Watch the red conduits."
+          },
+          {
+            "id": "hud-bar",
+            "kind": "panel",
+            "layout": {
+              "anchorX": 0.5,
+              "anchorY": 0,
+              "heightOffset": 0,
+              "heightScale": 0,
+              "maxHeight": 0,
+              "maxWidth": 0,
+              "minHeight": 48,
+              "minWidth": 0,
+              "widthOffset": 0,
+              "widthScale": 1,
+              "xOffset": 0,
+              "xScale": 0.5,
+              "yOffset": 0,
+              "yScale": 0
+            },
+            "list": {
+              "direction": "Horizontal",
+              "gap": "ss-gap",
+              "horizontal": "SpaceBetween",
+              "vertical": "Center"
+            },
+            "name": "HudBar",
+            "padding": {
+              "bottom": "ss-pad-sm",
+              "left": "ss-pad-sm",
+              "right": "ss-pad-sm",
+              "top": "ss-pad-sm"
+            },
+            "requireInsideParent": false,
+            "style": "st-rail"
+          },
+          {
+            "bindings": {
+              "text": "b-hud-time"
+            },
+            "id": "hud-time",
+            "kind": "text",
+            "layout": {
+              "anchorX": 0,
+              "anchorY": 0.5,
+              "heightOffset": 0,
+              "heightScale": 1,
+              "maxHeight": 0,
+              "maxWidth": 0,
+              "minHeight": 0,
+              "minWidth": 0,
+              "widthOffset": 0,
+              "widthScale": 0,
+              "xOffset": 0,
+              "xScale": 0,
+              "yOffset": 0,
+              "yScale": 0.5
+            },
+            "name": "HudTime",
+            "parentId": "hud-bar",
+            "requireInsideParent": true,
+            "style": "st-hud",
+            "text": "120"
+          },
+          {
+            "bindings": {
+              "text": "b-hud-cells"
+            },
+            "id": "hud-cells",
+            "kind": "text",
+            "layout": {
+              "anchorX": 1,
+              "anchorY": 0.5,
+              "heightOffset": 0,
+              "heightScale": 1,
+              "maxHeight": 0,
+              "maxWidth": 0,
+              "minHeight": 0,
+              "minWidth": 0,
+              "widthOffset": 0,
+              "widthScale": 0,
+              "xOffset": 0,
+              "xScale": 1,
+              "yOffset": 0,
+              "yScale": 0.5
+            },
+            "name": "HudCells",
+            "parentId": "hud-bar",
+            "requireInsideParent": true,
+            "style": "st-hud",
+            "text": "0/3"
+          },
+          {
+            "bindings": {
+              "text": "b-hud-integrity"
+            },
+            "id": "hud-integrity",
+            "kind": "text",
+            "layout": {
+              "anchorX": 0.5,
+              "anchorY": 0.5,
+              "heightOffset": 0,
+              "heightScale": 1,
+              "maxHeight": 0,
+              "maxWidth": 0,
+              "minHeight": 0,
+              "minWidth": 0,
+              "widthOffset": 0,
+              "widthScale": 0,
+              "xOffset": 0,
+              "xScale": 0.5,
+              "yOffset": 0,
+              "yScale": 0.5
+            },
+            "name": "HudIntegrity",
+            "parentId": "hud-bar",
+            "requireInsideParent": true,
+            "style": "st-hud",
+            "text": "INT 2"
+          },
+          {
+            "bindings": {
+              "text": "b-hud-score"
+            },
+            "id": "hud-score",
+            "kind": "text",
+            "layout": {
+              "anchorX": 0.5,
+              "anchorY": 0.5,
+              "heightOffset": 0,
+              "heightScale": 1,
+              "maxHeight": 0,
+              "maxWidth": 0,
+              "minHeight": 0,
+              "minWidth": 0,
+              "widthOffset": 0,
+              "widthScale": 0,
+              "xOffset": 0,
+              "xScale": 0.5,
+              "yOffset": 0,
+              "yScale": 0.5
+            },
+            "name": "HudScore",
+            "parentId": "hud-bar",
+            "requireInsideParent": true,
+            "style": "st-hud",
+            "text": "000"
+          },
+          {
+            "id": "result-sheet",
+            "kind": "panel",
+            "layout": {
+              "anchorX": 0.5,
+              "anchorY": 0.5,
+              "heightOffset": 0,
+              "heightScale": 0.6,
+              "maxHeight": 560,
+              "maxWidth": 720,
+              "minHeight": 240,
+              "minWidth": 320,
+              "widthOffset": 0,
+              "widthScale": 0.82,
+              "xOffset": 0,
+              "xScale": 0.5,
+              "yOffset": 0,
+              "yScale": 0.5
+            },
+            "list": {
+              "direction": "Vertical",
+              "gap": "ss-gap",
+              "horizontal": "Center",
+              "vertical": "Center"
+            },
+            "name": "ResultSheet",
+            "padding": {
+              "bottom": "ss-pad",
+              "left": "ss-pad",
+              "right": "ss-pad",
+              "top": "ss-pad"
+            },
+            "requireInsideParent": false,
+            "style": "st-panel"
+          },
+          {
+            "bindings": {
+              "text": "b-result-title"
+            },
+            "id": "result-title",
+            "kind": "text",
+            "layout": {
+              "anchorX": 0.5,
+              "anchorY": 0.5,
+              "heightOffset": 0,
+              "heightScale": 0,
+              "maxHeight": 0,
+              "maxWidth": 760,
+              "minHeight": 0,
+              "minWidth": 0,
+              "widthOffset": 0,
+              "widthScale": 1,
+              "xOffset": 0,
+              "xScale": 0.5,
+              "yOffset": 0,
+              "yScale": 0.5
+            },
+            "name": "ResultTitle",
+            "parentId": "result-sheet",
+            "requireInsideParent": true,
+            "style": "st-scrim",
+            "text": "ESCAPED"
+          },
+          {
+            "bindings": {
+              "text": "b-result-score"
+            },
+            "id": "result-score",
+            "kind": "text",
+            "layout": {
+              "anchorX": 0.5,
+              "anchorY": 0.5,
+              "heightOffset": 0,
+              "heightScale": 0,
+              "maxHeight": 0,
+              "maxWidth": 760,
+              "minHeight": 0,
+              "minWidth": 0,
+              "widthOffset": 0,
+              "widthScale": 1,
+              "xOffset": 0,
+              "xScale": 0.5,
+              "yOffset": 0,
+              "yScale": 0.5
+            },
+            "name": "ResultScore",
+            "parentId": "result-sheet",
+            "requireInsideParent": true,
+            "style": "st-hud",
+            "text": "SCORE 000"
+          },
+          {
+            "action": "play-again",
+            "id": "result-play-again",
+            "kind": "button",
+            "layout": {
+              "anchorX": 0.5,
+              "anchorY": 0.5,
+              "heightOffset": 0,
+              "heightScale": 0,
+              "maxHeight": 0,
+              "maxWidth": 460,
+              "minHeight": 52,
+              "minWidth": 220,
+              "widthOffset": 0,
+              "widthScale": 1,
+              "xOffset": 0,
+              "xScale": 0.5,
+              "yOffset": 0,
+              "yScale": 0.5
+            },
+            "name": "PlayAgain",
+            "parentId": "result-sheet",
+            "requireInsideParent": true,
+            "style": "st-button",
+            "text": "Play Again"
+          }
+        ],
+        "rootName": "LastLightUI",
+        "tokens": {
+          "colors": [
+            {
+              "id": "c-bg",
+              "value": {
+                "b": 15,
+                "g": 11,
+                "r": 10
+              }
+            },
+            {
+              "id": "c-panel",
+              "value": {
+                "b": 37,
+                "g": 29,
+                "r": 26
+              }
+            },
+            {
+              "id": "c-rail",
+              "value": {
+                "b": 25,
+                "g": 19,
+                "r": 17
+              }
+            },
+            {
+              "id": "c-power",
+              "value": {
+                "b": 255,
+                "g": 214,
+                "r": 0
+              }
+            },
+            {
+              "id": "c-interact",
+              "value": {
+                "b": 40,
+                "g": 176,
+                "r": 255
+              }
+            },
+            {
+              "id": "c-danger",
+              "value": {
+                "b": 40,
+                "g": 46,
+                "r": 255
+              }
+            },
+            {
+              "id": "c-text",
+              "value": {
+                "b": 244,
+                "g": 239,
+                "r": 236
+              }
+            },
+            {
+              "id": "c-muted",
+              "value": {
+                "b": 165,
+                "g": 149,
+                "r": 138
+              }
+            },
+            {
+              "id": "c-dark",
+              "value": {
+                "b": 20,
+                "g": 15,
+                "r": 14
+              }
+            }
+          ],
+          "semanticColors": [
+            {
+              "id": "sc-bg",
+              "primitive": "c-bg"
+            },
+            {
+              "id": "sc-panel",
+              "primitive": "c-panel"
+            },
+            {
+              "id": "sc-rail",
+              "primitive": "c-rail"
+            },
+            {
+              "id": "sc-power",
+              "primitive": "c-power"
+            },
+            {
+              "id": "sc-interact",
+              "primitive": "c-interact"
+            },
+            {
+              "id": "sc-danger",
+              "primitive": "c-danger"
+            },
+            {
+              "id": "sc-text",
+              "primitive": "c-text"
+            },
+            {
+              "id": "sc-muted",
+              "primitive": "c-muted"
+            },
+            {
+              "id": "sc-dark",
+              "primitive": "c-dark"
+            }
+          ],
+          "semanticSizes": [
+            {
+              "id": "ss-pad",
+              "primitive": "s-16"
+            },
+            {
+              "id": "ss-pad-sm",
+              "primitive": "s-8"
+            },
+            {
+              "id": "ss-gap",
+              "primitive": "s-12"
+            },
+            {
+              "id": "ss-corner",
+              "primitive": "s-8"
+            },
+            {
+              "id": "ss-body",
+              "primitive": "s-t-body"
+            },
+            {
+              "id": "ss-hud",
+              "primitive": "s-t-hud"
+            },
+            {
+              "id": "ss-caption",
+              "primitive": "s-t-caption"
+            },
+            {
+              "id": "ss-title",
+              "primitive": "s-t-title"
+            },
+            {
+              "id": "ss-small",
+              "primitive": "s-t-small"
+            },
+            {
+              "id": "ss-min-touch",
+              "primitive": "s-48"
+            }
+          ],
+          "sizes": [
+            {
+              "id": "s-2",
+              "value": 2
+            },
+            {
+              "id": "s-4",
+              "value": 4
+            },
+            {
+              "id": "s-8",
+              "value": 8
+            },
+            {
+              "id": "s-12",
+              "value": 12
+            },
+            {
+              "id": "s-16",
+              "value": 16
+            },
+            {
+              "id": "s-24",
+              "value": 24
+            },
+            {
+              "id": "s-32",
+              "value": 32
+            },
+            {
+              "id": "s-48",
+              "value": 48
+            },
+            {
+              "id": "s-72",
+              "value": 72
+            },
+            {
+              "id": "s-t-small",
+              "value": 13
+            },
+            {
+              "id": "s-t-body",
+              "value": 17
+            },
+            {
+              "id": "s-t-hud",
+              "value": 22
+            },
+            {
+              "id": "s-t-caption",
+              "value": 30
+            },
+            {
+              "id": "s-t-title",
+              "value": 44
+            }
+          ],
+          "styles": [
+            {
+              "background": "sc-panel",
+              "cornerRadius": "ss-corner",
+              "foreground": "sc-text",
+              "id": "st-panel",
+              "textSize": "ss-body"
+            },
+            {
+              "background": "sc-rail",
+              "cornerRadius": "ss-corner",
+              "foreground": "sc-muted",
+              "id": "st-rail",
+              "textSize": "ss-small"
+            },
+            {
+              "background": "sc-interact",
+              "cornerRadius": "ss-corner",
+              "foreground": "sc-dark",
+              "id": "st-button",
+              "interaction": {
+                "disabled": {
+                  "background": "sc-panel",
+                  "foreground": "sc-muted"
+                },
+                "focusRing": {
+                  "color": "sc-power",
+                  "thickness": "ss-pad-sm"
+                },
+                "focused": {
+                  "background": "sc-interact",
+                  "foreground": "sc-dark"
+                },
+                "hover": {
+                  "background": "sc-interact",
+                  "foreground": "sc-dark"
+                },
+                "pressed": {
+                  "background": "sc-danger",
+                  "foreground": "sc-text"
+                }
+              },
+              "textSize": "ss-body"
+            },
+            {
+              "background": "sc-panel",
+              "cornerRadius": "ss-corner",
+              "foreground": "sc-power",
+              "id": "st-button-secondary",
+              "interaction": {
+                "disabled": {
+                  "background": "sc-panel",
+                  "foreground": "sc-muted"
+                },
+                "focusRing": {
+                  "color": "sc-power",
+                  "thickness": "ss-pad-sm"
+                },
+                "focused": {
+                  "background": "sc-power",
+                  "foreground": "sc-dark"
+                },
+                "hover": {
+                  "background": "sc-power",
+                  "foreground": "sc-dark"
+                },
+                "pressed": {
+                  "background": "sc-panel",
+                  "foreground": "sc-power"
+                }
+              },
+              "textSize": "ss-body"
+            },
+            {
+              "background": "sc-panel",
+              "cornerRadius": "ss-corner",
+              "foreground": "sc-power",
+              "id": "st-hud",
+              "textSize": "ss-hud"
+            },
+            {
+              "background": "sc-panel",
+              "cornerRadius": "ss-corner",
+              "foreground": "sc-muted",
+              "id": "st-muted",
+              "textSize": "ss-small"
+            },
+            {
+              "background": "sc-bg",
+              "cornerRadius": "ss-gap",
+              "foreground": "sc-text",
+              "id": "st-scrim",
+              "textSize": "ss-caption"
+            }
+          ]
+        },
+        "viewports": [
+          {
+            "height": 800,
+            "id": "phone",
+            "insetBottom": 24,
+            "insetLeft": 16,
+            "insetRight": 16,
+            "insetTop": 24,
+            "width": 400
+          },
+          {
+            "height": 900,
+            "id": "desktop",
+            "insetBottom": 32,
+            "insetLeft": 48,
+            "insetRight": 48,
+            "insetTop": 32,
+            "width": 1600
+          }
+        ]
+      },
+      "controller": true,
+      "definition": {
+        "abi": "5",
+        "hash": "ca9738df6fc9efbc41f2b1ef2cd82532e5ae6cc4bd136fc821dbc965ad818c11",
+        "id": "responsive-ui"
+      },
+      "id": "last-light-interface",
+      "kind": "recipe_instance"
+    }
+  }
+}

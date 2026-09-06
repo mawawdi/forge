@@ -1359,6 +1359,144 @@ test("enrolled property update requires and accepts complete manifest property c
   );
 });
 
+for (const kind of ["create", "update", "move"] as const) {
+  test(`${kind} reconciles canonical numeric attributes and properties without tolerance`, () => {
+    const prior = durableTarget("numeric-part", "Workspace/Prior", "Part");
+    const next = { ...prior, path: kind === "move" ? "Workspace/Moved" : prior.path };
+    const before = projectCapture(kind === "create" ? [] : [{ target: prior }]);
+    const parent = { kind: "engine_container" as const, path: "Workspace", className: "Workspace" };
+    const values = {
+      id: `numeric-${kind}`,
+      properties: { Transparency: { kind: "number_f32" as const, value: 0.17 } },
+      attributes: { Enabled: true, Label: "exact", UiBackgroundTransparency: 0.62 },
+    };
+    const operation: CreatorMutationSealedChangeSet["operations"][number] =
+      kind === "create"
+        ? { ...values, kind, target: next, parent, className: "Part", name: "Prior" }
+        : kind === "move"
+          ? { ...values, kind, target: prior, parent, name: "Moved", removedAttributes: [] }
+          : { ...values, kind, target: prior, removedAttributes: [] };
+    const sealed = sealedEnrollmentChange(`canonical-numeric-${kind}`, operation, before);
+    const attributes = { ...values.attributes, UiBackgroundTransparency: Math.fround(0.62) };
+    const properties = { Transparency: { kind: "number_f32" as const, value: Math.fround(0.17) } };
+    const after = projectCapture([{ target: next, attributes, properties }]);
+    const input = enrolledReconciliationInput(sealed, before, after);
+    assert.notEqual(
+      values.attributes.UiBackgroundTransparency,
+      attributes.UiBackgroundTransparency,
+    );
+    assert.equal(
+      input.projection.requirements.find(
+        (entry) => entry.attributeName === "UiBackgroundTransparency",
+      )?.expected,
+      attributes.UiBackgroundTransparency,
+    );
+    const matched = reconcileCreatorMutation(input);
+    assert.equal(matched.status, "matched", JSON.stringify(matched.failureFacts));
+
+    // One adjacent representable float is still a mismatch, as are missing or
+    // differently typed values. Only the approved canonical value is accepted.
+    const bits = Buffer.alloc(4);
+    bits.writeFloatLE(attributes.UiBackgroundTransparency);
+    bits.writeUInt32LE(bits.readUInt32LE() + 1);
+    const missing = { Enabled: true, Label: "exact" };
+    for (const changedAttributes of [
+      { ...attributes, UiBackgroundTransparency: bits.readFloatLE() },
+      { ...attributes, UiBackgroundTransparency: "0.62" },
+      { ...attributes, Enabled: false },
+      { ...attributes, Label: "changed" },
+      missing,
+    ]) {
+      const result = reconcileCreatorMutation({
+        ...input,
+        afterIndexCapture: projectCapture([
+          { target: next, attributes: changedAttributes, properties },
+        ]),
+      });
+      assert.equal(result.status, "mismatched", JSON.stringify(result.failureFacts));
+      assert.ok(
+        result.failureFacts.some((entry) => entry.code === "approved_attribute_not_reflected"),
+      );
+    }
+    bits.writeFloatLE(properties.Transparency.value);
+    bits.writeUInt32LE(bits.readUInt32LE() + 1);
+    const changedProperty = reconcileCreatorMutation({
+      ...input,
+      afterIndexCapture: projectCapture([
+        {
+          target: next,
+          attributes,
+          properties: { Transparency: { kind: "number_f32", value: bits.readFloatLE() } },
+        },
+      ]),
+    });
+    assert.equal(
+      changedProperty.status,
+      "mismatched",
+      JSON.stringify(changedProperty.failureFacts),
+    );
+    assert.ok(
+      changedProperty.failureFacts.some(
+        (entry) => entry.code === "approved_property_not_reflected",
+      ),
+    );
+  });
+}
+
+for (const name of ["TopRightRadius", "TopLeftRadius"] as const) {
+  test(`asymmetric existing corners preserve untouched values when updating ${name}`, () => {
+    const target = durableTarget("asymmetric-corner", "Workspace/Corner", "UICorner");
+    const radius = (offset: number): StudioValue => ({ kind: "udim", scale: 0, offset });
+    const initial = {
+      BottomLeftRadius: radius(4),
+      BottomRightRadius: radius(8),
+      CornerRadius: radius(12),
+      TopLeftRadius: radius(12),
+      TopRightRadius: radius(16),
+    };
+    const before = projectCapture([{ target, properties: initial }]);
+    const expected = {
+      ...initial,
+      [name]: radius(20),
+      ...(name === "TopLeftRadius" ? { CornerRadius: radius(20) } : {}),
+    };
+    const after = projectCapture([{ target, properties: expected }]);
+    const sealed = sealedEnrollmentChange(
+      `asymmetric-${name}`,
+      {
+        id: `set-${name}`,
+        kind: "update",
+        target,
+        properties: { [name]: radius(20) },
+        attributes: {},
+        removedAttributes: [],
+      },
+      before,
+    );
+    const derived = name === "TopLeftRadius" ? { CornerRadius: radius(20) } : {};
+    const input = enrolledReconciliationInput(sealed, before, after, [], derived);
+    const result = reconcileCreatorMutation(input);
+    assert.equal(result.status, "matched", JSON.stringify(result.failureFacts));
+    assert.equal(
+      input.projection.requirements.some((entry) => entry.propertyName === "BottomLeftRadius"),
+      false,
+    );
+    const overwritten = reconcileCreatorMutation({
+      ...input,
+      afterIndexCapture: projectCapture([
+        { target, properties: { ...expected, BottomLeftRadius: radius(12) } },
+      ]),
+    });
+    assert.equal(overwritten.status, "mismatched");
+    assert.ok(
+      overwritten.failureFacts.some(
+        (entry) =>
+          entry.code === "unapproved_index_delta" && entry.detail.includes("BottomLeftRadius"),
+      ),
+    );
+  });
+}
+
 test("coupled alias deltas require equal final canary, direct readback and complete-index evidence", () => {
   const prior = ephemeralTarget("6", "Workspace/ColoredPart", "Part");
   const next = durableTarget("colored-part", prior.path, prior.className);

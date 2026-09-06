@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { z } from "zod";
 import { contentHash, stableJson } from "../packages/contracts/src/index.js";
 import {
   CREATOR_MODEL_IDS,
@@ -7,6 +8,12 @@ import {
   DEFAULT_CREATOR_MODEL_ID,
   MODEL_CONTINUATION_MAX_BYTES,
   OpenRouterModelClient,
+  modelOutputTokenLimit,
+  parseOpenRouterModelCatalog,
+  diagnoseToolArgumentJson,
+  toolArgumentSyntaxMessage,
+  assertModelToolCallWireEvidence,
+  captureToolCallWireEvidence,
   type ModelTurnRequest,
 } from "../packages/model-client/src/index.js";
 
@@ -219,7 +226,7 @@ test("AI SDK Core sends one locked-down OpenRouter step and replays opaque reaso
   assert.equal(client.descriptor.configuration.request.providerParallelToolCalls, "not_requested");
   assert.equal(
     client.descriptor.configuration.request.toolBatchExecution,
-    "atomic_validate_then_sequential",
+    "host_validated_then_sequential",
   );
   assert.equal(client.descriptor.configuration.request.toolNameEncoding, "openai_function_slug");
   assert.equal(client.descriptor.configuration.request.toolSchemaMode, "explicit_non_strict");
@@ -356,7 +363,7 @@ test("AI SDK Core performs one HTTP attempt and normalizes bounded provider erro
   assert.equal(result.usage.inputTokens, null);
 });
 
-test("provider adapter rejects non-object tool schemas before transport", async () => {
+test("provider adapter rejects malformed tool schemas before transport", async () => {
   let attempts = 0;
   const client = new OpenRouterModelClient({
     apiKey: "secret",
@@ -365,19 +372,243 @@ test("provider adapter rejects non-object tool schemas before transport", async 
       throw new Error("must not execute");
     },
   });
-  const result = await client.complete({
-    ...REQUEST,
-    tools: [
-      { name: "invalid.schema", description: "Invalid fixture.", parameters: "not-a-schema" },
-    ],
-  });
+  for (const parameters of [
+    "not-a-schema",
+    {
+      type: "object",
+      properties: { empty: { type: "array", prefixItems: [], items: false, maxItems: 0 } },
+    },
+    {
+      type: "object",
+      properties: { node: { $ref: "#/$defs/node" } },
+      $defs: {
+        node: {
+          type: "object",
+          properties: { child: { $ref: "#/$defs/node" } },
+        },
+      },
+    },
+  ]) {
+    const result = await client.complete({
+      ...REQUEST,
+      tools: [{ name: "invalid.schema", description: "Invalid fixture.", parameters }],
+    });
 
-  assert.equal(result.kind, "provider_error");
-  if (result.kind === "provider_error") {
-    assert.equal(result.errorClass, "request_configuration");
-    assert.equal(result.retryable, false);
+    assert.equal(result.kind, "provider_error");
+    if (result.kind === "provider_error") {
+      assert.equal(result.errorClass, "request_configuration");
+      assert.equal(result.retryable, false);
+    }
   }
   assert.equal(attempts, 0);
+});
+
+test("selected catalog completion cap reaches the provider unchanged and unreported limits stay explicit", async () => {
+  const modelCatalog = parseOpenRouterModelCatalog(
+    {
+      data: CREATOR_MODEL_IDS.map((id) => ({
+        id,
+        supported_parameters: ["tools"],
+        top_provider: { max_completion_tokens: id === DEFAULT_CREATOR_MODEL_ID ? 131072 : null },
+      })),
+    },
+    "2026-09-05T12:00:00.000Z",
+  );
+  let attempts = 0;
+  const client = new OpenRouterModelClient({
+    apiKey: "offline-key",
+    modelCatalog,
+    fetchImpl: async (_input, init) => {
+      attempts++;
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.max_tokens, 131072);
+      return response({ content: "Complete." }, "stop", "cap-response");
+    },
+  });
+  assert.equal(modelOutputTokenLimit(client.descriptor, DEFAULT_CREATOR_MODEL_ID), 131072);
+  const unreportedModel = CREATOR_MODEL_IDS.find((id) => id !== DEFAULT_CREATOR_MODEL_ID)!;
+  assert.equal(modelOutputTokenLimit(client.descriptor, unreportedModel), 32768);
+  assert.equal(
+    client.descriptor.configuration.request.outputTokenLimitCatalogHash,
+    modelCatalog.hash,
+  );
+  modelCatalog.models.find(
+    (entry) => entry.modelId === DEFAULT_CREATOR_MODEL_ID,
+  )!.maxCompletionTokens = 7;
+  assert.equal(modelOutputTokenLimit(client.descriptor, DEFAULT_CREATOR_MODEL_ID), 131072);
+  const result = await client.complete({ ...REQUEST, maxOutputTokens: 131072 });
+  assert.equal(result.kind, "assistant");
+  assert.equal(attempts, 1);
+  const excessive = await client.complete({ ...REQUEST, maxOutputTokens: 131073 });
+  assert.equal(excessive.kind, "provider_error");
+  if (excessive.kind === "provider_error")
+    assert.equal(excessive.errorClass, "request_configuration");
+  assert.equal(attempts, 1);
+});
+
+test("provider wire preserves nested input schema unions, bounds, references, and omitted optional fields", async () => {
+  const file = z
+    .object({
+      path: z.string().regex(/^[a-z][a-z-]*\.luau$/),
+      role: z.enum(["module", "entrypoint"]),
+      maximumUtf8Bytes: z.number().int().positive().max(262144),
+    })
+    .strict();
+  const shape = z
+    .object({
+      design: z
+        .object({
+          kind: z.literal("Composition"),
+          components: z
+            .array(
+              z.discriminatedUnion("kind", [
+                z
+                  .object({ kind: z.literal("source"), files: z.array(file).min(1).max(8) })
+                  .strict(),
+                z
+                  .object({
+                    kind: z.literal("copy"),
+                    source: file,
+                    config: z
+                      .object({ label: z.string().min(1), enabled: z.boolean().optional() })
+                      .strict(),
+                  })
+                  .strict(),
+              ]),
+            )
+            .min(1),
+        })
+        .strict(),
+      activity: z.string().max(120).optional(),
+    })
+    .strict();
+  const parameters = z.toJSONSchema(shape, { target: "draft-7", io: "input", reused: "ref" });
+  const args = {
+    design: {
+      kind: "Composition",
+      components: [
+        {
+          kind: "source",
+          files: [{ path: "main.luau", role: "entrypoint", maximumUtf8Bytes: 1024 }],
+        },
+      ],
+    },
+  };
+  let attempts = 0;
+  const result = await new OpenRouterModelClient({
+    apiKey: "offline-key",
+    fetchImpl: async (_input, init) => {
+      attempts++;
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.tools.length, 1);
+      assert.equal(body.tools[0].function.strict, false);
+      assert.deepEqual(body.tools[0].function.parameters, parameters);
+      assert.deepEqual(body.tools[0].function.parameters.required, ["design"]);
+      assert.ok(JSON.stringify(parameters).includes('"$ref"'));
+      assert.ok(JSON.stringify(parameters).includes('"oneOf"'));
+      return response(
+        {
+          content: null,
+          tool_calls: [
+            {
+              id: "nested-call",
+              type: "function",
+              function: { name: "composition_propose", arguments: JSON.stringify(args) },
+            },
+          ],
+        },
+        "tool_calls",
+        "nested-schema-response",
+      );
+    },
+  }).complete({
+    ...REQUEST,
+    tools: [
+      { name: "composition.propose", description: "Propose a declared composition.", parameters },
+    ],
+  });
+  assert.equal(attempts, 1);
+  assert.equal(result.kind, "assistant");
+  if (result.kind !== "assistant") return;
+  assert.deepEqual(result.message.toolCalls[0]?.arguments, args);
+  assert.equal(Object.hasOwn(result.message.toolCalls[0]!.arguments as object, "activity"), false);
+});
+
+test("HTTP schema failures retain safe provider diagnostic categories without echoing secrets or request data", async () => {
+  const secret = "never-echo-api-key-or-source";
+  let attempts = 0;
+  const result = await new OpenRouterModelClient({
+    apiKey: secret,
+    fetchImpl: async () => {
+      attempts++;
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: 400,
+            message: "Provider returned error",
+            metadata: {
+              provider_name: secret,
+              raw: JSON.stringify({
+                error: {
+                  code: "invalid_function_parameters",
+                  param: `tools[2].function.parameters.${secret}`,
+                  message: `Invalid schema for function '${secret}': additionalProperties is required for timeout. Authorization: Bearer ${secret}. Raw request: ${secret}`,
+                },
+              }),
+            },
+          },
+        }),
+        {
+          status: 400,
+          headers: { "content-type": "application/json", "x-provider-private": secret },
+        },
+      );
+    },
+  }).complete({ ...REQUEST, system: secret });
+  assert.equal(attempts, 1);
+  assert.equal(result.kind, "provider_error");
+  if (result.kind !== "provider_error") return;
+  assert.equal(result.errorClass, "http_400");
+  assert.match(result.message, /code=400/);
+  assert.match(result.message, /code=invalid_function_parameters/);
+  assert.match(result.message, /parameter=tools/);
+  assert.match(result.message, /mentions invalid or unsupported schema/);
+  assert.match(result.message, /keyword=additionalProperties/);
+  assert.ok(Buffer.byteLength(result.message, "utf8") <= 500);
+  assert.equal(JSON.stringify(result).includes(secret), false);
+  assert.equal(result.responseFacts.servingProvider, null);
+});
+
+test("provider diagnostic output is bounded, distinguishes context limits, and omits unknown prose", async () => {
+  for (const [code, message, expected] of [
+    [
+      "context_length_exceeded",
+      "Maximum context length exceeded: private-request-content",
+      /code=context_length_exceeded/,
+    ],
+    [
+      "private-code",
+      "private-request-content".repeat(10000),
+      /^OpenRouter request failed with HTTP 400\.$/,
+    ],
+  ] as const) {
+    const result = await new OpenRouterModelClient({
+      apiKey: "offline-key",
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            error: { code, message, metadata: { raw: "private-request-content".repeat(10000) } },
+          }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        ),
+    }).complete(REQUEST);
+    assert.equal(result.kind, "provider_error");
+    if (result.kind !== "provider_error") continue;
+    assert.match(result.message, expected);
+    assert.ok(Buffer.byteLength(result.message, "utf8") <= 500);
+    assert.equal(JSON.stringify(result).includes("private-request-content"), false);
+    assert.equal(JSON.stringify(result).includes("private-code"), false);
+  }
 });
 
 test("malformed or oversized continuation fails before transport and remains bounded", async () => {
@@ -409,6 +640,36 @@ test("malformed or oversized continuation fails before transport and remains bou
   assert.equal(result.kind, "provider_error");
   if (result.kind === "provider_error") assert.equal(result.errorClass, "invalid_continuation");
   assert.equal(attempts, 0);
+});
+
+test("responses above the former continuation bound replay once without duplicating assistant content", async () => {
+  const content = "source-or-plan-content ".repeat(16000);
+  let attempts = 0;
+  const client = new OpenRouterModelClient({
+    apiKey: "offline-key",
+    fetchImpl: async (_input, init) => {
+      attempts++;
+      if (attempts === 1) return response({ content }, "stop", "large-response");
+      const body = JSON.parse(String(init?.body));
+      const assistantMessages = body.messages.filter(
+        (message: { role: string }) => message.role === "assistant",
+      );
+      assert.equal(assistantMessages.length, 1);
+      assert.equal(assistantMessages[0].content, content);
+      return response({ content: "Continued." }, "stop", "after-large-response");
+    },
+  });
+  const first = await client.complete(REQUEST);
+  assert.equal(first.kind, "assistant");
+  if (first.kind !== "assistant") return;
+  assert.ok(first.message.continuation!.bytes > 256 * 1024);
+  assert.ok(first.message.continuation!.bytes <= MODEL_CONTINUATION_MAX_BYTES);
+  const second = await client.complete({
+    ...REQUEST,
+    messages: [...REQUEST.messages, first.message, { role: "user", content: "Continue." }],
+  });
+  assert.equal(second.kind, "assistant");
+  assert.equal(attempts, 2);
 });
 
 test("timeouts and malformed HTTP envelopes remain pre-trial provider failures", async () => {
@@ -463,7 +724,10 @@ test("timeouts and malformed HTTP envelopes remain pre-trial provider failures",
   assert.equal(errorEnvelope.kind, "provider_error");
   if (errorEnvelope.kind === "provider_error") {
     assert.equal(errorEnvelope.errorClass, "provider_response_error_502");
-    assert.equal(errorEnvelope.message, "OpenRouter returned an error response (code 502).");
+    assert.equal(
+      errorEnvelope.message,
+      "OpenRouter returned an error response (code 502). Provider diagnostic: code=502.",
+    );
     assert.doesNotMatch(errorEnvelope.message, /sensitive/);
   }
 });
@@ -512,4 +776,246 @@ test("AI SDK parses envelopes while Forge retains semantic tool-argument authori
   assert.equal(malformedArguments.kind, "assistant");
   if (malformedArguments.kind === "assistant")
     assert.equal(malformedArguments.message.toolCalls[0]?.arguments, "not-json");
+  if (malformedArguments.kind === "assistant")
+    assert.equal(
+      malformedArguments.message.toolCalls[0]?.argumentSyntaxError?.kind,
+      "invalid_json",
+    );
+});
+
+test("valid JSON primitives and encoded strings retain shape errors, never syntax errors or unwrapping", async () => {
+  for (const value of ["not-json", '{"path":"example.luau"}', 42, null, []]) {
+    const result = await new OpenRouterModelClient({
+      apiKey: "test-key",
+      fetchImpl: async () =>
+        response(
+          {
+            content: null,
+            tool_calls: [
+              {
+                id: "primitive",
+                type: "function",
+                function: { name: "project_read", arguments: JSON.stringify(value) },
+              },
+            ],
+          },
+          "tool_calls",
+          "response-primitive",
+        ),
+    }).complete(REQUEST);
+    assert.equal(result.kind, "assistant");
+    if (result.kind !== "assistant") throw new Error("Expected assistant");
+    assert.deepEqual(result.message.toolCalls[0]?.arguments, value);
+    assert.equal(result.message.toolCalls[0]?.argumentSyntaxError, undefined);
+  }
+});
+
+test("nonstream wire evidence preserves separate malformed arguments without retaining the response body", async () => {
+  const argumentsByCall = [
+    '{"nodes":[{"id":"one"}]} {\\"id\\":\\"foreign\\"}',
+    '{"nodes":[{"id":"two"}]}] {\\"id\\":\\"other\\"}',
+    JSON.stringify({ path: "third.luau" }),
+  ];
+  const wireCalls = argumentsByCall.map((raw, index) => ({
+    id: `wire-${index}`,
+    type: "function",
+    function: { name: "project_read", arguments: raw },
+  }));
+  const result = await new OpenRouterModelClient({
+    apiKey: "never-retain-key",
+    fetchImpl: async (_input, init) => {
+      assert.notEqual(JSON.parse(String(init?.body)).stream, true);
+      return response(
+        { content: "", reasoning: "never-retain-reasoning", tool_calls: wireCalls },
+        "tool_calls",
+        "wire-response",
+      );
+    },
+  }).complete(REQUEST);
+  assert.equal(result.kind, "assistant");
+  if (result.kind !== "assistant") throw new Error("Expected assistant");
+  const evidence = result.responseFacts.toolCallWireEvidence;
+  assert.ok(evidence);
+  assertModelToolCallWireEvidence(evidence);
+  assert.equal(result.responseFacts.responseId, "wire-response");
+  assert.equal(result.responseFacts.servingProvider, "OpenAI");
+  assert.equal(evidence.totalCalls, 3);
+  assert.equal(evidence.omittedCalls, 0);
+  assert.equal(
+    evidence.envelopeHash,
+    captureToolCallWireEvidence(
+      wireCalls.map((call) => ({
+        id: call.id,
+        name: call.function.name,
+        arguments: call.function.arguments,
+      })),
+    ).envelopeHash,
+  );
+  assert.deepEqual(
+    evidence.calls.map((call) => call.jsonValidity),
+    ["invalid", "invalid", "valid"],
+  );
+  assert.deepEqual(
+    evidence.calls.map((call) => call.invalidInputMatchesWire),
+    [true, true, null],
+  );
+  for (const [index, raw] of argumentsByCall.entries()) {
+    assert.equal(evidence.calls[index]?.argumentsHash, contentHash(raw));
+    assert.equal(evidence.calls[index]?.argumentsBytes, Buffer.byteLength(raw, "utf8"));
+    if (index < 2) assert.equal(result.message.toolCalls[index]?.arguments, raw);
+  }
+  assert.doesNotMatch(
+    JSON.stringify(result.responseFacts),
+    /never-retain|foreign|nodes|third\.luau/,
+  );
+});
+
+test("wire evidence survives truncated responses and rejected response identity", async () => {
+  for (const mismatch of [false, true]) {
+    const result = await new OpenRouterModelClient({
+      apiKey: "test-key",
+      fetchImpl: async () => {
+        const body = (await response(
+          {
+            content: null,
+            tool_calls: [
+              {
+                id: "partial",
+                type: "function",
+                function: { name: "project_read", arguments: '{"path":' },
+              },
+            ],
+          },
+          "length",
+          "partial-response",
+        ).json()) as Record<string, unknown>;
+        if (mismatch) body.model = "different-model";
+        return new Response(JSON.stringify(body), {
+          headers: { "content-type": "application/json" },
+        });
+      },
+    }).complete(REQUEST);
+    assert.equal(result.responseFacts.responseId, "partial-response");
+    const evidence = result.responseFacts.toolCallWireEvidence;
+    assert.ok(evidence);
+    assertModelToolCallWireEvidence(evidence);
+    assert.equal(evidence.calls[0]?.argumentsHash, contentHash('{"path":'));
+    assert.equal(evidence.calls[0]?.invalidInputMatchesWire, true);
+    assert.equal(result.kind, mismatch ? "provider_error" : "assistant");
+    if (result.kind === "assistant") assert.equal(result.stopReason, "max_tokens");
+  }
+});
+
+test("wire evidence counts omitted details without limiting provider tool calls and validates every field", () => {
+  const calls = Array.from({ length: 130 }, (_, index) => ({
+    id: String(index),
+    name: "tool",
+    arguments: index === 0 ? "" : "{}",
+  }));
+  const evidence = captureToolCallWireEvidence(
+    calls,
+    calls.map(() => "changed"),
+  );
+  assertModelToolCallWireEvidence(evidence);
+  assert.equal(evidence.totalCalls, 130);
+  assert.equal(evidence.calls.length, 128);
+  assert.equal(evidence.omittedCalls, 2);
+  assert.equal(evidence.calls[0]?.argumentsBytes, 0);
+  assert.equal(evidence.calls[0]?.invalidInputMatchesWire, false);
+  assert.notEqual(
+    evidence.envelopeHash,
+    captureToolCallWireEvidence(calls.slice(0, 128)).envelopeHash,
+  );
+  for (const changed of [
+    { totalCalls: -1 },
+    { omittedCalls: 0 },
+    { envelopeHash: "bad" },
+    { extra: true },
+  ])
+    assert.throws(() => assertModelToolCallWireEvidence({ ...evidence, ...changed }));
+  for (const changed of [
+    { index: 1 },
+    { argumentsHash: "bad" },
+    { argumentsBytes: -1 },
+    { argumentsBytes: 1.5 },
+    { invalidInputMatchesWire: "true" },
+    { jsonValidity: "unknown" },
+    { extra: true },
+  ])
+    assert.throws(() =>
+      assertModelToolCallWireEvidence({
+        ...evidence,
+        calls: [{ ...evidence.calls[0], ...changed }, ...evidence.calls.slice(1)],
+      }),
+    );
+  const missing = captureToolCallWireEvidence([{ id: "x", arguments: null }]);
+  assertModelToolCallWireEvidence(missing);
+  assert.equal(missing.calls[0]?.jsonValidity, "unavailable");
+  assert.equal(missing.calls[0]?.argumentsHash, null);
+});
+
+test("a rejected outer response retains only attributable tool digests and identity", async () => {
+  const raw = '{"path":';
+  const result = await new OpenRouterModelClient({
+    apiKey: "never-retain-key",
+    fetchImpl: async () =>
+      response(
+        {
+          content: 42,
+          hidden: "never-retain-hidden-field",
+          tool_calls: [
+            {
+              id: "outer-invalid",
+              type: "function",
+              function: { name: "project_read", arguments: raw },
+            },
+          ],
+        },
+        "tool_calls",
+        "invalid-envelope-response",
+      ),
+  }).complete(REQUEST);
+  assert.equal(result.kind, "provider_error");
+  assert.equal(result.responseFacts.responseId, "invalid-envelope-response");
+  assert.equal(result.responseFacts.servingProvider, "OpenAI");
+  assert.equal(
+    result.responseFacts.toolCallWireEvidence?.calls[0]?.argumentsHash,
+    contentHash(raw),
+  );
+  assert.equal(result.responseFacts.toolCallWireEvidence?.calls[0]?.invalidInputMatchesWire, null);
+  assert.doesNotMatch(JSON.stringify(result), /never-retain/);
+});
+
+test("JSON diagnostics retain an interior UTF-16 position and bounded escaped vicinity without parser prose", () => {
+  const raw = '{"prefix":"' + "🚀".repeat(50_000) + '",\n"broken":true false,"ending":"complete"}';
+  const diagnostic = diagnoseToolArgumentJson(raw);
+  assert.ok(diagnostic);
+  assert.equal(diagnostic.positionUtf16, raw.indexOf("false"));
+  assert.equal(diagnostic.line, 2);
+  assert.equal(diagnostic.column, 15);
+  assert.ok(diagnostic.vicinity);
+  assert.equal(
+    diagnostic.vicinity.text,
+    raw.slice(
+      diagnostic.vicinity.startUtf16,
+      diagnostic.vicinity.startUtf16 + diagnostic.vicinity.text.length,
+    ),
+  );
+  assert.ok(diagnostic.vicinity.text.length <= 120);
+  assert.ok(Buffer.byteLength(JSON.stringify(diagnostic.vicinity.text), "utf8") <= 722);
+  const feedback = toolArgumentSyntaxMessage(diagnostic);
+  assert.match(feedback, /Malformed JSON.*UTF-16 offset/);
+  assert.match(feedback, /broken/);
+  assert.doesNotMatch(feedback, /truncat|token|expected object/i);
+  assert.ok(Buffer.byteLength(feedback, "utf8") < 1_200);
+  assert.equal(diagnoseToolArgumentJson(JSON.stringify(raw)), null);
+  const missingOffset = toolArgumentSyntaxMessage({
+    kind: "invalid_json",
+    positionUtf16: null,
+    line: null,
+    column: null,
+    vicinity: null,
+  });
+  assert.match(missingOffset, /did not provide an offset/);
+  assert.doesNotMatch(missingOffset, /truncat|token/i);
 });

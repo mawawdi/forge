@@ -36,7 +36,7 @@ export function createForgeRuntimeRecipe(bundle: ForgeRuntimeBundle): {
       {
         id: "runtime-lifecycle",
         description:
-          "Scope, Event, Task and optional StateMachine lifecycle behavior is covered by fixed repository Luau tests; integration still requires native checks.",
+          "Scope, Event, Task, StateMachine and Network admission/lifecycle behavior is covered by fixed repository Luau tests; integration still requires native checks.",
         evidence: "isolated_test",
       },
     ],
@@ -102,6 +102,7 @@ function expandRuntime(
     inventory.push({
       id,
       componentId: input.componentId,
+      outputId: name === "Packages" ? "packages" : "root",
       change: {
         id,
         kind: "create",
@@ -131,6 +132,7 @@ function expandRuntime(
     inventory.push({
       id,
       componentId: input.componentId,
+      outputId: "module/" + module.id,
       change: {
         id,
         kind: "create",

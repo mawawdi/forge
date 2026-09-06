@@ -15,16 +15,28 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 import {
   MODEL_CONTINUATION_MAX_BYTES,
+  modelOutputTokenLimit,
+  supportsModelImages,
   type ModelClient,
   type ModelContinuation,
   type ModelMessage,
   type ModelResponseFacts,
   type ModelToolDefinition,
+  type ModelToolCallWireEvidence,
   type ModelTurnRequest,
   type ModelTurnResult,
   type ModelUsage,
 } from "./contracts.js";
-import { CREATOR_MODEL_REGISTRY, isCreatorModelId } from "./model-registry.js";
+import {
+  CREATOR_MODEL_REGISTRY,
+  assertCreatorModelCatalog,
+  isCreatorModelId,
+  type CreatorModelCatalog,
+} from "./model-registry.js";
+import { safeProviderErrorMessage } from "./provider-error.js";
+import { diagnoseToolArgumentJson } from "./tool-argument-syntax.js";
+import { assertModelMessageImages } from "./images.js";
+import { captureToolCallWireEvidence } from "./tool-call-wire-evidence.js";
 
 const TRANSPORT = "openrouter-ai-sdk-core";
 const ALLOWLISTED_MODELS = Object.freeze(CREATOR_MODEL_REGISTRY.models.map((model) => model.id));
@@ -49,7 +61,7 @@ export const OPENROUTER_MODEL_CLIENT_DESCRIPTOR = {
       steps: 1 as const,
       toolChoice: "auto" as const,
       providerParallelToolCalls: "not_requested" as const,
-      toolBatchExecution: "atomic_validate_then_sequential" as const,
+      toolBatchExecution: "host_validated_then_sequential" as const,
       toolNameEncoding: "openai_function_slug" as const,
       toolSchemaMode: "explicit_non_strict" as const,
       maxRetries: 0 as const,
@@ -57,6 +69,14 @@ export const OPENROUTER_MODEL_CLIENT_DESCRIPTOR = {
       timeoutPolicy: "bounded_turn_and_remaining_runtime_budget" as const,
       maxDurationMsPerTurn: 1_200_000,
       maxOutputTokensPerTurn: 32_768,
+      maxOutputTokensByModel: Object.freeze(
+        Object.fromEntries(ALLOWLISTED_MODELS.map((model) => [model, 32_768])),
+      ),
+      outputTokenLimitCatalogHash: null as string | null,
+      inputModalitiesByModel: Object.freeze(
+        Object.fromEntries(ALLOWLISTED_MODELS.map((model) => [model, null])),
+      ) as Readonly<Record<string, readonly string[] | null>>,
+      inputModalityCatalogHash: null as string | null,
     },
     continuation: { maxBytes: MODEL_CONTINUATION_MAX_BYTES },
   },
@@ -66,15 +86,52 @@ export interface OpenRouterAiSdkClientOptions {
   apiKey: string;
   fetchImpl?: typeof fetch;
   baseURL?: string;
+  modelCatalog?: CreatorModelCatalog;
 }
 
 export class OpenRouterModelClient implements ModelClient {
-  readonly descriptor = OPENROUTER_MODEL_CLIENT_DESCRIPTOR;
+  readonly descriptor: typeof OPENROUTER_MODEL_CLIENT_DESCRIPTOR;
 
   private readonly provider: ReturnType<typeof createOpenRouter>;
 
   constructor(options: OpenRouterAiSdkClientOptions) {
     if (!options.apiKey) throw new Error("OPENROUTER_API_KEY is required");
+    if (options.modelCatalog) assertCreatorModelCatalog(options.modelCatalog);
+    const caps = Object.freeze(
+      Object.fromEntries(
+        ALLOWLISTED_MODELS.map((model) => [
+          model,
+          options.modelCatalog?.models.find((entry) => entry.modelId === model)
+            ?.maxCompletionTokens ?? 32_768,
+        ]),
+      ),
+    );
+    this.descriptor = {
+      ...OPENROUTER_MODEL_CLIENT_DESCRIPTOR,
+      configuration: {
+        ...OPENROUTER_MODEL_CLIENT_DESCRIPTOR.configuration,
+        request: {
+          ...OPENROUTER_MODEL_CLIENT_DESCRIPTOR.configuration.request,
+          maxOutputTokensPerTurn: Math.max(...Object.values(caps)),
+          maxOutputTokensByModel: caps,
+          outputTokenLimitCatalogHash: options.modelCatalog?.hash ?? null,
+          inputModalitiesByModel: Object.freeze(
+            Object.fromEntries(
+              ALLOWLISTED_MODELS.map((model) => {
+                const entry = options.modelCatalog?.models.find((entry) => entry.modelId === model);
+                return [
+                  model,
+                  entry?.status === "available" && entry.inputModalities
+                    ? Object.freeze([...entry.inputModalities])
+                    : null,
+                ];
+              }),
+            ),
+          ),
+          inputModalityCatalogHash: options.modelCatalog?.hash ?? null,
+        },
+      },
+    };
     this.provider = createOpenRouter({
       apiKey: options.apiKey,
       ...(options.fetchImpl ? { fetch: options.fetchImpl } : {}),
@@ -108,11 +165,35 @@ export class OpenRouterModelClient implements ModelClient {
     }
     let wireTools: WireTools;
     try {
+      assertModelMessageImages(request.messages);
+      if (
+        request.messages.some(
+          (message) => message.role === "user" && (message.images?.length ?? 0) > 0,
+        ) &&
+        !supportsModelImages(this.descriptor, request.model)
+      )
+        return providerFailure(
+          "model_image_input_unconfirmed",
+          "The selected model has no confirmed image-input capability in the current catalog. Select an image-capable model explicitly; Forge will not drop images or switch models.",
+          false,
+          requestHash,
+          emptyUsage(),
+          responseFacts(request.model, null, null, null, Date.now() - startedAt, null),
+        );
+      if (
+        !Number.isSafeInteger(request.maxOutputTokens) ||
+        request.maxOutputTokens < 1 ||
+        request.maxOutputTokens > modelOutputTokenLimit(this.descriptor, request.model)
+      )
+        throw new Error("Requested output tokens exceed the declared selected-model limit.");
       wireTools = toWireTools(request.tools);
     } catch (error) {
       return providerFailure(
         "request_configuration",
-        boundedTransportMessage(error, "Forge tool names could not be encoded for the provider."),
+        boundedTransportMessage(
+          error,
+          "Forge request does not match the declared provider configuration.",
+        ),
         false,
         requestHash,
         emptyUsage(),
@@ -134,6 +215,26 @@ export class OpenRouterModelClient implements ModelClient {
       );
     }
 
+    let receivedResponse:
+      | {
+          model: string | null;
+          provider: string | null;
+          id: string | null;
+          finishReason: string | null;
+        }
+      | undefined;
+    let wireEvidence: ModelToolCallWireEvidence | undefined;
+    const failureFacts = (latencyMs: number, finishReason: string | null) =>
+      responseFacts(
+        request.model,
+        receivedResponse?.model ?? null,
+        receivedResponse?.provider ?? null,
+        receivedResponse?.id ?? null,
+        latencyMs,
+        receivedResponse?.finishReason ?? finishReason,
+        undefined,
+        wireEvidence,
+      );
     try {
       const result = await generateText({
         model: this.provider.chat(request.model, {
@@ -155,11 +256,24 @@ export class OpenRouterModelClient implements ModelClient {
         maxOutputTokens: request.maxOutputTokens,
         timeout: request.timeoutMs,
         telemetry: { isEnabled: false, recordInputs: false, recordOutputs: false },
+        // Inspect the received tool envelope before discarding the response body.
+        // Only bounded digests leave this adapter; prose/reasoning/headers do not.
+        include: { responseBody: true },
       });
 
       const latencyMs = Date.now() - startedAt;
       const usage = usageFrom(result.usage, result.providerMetadata);
       const servingProvider = providerName(result.providerMetadata);
+      receivedResponse = {
+        model: result.response.modelId,
+        provider: servingProvider,
+        id: result.response.id,
+        finishReason: result.finishReason,
+      };
+      wireEvidence = wireEvidenceFromResponse(
+        result.response.body,
+        result.toolCalls.map((call) => call.input),
+      );
       if (result.response.modelId !== request.model || servingProvider === null) {
         return providerFailure(
           "response_identity_mismatch",
@@ -174,6 +288,8 @@ export class OpenRouterModelClient implements ModelClient {
             result.response.id,
             latencyMs,
             result.finishReason,
+            undefined,
+            wireEvidence,
           ),
         );
       }
@@ -193,14 +309,24 @@ export class OpenRouterModelClient implements ModelClient {
             latencyMs,
             result.finishReason,
             continuation.identity,
+            wireEvidence,
           ),
         );
       }
-      const calls = result.toolCalls.map((call) => ({
-        id: call.toolCallId,
-        name: wireTools.wireToPublic.get(call.toolName) ?? call.toolName,
-        arguments: call.input,
-      }));
+      const calls = result.toolCalls.map((call) => {
+        // InvalidToolInputError retains the actual wire text. A parsed JSON string
+        // is a different value and must never be reparsed into a tool object.
+        const syntaxError =
+          call.invalid && InvalidToolInputError.isInstance(call.error)
+            ? diagnoseToolArgumentJson(call.error.toolInput)
+            : null;
+        return {
+          id: call.toolCallId,
+          name: wireTools.wireToPublic.get(call.toolName) ?? call.toolName,
+          arguments: call.input,
+          ...(syntaxError === null ? {} : { argumentSyntaxError: syntaxError }),
+        };
+      });
       const message: Extract<ModelMessage, { role: "assistant" }> = {
         role: "assistant",
         content: result.text,
@@ -215,6 +341,7 @@ export class OpenRouterModelClient implements ModelClient {
         latencyMs,
         result.finishReason,
         continuation.value,
+        wireEvidence,
       );
       return {
         kind: "assistant",
@@ -228,15 +355,27 @@ export class OpenRouterModelClient implements ModelClient {
       };
     } catch (error) {
       const latencyMs = Date.now() - startedAt;
+      if (APICallError.isInstance(error) && error.responseBody) {
+        // A malformed outer envelope can fail before generateText returns.
+        // Preserve only attributable identity and tool digests if it was JSON.
+        try {
+          const body: unknown = JSON.parse(error.responseBody);
+          wireEvidence ??= wireEvidenceFromResponse(body);
+          if (isRecord(body)) {
+            const choice = Array.isArray(body.choices) ? body.choices[0] : undefined;
+            receivedResponse ??= {
+              model: responseIdentifier(body.model),
+              provider: responseIdentifier(body.provider),
+              id: responseIdentifier(body.id),
+              finishReason: isRecord(choice) ? responseIdentifier(choice.finish_reason) : null,
+            };
+          }
+        } catch {
+          // Invalid outer JSON provides no independently attributable tool envelope.
+        }
+      }
       if (InvalidToolInputError.isInstance(error) || NoSuchToolError.isInstance(error)) {
-        const facts = responseFacts(
-          request.model,
-          null,
-          null,
-          null,
-          latencyMs,
-          "invalid-tool-call",
-        );
+        const facts = failureFacts(latencyMs, "invalid-tool-call");
         const usage = emptyUsage();
         return {
           kind: "invalid_model_response",
@@ -250,14 +389,17 @@ export class OpenRouterModelClient implements ModelClient {
           ...metadataHash(facts, usage),
         };
       }
-      if (isAbort(error) || (APICallError.isInstance(error) && isAbort(error.cause)))
+      if (
+        (!APICallError.isInstance(error) && isAbort(error)) ||
+        (APICallError.isInstance(error) && isAbort(error.cause))
+      )
         return providerFailure(
           "timeout",
           "OpenRouter request timed out before a valid assistant envelope was received.",
           true,
           requestHash,
           emptyUsage(),
-          responseFacts(request.model, null, null, null, latencyMs, null),
+          failureFacts(latencyMs, null),
         );
       if (APICallError.isInstance(error)) {
         const status = error.statusCode ?? null;
@@ -271,24 +413,30 @@ export class OpenRouterModelClient implements ModelClient {
             errorEnvelope
               ? `provider_response_error${providerCode ? `_${providerCode}` : ""}`
               : "invalid_response_schema",
-            errorEnvelope
-              ? `OpenRouter returned an error response${providerCode ? ` (code ${providerCode})` : ""}.`
-              : "OpenRouter returned a response that could not be read.",
+            safeProviderErrorMessage(
+              errorEnvelope
+                ? `OpenRouter returned an error response${providerCode ? ` (code ${providerCode})` : ""}.`
+                : "OpenRouter returned a response that could not be read.",
+              error,
+            ),
             error.isRetryable,
             requestHash,
             emptyUsage(),
-            responseFacts(request.model, null, null, null, latencyMs, null),
+            failureFacts(latencyMs, null),
           );
         }
         return providerFailure(
           status === null ? "provider_api" : `http_${status}`,
-          status === null
-            ? "OpenRouter request failed."
-            : `OpenRouter request failed with HTTP ${status}.`,
+          safeProviderErrorMessage(
+            status === null
+              ? "OpenRouter request failed."
+              : `OpenRouter request failed with HTTP ${status}.`,
+            error,
+          ),
           error.isRetryable,
           requestHash,
           emptyUsage(),
-          responseFacts(request.model, null, null, null, latencyMs, null),
+          failureFacts(latencyMs, null),
         );
       }
       return providerFailure(
@@ -300,7 +448,7 @@ export class OpenRouterModelClient implements ModelClient {
         false,
         requestHash,
         emptyUsage(),
-        responseFacts(request.model, null, null, null, latencyMs, null),
+        failureFacts(latencyMs, null),
       );
     }
   }
@@ -354,7 +502,46 @@ function toWireTools(definitions: ModelToolDefinition[]): WireTools {
 function providerJsonSchema(value: unknown, toolName: string): Parameters<typeof jsonSchema>[0] {
   if (!isRecord(value))
     throw new Error(`Forge tool ${toolName} must provide an object JSON Schema.`);
+  assertProviderToolSchema(value, toolName);
   return value as Parameters<typeof jsonSchema>[0];
+}
+
+/** Enforce the portable schema subset supported by every registered model provider. */
+function assertProviderToolSchema(root: Record<string, unknown>, toolName: string): void {
+  const resolvePointer = (reference: string): unknown => {
+    if (reference === "#") return root;
+    if (!reference.startsWith("#/")) return undefined;
+    return reference
+      .slice(2)
+      .split("/")
+      .map((segment) => segment.replaceAll("~1", "/").replaceAll("~0", "~"))
+      .reduce<unknown>(
+        (value, segment) =>
+          value !== null && typeof value === "object"
+            ? (value as Record<string, unknown>)[segment]
+            : undefined,
+        root,
+      );
+  };
+  const visit = (value: unknown, ancestors: ReadonlySet<unknown>): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, ancestors);
+      return;
+    }
+    if (!isRecord(value)) return;
+    if (Array.isArray(value.prefixItems) && value.prefixItems.length === 0)
+      throw new Error(`Forge tool ${toolName} contains an empty prefixItems schema.`);
+    if (typeof value.$ref === "string" && value.$ref.startsWith("#")) {
+      const target = resolvePointer(value.$ref);
+      if (target === undefined)
+        throw new Error(`Forge tool ${toolName} contains an unresolved local schema reference.`);
+      if (ancestors.has(target))
+        throw new Error(`Forge tool ${toolName} contains a recursive JSON Schema.`);
+      visit(target, new Set([...ancestors, target]));
+    }
+    for (const [key, item] of Object.entries(value)) if (key !== "$ref") visit(item, ancestors);
+  };
+  visit(root, new Set([root]));
 }
 
 function toAiMessages(
@@ -364,7 +551,25 @@ function toAiMessages(
   const result: AiModelMessage[] = [];
   for (const message of messages) {
     if (message.role === "user") {
-      result.push({ role: "user", content: message.content });
+      result.push({
+        role: "user",
+        content: message.images?.length
+          ? [
+              ...message.images.flatMap((image, index) => [
+                {
+                  type: "text" as const,
+                  text: `Image ${index + 1} (${image.width} × ${image.height} pixels):`,
+                },
+                {
+                  type: "image" as const,
+                  image: image.base64,
+                  mediaType: image.mimeType,
+                },
+              ]),
+              { type: "text", text: message.content },
+            ]
+          : message.content,
+      });
       continue;
     }
     if (message.role === "tool") {
@@ -456,6 +661,7 @@ function responseFacts(
   latencyMs: number,
   finishReason: string | null,
   continuation?: Pick<ModelContinuation, "hash" | "bytes">,
+  toolCallWireEvidence?: ModelToolCallWireEvidence,
 ): ModelResponseFacts {
   return {
     requestedModel,
@@ -467,7 +673,30 @@ function responseFacts(
     finishReason,
     continuationHash: continuation?.hash ?? null,
     continuationBytes: continuation?.bytes ?? null,
+    ...(toolCallWireEvidence ? { toolCallWireEvidence } : {}),
   };
+}
+
+function wireEvidenceFromResponse(
+  body: unknown,
+  adaptedInputs?: readonly unknown[],
+): ModelToolCallWireEvidence | undefined {
+  if (!isRecord(body) || !Array.isArray(body.choices)) return undefined;
+  const first = body.choices[0];
+  if (!isRecord(first) || !isRecord(first.message) || !Array.isArray(first.message.tool_calls))
+    return undefined;
+  return captureToolCallWireEvidence(
+    first.message.tool_calls.map((call: unknown) => {
+      const entry = isRecord(call) ? call : {};
+      const fn = isRecord(entry.function) ? entry.function : {};
+      return { id: entry.id, name: fn.name, arguments: fn.arguments };
+    }),
+    adaptedInputs,
+  );
+}
+
+function responseIdentifier(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 && value.length <= 1024 ? value : null;
 }
 
 function usageFrom(

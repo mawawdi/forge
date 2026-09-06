@@ -3,6 +3,12 @@ import {
   type CompactConversation,
 } from "../../creator-conversation/src/compaction.js";
 import { randomUUID } from "node:crypto";
+import { CreatorTurnNotAdmittedError } from "./turn-admission-error.js";
+import { validateVisualObservationInputs } from "../../visual-evidence/src/index.js";
+import {
+  creatorVisualSubmissionFromObservations,
+  type CreatorVisualContext,
+} from "../../creator-session/src/visual-context.js";
 import {
   AgentExecutionJournalStore,
   assertAgentRun,
@@ -24,6 +30,7 @@ import {
   assertCreatorControlView,
   assertCreatorActionRequest,
   assertCreatorTurnRequest,
+  assertCreatorTurnContract,
   assertCreatorWorkJobRequestBinding,
   creatorWorkRequestHash,
   sealCreatorCitation,
@@ -63,11 +70,13 @@ import {
   type LoadedCreatorConversation,
 } from "../../creator-conversation/src/index.js";
 import { deriveStudioProjectIdentityAuthority } from "../../studio-evidence/src/index.js";
-import type {
-  CreatorTransactionControlAction as TransactionControlAction,
-  CreatorSessionCoordinator,
+import {
+  creatorBuildRetryAvailable,
+  type CreatorTransactionControlAction as TransactionControlAction,
+  type CreatorSessionCoordinator,
 } from "../../creator-session/src/coordinator.js";
 import type {
+  CreatorPlan,
   CreatorAgentCitation,
   CreatorAgentContextCitation,
   CreatorTransactionControlView as TransactionControlView,
@@ -76,10 +85,13 @@ import type {
   CreatorSessionBundle,
   CreatorSessionStatus,
 } from "../../creator-session/src/index.js";
+import { assertCreatorPlanRecompilation } from "../../creator-session/src/plan-recompilation.js";
+import { verifyCreatorPlanRefreshLineage } from "../../creator-session/src/plan-refresh-lineage.js";
 import {
   CREATOR_REQUEST_TEXT_MAX_BYTES,
   assertCreatorMutationFinalization,
   assertCreatorPlan,
+  assertCreatorSessionBundle,
   assertCreatorRequestArtifact,
   createCreatorAgentContextCitation,
   creatorPlanSummary,
@@ -163,7 +175,7 @@ type JobExecutionAssessment =
     }
   | {
       readonly kind: "terminal";
-      readonly providerOutcome: "response_persisted" | "failure_persisted";
+      readonly providerOutcome: "never_dispatched" | "response_persisted" | "failure_persisted";
       readonly journal: LoadedAgentExecutionJournal;
     };
 
@@ -733,21 +745,71 @@ export class CreatorConversationCoordinator {
     this.assertAccepting();
     assertCreatorTurnRequest(value);
     const request = value as CreatorTurnRequest;
+    let persistenceAttempted = false;
+    try {
+      return await this.admitTurn(request, () => {
+        persistenceAttempted = true;
+      });
+    } catch (error) {
+      // Failed writes may have committed their head before losing acknowledgement.
+      // Only pre-write failures with a known conversation can prove non-admission.
+      if (persistenceAttempted || !request.conversationId) throw error;
+      return this.serialize(request.conversationId, async () => {
+        const current = await this.load(request.conversationId!);
+        const existing = findIdempotentJob(current, request);
+        if (existing) return admission(existing, this.now());
+        throw new CreatorTurnNotAdmittedError(
+          request,
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+    }
+  }
+
+  private async admitTurn(
+    request: CreatorTurnRequest,
+    beforePersistence: () => void,
+  ): Promise<CreatorWorkAdmission> {
     const ensured = request.conversationId
       ? await this.load(request.conversationId)
       : await this.ensurePairedConversation();
     if (!ensured) throw new Error("Link this unpublished Studio place before starting work");
-    if (!conversationMatchesStudio(ensured, this.options.transaction.pairedStudio()))
-      throw new Error("Open and pair this project before continuing its conversation");
     const conversationId = ensured.conversation.id;
     const replay = findIdempotentJob(ensured, request);
     if (replay) return admission(replay, this.now());
+    if (!conversationMatchesStudio(ensured, this.options.transaction.pairedStudio()))
+      throw new Error("Open and pair this project before continuing its conversation");
     const selection = resolveCreatorModelSelection(
       request.selectedModelId,
       this.options.modelCatalog,
     );
     if (!selection.definition || selection.availability !== "available")
       throw new Error(`Selected model is unavailable: ${selection.reason}`);
+    if (request.visualObservations?.length) {
+      validateVisualObservationInputs(request.visualObservations);
+      if (
+        !this.options.modelCatalog.models
+          .find((entry) => entry.modelId === request.selectedModelId)
+          ?.inputModalities?.includes("image")
+      )
+        throw new Error(
+          "The selected model's current catalog does not confirm image input. Choose an image-capable model before sending visual attachments",
+        );
+      const namedViews = request.visualObservations.flatMap((item) =>
+        item.kind === "rendered_view" && item.viewId ? [item.viewId] : [],
+      );
+      if (namedViews.length) {
+        const episode = latestEpisode(ensured);
+        const snapshot = episode
+          ? await this.options.transaction.conversationSnapshot(episode.sessionBundle.id)
+          : undefined;
+        const declared =
+          snapshot?.bundle.plan?.compiled.design.visualDirection?.views.map((item) => item.id) ??
+          [];
+        if (namedViews.some((id) => !declared.includes(id)))
+          throw new Error("A visual attachment names a view outside the current game plan");
+      }
+    }
     const view = await this.currentControlView(conversationId);
     const contract = view.turnContract;
     if (
@@ -765,10 +827,10 @@ export class CreatorConversationCoordinator {
       throw new Error("Creator turn text is outside the exact control-view bounds");
     const admitted = await this.serialize(conversationId, async () => {
       let current = await this.load(conversationId);
-      if (!conversationMatchesStudio(current, this.options.transaction.pairedStudio()))
-        throw new Error("Paired Studio project changed before durable turn admission");
       const existing = findIdempotentJob(current, request);
       if (existing) return { job: existing };
+      if (!conversationMatchesStudio(current, this.options.transaction.pairedStudio()))
+        throw new Error("Paired Studio project changed before durable turn admission");
       const liveView = await this.currentControlView(conversationId);
       const liveContract = liveView.turnContract;
       if (
@@ -798,7 +860,26 @@ export class CreatorConversationCoordinator {
         ...(liveContract.replyToEventId ? { replyToEventId: liveContract.replyToEventId } : {}),
         createdAt: this.now(),
       });
+      beforePersistence();
       const turnReference = await this.store.artifactStore.write(turn);
+      const visualAttachments: CreatorConversationAttachment[] = [];
+      for (const observation of request.visualObservations ?? []) {
+        const artifact = await this.store.artifactStore.write({
+          kind: "CreatorVisualUpload",
+          source: "creator_upload",
+          evidenceScope: "creator_reported_visual",
+          observation,
+        });
+        visualAttachments.push({
+          role: "visual_observation",
+          label: `${observation.kind === "reference" ? "Visual reference" : "Rendered view"} ${visualAttachments.length + 1}`,
+          binding: binding(
+            `visual_upload_${artifact.artifactHash}`,
+            artifact.artifactHash,
+            artifact,
+          ),
+        });
+      }
       const admittedRequest = await this.store.artifactStore.write(request);
       const admissionAuthority = await this.store.artifactStore.write(liveContract);
       const agentExecutions = [createAgentExecutionSlot({ purpose: "planner", ordinal: 1 })];
@@ -842,7 +923,7 @@ export class CreatorConversationCoordinator {
           selectedModelId: request.selectedModelId,
           job: binding(job.id, job.hash, jobReference),
         },
-        attachments: [],
+        attachments: visualAttachments,
       });
       return { job, turnId: turn.id };
     });
@@ -1268,6 +1349,17 @@ export class CreatorConversationCoordinator {
     const continuesEpisode =
       request.turnKind === "clarification" || request.turnKind === "plan_refinement";
     const priorEpisode = continuesEpisode ? activeEpisode : undefined;
+    const retainedVisual =
+      !request.visualObservations?.length &&
+      priorEpisode &&
+      before.events.some((event) =>
+        event.attachments.some((item) => item.role === "visual_observation"),
+      )
+        ? await this.retainedVisualSubmission(
+            priorEpisode.sessionBundle.id,
+            request.selectedModelId,
+          )
+        : undefined;
     if (continuesEpisode) {
       if (!priorEpisode) throw new Error("Conversational refinement has no active work episode");
       await this.options.transaction.supersedeConversationCandidate(priorEpisode.sessionBundle.id);
@@ -1285,6 +1377,36 @@ export class CreatorConversationCoordinator {
       message: "Reading your project and conversation.",
     });
     const transactionSessionId = requiredTransactionSessionId(prepared);
+    let visualContext: CreatorVisualContext | undefined;
+    if (request.visualObservations?.length) {
+      const studio = this.options.transaction.pairedStudio();
+      if (!studio || !conversationMatchesStudio(before, studio))
+        throw new Error("The paired project changed before visual submission dispatch");
+      const authority = await this.store.artifactStore.read(
+        running.admissionAuthority,
+        assertCreatorTurnContract,
+      );
+      visualContext = {
+        expectedProjectId: studio.projectId,
+        ...(authority.projectRevisionHash
+          ? { expectedRevisionHash: authority.projectRevisionHash }
+          : {}),
+      };
+      if (activeEpisode) {
+        const { bundle } = await this.options.transaction.conversationSnapshot(
+          activeEpisode.sessionBundle.id,
+        );
+        if (bundle.plan) {
+          const graph = bundle.gameBuilds?.at(-1)?.graph;
+          visualContext.plan = {
+            hash: bundle.plan.compiled.hash,
+            ...(graph ? { buildHash: graph.hash } : {}),
+            viewIds:
+              bundle.plan.compiled.design.visualDirection?.views.map((view) => view.id) ?? [],
+          };
+        }
+      }
+    }
     const result = await this.options.transaction.action({
       action: "start",
       creatorText: request.text,
@@ -1293,6 +1415,10 @@ export class CreatorConversationCoordinator {
       creatorSessionId: transactionSessionId,
       contextCitations: context.contextCitations,
       agentExecutions: prepared.agentExecutions,
+      ...retainedVisual,
+      ...(request.visualObservations?.length
+        ? { visualObservations: request.visualObservations, visualContext }
+        : {}),
     });
     const executionAssessment = await this.requireSettledJobExecution(prepared);
     const sessionId = sessionIdFromSummary(result);
@@ -1407,6 +1533,11 @@ export class CreatorConversationCoordinator {
       const episode = latestEpisode(loaded);
       if (!episode) throw new Error("Plan refinement has no active episode");
       const selectedModelId = requiredSelectedModelId(running);
+      const visualSubmission = loaded.events.some((event) =>
+        event.attachments.some((item) => item.role === "visual_observation"),
+      )
+        ? await this.retainedVisualSubmission(episode.sessionBundle.id, selectedModelId)
+        : undefined;
       await this.options.transaction.supersedeConversationCandidate(episode.sessionBundle.id);
       const synthetic: CreatorTurnRequest = {
         kind: "CreatorTurnRequest",
@@ -1417,6 +1548,7 @@ export class CreatorConversationCoordinator {
         text,
         selectedModelId,
         idempotencyKey: request.idempotencyKey,
+        ...(visualSubmission ? { visualObservations: visualSubmission.visualObservations } : {}),
       };
       const context = await this.materializeConversationContext(
         loaded,
@@ -1440,6 +1572,7 @@ export class CreatorConversationCoordinator {
         creatorSessionId: transactionSessionId,
         contextCitations: context.contextCitations,
         agentExecutions: prepared.agentExecutions,
+        ...visualSubmission,
       });
       const executionAssessment = await this.requireSettledJobExecution(prepared);
       const sessionId = sessionIdFromSummary(result);
@@ -1490,6 +1623,16 @@ export class CreatorConversationCoordinator {
       return;
     const assessment = await this.assessJobExecution(running);
     if (
+      await this.settleBuildRefreshBeforeDispatch(
+        execution,
+        running,
+        descriptor.actionId,
+        currentEpisode.sessionBundle.id,
+        assessment,
+      )
+    )
+      return;
+    if (
       assessment.kind === "provider_outcome_unknown" ||
       assessment.kind === "continuation_unavailable"
     )
@@ -1502,12 +1645,15 @@ export class CreatorConversationCoordinator {
     if (descriptor.actionId === "refresh_project") {
       const refreshedSessionId = sessionIdFromSummary(actionResult);
       if (refreshedSessionId !== currentEpisode.sessionBundle.id) {
-        if (assessment.kind !== "terminal")
-          throw new Error("Changed project refresh returned without a terminal planner journal");
         const [predecessorSnapshot, successorSnapshot] = await Promise.all([
           this.options.transaction.conversationSnapshot(currentEpisode.sessionBundle.id),
           this.options.transaction.conversationSnapshot(refreshedSessionId),
         ]);
+        const hostPlan = await this.assertRefreshPlanningBoundary(
+          running,
+          successorSnapshot.bundle,
+          assessment,
+        );
         const successorEpisode = await this.publishRefreshSuccessor({
           execution,
           job: running,
@@ -1521,15 +1667,17 @@ export class CreatorConversationCoordinator {
             ? exactResponseAttribution(completedRun, requiredSelectedModelId(running))
             : undefined;
         await this.updateJob(execution, {
-          status: successorSnapshot.bundle.agentOutcome ? "succeeded" : "failed",
+          status: hostPlan || successorSnapshot.bundle.agentOutcome ? "succeeded" : "failed",
           phase: successorSnapshot.bundle.session.status,
           providerOutcome: assessment.providerOutcome,
           ...(completedResponse?.responseId
             ? { providerRequestId: completedResponse.responseId }
             : {}),
-          ...(successorSnapshot.bundle.agentOutcome
+          ...(hostPlan || successorSnapshot.bundle.agentOutcome
             ? {
-                message: `The refreshed project was replanned in successor episode ${successorEpisode.id}.`,
+                message: hostPlan
+                  ? "The retained design was compiled against fresh observations and is ready for a new review. No model request was made."
+                  : `The refreshed project was replanned in successor episode ${successorEpisode.id}.`,
               }
             : agentRunFailure(completedRun)),
         });
@@ -1575,6 +1723,29 @@ export class CreatorConversationCoordinator {
       providerOutcome: "never_dispatched",
       failureCode: failure.failure.code,
       message: preparationFailureMessage(failure),
+    });
+    return true;
+  }
+
+  private async settleBuildRefreshBeforeDispatch(
+    execution: WorkExecution,
+    job: CreatorWorkJob,
+    actionId: string,
+    sessionId: string,
+    assessment: JobExecutionAssessment,
+  ): Promise<boolean> {
+    if (!["build_plan", "retry_build"].includes(actionId) || assessment.kind !== "never_dispatched")
+      return false;
+    const { bundle } = await this.options.transaction.conversationSnapshot(sessionId);
+    if (bundle.session.status !== "refresh_required") return false;
+    if (job.agentExecutions.length !== 1 || job.agentExecutions[0]?.purpose !== "builder")
+      throw new Error("Build refresh lost its reserved builder execution");
+    await this.updateJob(execution, {
+      status: "succeeded",
+      phase: "refresh_required",
+      providerOutcome: "never_dispatched",
+      message:
+        "The Studio connection or project observations changed before Build started. Refresh the project to review the current plan. No model request was made.",
     });
     return true;
   }
@@ -1625,8 +1796,13 @@ export class CreatorConversationCoordinator {
       throw new Error("Terminal execution journal lost its terminal checkpoint");
     return {
       kind: "terminal",
-      providerOutcome:
-        terminal.result.status === "completed" ? "response_persisted" : "failure_persisted",
+      providerOutcome: !journal.entries.some(
+        (entry) => entry.checkpoint.checkpointType === "request_intent",
+      )
+        ? "never_dispatched"
+        : terminal.result.status === "completed"
+          ? "response_persisted"
+          : "failure_persisted",
       journal,
     };
   }
@@ -1650,6 +1826,32 @@ export class CreatorConversationCoordinator {
         `Forge couldn't finish this request. The saved execution is ${assessment.kind.replaceAll("_", " ")}. Open Details before retrying.`,
       );
     return assessment;
+  }
+
+  private async retainedVisualSubmission(sessionId: string, modelId: string, required = false) {
+    const { bundle } = await this.options.transaction.conversationSnapshot(sessionId);
+    const request = await this.store.artifactStore.read(
+      bundle.creatorRequest,
+      assertCreatorRequestArtifact,
+    );
+    if (request.sessionId !== bundle.session.id || request.promptHash !== bundle.session.promptHash)
+      throw new Error("Retained visual request does not bind the original creator session");
+    if (!request.visualObservations?.length) {
+      if (required)
+        throw new Error(
+          "The failed request has no sealed visual submission. Send a new turn with the images to bind the current project context",
+        );
+      return undefined;
+    }
+    if (
+      !this.options.modelCatalog.models
+        .find((entry) => entry.modelId === modelId)
+        ?.inputModalities?.includes("image")
+    )
+      throw new Error(
+        "The selected model's current catalog does not confirm image input for the retained visual attachments",
+      );
+    return creatorVisualSubmissionFromObservations(request.visualObservations, bundle.session);
   }
 
   private async executeResumedAgentWork(
@@ -1685,6 +1887,26 @@ export class CreatorConversationCoordinator {
     if (request.selectedModelId !== running.selectedModelId)
       throw new Error("Resumed work lost the exact model selected for the original turn");
     this.assertModelAvailable(request.selectedModelId);
+    const inheritsVisual =
+      (request.turnKind === "clarification" || request.turnKind === "plan_refinement") &&
+      loaded.events.some((event) =>
+        event.attachments.some((item) => item.role === "visual_observation"),
+      );
+    const visualSubmission =
+      request.visualObservations?.length || inheritsVisual
+        ? await this.retainedVisualSubmission(
+            requiredTransactionSessionId(prior),
+            request.selectedModelId,
+            Boolean(request.visualObservations?.length),
+          )
+        : undefined;
+    if (
+      request.visualObservations?.length &&
+      visualSubmission &&
+      stableJson(visualSubmission.visualObservations) !==
+        stableJson(validateVisualObservationInputs(request.visualObservations))
+    )
+      throw new Error("The retry images differ from the exact admitted creator request");
     const priorEpisode = prior.episodeId
       ? loaded.episodes.find((candidate) => candidate.id === prior.episodeId)
       : undefined;
@@ -1748,6 +1970,7 @@ export class CreatorConversationCoordinator {
       creatorSessionId: transactionSessionId,
       contextCitations: context.contextCitations,
       agentExecutions: prepared.agentExecutions,
+      ...visualSubmission,
     });
     const executionAssessment = await this.requireSettledJobExecution(prepared);
     const sessionId = sessionIdFromSummary(result);
@@ -1873,6 +2096,8 @@ export class CreatorConversationCoordinator {
       assertCreatorControlView,
     );
     const descriptor = assertCreatorActionRequestBinding(authority, admitted);
+    if (prior.providerOutcome === "outcome_unknown" && descriptor.actionId !== "refresh_project")
+      throw new Error("Unknown provider actions can only restart a read-only project refresh");
     const loaded = await this.load(execution.conversationId);
     const episode = prior.episodeId
       ? loaded.episodes.find((candidate) => candidate.id === prior.episodeId)
@@ -1884,7 +2109,16 @@ export class CreatorConversationCoordinator {
     )
       throw new Error("Resumed agent action changed its selected model or execution purpose");
     this.assertModelAvailable(running.selectedModelId);
-    const inner = transactionAction(descriptor, authority, admitted, episode.sessionBundle.id);
+    const originalAction = transactionAction(
+      descriptor,
+      authority,
+      admitted,
+      episode.sessionBundle.id,
+    );
+    const inner =
+      descriptor.actionId === "refresh_project"
+        ? await this.resumedRefreshAction(originalAction)
+        : originalAction;
     const result = await this.options.transaction.action({
       ...inner,
       agentExecutions: running.agentExecutions,
@@ -1892,6 +2126,16 @@ export class CreatorConversationCoordinator {
     await this.syncSession(episode.sessionBundle.id);
     if (await this.settlePreparationFailure(execution, running, episode.sessionBundle.id)) return;
     const assessment = await this.assessJobExecution(running);
+    if (
+      await this.settleBuildRefreshBeforeDispatch(
+        execution,
+        running,
+        descriptor.actionId,
+        episode.sessionBundle.id,
+        assessment,
+      )
+    )
+      return;
     if (
       assessment.kind === "provider_outcome_unknown" ||
       assessment.kind === "continuation_unavailable"
@@ -1905,12 +2149,15 @@ export class CreatorConversationCoordinator {
     if (descriptor.actionId === "refresh_project") {
       const refreshedSessionId = sessionIdFromSummary(result);
       if (refreshedSessionId !== episode.sessionBundle.id) {
-        if (assessment.kind !== "terminal")
-          throw new Error("Resumed changed refresh returned without a terminal planner journal");
         const [predecessorSnapshot, successorSnapshot] = await Promise.all([
           this.options.transaction.conversationSnapshot(episode.sessionBundle.id),
           this.options.transaction.conversationSnapshot(refreshedSessionId),
         ]);
+        const hostPlan = await this.assertRefreshPlanningBoundary(
+          running,
+          successorSnapshot.bundle,
+          assessment,
+        );
         await this.publishRefreshSuccessor({
           execution,
           job: running,
@@ -1919,11 +2166,15 @@ export class CreatorConversationCoordinator {
           successor: successorSnapshot.bundle,
         });
         await this.updateJob(execution, {
-          status: successorSnapshot.bundle.agentOutcome ? "succeeded" : "failed",
+          status: hostPlan || successorSnapshot.bundle.agentOutcome ? "succeeded" : "failed",
           phase: successorSnapshot.bundle.session.status,
           providerOutcome: assessment.providerOutcome,
-          ...(successorSnapshot.bundle.agentOutcome
-            ? { message: "The explicitly resumed refresh published a linked successor episode." }
+          ...(hostPlan || successorSnapshot.bundle.agentOutcome
+            ? {
+                message: hostPlan
+                  ? "The retained design is ready for a new review against fresh observations. No model request was made."
+                  : "The explicitly resumed refresh published a linked successor episode.",
+              }
             : agentRunFailure(await latestAgentRun(this.store, successorSnapshot.bundle))),
         });
         return;
@@ -2056,7 +2307,7 @@ export class CreatorConversationCoordinator {
         (job.transactionSessionId === input.snapshot.session.id ||
           (input.priorEpisode !== undefined && job.episodeId === input.priorEpisode.id)),
     );
-    let episode = sealCreatorWorkEpisode({
+    const episode = sealCreatorWorkEpisode({
       id: episodeId,
       conversationId: input.conversationId,
       ordinal: input.priorEpisode?.ordinal ?? loaded.episodes.length + 1,
@@ -2090,6 +2341,17 @@ export class CreatorConversationCoordinator {
       createdAt: input.priorEpisode?.createdAt ?? now,
       updatedAt: now,
     });
+    const recompilation = await this.verifiedPlanRecompilation(input.snapshot);
+    if (recompilation) {
+      return this.publishPlanReview({
+        ...input,
+        loaded,
+        episode,
+        plan: input.snapshot.plan!,
+        selectedModelId: input.request.selectedModelId,
+        recompilation,
+      });
+    }
     if (!outcome || !run) {
       const terminal: Extract<AppendEventWithoutConversation, { eventType: "terminal_output" }> = {
         authority: "forge",
@@ -2169,57 +2431,175 @@ export class CreatorConversationCoordinator {
       attachments: await this.technicalAttachments(input.snapshot, input.contextArtifact),
     });
     if (outcome.kind === "plan_proposed") {
-      const planReference = await this.store.artifactStore.write(outcome.plan);
-      const consultation = input.snapshot.sourceConsultations.at(-1);
-      const previousPlan = loaded.planRevisions
-        .filter((candidate) => candidate.episodeId === episode.id)
-        .at(-1);
-      const revision = sealCreatorPlanRevision({
-        id: `creator_plan_revision_${randomUUID()}`,
-        conversationId: input.conversationId,
-        episodeId: episode.id,
-        revision: (previousPlan?.revision ?? 0) + 1,
-        projectRevisionHash: outcome.plan.projectRevisionHash,
-        modelId: input.request.selectedModelId,
-        plan: binding(outcome.plan.id, outcome.plan.hash, planReference),
-        ...(consultation
-          ? {
-              sourceConsultation: binding(
-                consultation.id,
-                consultation.hash,
-                consultation.artifact,
-              ),
-            }
-          : {}),
-        ...(previousPlan ? { supersedes: { id: previousPlan.id, hash: previousPlan.hash } } : {}),
-        publishedAt: now,
-      });
-      const revisionReference = await this.store.artifactStore.write(revision);
-      episode = sealCreatorWorkEpisode({
-        ...withoutRecordIdentity(episode),
-        planRevision: { id: revision.id, hash: revision.hash },
-        updatedAt: this.now(),
-      });
-      await this.append(loaded, {
-        authority: "agent",
-        eventType: "plan_revision",
-        episodeId: episode.id,
+      return this.publishPlanReview({
+        ...input,
+        loaded,
         episode,
-        planRevision: revision,
-        projectRevisionHash: outcome.plan.projectRevisionHash,
-        binding: {
-          ...sessionBinding(input.snapshot),
-          planRevisionId: revision.id,
-          planRevisionHash: revision.hash,
-        },
-        data: {
-          planRevision: binding(revision.id, revision.hash, revisionReference),
-          revision: revision.revision,
-          summary: creatorPlanSummary(outcome.plan),
-        },
-        attachments: await this.technicalAttachments(input.snapshot, input.contextArtifact),
+        plan: outcome.plan,
+        selectedModelId: input.request.selectedModelId,
       });
     }
+    return episode;
+  }
+
+  private async verifiedPlanRecompilation(
+    snapshot: CreatorSessionBundle,
+  ): Promise<CreatorArtifactBinding | undefined> {
+    if (!snapshot.planRecompilation) return undefined;
+    const record = await this.store.artifactStore.read(
+      snapshot.planRecompilation.artifact,
+      assertCreatorPlanRecompilation,
+    );
+    if (
+      !snapshot.plan ||
+      snapshot.agentOutcome ||
+      snapshot.agentRuns.length > 0 ||
+      snapshot.session.status !== "awaiting_plan_approval" ||
+      snapshot.approvals.length > 0 ||
+      record.id !== snapshot.planRecompilation.id ||
+      record.hash !== snapshot.planRecompilation.hash ||
+      record.sessionId !== snapshot.session.id ||
+      record.planId !== snapshot.plan.id ||
+      record.planHash !== snapshot.plan.hash ||
+      record.afterCaptureHash !== snapshot.session.currentProjectCaptureHash
+    )
+      throw new Error("Host plan publication lost its exact fresh-plan recompilation binding");
+    const lineage = await verifyCreatorPlanRefreshLineage({
+      store: this.store.artifactStore,
+      references: snapshot.planRecompilation.refreshLineage,
+      immediatePredecessorSessionId: snapshot.predecessorSessionId!,
+      plan: await this.store.artifactStore.read(record.predecessor.plan, assertCreatorPlan),
+    });
+    if (lineage.at(-1)?.session.id !== record.predecessor.sessionId)
+      throw new Error("Host plan publication lost its retained design origin");
+    return binding(record.id, record.hash, snapshot.planRecompilation.artifact);
+  }
+
+  /** An explicit retry follows saved read-only refresh work; it never replays a consumed action. */
+  private async resumedRefreshAction(
+    original: Omit<Extract<TransactionControlAction, { action: "act" }>, "agentExecutions">,
+  ): Promise<Omit<Extract<TransactionControlAction, { action: "act" }>, "agentExecutions">> {
+    const { bundle: current, depth } = await this.latestRefreshSuccessor(original.sessionId);
+    if (depth === 0) return original;
+    if (current.session.status !== "refresh_required")
+      throw new Error(
+        "Interrupted refresh must reach a fresh observation boundary before retrying",
+      );
+    const view = (await this.options.transaction.dashboardState(current.session.id)).controlView;
+    if (!view || !view.actions.some((action) => action.id === "transaction_refresh_project"))
+      throw new Error("Interrupted refresh has no current refresh authority");
+    return {
+      action: "act",
+      sessionId: current.session.id,
+      viewId: view.id,
+      viewHash: view.hash,
+      actionId: "transaction_refresh_project",
+    };
+  }
+
+  private async latestRefreshSuccessor(
+    sessionId: string,
+  ): Promise<{ bundle: CreatorSessionBundle; depth: number }> {
+    let current = (await this.options.transaction.conversationSnapshot(sessionId)).bundle;
+    const visited = new Set<string>();
+    while (current.successorSessionId) {
+      if (visited.has(current.session.id) || visited.size >= 32)
+        throw new Error("Interrupted refresh lineage is cyclic or exceeds its bound");
+      visited.add(current.session.id);
+      const next = (await this.options.transaction.conversationSnapshot(current.successorSessionId))
+        .bundle;
+      if (
+        next.predecessorSessionId !== current.session.id ||
+        next.session.projectId !== current.session.projectId ||
+        next.session.model !== current.session.model ||
+        next.session.promptHash !== current.session.promptHash
+      )
+        throw new Error("Interrupted refresh lost its exact successor binding");
+      current = next;
+    }
+    return { bundle: current, depth: visited.size };
+  }
+
+  private async assertRefreshPlanningBoundary(
+    job: CreatorWorkJob,
+    snapshot: CreatorSessionBundle,
+    assessment: JobExecutionAssessment,
+  ): Promise<boolean> {
+    const hostPlan = await this.verifiedPlanRecompilation(snapshot);
+    const execution = job.agentExecutions[0];
+    if (job.agentExecutions.length !== 1 || execution?.purpose !== "planner")
+      throw new Error("Project refresh lost its exact planner reservation");
+    if (hostPlan) {
+      if (assessment.kind !== "never_dispatched")
+        throw new Error("Host plan recompilation cannot conceal a dispatched planner execution");
+      return true;
+    }
+    if (assessment.kind !== "terminal")
+      throw new Error("Changed project refresh returned without a terminal planner journal");
+    return false;
+  }
+
+  private async publishPlanReview(input: {
+    conversationId: string;
+    loaded: LoadedCreatorConversation;
+    episode: CreatorWorkEpisode;
+    plan: CreatorPlan;
+    snapshot: CreatorSessionBundle;
+    selectedModelId: string;
+    contextArtifact: ArtifactReference;
+    recompilation?: CreatorArtifactBinding;
+  }): Promise<CreatorWorkEpisode> {
+    const { loaded, plan } = input;
+    const planSummary = creatorPlanSummary(plan);
+    let { episode } = input;
+    const now = this.now();
+    const planReference = await this.store.artifactStore.write(plan);
+    const consultation = input.snapshot.sourceConsultations.at(-1);
+    const previousPlan = loaded.planRevisions
+      .filter((candidate) => candidate.episodeId === episode.id)
+      .at(-1);
+    const revision = sealCreatorPlanRevision({
+      id: `creator_plan_revision_${randomUUID()}`,
+      conversationId: input.conversationId,
+      episodeId: episode.id,
+      revision: (previousPlan?.revision ?? 0) + 1,
+      projectRevisionHash: plan.projectRevisionHash,
+      modelId: input.selectedModelId,
+      plan: binding(plan.id, plan.hash, planReference),
+      ...(consultation
+        ? {
+            sourceConsultation: binding(consultation.id, consultation.hash, consultation.artifact),
+          }
+        : {}),
+      ...(previousPlan ? { supersedes: { id: previousPlan.id, hash: previousPlan.hash } } : {}),
+      publishedAt: now,
+    });
+    const revisionReference = await this.store.artifactStore.write(revision);
+    episode = sealCreatorWorkEpisode({
+      ...withoutRecordIdentity(episode),
+      planRevision: { id: revision.id, hash: revision.hash },
+      updatedAt: this.now(),
+    });
+    await this.append(loaded, {
+      authority: input.recompilation ? "forge" : "agent",
+      eventType: "plan_revision",
+      episodeId: episode.id,
+      episode,
+      planRevision: revision,
+      projectRevisionHash: plan.projectRevisionHash,
+      binding: {
+        ...sessionBinding(input.snapshot),
+        planRevisionId: revision.id,
+        planRevisionHash: revision.hash,
+      },
+      data: {
+        planRevision: binding(revision.id, revision.hash, revisionReference),
+        revision: revision.revision,
+        summary: planSummary,
+        ...(input.recompilation ? { recompilation: input.recompilation } : {}),
+      },
+      attachments: await this.technicalAttachments(input.snapshot, input.contextArtifact),
+    });
     return episode;
   }
 
@@ -2230,16 +2610,41 @@ export class CreatorConversationCoordinator {
     predecessor: CreatorSessionBundle;
     successor: CreatorSessionBundle;
   }): Promise<CreatorWorkEpisode> {
-    if (
-      input.predecessor.successorSessionId !== input.successor.session.id ||
-      input.successor.predecessorSessionId !== input.predecessor.session.id
-    )
-      throw new Error("Project refresh lost its reciprocal lower-session successor binding");
     const executionSlot = input.job.agentExecutions[0];
+    const hostPlan = await this.assertRefreshPlanningBoundary(
+      input.job,
+      input.successor,
+      await this.assessJobExecution(input.job),
+    );
+    const directSuccessor =
+      input.predecessor.successorSessionId === input.successor.session.id &&
+      input.successor.predecessorSessionId === input.predecessor.session.id;
+    if (!directSuccessor) {
+      if (!hostPlan || !input.successor.planRecompilation)
+        throw new Error("Project refresh lost its reciprocal lower-session successor binding");
+      const record = await this.store.artifactStore.read(
+        input.successor.planRecompilation.artifact,
+        assertCreatorPlanRecompilation,
+      );
+      const lineage = await verifyCreatorPlanRefreshLineage({
+        store: this.store.artifactStore,
+        references: input.successor.planRecompilation.refreshLineage,
+        immediatePredecessorSessionId: input.successor.predecessorSessionId!,
+        plan: await this.store.artifactStore.read(record.predecessor.plan, assertCreatorPlan),
+      });
+      const predecessorIndex = lineage.findIndex(
+        (item) => item.session.id === input.predecessor.session.id,
+      );
+      if (
+        predecessorIndex < 1 ||
+        input.predecessor.successorSessionId !== lineage[predecessorIndex - 1]?.session.id
+      )
+        throw new Error("Host refresh publication lost its exact retained lower-session lineage");
+    }
     if (
       input.job.agentExecutions.length !== 1 ||
       executionSlot?.purpose !== "planner" ||
-      input.successor.agentRuns.at(-1)?.agentRunId !== executionSlot.agentRunId
+      (!hostPlan && input.successor.agentRuns.at(-1)?.agentRunId !== executionSlot.agentRunId)
     )
       throw new Error("Project refresh successor is not bound to its preassigned planner run");
     if (
@@ -2259,7 +2664,6 @@ export class CreatorConversationCoordinator {
     const alreadyPublished = loaded.episodes.find(
       (episode) => episode.sessionBundle.id === input.successor.session.id,
     );
-    if (alreadyPublished) return alreadyPublished;
     const predecessor = loaded.episodes.find(
       (episode) => episode.id === input.predecessorEpisodeId,
     );
@@ -2269,11 +2673,41 @@ export class CreatorConversationCoordinator {
     if (
       !refresh ||
       refresh.refresh.outcome !== "superseded" ||
-      refresh.refresh.successorSessionId !== input.successor.session.id
+      refresh.refresh.successorSessionId !== input.predecessor.successorSessionId
     )
       throw new Error("Project refresh successor has no exact superseding refresh evidence");
 
-    const successorEpisodeId = `creator_episode_${randomUUID()}`;
+    if (alreadyPublished) {
+      if (
+        predecessor.successorEpisodeId !== alreadyPublished.id ||
+        alreadyPublished.predecessorEpisodeId !== predecessor.id
+      )
+        throw new Error("Published refresh episodes lost their reciprocal identity");
+      const plan = input.successor.plan;
+      const successor =
+        plan && !alreadyPublished.planRevision
+          ? await this.publishPlanReview({
+              conversationId: input.execution.conversationId,
+              loaded,
+              episode: alreadyPublished,
+              plan,
+              snapshot: input.successor,
+              selectedModelId: input.job.selectedModelId!,
+              contextArtifact: input.successor.creatorRequest,
+              ...(hostPlan
+                ? { recompilation: (await this.verifiedPlanRecompilation(input.successor))! }
+                : {}),
+            })
+          : alreadyPublished;
+      this.sessionEpisodes.set(input.successor.session.id, {
+        conversationId: input.execution.conversationId,
+        episodeId: successor.id,
+      });
+      this.transactionHashes.set(input.successor.session.id, input.successor.session.hash);
+      return successor;
+    }
+
+    const successorEpisodeId = predecessor.successorEpisodeId ?? `creator_episode_${randomUUID()}`;
     const predecessorReference = await this.writeSessionSnapshot(input.predecessor);
     const linkedPredecessor = sealCreatorWorkEpisode({
       ...withoutRecordIdentity(predecessor),
@@ -2287,28 +2721,43 @@ export class CreatorConversationCoordinator {
       successorEpisodeId,
       updatedAt: this.now(),
     });
-    await this.append(loaded, {
-      authority: "forge",
-      eventType: "project_change",
-      episodeId: linkedPredecessor.id,
-      episode: linkedPredecessor,
-      projectRevisionHash: input.predecessor.session.currentRevisionHash,
-      binding: sessionBinding(input.predecessor),
-      data: {
-        state: "superseded",
-        message:
-          "A complete refresh changed the project. The prior episode is superseded and no plan, approval, change set, or action authority was inherited.",
-        predecessorEpisodeId: linkedPredecessor.id,
-        successorEpisodeId,
-      },
-      attachments: [
-        {
-          role: "refresh",
-          label: "Project refresh",
-          binding: binding(refresh.refresh.id, refresh.refresh.hash, refresh.artifact),
+    if (!predecessor.successorEpisodeId)
+      await this.append(loaded, {
+        authority: "forge",
+        eventType: "project_change",
+        episodeId: linkedPredecessor.id,
+        episode: linkedPredecessor,
+        projectRevisionHash: input.predecessor.session.currentRevisionHash,
+        binding: sessionBinding(input.predecessor),
+        data: {
+          state: "superseded",
+          message: hostPlan
+            ? "Fresh observations match the retained design's requirements. Forge compiled a new plan for review; the previous approval grants no authority to apply it."
+            : "A complete refresh changed the project. The prior episode is superseded and no plan, approval, change set, or action authority was inherited.",
+          predecessorEpisodeId: linkedPredecessor.id,
+          successorEpisodeId,
         },
-      ],
-    });
+        attachments: [
+          {
+            role: "refresh",
+            label: "Project refresh",
+            binding: binding(refresh.refresh.id, refresh.refresh.hash, refresh.artifact),
+          },
+          ...(!directSuccessor && input.successor.planRecompilation
+            ? [
+                {
+                  role: "refresh" as const,
+                  label: "Retained refresh lineage",
+                  binding: binding(
+                    input.successor.planRecompilation.id,
+                    input.successor.planRecompilation.hash,
+                    input.successor.planRecompilation.artifact,
+                  ),
+                },
+              ]
+            : []),
+        ],
+      });
     const successor = await this.publishAgentOutcome({
       conversationId: input.execution.conversationId,
       creatorTurnId: linkedPredecessor.creatorTurnId,
@@ -2499,6 +2948,14 @@ export class CreatorConversationCoordinator {
         bundle.agentOutcome.outcome.id,
         bundle.agentOutcome.outcome.hash,
         bundle.agentOutcome.artifact,
+      );
+    if (bundle.planRecompilation)
+      push(
+        "technical_detail",
+        "Plan recompilation",
+        bundle.planRecompilation.id,
+        bundle.planRecompilation.hash,
+        bundle.planRecompilation.artifact,
       );
     const change = bundle.changeSets.at(-1);
     if (change) await write("change_set", "Exact change set", change);
@@ -2892,16 +3349,29 @@ export class CreatorConversationCoordinator {
       return false;
     }
     if (
+      await this.settleBuildRefreshBeforeDispatch(
+        { request: admitted, jobId: job.id, conversationId: conversation.conversation.id },
+        job,
+        descriptor.actionId,
+        episode.sessionBundle.id,
+        assessment,
+      )
+    )
+      return true;
+    if (
       assessment.kind === "never_dispatched" &&
       lowerActionStillEligible(descriptor.actionId, snapshot.bundle.session.status)
     )
       return false;
 
     if (descriptor.actionId === "refresh_project" && snapshot.bundle.successorSessionId) {
-      if (assessment.kind !== "terminal") return false;
-      const successor = await this.options.transaction.conversationSnapshot(
-        snapshot.bundle.successorSessionId,
-      );
+      const successor = await this.latestRefreshSuccessor(snapshot.bundle.session.id);
+      if (
+        assessment.kind !== "terminal" &&
+        !(assessment.kind === "never_dispatched" && successor.bundle.planRecompilation)
+      )
+        return false;
+      const hostPlan = await this.assertRefreshPlanningBoundary(job, successor.bundle, assessment);
       await this.publishRefreshSuccessor({
         execution: {
           request: admitted,
@@ -2916,13 +3386,14 @@ export class CreatorConversationCoordinator {
       await this.updateJob(
         { request: admitted, jobId: job.id, conversationId: conversation.conversation.id },
         {
-          status: successor.bundle.agentOutcome ? "succeeded" : "failed",
+          status: hostPlan || successor.bundle.agentOutcome ? "succeeded" : "failed",
           phase: successor.bundle.session.status,
           providerOutcome: assessment.providerOutcome,
-          ...(successor.bundle.agentOutcome
+          ...(hostPlan || successor.bundle.agentOutcome
             ? {
-                message:
-                  "The terminal refresh journal and linked successor were reconstructed without redispatch.",
+                message: hostPlan
+                  ? "The retained host plan and linked successor were published after restart without a model request."
+                  : "The terminal refresh journal and linked successor were reconstructed without redispatch.",
               }
             : agentRunFailure(await latestAgentRun(this.store, successor.bundle))),
         },
@@ -3743,16 +4214,25 @@ export class CreatorConversationCoordinator {
     const episode = latestEpisode(conversation);
     const latestEvent = conversation.events.at(-1)!;
     const id = `creator_control_${randomUUID()}`;
-    const projectBusy = [...this.loaded.values()].find(
-      (other) =>
-        other.conversation.id !== conversation.conversation.id &&
-        stableJson(other.conversation.project) === stableJson(conversation.conversation.project) &&
-        (hasUnfinishedAgentWork(other) ||
-          (latestEpisode(other) &&
-            !["completed", "accepted", "rejected", "incomplete", "superseded"].includes(
-              latestEpisode(other)!.status,
-            ))),
-    );
+    let projectBusy: LoadedCreatorConversation | undefined;
+    for (const other of this.loaded.values()) {
+      if (
+        other.conversation.id === conversation.conversation.id ||
+        stableJson(other.conversation.project) !== stableJson(conversation.conversation.project)
+      )
+        continue;
+      const otherEpisode = latestEpisode(other);
+      if (
+        (otherEpisode &&
+          !["completed", "accepted", "rejected", "incomplete", "superseded"].includes(
+            otherEpisode.status,
+          )) ||
+        (await this.hasUnfinishedAgentWork(other))
+      ) {
+        projectBusy = other;
+        break;
+      }
+    }
     const pairedStudio = this.options.transaction.pairedStudio();
     const interruptedAgentWork = agentRecoveryCandidate(conversation);
     const activity = activeActivity(conversation);
@@ -3873,6 +4353,66 @@ export class CreatorConversationCoordinator {
           ]
         : [],
     });
+  }
+
+  private async hasUnfinishedAgentWork(conversation: LoadedCreatorConversation): Promise<boolean> {
+    for (const job of unfinishedAgentJobs(conversation)) {
+      if (
+        job.jobType !== "agent_action" ||
+        job.status !== "outcome_unknown" ||
+        job.providerOutcome !== "outcome_unknown" ||
+        job.failure?.code !== "provider_outcome_unknown" ||
+        job.agentExecutions.length !== 1 ||
+        job.agentExecutions[0]!.purpose !== "builder"
+      )
+        return true;
+      const episode = conversation.episodes.find((candidate) => candidate.id === job.episodeId);
+      if (
+        !episode ||
+        episode.status !== "incomplete" ||
+        episode.sessionBundle.hash !== episode.sessionBundle.artifact.artifactHash
+      )
+        return true;
+      try {
+        const snapshot = await this.store.artifactStore.read(episode.sessionBundle.artifact);
+        if (
+          !snapshot ||
+          typeof snapshot !== "object" ||
+          !("kind" in snapshot) ||
+          snapshot.kind !== "CreatorSessionEvidenceSnapshot" ||
+          !("id" in snapshot) ||
+          snapshot.id !== episode.sessionBundle.id ||
+          !("sessionHash" in snapshot) ||
+          !("bundle" in snapshot)
+        )
+          return true;
+        const bundle = snapshot.bundle as CreatorSessionBundle;
+        assertCreatorSessionBundle(bundle);
+        if (
+          bundle.session.id !== episode.sessionBundle.id ||
+          bundle.session.hash !== snapshot.sessionHash ||
+          bundle.session.status !== "incomplete" ||
+          bundle.session.failure?.code !== "control_process_interrupted" ||
+          bundle.session.currentRevisionHash !== episode.currentProjectRevisionHash ||
+          bundle.mutationAttempts.length !== 0 ||
+          bundle.rojoSourceMutations.length !== 0 ||
+          bundle.changeSets.length !== 0 ||
+          (bundle.gameBuilds?.length ?? 0) !== 0 ||
+          bundle.activeMutation !== undefined ||
+          bundle.closedMutation !== undefined ||
+          bundle.checkpoint !== undefined ||
+          bundle.verifications.length !== 0
+        )
+          return true;
+        // The immutable terminal session proves that this interrupted builder
+        // never entered a Studio or Rojo mutation attempt. Retain the unknown provider result;
+        // releasing the project only permits a new explicitly submitted request.
+      } catch {
+        // Missing, corrupt or mismatched terminal evidence cannot release a lock.
+        return true;
+      }
+    }
+    return false;
   }
 
   private publishedContinuityControlView(
@@ -4162,7 +4702,7 @@ export class CreatorConversationCoordinator {
       eventType: input.eventType,
       data: input.data,
     } as CreatorConversationEvent);
-    await this.store.append({
+    const { loaded: next } = await this.store.append({
       conversation,
       event,
       ...(input.episode ? { episode: input.episode } : {}),
@@ -4172,7 +4712,6 @@ export class CreatorConversationCoordinator {
       ...(input.job ? { job: input.job } : {}),
       expectedHead: { sequence: loaded.head.sequence, commitHash: loaded.head.commitHash },
     });
-    const next = await this.store.load(conversation.id);
     this.loaded.set(conversation.id, next);
     this.controlViews.delete(conversation.id);
     this.emit();
@@ -4572,7 +5111,7 @@ async function latestAgentRun(
   return binding ? ((await store.artifactStore.read(binding.agentRun)) as AgentRunView) : undefined;
 }
 
-function materializeModelRegistry(
+export function materializeModelRegistry(
   defaultModelId: CreatorModelId,
   catalog: CreatorModelCatalog,
   generatedAt: string,
@@ -4590,6 +5129,12 @@ function materializeModelRegistry(
           availability?.status === "unconfirmed" || availability === undefined
             ? "unknown"
             : availability.status,
+        imageInput:
+          availability?.inputModalities == null
+            ? "unknown"
+            : availability.inputModalities.includes("image")
+              ? "supported"
+              : "unsupported",
         requiredCapabilities: ["tools"] as const,
         providerFallback: "disabled" as const,
         ...(availability && availability.reason !== "catalog_confirmed"
@@ -5046,7 +5591,7 @@ function turnTypesForEpisode(episode: CreatorWorkEpisode | undefined) {
   return [] as const;
 }
 
-function hasUnfinishedAgentWork(conversation: LoadedCreatorConversation): boolean {
+function unfinishedAgentJobs(conversation: LoadedCreatorConversation): readonly CreatorWorkJob[] {
   // A recovery job takes over its exact predecessor's work. Historical unknown
   // outcomes stay in the ledger, but only unreplaced jobs can occupy the project.
   const replaced = new Set(
@@ -5054,7 +5599,7 @@ function hasUnfinishedAgentWork(conversation: LoadedCreatorConversation): boolea
       job.resumesJob ? [`${job.resumesJob.id}:${job.resumesJob.hash}`] : [],
     ),
   );
-  return conversation.jobs.some(
+  return conversation.jobs.filter(
     (job) =>
       job.agentExecutions.length > 0 &&
       !replaced.has(`${job.id}:${job.hash}`) &&
@@ -5094,12 +5639,21 @@ function agentRecoveryCandidate(
 }
 
 function agentRecoveryAction(job: CreatorWorkJob): "resume_work" | "retry_work" | undefined {
-  if (job.jobType === "agent_action")
+  if (job.jobType === "agent_action") {
+    if (
+      job.agentExecutions.length === 1 &&
+      job.agentExecutions[0]?.purpose === "planner" &&
+      job.status === "outcome_unknown" &&
+      job.providerOutcome === "outcome_unknown" &&
+      job.failure?.code === "provider_outcome_unknown"
+    )
+      return "retry_work";
     return job.status === "failed" &&
       job.providerOutcome === "never_dispatched" &&
       job.failure?.code === "agent_action_resume_exact"
       ? "resume_work"
       : undefined;
+  }
   if (
     job.status === "failed" &&
     job.providerOutcome === "never_dispatched" &&
@@ -5371,7 +5925,8 @@ function decisionForAction(
   if (id === "build_plan" || id === "retry_build") return "build";
   if (id === "revise_plan") return "revise_plan";
   if (id === "reject_plan") return "reject_plan";
-  if (id === "apply_changes" || id === "resume_build") return "apply";
+  if (id === "apply_changes") return "apply";
+  if (id === "resume_build") return "resume_build";
   if (id === "reject_changes") return "reject_change";
   if (id === "retry_play") return "retry_play";
   if (id === "cancel_changes") return "cancel_change";
@@ -5694,6 +6249,9 @@ export async function transactionMilestoneEvents(input: {
     assertAgentRun(run);
     failureMessage = agentRunFailure(run).message;
   }
+  if (creatorBuildRetryAvailable(bundle))
+    failureMessage =
+      "The build stopped before it could finish. Your accepted plan is retained. Choose Retry build to verify and restore completed draft work from the saved run, then continue. Details contains the original error.";
   const terminal = terminalOutputEvent(bundle, episode, existingEvents, failureMessage);
   if (terminal) {
     if (bundle.preparationFailure)

@@ -30529,7 +30529,13 @@
             "engineType": "UDim",
             "scriptType": "UDim"
           },
-          "serialized": false
+          "serialized": false,
+          "setterEffects": [
+            "BottomLeftRadius",
+            "BottomRightRadius",
+            "TopLeftRadius",
+            "TopRightRadius"
+          ]
         },
         {
           "catalogType": {
@@ -30552,7 +30558,10 @@
           "reflection": {
             "engineType": "UDim",
             "scriptType": "UDim"
-          }
+          },
+          "setterEffects": [
+            "CornerRadius"
+          ]
         },
         {
           "catalogType": {
@@ -37159,7 +37168,7 @@
       "source": "forbidden"
     }
   ],
-  "evidenceContractHash": "205bd764dbb07f3298581b01d13dcb3f040b1817e7ff4097b2551cb0b1f43413",
+  "evidenceContractHash": "c172a17c4ca85c8073a030e8f372a94c77ca14ebfbd6d296a15511ef41796fa0",
   "kind": "StudioCapabilityManifest",
   "limits": {
     "maximumDiagnostics": 32,

@@ -22,6 +22,55 @@ with internal status records.
 Registered benchmarks are a separate developer workflow. Their evaluator files
 and treatment configuration are not ordinary creator inputs.
 
+## Current product priority: Blender-backed worlds
+
+Forge's next major capability is a Blender-backed spatial compiler that produces
+reviewed, partitioned scene bundles while retaining Roblox-native gameplay,
+collision, stable identities, editability, and evidence. Blender is the visual-world
+compiler, not an unrestricted code executor or a substitute for Studio authority.
+Cube/CubePart remains an optional individual-asset research path, not the primary
+direction. The complete decision and boundary live in
+[Visual generation](VISUALS.md).
+
+Judge progress through rendered gameplay views and creator review. Object count,
+planner effort, a local eligibility result, or a successful mesh preview does not
+establish better visual quality. Materials, lighting, composition, interface,
+feedback, device performance, and gameplay behavior remain distinct concerns.
+
+## Creator interaction
+
+The dashboard is a conversation workspace, not a transaction console. Projects
+follow saved identity; conversations keep independent context; cosmetic names do
+not affect either. Long histories compact into durable model-authored handoffs while
+the original transcript remains retained. Drafts survive ordinary navigation and
+same-tab reconnects.
+
+Public activity is concise and expandable. The chat carries the creator request,
+plan, progress that helps the creator understand current work, and one final
+Markdown result. Exact source diffs, checks, usage, traces, and recovery evidence
+belong in Details. Private reasoning, internal journals, projection identifiers,
+and machine bookkeeping do not become chat prose.
+
+Planning never edits Studio. The creator can accept, change, or reject a plan.
+Acceptance starts Build and automatic Apply under that exact authority; it is not
+approval of unrelated later work. Ordinary Play is optional and never keeps a
+conversation artificially open. The creator reports what they observed in the same
+conversation, while Forge preserves the distinction between that report and captured
+engine facts.
+
+Reference images also belong in the ordinary prompt. Forge retains their exact
+pixels and internal correspondence, but creators may refer to visible content in
+natural language. They need no screenshot-classification form, filenames, or image
+numbers. Model interpretation may guide an inspected edit; it cannot certify capture
+provenance, Studio identity, or the resulting visual quality.
+
+Errors present one readable original boundary and the next supported action. A
+browser disconnect does not erase admitted work. An ambiguous provider response or
+Studio recording is observed before any retry is offered, and a restart never
+repeats an effect automatically. Accessibility requires labeled icons, visible
+focus, readable contrast, keyboard closure/restoration, usable touch targets, and
+reduced-motion alternatives.
+
 ## Authority stays explicit
 
 | Source                    | Authority                                                    |
@@ -64,6 +113,9 @@ paths, and credentials never enter builder-visible context.
   outright. Keep one current path and archive evidence before an authorized reset.
 - **Claims match evidence.** Successful editing, static checks, runtime facts,
   visual quality, and gameplay correctness are different claims.
+- **World authoring is visible.** Ordinary game worlds are persistent Studio
+  instances under declared `Workspace` roots. Runtime-generated primary worlds are
+  an explicit creator choice, never an optimization hidden inside a source file.
 
 ## Scope
 
@@ -71,8 +123,8 @@ Forge currently runs as a local service and Studio plugin. It has a fixed model
 registry, typed authoring policy, optional declared Rojo support, and a separate
 registered-experiment path. It does not provide cloud collaboration, arbitrary
 plugin execution, an unrestricted Studio scripting endpoint, general asset search,
-or automatic proof of game quality.
+automatic proof of game quality, or the planned Blender compiler/importer.
 
 [Architecture](ARCHITECTURE.md) describes implementation,
-[Creator experience](CREATOR-EXPERIENCE.md) describes the interface, and
+[Visual generation](VISUALS.md) defines the visual direction, and
 [Roadmap](ROADMAP.md) defines the next work.

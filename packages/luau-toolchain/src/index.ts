@@ -144,16 +144,24 @@ export function analyzeStudioSourcesWithRobloxLuau(
     );
     const candidateFiles = sourceFiles.slice(0, sources.length).map((source) => source.file);
     const result = analyzeWithRobloxLuau(temporaryRoot, candidateFiles, options);
-    const sourceByFile = new Map(sourceFiles.map((source) => [source.file, source]));
-    const issues = result.issues.map((issue) => remapStudioIssue(issue, sourceByFile));
-    const remappedIssueIds = new Map(
-      result.issues.map((issue, index) => [issue.id, issues[index]!.id]),
+    const sourceByFile = new Map(
+      sourceFiles.flatMap((source) =>
+        studioDiagnosticPaths(source.file, temporaryRoot).map((path) => [path, source] as const),
+      ),
     );
+    const remappedIssues = result.issues.map((issue) => remapStudioIssue(issue, sourceByFile));
+    const remappedIssueIds = new Map(
+      result.issues.map((issue, index) => [issue.id, remappedIssues[index]!.id]),
+    );
+    // luau-lsp can report a module once through an import and again as a
+    // directly analyzed file. Deduplicate only after their source identities
+    // have been resolved against this exact temporary project.
+    const issues = [...new Map(remappedIssues.map((issue) => [issue.id, issue])).values()];
     return {
       ...result,
       tiers: result.tiers.map((entry) => ({
         ...entry,
-        issueIds: entry.issueIds.map((id) => remappedIssueIds.get(id) ?? id),
+        issueIds: [...new Set(entry.issueIds.map((id) => remappedIssueIds.get(id) ?? id))],
       })) as LuauAnalysisResult["tiers"],
       issues,
       stdout: remapStudioDiagnosticOutput(result.stdout, sourceFiles, temporaryRoot),
@@ -747,8 +755,12 @@ function remapStudioIssue(
   sourceByFile: ReadonlyMap<string, StudioLuauAnalysisSource & { file: string }>,
 ): VerificationIssue {
   if (!issue.path) return issue;
-  const source = sourceByFile.get(basename(issue.path));
+  const decorated = issue.path.match(/^(.+) \[game\/(.+)\]$/);
+  const source = sourceByFile.get(decorated?.[1] ?? issue.path);
   if (!source) return issue;
+  // The bracketed label is not authority on its own. Both its generated file
+  // and its complete DataModel path must match the host's source map.
+  if (decorated && decorated[2] !== source.studioPath) return issue;
   const location = issue.location ?? { line: 0, column: 0 };
   return {
     ...issue,
@@ -764,15 +776,19 @@ function remapStudioDiagnosticOutput(
 ): string {
   let value = output;
   for (const source of sources) {
-    const absolute = resolve(root, source.file);
-    const variants = [
-      absolute,
-      relative(toolExecutionRoot(), absolute).split(sep).join("/"),
-      source.file,
-    ].sort((left, right) => right.length - left.length);
+    const variants = studioDiagnosticPaths(source.file, root).sort(
+      (left, right) => right.length - left.length,
+    );
     for (const variant of variants) value = value.split(variant).join(source.studioPath);
   }
   return value;
+}
+
+function studioDiagnosticPaths(file: string, root: string): string[] {
+  const absolute = resolve(root, file);
+  // The compiler reports candidate-relative paths, while luau-lsp may report
+  // absolute paths or paths relative to its pinned tool execution directory.
+  return [absolute, relative(toolExecutionRoot(), absolute).split(sep).join("/"), file];
 }
 
 function normalizeRule(value: string): string {

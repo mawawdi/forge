@@ -5,6 +5,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import {
   ImmutableJsonArtifactStore,
+  serializeCanonicalJson,
   type ArtifactReference,
 } from "../../artifact-store/src/index.js";
 import { contentHash, stableJson } from "../../contracts/src/index.js";
@@ -54,7 +55,51 @@ export interface AssetGeometry {
   vertexCount: number;
   triangleCount: number;
   bounds: { min: AssetVector; max: AssetVector };
-  groups: string[];
+  regions: AssetGeometryRegion[];
+  topology: AssetTopology;
+  warnings: AssetGeometryWarning[];
+}
+export interface AssetGeometryRegion {
+  kind: "object" | "group";
+  name: string;
+  triangleCount: number;
+  referencedVertexCount: number;
+  bounds: { min: AssetVector; max: AssetVector } | null;
+}
+/** Validated source-frame data. The summary alone is retained in AssetLock. */
+export interface ParsedObjMesh {
+  vertices: AssetVector[];
+  triangles: Array<[number, number, number]>;
+  regions: Array<{ kind: AssetGeometryRegion["kind"]; name: string; triangleIds: number[] }>;
+  appearance: {
+    normalCount: number;
+    textureCoordinateCount: number;
+    smoothingDeclarationCount: number;
+  };
+  geometry: AssetGeometry;
+}
+export interface AssetTopology {
+  basis: "obj_vertex_indices";
+  referencedVertexCount: number;
+  unreferencedVertexCount: number;
+  edgeCount: number;
+  boundaryEdgeCount: number;
+  nonManifoldEdgeCount: number;
+  inconsistentWindingEdgeCount: number;
+  edgeConnectedComponentCount: number;
+  duplicateTriangleCount: number;
+  unlabelledTriangleCount: number;
+}
+export interface AssetGeometryWarning {
+  code:
+    | "boundary_edges"
+    | "disconnected_surfaces"
+    | "duplicate_triangles"
+    | "empty_regions"
+    | "inconsistent_winding"
+    | "non_manifold_edges"
+    | "unreferenced_vertices";
+  detail: string;
 }
 export interface AssetFit {
   scale: number;
@@ -63,7 +108,7 @@ export interface AssetFit {
   clearance: number;
 }
 export interface AssetProvenance {
-  kind: "recorded_obj" | "cube_local";
+  kind: "recorded_obj" | "cube_local" | "cube_remote";
   source: string;
   license: string;
   codeHash: string;
@@ -97,7 +142,7 @@ export class AssetError extends Error {
 const hashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const provenanceSchema = z
   .object({
-    kind: z.enum(["recorded_obj", "cube_local"]),
+    kind: z.enum(["recorded_obj", "cube_local", "cube_remote"]),
     source: z.string().min(1).max(2048),
     license: z.string().min(1).max(2048),
     codeHash: hashSchema,
@@ -140,15 +185,33 @@ export function inspectObj(
   bytes: Uint8Array,
   policy: AssetInspectionPolicy = DEFAULT_ASSET_INSPECTION_POLICY,
 ): AssetGeometry {
+  return parseObjMesh(bytes, policy).geometry;
+}
+
+/** One parser owns admission, triangulation, memberships and summary measurements. */
+export function parseObjMesh(
+  bytes: Uint8Array,
+  policy: AssetInspectionPolicy = DEFAULT_ASSET_INSPECTION_POLICY,
+): ParsedObjMesh {
   validateInspectionPolicy(policy);
   if (bytes.byteLength < 1 || bytes.byteLength > policy.maximumBytes)
     throw new AssetError("resource_limit", "OBJ bytes exceed inspection policy");
-  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  const text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
   const vertices: AssetVector[] = [];
-  const triangles: number[][] = [];
-  const groups = new Set<string>();
+  const triangles: Array<[number, number, number]> = [];
+  const regions = new Map<
+    string,
+    {
+      kind: AssetGeometryRegion["kind"];
+      name: string;
+      triangleIds: number[];
+    }
+  >();
+  let activeObject: string | undefined;
+  let activeGroup: string | undefined;
   let normals = 0;
   let textures = 0;
+  let smoothingDeclarations = 0;
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.split("#", 1)[0]!.trim();
     if (!line) continue;
@@ -193,10 +256,19 @@ export function inspectObj(
           return resolved;
         })[0]!;
       });
+      if (face.length > 3) assertConvexPlanarPolygon(face.map((index) => vertices[index]!));
       for (let index = 1; index + 1 < face.length; index++) {
-        triangles.push([face[0]!, face[index]!, face[index + 1]!]);
+        const triangle: [number, number, number] = [face[0]!, face[index]!, face[index + 1]!];
+        triangles.push(triangle);
         if (triangles.length > policy.maximumTriangles)
           throw new AssetError("resource_limit", "OBJ triangle budget exceeded");
+        // OBJ object and group declarations are independent, persistent memberships.
+        // Vertices alone do not give either region geometry; only subsequent faces do.
+        for (const key of [activeObject, activeGroup]) {
+          if (key === undefined) continue;
+          const region = regions.get(key)!;
+          region.triangleIds.push(triangles.length - 1);
+        }
       }
     } else if (tag === "g" || tag === "o") {
       if (parts.length !== 1 || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(parts[0]!))
@@ -204,11 +276,18 @@ export function inspectObj(
           "invalid_geometry",
           "OBJ object/group names must be bounded identifiers",
         );
-      groups.add(parts[0]!);
-      if (groups.size > 256) throw new AssetError("resource_limit", "OBJ group budget exceeded");
+      const kind = tag === "o" ? "object" : "group";
+      const name = parts[0]!;
+      const key = `${kind}:${name}`;
+      if (!regions.has(key)) regions.set(key, { kind, name, triangleIds: [] });
+      if (regions.size > 256)
+        throw new AssetError("resource_limit", "OBJ object/group region budget exceeded");
+      if (kind === "object") activeObject = key;
+      else activeGroup = key;
     } else if (tag === "s") {
       if (parts.length !== 1 || !/^(off|0|[1-9]\d*)$/.test(parts[0]!))
         throw new AssetError("invalid_geometry", "Malformed OBJ smoothing declaration");
+      smoothingDeclarations++;
     } else
       throw new AssetError(
         "unsupported_obj_record",
@@ -224,6 +303,117 @@ export function inspectObj(
     if (Math.hypot(u.y * v.z - u.z * v.y, u.z * v.x - u.x * v.z, u.x * v.y - u.y * v.x) <= 1e-12)
       throw new AssetError("degenerate_geometry", "OBJ contains a degenerate triangle");
   }
+  const memberships = [...regions.values()].sort((a, b) =>
+    a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+  );
+  return {
+    vertices,
+    triangles,
+    regions: memberships,
+    appearance: {
+      normalCount: normals,
+      textureCoordinateCount: textures,
+      smoothingDeclarationCount: smoothingDeclarations,
+    },
+    geometry: summarizeObjMesh({ vertices, triangles, regions: memberships }),
+  };
+}
+
+/** One summary implementation for validated ingestion and retained review buffers. */
+export function summarizeObjMesh(
+  mesh: Pick<ParsedObjMesh, "vertices" | "triangles" | "regions">,
+): AssetGeometry {
+  const labelled = new Uint8Array(mesh.triangles.length);
+  const measuredRegions = mesh.regions
+    .map((region): AssetGeometryRegion => {
+      const vertices = new Set<number>();
+      for (const triangleId of region.triangleIds) {
+        labelled[triangleId] = 1;
+        for (const vertex of mesh.triangles[triangleId]!) vertices.add(vertex);
+      }
+      return {
+        kind: region.kind,
+        name: region.name,
+        triangleCount: region.triangleIds.length,
+        referencedVertexCount: vertices.size,
+        bounds: vertices.size ? measureBounds([...vertices].map((id) => mesh.vertices[id]!)) : null,
+      };
+    })
+    .sort((a, b) =>
+      a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+    );
+  let unlabelledTriangleCount = 0;
+  for (const value of labelled) if (!value) unlabelledTriangleCount++;
+  const topology = measureTopology(mesh.vertices.length, mesh.triangles, unlabelledTriangleCount);
+  return {
+    vertexCount: mesh.vertices.length,
+    triangleCount: mesh.triangles.length,
+    bounds: measureBounds(mesh.vertices),
+    regions: measuredRegions,
+    topology,
+    warnings: geometryWarnings(topology, measuredRegions),
+  };
+}
+
+/** A fan is unambiguous only for a convex planar polygon with its boundary in order. */
+function assertConvexPlanarPolygon(points: readonly AssetVector[]): void {
+  const reject = () => {
+    throw new AssetError(
+      "unsupported_polygon",
+      "OBJ polygons must be convex and planar with a simple ordered boundary; triangulate this face explicitly before ingestion",
+    );
+  };
+  const bounds = measureBounds(points);
+  const extent = Math.max(...AXES.map((axis) => bounds.max[axis] - bounds.min[axis]));
+  if (!Number.isFinite(extent) || extent <= 0) reject();
+  // Normalize before geometric predicates: translation and source units must
+  // not determine whether an otherwise identical polygon is admitted.
+  const origin = points[0]!;
+  const local = points.map((point) => ({
+    x: (point.x - origin.x) / extent,
+    y: (point.y - origin.y) / extent,
+    z: (point.z - origin.z) / extent,
+  }));
+  const normal = { x: 0, y: 0, z: 0 };
+  for (let index = 0; index < local.length; index++) {
+    const a = local[index]!;
+    const b = local[(index + 1) % local.length]!;
+    normal.x += a.y * b.z - a.z * b.y;
+    normal.y += a.z * b.x - a.x * b.z;
+    normal.z += a.x * b.y - a.y * b.x;
+  }
+  const magnitude = Math.hypot(normal.x, normal.y, normal.z);
+  const tolerance = Number.EPSILON * 128;
+  if (magnitude <= tolerance) reject();
+  for (const axis of AXES) normal[axis] /= magnitude;
+  if (
+    local.some(
+      (point) => Math.abs(point.x * normal.x + point.y * normal.y + point.z * normal.z) > 1e-9,
+    )
+  )
+    reject();
+  // Every nonincident vertex must lie strictly on the interior side of each
+  // oriented edge. Unlike adjacent-turn tests, this also rejects star polygons.
+  // Faces have at most 64 vertices, bounding these pairwise predicates.
+  for (let index = 0; index < local.length; index++) {
+    const next = (index + 1) % local.length;
+    const a = local[index]!;
+    const b = local[next]!;
+    const edge = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+    for (let other = 0; other < local.length; other++) {
+      if (other === index || other === next) continue;
+      const point = local[other]!;
+      const delta = { x: point.x - a.x, y: point.y - a.y, z: point.z - a.z };
+      const side =
+        (edge.y * delta.z - edge.z * delta.y) * normal.x +
+        (edge.z * delta.x - edge.x * delta.z) * normal.y +
+        (edge.x * delta.y - edge.y * delta.x) * normal.z;
+      if (side <= tolerance) reject();
+    }
+  }
+}
+
+function measureBounds(vertices: Iterable<AssetVector>): { min: AssetVector; max: AssetVector } {
   const min = { x: Infinity, y: Infinity, z: Infinity };
   const max = { x: -Infinity, y: -Infinity, z: -Infinity };
   for (const vertex of vertices)
@@ -231,12 +421,119 @@ export function inspectObj(
       min[axis] = Math.min(min[axis], vertex[axis]);
       max[axis] = Math.max(max[axis], vertex[axis]);
     }
-  return {
-    vertexCount: vertices.length,
-    triangleCount: triangles.length,
-    bounds: { min, max },
-    groups: [...groups].sort(),
+  return { min, max };
+}
+
+/** Index connectivity is reproducible evidence, not a geometric watertightness or visual-quality test. */
+function measureTopology(
+  vertexCount: number,
+  triangles: readonly number[][],
+  unlabelledTriangleCount: number,
+): AssetTopology {
+  const referenced = new Set<number>();
+  const faces = new Set<string>();
+  const edges = new Map<string, { count: number; direction: number; triangle: number }>();
+  const parents = Int32Array.from({ length: triangles.length }, (_, index) => index);
+  const ranks = new Uint8Array(triangles.length);
+  const find = (index: number): number => {
+    while (parents[index] !== index) {
+      parents[index] = parents[parents[index]!]!;
+      index = parents[index]!;
+    }
+    return index;
   };
+  let components = triangles.length;
+  let duplicates = 0;
+  for (const [index, face] of triangles.entries()) {
+    const faceKey = [...face].sort((a, b) => a - b).join(":");
+    if (faces.has(faceKey)) duplicates++;
+    faces.add(faceKey);
+    for (let corner = 0; corner < 3; corner++) {
+      const a = face[corner]!;
+      const b = face[(corner + 1) % 3]!;
+      referenced.add(a);
+      const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+      const direction = a < b ? 1 : -1;
+      const edge = edges.get(key);
+      if (!edge) edges.set(key, { count: 1, direction, triangle: index });
+      else {
+        edge.count++;
+        edge.direction += direction;
+        let first = find(index);
+        let second = find(edge.triangle);
+        if (first !== second) {
+          if (ranks[first]! < ranks[second]!) [first, second] = [second, first];
+          parents[second] = first;
+          if (ranks[first] === ranks[second]) ranks[first] = ranks[first]! + 1;
+          components--;
+        }
+      }
+    }
+  }
+  let boundary = 0;
+  let nonManifold = 0;
+  let inconsistentWinding = 0;
+  for (const edge of edges.values()) {
+    if (edge.count === 1) boundary++;
+    if (edge.count > 2) nonManifold++;
+    if (edge.count === 2 && edge.direction !== 0) inconsistentWinding++;
+  }
+  return {
+    basis: "obj_vertex_indices",
+    referencedVertexCount: referenced.size,
+    unreferencedVertexCount: vertexCount - referenced.size,
+    edgeCount: edges.size,
+    boundaryEdgeCount: boundary,
+    nonManifoldEdgeCount: nonManifold,
+    inconsistentWindingEdgeCount: inconsistentWinding,
+    edgeConnectedComponentCount: components,
+    duplicateTriangleCount: duplicates,
+    unlabelledTriangleCount,
+  };
+}
+
+function geometryWarnings(
+  topology: AssetTopology,
+  regions: readonly AssetGeometryRegion[],
+): AssetGeometryWarning[] {
+  const warnings: AssetGeometryWarning[] = [];
+  if (topology.boundaryEdgeCount)
+    warnings.push({
+      code: "boundary_edges",
+      detail: `${topology.boundaryEdgeCount} index edges have one incident triangle; inspect open surfaces or split vertex seams.`,
+    });
+  if (topology.edgeConnectedComponentCount > 1)
+    warnings.push({
+      code: "disconnected_surfaces",
+      detail: `${topology.edgeConnectedComponentCount} triangle components share no index edges; inspect intentional separate pieces, fragmentation or split seams.`,
+    });
+  if (topology.duplicateTriangleCount)
+    warnings.push({
+      code: "duplicate_triangles",
+      detail: `${topology.duplicateTriangleCount} triangles repeat an existing set of vertex indices, ignoring winding.`,
+    });
+  const emptyRegions = regions.filter((region) => region.triangleCount === 0).length;
+  if (emptyRegions)
+    warnings.push({
+      code: "empty_regions",
+      detail: `${emptyRegions} object/group labels contain no faces and cannot satisfy a requested part.`,
+    });
+  if (topology.inconsistentWindingEdgeCount)
+    warnings.push({
+      code: "inconsistent_winding",
+      detail: `${topology.inconsistentWindingEdgeCount} edges with two incident triangles have matching edge direction; inspect face orientation.`,
+    });
+  if (topology.nonManifoldEdgeCount)
+    warnings.push({
+      code: "non_manifold_edges",
+      detail: `${topology.nonManifoldEdgeCount} index edges have more than two incident triangles; inspect overlapping or non-manifold surfaces.`,
+    });
+  if (topology.unreferencedVertexCount)
+    warnings.push({
+      code: "unreferenced_vertices",
+      detail: `${topology.unreferencedVertexCount} vertices have no faces but remain included in the conservative fit bounds.`,
+    });
+  return warnings;
 }
 
 export function fitAssetGeometry(geometry: AssetGeometry, spec: AssetSpec): AssetFit {
@@ -262,8 +559,8 @@ export function fitAssetGeometry(geometry: AssetGeometry, spec: AssetSpec): Asse
       throw new AssetError("unsatisfiable_bounds", "Fitted geometry violates clearance");
   }
   for (const part of spec.namedParts)
-    if (!geometry.groups.includes(part))
-      throw new AssetError("missing_part", `Requested OBJ group is absent: ${part}`);
+    if (!geometry.regions.some((region) => region.name === part && region.triangleCount > 0))
+      throw new AssetError("missing_part", `Requested OBJ object/group has no faces: ${part}`);
   return { scale, translation, bounds: { min, max }, clearance: spec.clearance };
 }
 
@@ -292,6 +589,21 @@ export class AssetRegistry {
       throw new AssetError(
         "hash_mismatch",
         "Recorded OBJ bytes do not match their declared content hash",
+      );
+    if (input.bytes.byteLength < 1 || input.bytes.byteLength > this.policy.maximumBytes)
+      throw new AssetError("resource_limit", "OBJ bytes exceed inspection policy");
+    const sourceRecord = {
+      kind: "RecordedObjBytes",
+      sourceHash,
+      utf8Bytes: input.bytes.byteLength,
+      // Keep a leading UTF-8 BOM so re-encoding reproduces the exact pinned bytes.
+      obj: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(input.bytes),
+    };
+    const sourceArtifactBytes = Buffer.byteLength(serializeCanonicalJson(sourceRecord), "utf8");
+    if (sourceArtifactBytes > this.store.maxBytes)
+      throw new AssetError(
+        "resource_limit",
+        `OBJ source artifact exceeds the configured artifact store byte limit (${sourceArtifactBytes} > ${this.store.maxBytes}); raw source and serialized JSON have separate byte limits`,
       );
     const geometry = inspectObj(input.bytes, this.policy);
     const fit = fitAssetGeometry(geometry, spec);
@@ -323,12 +635,7 @@ export class AssetRegistry {
       seen.add(pin.assetId);
     }
     dependencies.sort((a, b) => (a.assetId < b.assetId ? -1 : a.assetId > b.assetId ? 1 : 0));
-    const sourceArtifact = await this.store.write({
-      kind: "RecordedObjBytes",
-      sourceHash,
-      utf8Bytes: input.bytes.byteLength,
-      obj: new TextDecoder("utf-8", { fatal: true }).decode(input.bytes),
-    });
+    const sourceArtifact = await this.store.write(sourceRecord);
     const value = {
       kind: "AssetLock" as const,
       assetId: spec.id,
@@ -345,7 +652,8 @@ export class AssetRegistry {
       limitations: [
         "Recorded geometry and a requested fit transform are inspected locally; the original bytes are preserved unchanged.",
         "The fit transform must be applied and rechecked by a separately admitted importer. Roblox upload, ownership, moderation, asset permission, rendering, collision and persistence are unverified.",
-        "Named OBJ groups are labels, not proof of separate engine parts. Socket coordinates are declarations within the requested envelope.",
+        "OBJ object/group membership and bounds are measured from faces; labels are not proof of separate engine parts. Socket coordinates are declarations within the requested envelope.",
+        "Topology counts use OBJ vertex indices without welding. Warnings are inspection facts, not a visual-quality score or proof of watertightness; self-intersections, coincident shells, appearance, texture quality and semantic part meaning are unchecked.",
       ],
     };
     const lock: AssetLock = { ...value, hash: contentHash(stableJson(value)) };
@@ -367,6 +675,64 @@ export class AssetRegistry {
   }
 }
 
+const cubeGenerationSchema = z.discriminatedUnion("operation", [
+  z
+    .object({
+      operation: z.literal("cube3d"),
+      seed: z.number().int().min(0).max(2147483647),
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("cubepart"),
+      seed: z.number().int().min(0).max(2147483647),
+      input: z
+        .object({
+          sourceArtifact: z
+            .object({
+              locator: z.string().regex(/^artifacts\/[a-f0-9]{64}\.json$/),
+              artifactHash: hashSchema,
+              bytes: z.number().int().safe().positive(),
+            })
+            .strict()
+            .refine(
+              (reference) => reference.locator === `artifacts/${reference.artifactHash}.json`,
+              "CubePart input artifact locator must match its hash",
+            ),
+          sha256: hashSchema,
+          bytes: z
+            .number()
+            .int()
+            .positive()
+            .max(16 * 1024 * 1024),
+        })
+        .strict(),
+      parts: z
+        .array(
+          z
+            .object({
+              id: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/),
+              prompt: z.string().min(1).max(512),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(8)
+        .refine(
+          (parts) => new Set(parts.map((part) => part.id)).size === parts.length,
+          "CubePart part identifiers must be unique",
+        ),
+    })
+    .strict(),
+]);
+export type CubeGeneration = z.infer<typeof cubeGenerationSchema>;
+
+/** Declared host-pinned inputs only; parsing does not retrieve or verify input bytes. */
+export function parseCubeGeneration(input: unknown): CubeGeneration {
+  assertBoundedGameJson(input, DEFAULT_GAME_ADMISSION_POLICY);
+  return cubeGenerationSchema.parse(input);
+}
+
 export interface CubeJobIntent {
   kind: "CubeJobIntent";
   jobId: string;
@@ -374,6 +740,7 @@ export interface CubeJobIntent {
   codeHash: string;
   configurationHash: string;
   checkpointHashes: string[];
+  generation: CubeGeneration;
   hash: string;
 }
 export function createCubeJobIntent(input: {
@@ -381,36 +748,47 @@ export function createCubeJobIntent(input: {
   codeHash: string;
   configurationHash: string;
   checkpointHashes: string[];
+  generation?: CubeGeneration;
 }): CubeJobIntent {
   const spec = validateAssetSpec(input.spec);
   hashSchema.parse(input.codeHash);
   hashSchema.parse(input.configurationHash);
-  if (input.checkpointHashes.length !== 2)
-    throw new AssetError("invalid_pin", "Cube needs exact GPT and shape checkpoint hashes");
-  input.checkpointHashes.forEach((hash) => hashSchema.parse(hash));
+  const checkpointHashes = z.array(hashSchema).min(1).max(16).parse(input.checkpointHashes);
   const value = {
     kind: "CubeJobIntent" as const,
     jobId: randomUUID(),
     spec,
     codeHash: input.codeHash,
     configurationHash: input.configurationHash,
-    checkpointHashes: [...input.checkpointHashes],
+    checkpointHashes,
+    generation: parseCubeGeneration(
+      input.generation === undefined ? { operation: "cube3d", seed: 0 } : input.generation,
+    ),
   };
   return { ...value, hash: contentHash(stableJson(value)) };
 }
-export function assertCubeJobIntent(intent: CubeJobIntent): void {
-  assertBoundedGameJson(intent as unknown, DEFAULT_GAME_ADMISSION_POLICY);
-  if (intent.kind !== "CubeJobIntent" || !/^[a-f0-9-]{36}$/.test(intent.jobId))
-    throw new AssetError("invalid_job", "Malformed Cube job identity");
-  const { hash, ...value } = intent;
+const cubeJobIntentSchema = z
+  .object({
+    kind: z.literal("CubeJobIntent"),
+    jobId: z
+      .string()
+      .regex(/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/),
+    spec: assetSpecSchema,
+    codeHash: hashSchema,
+    configurationHash: hashSchema,
+    checkpointHashes: z.array(hashSchema).min(1).max(16),
+    generation: cubeGenerationSchema,
+    hash: hashSchema,
+  })
+  .strict();
+
+export function assertCubeJobIntent(intent: unknown): asserts intent is CubeJobIntent {
+  assertBoundedGameJson(intent, DEFAULT_GAME_ADMISSION_POLICY);
+  const parsed = cubeJobIntentSchema.parse(intent);
+  const { hash, ...value } = parsed;
   if (contentHash(stableJson(value)) !== hash)
     throw new AssetError("hash_mismatch", "Cube intent hash mismatch");
-  validateAssetSpec(intent.spec);
-  hashSchema.parse(intent.codeHash);
-  hashSchema.parse(intent.configurationHash);
-  if (intent.checkpointHashes.length !== 2)
-    throw new AssetError("invalid_pin", "Cube checkpoint inventory mismatch");
-  intent.checkpointHashes.forEach((pin) => hashSchema.parse(pin));
+  validateAssetSpec(parsed.spec);
 }
 
 export function connectedAssetProviderStatus(provider: "generation_service" | "open_cloud"): {
@@ -507,3 +885,13 @@ export async function readPinnedAssetFile(
 }
 
 export * from "./cube-worker.js";
+export * from "./cube-remote.js";
+export * from "./jobs.js";
+export * from "./mesh-review.js";
+export * from "./mesh-review-html.js";
+export type {
+  ReviewedAssetCompositionPin,
+  ReviewedAssetCompositionBinding,
+  ReviewedAssetCompositionResolution,
+  ReviewedAssetCompositionCatalog,
+} from "./composition.js";

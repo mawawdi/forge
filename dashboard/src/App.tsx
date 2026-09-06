@@ -13,7 +13,9 @@ import { GameBuildWindow } from "./components/GameBuildWindow";
 import type { CreatorConversationEvent } from "./types";
 
 const TechnicalDetailsSheet = lazy(() => import("./components/TechnicalDetailsSheet"));
-const LATEST_BUTTON_THRESHOLD_PX = 72;
+// A small nudge upward is usually just a reader checking the prior activity.
+// Keep the affordance out of the way until they have moved meaningfully into history.
+const LATEST_BUTTON_THRESHOLD_PX = 1024;
 
 function isMeaningfullyAwayFromLatest(scroller: HTMLElement): boolean {
   return (

@@ -5,11 +5,18 @@ import { contentHash, stableJson } from "../../contracts/src/index.js";
 import type { GamePlacementParent, GameSourcePackage } from "../../game-ir/src/index.js";
 export { createForgeRuntimeRecipe } from "./recipe.js";
 
-export const FORGE_RUNTIME_ABI = "forge-runtime@1";
-export const FORGE_RUNTIME_MODULE_IDS = ["event", "scope", "state-machine", "task"] as const;
+export const FORGE_RUNTIME_ABI = "forge-runtime@2";
+export const FORGE_RUNTIME_MODULE_IDS = [
+  "event",
+  "network",
+  "scope",
+  "state-machine",
+  "task",
+] as const;
 export type ForgeRuntimeModuleId = (typeof FORGE_RUNTIME_MODULE_IDS)[number];
 const MODULE_NAMES: Record<ForgeRuntimeModuleId, string> = {
   event: "Event",
+  network: "Network",
   scope: "Scope",
   "state-machine": "StateMachine",
   task: "Task",
@@ -43,7 +50,7 @@ const lockSchema = z
           })
           .strict(),
       )
-      .length(4),
+      .length(FORGE_RUNTIME_MODULE_IDS.length),
     bundleHash: hashSchema,
   })
   .strict();
@@ -126,7 +133,11 @@ export function forgeRuntimeSourcePackage(
 } {
   assertForgeRuntimeBundle(bundle);
   assertStudioPath(options.rootPath);
-  if (options.parent.kind !== "generated" && options.parent.path !== options.rootPath)
+  if (
+    options.parent.kind !== "generated" &&
+    options.parent.kind !== "component_output" &&
+    options.parent.path !== options.rootPath
+  )
     throw new Error("Runtime import path must match its exact installation parent");
   const componentId = options.componentId ?? "forge-runtime";
   const prefix = options.operationPrefix ?? componentId;
@@ -178,53 +189,6 @@ export function emitStaticModuleImport(input: { localName: string; studioPath: s
   const [service, ...children] = assertStudioPath(input.studioPath);
   const expression = `game:GetService(${JSON.stringify(service)})${children.map((child) => `:WaitForChild(${JSON.stringify(child)})`).join("")}`;
   return `local ${input.localName} = require(${expression})`;
-}
-
-/** Optional ordinary Script source; the host never invokes these module exports. */
-export function emitScopedBootstrap(input: {
-  scopeStudioPath: string;
-  modules: Array<{ localName: string; studioPath: string; startExport: string }>;
-}): string {
-  const names = new Set([
-    "ForgeScope",
-    "scope",
-    "destroying",
-    "ok",
-    "failure",
-    "cleanupErrors",
-    "cleanup",
-  ]);
-  const starts: string[] = [];
-  for (const module of input.modules) {
-    assertIdentifier(module.localName);
-    assertIdentifier(module.startExport);
-    if (names.has(module.localName)) throw new Error("Duplicate or reserved bootstrap local name");
-    names.add(module.localName);
-    starts.push(
-      emitStaticModuleImport(module),
-      `local cleanup = ${module.localName}.${module.startExport}(scope)`,
-      "if cleanup ~= nil then scope:Defer(cleanup) end",
-    );
-  }
-  return [
-    "--!strict",
-    emitStaticModuleImport({ localName: "ForgeScope", studioPath: input.scopeStudioPath }),
-    "local scope = ForgeScope.new()",
-    "local destroying = script.Destroying:Connect(function()",
-    "  local cleanupErrors = scope:Close()",
-    "  for _, failure in cleanupErrors do warn(failure.message) end",
-    "end)",
-    "scope:Defer(function() destroying:Disconnect() end)",
-    "local ok, failure = xpcall(function()",
-    ...starts.map((line) => `  ${line}`),
-    "end, debug.traceback)",
-    "if not ok then",
-    "  local cleanupErrors = scope:Close()",
-    "  for _, cleanup in cleanupErrors do warn(cleanup.message) end",
-    "  error(failure)",
-    "end",
-    "",
-  ].join("\n");
 }
 
 export function assertForgeRuntimeBundle(bundle: ForgeRuntimeBundle): void {

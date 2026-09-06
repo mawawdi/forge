@@ -125,6 +125,75 @@ test("characterization: a source nocheck directive overrides the host strict def
   );
 });
 
+test("imported and directly analyzed Studio module errors have one canonical identity", () => {
+  const result = analyzeStudioSourcesWithRobloxLuau({
+    nodes: [],
+    sources: [
+      {
+        id: "server",
+        studioPath: "ServerScriptService/GameServer",
+        className: "Script",
+        source:
+          'local model = require(game:GetService("ServerScriptService"):WaitForChild("RunModel"))\nprint(model)',
+      },
+      {
+        id: "run",
+        studioPath: "ServerScriptService/RunModel",
+        className: "ModuleScript",
+        source: "local model = {}\nfunction model.step()\n  return RunModel\nend\nreturn model",
+      },
+    ],
+  });
+  const errors = result.issues.filter((issue) => issue.message.includes("Unknown global"));
+  assert.equal(errors.length, 1, JSON.stringify(errors));
+  assert.equal(errors[0]?.path, "ServerScriptService/RunModel");
+  assert.equal(result.tiers[1].status, "fail");
+  for (const tier of result.tiers) assert.equal(new Set(tier.issueIds).size, tier.issueIds.length);
+});
+
+test("Studio diagnostic aliases require both the generated file and its exact mapped path", () => {
+  withFakeToolchain(({ writeTool }) => {
+    writeTool(
+      "lsp",
+      [
+        'const file = process.argv.find((argument) => argument.endsWith("_run.luau"));',
+        'const diagnostic = ":38.10-38.18: TypeError: Unknown global RunModel\\n";',
+        "process.stderr.write(file + diagnostic);",
+        'process.stderr.write(file + " [game/ServerScriptService/RunModel]" + diagnostic);',
+        'process.stderr.write(file + " [game/ServerScriptService/Other]" + diagnostic);',
+        'process.stderr.write(file.replace("_run.luau", "_unknown.luau") + " [game/ServerScriptService/RunModel]" + diagnostic);',
+        'process.stderr.write("/untrusted/" + require("node:path").basename(file) + " [game/ServerScriptService/RunModel]" + diagnostic);',
+        "process.exit(1);",
+      ].join("\n"),
+    );
+    const result = analyzeStudioSourcesWithRobloxLuau({
+      nodes: [],
+      sources: [
+        {
+          id: "run",
+          studioPath: "ServerScriptService/RunModel",
+          className: "ModuleScript",
+          source: "return {}",
+        },
+      ],
+    });
+    assert.equal(result.issues.length, 4);
+    assert.equal(
+      result.issues.filter((issue) => issue.path === "ServerScriptService/RunModel").length,
+      1,
+    );
+    assert.ok(
+      result.issues.some((issue) => issue.path?.includes("[game/ServerScriptService/Other]")),
+    );
+    assert.ok(result.issues.some((issue) => issue.path?.includes("_unknown.luau [game/")));
+    assert.ok(result.issues.some((issue) => issue.path?.startsWith("/untrusted/")));
+    assert.deepEqual(
+      result.tiers[1].issueIds,
+      result.issues.map((issue) => issue.id),
+    );
+  });
+});
+
 for (const [tool, ruleId, completedSyntax] of [
   ["compile", "LUAU_SYNTAX_TOOL_TIMEOUT", false],
   ["rojo", "ROBLOX_SOURCEMAP_TOOL_TIMEOUT", true],

@@ -250,6 +250,7 @@ export async function replayCreatorOfflineRegression(input: {
             contentHash(stableJson(terminal.checkpoint.result)) !== binding.terminalResultHash
           )
             throw new Error("AgentRun differs from its immutable terminal journal binding");
+          return loaded;
         },
       });
       add(

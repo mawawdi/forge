@@ -21,6 +21,7 @@ import {
   bindGameBuildPartition,
   createGamePartitionBinding,
   gameTopologyFromCapture,
+  gameGeneratedTarget,
   gameBuildPartitionOperations,
   compareGameBuildArtifactReuse,
   type GameInventoryItem,
@@ -74,6 +75,7 @@ const REGISTRY = createGameDefinitionRegistry([DEFINITION]);
 function design(count = 1): GameDesignSpec {
   return {
     kind: "GameDesignSpec",
+    worldAuthoring: { mode: "none" },
     id: "compiler-fixture",
     intent: "Materialize independently declared editor objects.",
     components: [
@@ -180,6 +182,77 @@ function build(compiled: GamePlan) {
   }).graph;
 }
 
+test("persistent worlds require exact authored roots containing spatial geometry", () => {
+  const root: GameInventoryItem = {
+    id: "scene-root",
+    componentId: "material",
+    change: {
+      id: "scene-root",
+      kind: "create",
+      className: "Folder",
+      initialization: "initial_properties",
+      path: "Workspace/Scene",
+      parent: { kind: "engine_container", path: "Workspace", className: "Workspace" },
+    },
+    lockedProperties: {},
+    valueSlots: [],
+    attributes: {},
+    removedAttributes: [],
+    dependencies: [],
+  };
+  const floor: GameInventoryItem = {
+    id: "scene-floor",
+    componentId: "material",
+    change: {
+      id: "scene-floor",
+      kind: "create",
+      className: "Part",
+      initialization: "initial_properties",
+      path: "Workspace/Scene/Floor",
+      parent: gameGeneratedTarget({
+        projectId: PROJECT_ID,
+        operationId: root.id,
+        path: "Workspace/Scene",
+        className: "Folder",
+      }),
+    },
+    lockedProperties: {},
+    valueSlots: [],
+    attributes: {},
+    removedAttributes: [],
+    dependencies: [root.id],
+  };
+  const persistent = design(2);
+  persistent.worldAuthoring = { mode: "persistent", roots: ["Workspace/Scene"] };
+  const before = capture();
+  assert.doesNotThrow(() =>
+    compileGamePlan({
+      design: persistent,
+      registry: REGISTRY,
+      projectId: PROJECT_ID,
+      project: PROJECT,
+      initialTopology: gameTopologyFromCapture(before),
+      sessionId: "persistent-world",
+      observedRevisionHash: before.revision.hash,
+      inventory: [root, floor],
+    }),
+  );
+  assert.throws(
+    () =>
+      compileGamePlan({
+        design: persistent,
+        registry: REGISTRY,
+        projectId: PROJECT_ID,
+        project: PROJECT,
+        initialTopology: gameTopologyFromCapture(before),
+        sessionId: "empty-persistent-world",
+        observedRevisionHash: before.revision.hash,
+        inventory: [root],
+      }),
+    /contains no authored spatial geometry/,
+  );
+});
+
 test("whole candidates partition by native operation and encoded evidence limits", () => {
   const compiled = plan(folders(129));
   const graph = build(compiled);
@@ -264,23 +337,142 @@ test("entrypoints activate only in the final bounded transaction", () => {
     change: { ...entrypoint.change, id: "entry-" + index, path: "Workspace/Entry" + index },
     source: { fileId: "entry-" + index, content: { kind: "slot" as const, maximumUtf8Bytes: 100 } },
   }));
+  assert.throws(() => plan(tooMany), /Entrypoint activation component/);
+  const dependent = { ...folders(1)[0]!, dependencies: [entrypoint.id] };
   assert.throws(
-    () =>
-      materializeGameBuildGraph({
-        plan: plan(tooMany),
-        acceptanceHash: ACCEPTANCE,
-        sources: tooMany.map((item) => ({ slotId: item.id, source: "print('ready')" })),
-        values: [],
-        checks: CHECKS,
-      }),
-    /Entrypoint activation component/,
+    () => plan([entrypoint, dependent]),
+    /Entrypoint activation includes dependent allocations/,
+    "An explicit operation-order dependency fails before approval or source authoring",
   );
+  const child = {
+    ...folders(1)[0]!,
+    change: {
+      ...folders(1)[0]!.change,
+      kind: "create" as const,
+      className: "Folder" as const,
+      initialization: "initial_properties" as const,
+      path: entrypoint.change.path + "/Child",
+      parent: gameGeneratedTarget({
+        projectId: PROJECT_ID,
+        operationId: entrypoint.id,
+        path: entrypoint.change.path,
+        className: "Script",
+      }),
+    },
+  };
+  assert.throws(
+    () => plan([entrypoint, child]),
+    /Entrypoint activation includes dependent allocations/,
+  );
+  assert.throws(
+    () => plan([entrypoint, folders(1)[0]!].map((item) => ({ ...item, atomicGroup: "together" }))),
+    /Entrypoint activation includes dependent allocations/,
+  );
+});
+
+test("component content dependencies preserve provenance without ordering allocations after activation", () => {
+  const before = capture();
+  const spec: GameDesignSpec = {
+    kind: "GameDesignSpec",
+    worldAuthoring: { mode: "none" },
+    id: "activation-dependencies",
+    intent: "Compose server and client source without conflating content and activation order.",
+    components: ["server", "client"].map((componentId) => ({
+      kind: "source_package" as const,
+      id: componentId,
+      ports: [],
+      obligations: [],
+      files: ["main", "utility"].map((fileId) => ({
+        id: fileId,
+        path: fileId + ".luau",
+        context: componentId === "server" ? ("server" as const) : ("client" as const),
+        role: fileId === "main" ? ("entrypoint" as const) : ("module" as const),
+        content: { kind: "slot" as const, maximumUtf8Bytes: 100 },
+        imports: fileId === "main" ? [{ componentId, fileId: "utility" }] : [],
+        placement: {
+          kind: "create" as const,
+          operationId: componentId + "-" + fileId,
+          name: componentId + "-" + fileId,
+          className:
+            fileId === "utility"
+              ? ("ModuleScript" as const)
+              : componentId === "server"
+                ? ("Script" as const)
+                : ("LocalScript" as const),
+          parent: {
+            kind: "engine_container" as const,
+            path: "Workspace",
+            className: "Workspace",
+          },
+        },
+      })),
+    })),
+    connections: [],
+    artifactDependencies: [{ from: "client", to: "server" }],
+  };
+  const input = {
+    design: spec,
+    registry: createGameDefinitionRegistry([]),
+    projectId: PROJECT_ID,
+    project: PROJECT,
+    initialTopology: gameTopologyFromCapture(before),
+  };
+  const compiled = compileGamePlan({
+    ...input,
+    ...expandGameDesign(input),
+    sessionId: "activation-dependencies",
+    observedRevisionHash: before.revision.hash,
+  });
+  assert.deepEqual(
+    compiled.inventory.find((item) => item.id === "client-utility")!.dependencies,
+    [],
+  );
+  assert.deepEqual(compiled.inventory.find((item) => item.id === "client-main")!.dependencies, [
+    "client-utility",
+  ]);
+  const material = (serverMain: string) =>
+    materializeGameBuildGraph({
+      plan: compiled,
+      acceptanceHash: ACCEPTANCE,
+      sources: compiled.inventory.map((item) => ({
+        slotId: item.id,
+        source: item.id === "server-main" ? serverMain : "return {}",
+      })),
+      values: [],
+      checks: CHECKS,
+    }).graph;
+  const first = material("print('first')");
+  assert.deepEqual(
+    first.partitions.map((partition) => partition.operationIds.length),
+    [2, 2],
+  );
+  assert.ok(
+    gameBuildPartitionOperations(first, 0).every(
+      (operation) => operation.target.className === "ModuleScript",
+    ),
+  );
+  assert.ok(
+    gameBuildPartitionOperations(first, 1).every((operation) =>
+      ["Script", "LocalScript"].includes(operation.target.className),
+    ),
+  );
+  const second = material("print('second')");
+  const client = (graph: typeof first) =>
+    graph.artifacts.find(
+      (artifact) =>
+        artifact.kind === "source" &&
+        artifact.componentId === "client" &&
+        artifact.fileId === "utility",
+    )!;
+  assert.equal(client(first).hash, client(second).hash);
+  assert.notEqual(client(first).inputHash, client(second).inputHash);
 });
 
 test("source dependency changes invalidate importer check inputs without rewriting equal bytes", () => {
   const before = capture();
   const spec: GameDesignSpec = {
     kind: "GameDesignSpec",
+    worldAuthoring: { mode: "none" },
     id: "imports",
     intent: "Compose ordinary source dependencies.",
     components: [
@@ -388,6 +580,7 @@ test("ordinary installed source packages retain a declared hash-bound import clo
   };
   const spec: GameDesignSpec = {
     kind: "GameDesignSpec",
+    worldAuthoring: { mode: "none" },
     id: "existing-source",
     intent: "Compose existing ordinary modules without rewriting them.",
     connections: [],
@@ -505,6 +698,7 @@ test("ordinary source packages materialize exact locks and approved slots withou
   const source = "return { answer = 42 }\n";
   const spec: GameDesignSpec = {
     kind: "GameDesignSpec",
+    worldAuthoring: { mode: "none" },
     id: "novel-code",
     intent: "Install an ordinary module with novel behavior.",
     components: [

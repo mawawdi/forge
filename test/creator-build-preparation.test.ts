@@ -25,8 +25,11 @@ import { LocalCreatorAgentWorker } from "../packages/creator-session/src/worker.
 import { CreatorSessionCoordinator } from "../packages/creator-session/src/coordinator.js";
 import type { CreatorSessionBundle } from "../packages/creator-session/src/index.js";
 
-test("accepting a plan builds once and hands the sealed graph to checkpoint preparation", async () => {
+test("accepting a plan builds once and hands the sealed graph to checkpoint preparation", async (context) => {
   const saved = await incident();
+  const directory = await mkdtemp(join(tmpdir(), "forge-plan-request-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const artifactStore = new ImmutableJsonArtifactStore(directory);
   let session = createCreatorSession({
     prompt: saved.plan.goal,
     projectId: saved.session.projectId,
@@ -38,6 +41,14 @@ test("accepting a plan builds once and hands the sealed graph to checkpoint prep
   session = advanceSession(session, { status: "awaiting_plan_approval", plan: saved.plan });
   const bundle = {
     session,
+    creatorRequest: await artifactStore.write({
+      kind: "CreatorRequest",
+      sessionId: session.id,
+      promptHash: session.promptHash,
+      creatorText: saved.plan.goal,
+      agentPrompt: `Build the approved inventory.\n${saved.plan.goal}`,
+      contextCitations: [],
+    }),
     plan: saved.plan,
     ownership: saved.ownership,
     approvals: [],
@@ -49,11 +60,19 @@ test("accepting a plan builds once and hands the sealed graph to checkpoint prep
   let applies = 0;
   const graph = { id: "game_build_graph_auto", hash: "a".repeat(64) };
   const harness = Object.assign(Object.create(CreatorSessionCoordinator.prototype), {
+    artifactStore,
     bundles: new Map([[session.id, bundle]]),
     input: {
       worker: {
-        build: async () => {
+        build: async (request: {
+          creatorPrompt: string;
+          agentPrompt: string;
+          initialImages: readonly unknown[];
+        }) => {
           builds++;
+          assert.equal(request.creatorPrompt, saved.plan.goal);
+          assert.equal(request.agentPrompt, `Build the approved inventory.\n${saved.plan.goal}`);
+          assert.deepEqual(request.initialImages, []);
           return {
             status: "sealed",
             graph,
@@ -67,8 +86,6 @@ test("accepting a plan builds once and hands the sealed graph to checkpoint prep
     },
     persist: async (value: unknown) => value,
     publishView: async () => undefined,
-    creatorPrompt: async () => saved.plan.goal,
-    agentPrompt: async () => saved.plan.goal,
     sourceEvidence: async () => ({}),
     observationForBundle: async () => saved.projectIndex,
     retainSourceWriteBlobs: async (value: unknown) => value,
@@ -127,6 +144,10 @@ test("retry build retains exact approval only across unchanged authority and all
     },
     approvals: [saved.planApproval],
     mutationAttempts: [],
+    rojoSourceMutations: [],
+    changeSets: [],
+    agentRuns: [],
+    buildContracts: [],
     preparationFailure: {
       execution: original,
       failure: {

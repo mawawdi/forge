@@ -140,4 +140,6 @@ and classifications when consolidating research; never relabel historical artifa
 as current-schema evidence or imply they survived an authorized store reset.
 
 Historical observations live only in the [research index](RESEARCH.md). Current
-quality gates are listed in [Development](DEVELOPMENT.md).
+quality gates are listed in the [repository guide](../README.md#develop-and-verify).
+Visual generation and review use the same vocabulary; their specific boundaries
+are collected in [Visual generation](VISUALS.md#visual-claim-boundary).

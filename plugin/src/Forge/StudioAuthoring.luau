@@ -172,16 +172,21 @@ end
 
 
 local function propertyMaterial(instance: Instance, propertyName: string, registry, encodeReference: ((Instance, any) -> any)?): string
-	return Generated.canonicalValueMaterial(Generated.read(instance, propertyName, function(reference: Instance, property: any)
+	local observed = Generated.readProjectProperty(instance, propertyName, function(reference: Instance, property: any)
 		if encodeReference ~= nil then return encodeReference(reference, property) end
 		return referenceEncoder(registry, reference, property)
-	end))
+	end)
+	-- Preserve an exact native before-state without admitting an unbounded
+	-- authored value or accepting it as a finite mutation postcondition.
+	if observed.kind == "observed_vector2_f32" then return "native_before:" .. Canonical.material(observed) end
+	return Generated.canonicalValueMaterial(observed)
 end
 
 local function exactPropertyFact(instance: Instance, className: string, propertyName: string, expected: any, registry, encodeReference: ((Instance, any) -> any)?): any
 	local metadata = Generated.propertyMetadata(className, propertyName)
 	if not metadata then error("property is not writable in the generated manifest: " .. propertyName) end
-	local before = propertyMaterial(instance, propertyName, registry, encodeReference)
+	local captured, before = pcall(propertyMaterial, instance, propertyName, registry, encodeReference)
+	if not captured then error("Cannot capture mutation before-state for " .. className .. "." .. propertyName .. ": " .. tostring(before)) end
 	local after = Generated.canonicalValueMaterial(Generated.validateValue(metadata.codec, expected, metadata))
 	return exactMutationFact("property", instance, propertyName, function() return propertyMaterial(instance, propertyName, registry, encodeReference) == before end, function() return propertyMaterial(instance, propertyName, registry, encodeReference) == after end)
 end
@@ -910,7 +915,7 @@ local function transactionCursorPayload(value: any): any
 			or not exactHash(value.finalization.expectedCurrentProjectRevisionHash)
 			or not boundedWhole(value.finalization.expectedCurrentProjectDetectorEpoch, 0, 9007199254740991)
 		) then error("creator transaction finalization expected-current binding is malformed") end
-		if value.finalization.finalizationKind == "recovery_cancel" and (value.finalization.action ~= "cancel" or value.finalization.recovery ~= true or value.finalization.replacesAction == nil) then
+		if value.finalization.finalizationKind == "recovery_cancel" and (value.finalization.action ~= "cancel" or value.finalization.recovery ~= true) then
 			error("creator transaction recovery cancellation provenance is malformed")
 		end
 		if value.finalization.finalizationKind == "ordinary" and (value.finalization.recovery ~= nil or value.finalization.replacesAction ~= nil) then
@@ -1046,7 +1051,6 @@ local function finalizationReceiptPayload(value: any): any
 		or not boundedWhole(value.expectedCurrentProjectDetectorEpoch, 0, 9007199254740991)
 		or (value.finalizationKind ~= "ordinary" and value.finalizationKind ~= "recovery_cancel")
 		or (value.replacesAction ~= nil and value.replacesAction ~= "commit" and value.replacesAction ~= "cancel")
-		or (value.finalizationKind == "recovery_cancel" and value.replacesAction == nil)
 		or (value.finalizationKind == "ordinary" and value.replacesAction ~= nil)
 	then error("creator finalization receipt is malformed") end
 	local payload = {
@@ -1153,18 +1157,17 @@ local function beginFinalization(plugin: Plugin, binding: any, action: string, m
 	return setActive(plugin, intent)
 end
 
--- A closure failure after the original Finish is not permission to replay that
--- action. If Studio later proves the exact recording is still open, a creator
--- may authorize one distinct recovery cancellation. Its durable intent retains
--- the replaced action and the recovery gate, so it cannot be confused with a
--- retry of the original commit/cancel.
+-- An exact still-open cursor grants one creator-authorized recovery cancellation.
+-- If an ordinary Finish was attempted, retain that action as replacement
+-- provenance. An open cursor has no displaced action. Both paths bind the fresh
+-- recovery capture; neither can retry an already attempted recovery cancellation.
 local function beginRecoveryCancellation(plugin: Plugin, binding: any, expected: any): any
 	local current = assertTransactionCursor(binding)
-	if current.phase ~= "finalization_intent"
-		or typeof(current.finalization) ~= "table"
-		or current.finalization.recovery == true
-		or (current.finalization.action ~= "commit" and current.finalization.action ~= "cancel")
-		or typeof(current.recovery) ~= "table"
+	local openCancellation = current.phase == "open" and current.finalization == nil
+	local replacementCancellation = current.phase == "finalization_intent"
+		and typeof(current.finalization) == "table" and current.finalization.finalizationKind == "ordinary"
+		and current.finalization.recovery ~= true
+	if (not openCancellation and not replacementCancellation) or typeof(current.recovery) ~= "table"
 	then error("recovery cancellation intent is malformed") end
 	if typeof(expected) ~= "table"
 		or expected.projectIndexManifestId ~= current.recovery.projectIndexManifestId
@@ -1173,11 +1176,12 @@ local function beginRecoveryCancellation(plugin: Plugin, binding: any, expected:
 	then error("recovery cancellation expected-current binding mismatch") end
 	local replacement = table.clone(current)
 	replacement.cursorHash = nil
+	replacement.phase = "finalization_intent"
 	replacement.finalization = {
 		action = "cancel",
 		recovery = true,
 		finalizationKind = "recovery_cancel",
-		replacesAction = current.finalization.action,
+		replacesAction = if replacementCancellation then current.finalization.action else nil,
 		expectedCurrentProjectIndexManifestId = current.recovery.projectIndexManifestId,
 		expectedCurrentProjectRevisionHash = current.recovery.projectRevisionHash,
 		expectedCurrentProjectDetectorEpoch = current.recovery.projectDetectorEpoch,
@@ -2233,21 +2237,19 @@ function StudioAuthoring:acknowledgeFinalization(payload: any)
 end
 
 function StudioAuthoring:cancelInterrupted(payload: any, beforeFinish: ((any) -> ())?)
+	if typeof(payload) ~= "table" or payload.action ~= "cancel" then error("interrupted-recording cancellation action is malformed") end
 	local stored = activeSetting(self.plugin)
-	if typeof(stored) ~= "table"
-		or stored.phase ~= "finalization_intent"
-		or typeof(stored.finalization) ~= "table"
-		or stored.finalization.recovery == true
+	local openCancellation = typeof(stored) == "table" and stored.phase == "open" and stored.finalization == nil and payload.replacesAction == nil
+	local replacementCancellation = typeof(stored) == "table" and stored.phase == "finalization_intent"
+		and typeof(stored.finalization) == "table" and stored.finalization.finalizationKind == "ordinary"
+		and stored.finalization.recovery ~= true and payload.replacesAction == stored.finalization.action
+	if (not openCancellation and not replacementCancellation)
 		or typeof(stored.recovery) ~= "table"
 		or not sameRecordingBinding(payload, stored)
-		or payload.recoveryProjectIndexManifestId ~= stored.recovery.projectIndexManifestId
-		or payload.recoveryProjectRevisionHash ~= stored.recovery.projectRevisionHash
-		or payload.recoveryProjectDetectorEpoch ~= stored.recovery.projectDetectorEpoch
 		or payload.expectedCurrentProjectIndexManifestId ~= stored.recovery.projectIndexManifestId
 		or payload.expectedCurrentProjectRevisionHash ~= stored.recovery.projectRevisionHash
 		or payload.expectedCurrentProjectDetectorEpoch ~= stored.recovery.projectDetectorEpoch
 		or payload.finalizationKind ~= "recovery_cancel"
-		or payload.replacesAction ~= stored.finalization.action
 	then error("interrupted-recording cancellation binding mismatch") end
 	if exactRecordingState(stored.recordingId, function()
 		return changeHistoryService():IsRecordingInProgress(stored.recordingId)
@@ -2257,8 +2259,8 @@ function StudioAuthoring:cancelInterrupted(payload: any, beforeFinish: ((any) ->
 		projectRevisionHash = stored.recovery.projectRevisionHash,
 		projectDetectorEpoch = stored.recovery.projectDetectorEpoch,
 	}
-	-- This writes a different recovery-cancel intent and retains the original
-	-- action in `replacesAction`; it is never a retry of that original Finish.
+	-- Persist the new cancellation intent before Finish. A displaced ordinary
+	-- intent retains its action; a previously open cursor supplies no such action.
 	local cancellationIntent = beginRecoveryCancellation(self.plugin, stored, expected)
 	local cancelled, cancelledOrFailure = self:closeRecordingAndPersistFinalization(cancellationIntent, stored.recordingId, Enum.FinishRecordingOperation.Cancel, beforeFinish)
 	if not cancelled then error("RECOVERY_REQUIRED: " .. tostring(cancelledOrFailure)) end
@@ -2392,6 +2394,10 @@ end
 
 function StudioAuthoring.settingKeysForTest()
 	return { active = ACTIVE_RECORDING_SETTING, finalization = FINALIZATION_RECEIPT_SETTING, lastCommit = LAST_COMMIT_SETTING }
+end
+
+function StudioAuthoring.exactPropertyFactForTest(instance: Instance, propertyName: string, expected: any): any
+	return exactPropertyFact(instance, instance.ClassName, propertyName, expected, {})
 end
 
 function StudioAuthoring.possibleRecordingForTest(active: any, stored: any, observeAnyRecording: () -> boolean): boolean

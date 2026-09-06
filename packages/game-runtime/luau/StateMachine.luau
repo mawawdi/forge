@@ -1,5 +1,5 @@
 --!strict
--- ForgeRuntime, MIT. ABI forge-runtime@1.
+-- ForgeRuntime, MIT. ABI forge-runtime@2.
 local StateMachine = {}
 local methods = {}
 methods.__index = methods

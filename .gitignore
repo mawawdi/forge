@@ -12,8 +12,6 @@ target/
 *.rbxl.lock
 *.rbxlx.lock
 reference-plugin/
-dashboard/test-results/
-dashboard/playwright-report/
 .agents/
 **.png
-!dashboard/e2e/*-snapshots/*.png
+**__pycache__/

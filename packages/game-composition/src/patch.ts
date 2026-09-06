@@ -1,3 +1,9 @@
+import {
+  compositionConfigDataSchema,
+  COMPOSITION_ID_SCHEMA,
+  COMPOSITION_NAME_SCHEMA,
+  COMPOSITION_MEMBER_SCHEMA,
+} from "./config-schema.js";
 import { z } from "zod";
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 import {
@@ -24,90 +30,94 @@ import type {
 import type { GameInventoryItem } from "../../game-compiler/src/index.js";
 import {
   CompositionError,
-  arraySchema,
   boundedConfig,
   createItem,
   engineParent,
-  idSchema,
   itemId,
-  objectSchema,
   outputParent,
   uniqueById,
   type CompositionContext,
   type CompositionOutput,
 } from "./common.js";
 
-const jsonSchema = { type: "string", maxLength: 65536 } as const;
-const parentSchema = z
-  .object({ kind: z.enum(["engine", "object", "generated"]), id: z.string() })
+const parentSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("engine"), id: z.string().min(1).max(1024) }).strict(),
+  z.object({ kind: z.literal("object"), id: z.string().min(1).max(1024) }).strict(),
+  z.object({ kind: z.literal("generated"), id: COMPOSITION_ID_SCHEMA }).strict(),
+]);
+const operationFields = {
+  id: COMPOSITION_ID_SCHEMA.describe(
+    "Local patch operation ID. A create operation exposes this exact ID as a component_output parent alias; the host derives its private inventory identity.",
+  ),
+  properties: z
+    .array(z.object({ name: COMPOSITION_MEMBER_SCHEMA, valueJson: z.string().max(65536) }).strict())
+    .max(256),
+  valueSlots: z
+    .array(
+      z
+        .object({
+          id: COMPOSITION_ID_SCHEMA,
+          propertyName: COMPOSITION_MEMBER_SCHEMA,
+          schemaJson: z.string().max(65536),
+        })
+        .strict(),
+    )
+    .max(256),
+  attributes: z
+    .array(z.object({ name: COMPOSITION_MEMBER_SCHEMA, valueJson: z.string().max(65536) }).strict())
+    .max(64),
+  removedAttributes: z.array(COMPOSITION_MEMBER_SCHEMA).max(64),
+  dependencies: z.array(COMPOSITION_ID_SCHEMA).max(4096),
+};
+const operationSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      ...operationFields,
+      kind: z.literal("create"),
+      className: z.string().min(1).max(64),
+      parent: parentSchema,
+      name: COMPOSITION_NAME_SCHEMA,
+      removedAttributes: operationFields.removedAttributes.max(0),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationFields,
+      kind: z.literal("update"),
+      objectId: z.string().min(1).max(1024),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationFields,
+      kind: z.literal("move"),
+      objectId: z.string().min(1).max(1024),
+      parent: parentSchema,
+      name: COMPOSITION_NAME_SCHEMA,
+    })
+    .strict(),
+  z
+    .object({
+      ...operationFields,
+      kind: z.literal("delete"),
+      objectId: z.string().min(1).max(1024),
+      properties: operationFields.properties.max(0),
+      valueSlots: operationFields.valueSlots.max(0),
+      attributes: operationFields.attributes.max(0),
+      removedAttributes: operationFields.removedAttributes.max(0),
+    })
+    .strict(),
+]);
+export const STUDIO_PATCH_CONFIG_SCHEMA = z
+  .object({ operations: z.array(operationSchema).min(1).max(4096) })
   .strict();
-const operationSchema = z
-  .object({
-    id: z.string(),
-    kind: z.enum(["create", "update", "move", "delete"]),
-    className: z.string().optional(),
-    objectId: z.string().optional(),
-    parent: parentSchema.optional(),
-    name: z.string().optional(),
-    properties: z
-      .array(z.object({ name: z.string(), valueJson: z.string().max(65536) }).strict())
-      .max(256),
-    valueSlots: z
-      .array(
-        z
-          .object({ id: z.string(), propertyName: z.string(), schemaJson: z.string().max(65536) })
-          .strict(),
-      )
-      .max(256),
-    attributes: z
-      .array(z.object({ name: z.string(), valueJson: z.string().max(65536) }).strict())
-      .max(64),
-    removedAttributes: z.array(z.string()).max(64),
-    dependencies: z.array(z.string()).max(4096),
-  })
-  .strict();
-const configSchema = z.object({ operations: z.array(operationSchema).min(1).max(4096) }).strict();
-export type StudioPatchConfig = z.infer<typeof configSchema>;
+export type StudioPatchConfig = z.infer<typeof STUDIO_PATCH_CONFIG_SCHEMA>;
 export const STUDIO_PATCH_DEFINITION: GameRecipeDefinition = {
   kind: "GameRecipeDefinition",
   sourceExports: [],
   id: "studio-patch",
   abi: "1",
-  configSchema: objectSchema({
-    operations: arraySchema(
-      objectSchema(
-        {
-          id: idSchema,
-          kind: { type: "string", maxLength: 16, enum: ["create", "update", "move", "delete"] },
-          className: idSchema,
-          objectId: { type: "string", maxLength: 1024 },
-          parent: objectSchema({
-            kind: { type: "string", maxLength: 16, enum: ["engine", "object", "generated"] },
-            id: { type: "string", maxLength: 1024 },
-          }),
-          name: idSchema,
-          properties: arraySchema(objectSchema({ name: idSchema, valueJson: jsonSchema }), 256),
-          valueSlots: arraySchema(
-            objectSchema({ id: idSchema, propertyName: idSchema, schemaJson: jsonSchema }),
-            256,
-          ),
-          attributes: arraySchema(objectSchema({ name: idSchema, valueJson: jsonSchema }), 64),
-          removedAttributes: arraySchema(idSchema, 64),
-          dependencies: arraySchema(idSchema, 4096),
-        },
-        [
-          "id",
-          "kind",
-          "properties",
-          "valueSlots",
-          "attributes",
-          "removedAttributes",
-          "dependencies",
-        ],
-      ),
-      4096,
-    ),
-  }),
+  configSchema: compositionConfigDataSchema(STUDIO_PATCH_CONFIG_SCHEMA),
   ports: [],
   obligations: [
     {
@@ -125,7 +135,7 @@ export function compileStudioPatch(
   input: unknown,
 ): CompositionOutput {
   boundedConfig(input);
-  const config = configSchema.parse(input);
+  const config = STUDIO_PATCH_CONFIG_SCHEMA.parse(input);
   const operations = uniqueById(config.operations);
   const observed = new Map(
     context.observation?.instances.map((instance) => [instance.objectId, instance]) ?? [],
@@ -165,7 +175,7 @@ export function compileStudioPatch(
       );
     const dependencies = op.dependencies.map((dependency) => expand(dependency).id);
     const parent = (): StudioMutationParent => {
-      if (!op.parent)
+      if (!("parent" in op))
         throw new CompositionError("invalid_parent", "Create/move requires an explicit parent");
       if (op.parent.kind === "engine") return engineParent(op.parent.id);
       if (op.parent.kind === "generated") {
@@ -182,16 +192,7 @@ export function compileStudioPatch(
         className: instance.className,
       };
     };
-    const target = op.objectId ? lookup(op.objectId) : undefined;
-    if (
-      op.kind === "create"
-        ? target !== undefined || !op.className
-        : !target || op.className !== undefined
-    )
-      throw new CompositionError(
-        "invalid_operation",
-        "Create specifies className; existing mutation specifies only an observed objectId",
-      );
+    const target = op.kind === "create" ? undefined : lookup(op.objectId);
     if (target?.engineContainer)
       throw new CompositionError(
         "unsupported_target",
@@ -269,27 +270,6 @@ export function compileStudioPatch(
           "invalid_attribute",
           "Removed attributes cannot overlap writes or reserved names",
         );
-    if (
-      (op.kind === "delete" &&
-        (op.properties.length ||
-          op.valueSlots.length ||
-          op.attributes.length ||
-          op.removedAttributes.length)) ||
-      (op.kind === "create" && op.removedAttributes.length)
-    )
-      throw new CompositionError(
-        "invalid_payload",
-        "Patch payload is incompatible with its operation",
-      );
-    if (
-      op.kind === "create" || op.kind === "move"
-        ? !op.name
-        : op.parent !== undefined || op.name !== undefined
-    )
-      throw new CompositionError(
-        "invalid_operation",
-        "Only create/move supplies a name and parent",
-      );
     let item: GameInventoryItem;
     if (op.kind === "create")
       item = createItem(
@@ -353,6 +333,7 @@ export function compileStudioPatch(
     }
     item = {
       ...item,
+      ...(op.kind === "create" ? { outputId: op.id } : {}),
       valueSlots,
       attributes,
       removedAttributes: [...op.removedAttributes],

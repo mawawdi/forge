@@ -13,6 +13,35 @@ local DirectRuntimeObserver = require("../plugin/src/Forge/DirectRuntimeObserver
 local Constants = require("../plugin/src/Forge/Constants")
 local ConnectorPresentation = require("../plugin/src/Forge/ConnectorPresentation")
 local fs = require("@lune/fs")
+require("./test-runtime-recording-recovery")
+require("./test-open-recording-cancellation")
+require("./test-runtime-recovery-inventory")
+require("./test-studio-project-unbounded")
+require("./test-project-change-diagnostics")
+
+do
+	local Roblox = require("@lune/roblox")
+	local constraint = { ClassName = "UISizeConstraint", MaxSize = Roblox.Vector2.new(math.huge, math.huge) }
+	local expected = { kind = "vector2_f32", x = 640, y = 480 }
+	local fact = StudioAuthoring.exactPropertyFactForTest(constraint, "MaxSize", expected)
+	assert(fact.matchesBefore() and not fact.matchesAfter(), "native unbounded defaults must have exact before-state matchers")
+	constraint.MaxSize = Roblox.Vector2.new(640, 480)
+	assert(not fact.matchesBefore() and fact.matchesAfter(), "finite assignment must match only the approved after-state")
+	constraint.MaxSize = Roblox.Vector2.new(math.huge, 480)
+	assert(not fact.matchesBefore() and not fact.matchesAfter(), "an unrelated partial unbounded edit must not inherit an exemption")
+	local mixed = StudioAuthoring.exactPropertyFactForTest(constraint, "MaxSize", expected)
+	assert(mixed.matchesBefore(), "mixed finite/unbounded axes must retain their exact values")
+	constraint.MaxSize = Roblox.Vector2.new(math.huge, 481)
+	assert(not mixed.matchesBefore(), "finite axes must remain exact")
+	constraint.MaxSize = Roblox.Vector2.new(math.huge, math.huge)
+	assert(fact.matchesBefore(), "cancellation must recognize the captured engine default")
+	assert(not pcall(function() Generated.read(constraint, "MaxSize") end), "private before-state support must not widen canonical final evidence")
+	assert(not pcall(function() Generated.validateValue("vector2_f32", { kind = "vector2_f32", x = math.huge, y = 480 }) end), "authored infinity must remain rejected")
+	constraint.MaxSize = Roblox.Vector2.new(math.huge, 0 / 0)
+	assert(not pcall(function() StudioAuthoring.exactPropertyFactForTest(constraint, "MaxSize", expected) end), "NaN must never form an exact matcher")
+	constraint.MaxSize = Roblox.Vector2.new(-math.huge, math.huge)
+	assert(not pcall(function() StudioAuthoring.exactPropertyFactForTest(constraint, "MaxSize", expected) end), "unsupported negative infinity must remain rejected")
+end
 
 do
 	local withinRoot = StudioInstancePolicy.isWithinEvidenceRoot
@@ -451,13 +480,13 @@ assert(string.find(runtimeSource, 'local beforeCapture = requireCurrentProjectIn
 assert(string.find(runtimeSource, 'local beforeCapture = requireCurrentProjectIndex("creator apply")', 1, true), "Apply must recheck the monitored pre-Apply binding before its one receipt-bound post-state stream")
 assert(not string.find(runtimeSource, 'publishProjectIndex("creator prepare"', 1, true) and not string.find(runtimeSource, 'publishProjectIndex("creator preflight"', 1, true) and not string.find(runtimeSource, 'publishProjectIndex("creator apply"', 1, true), "one transaction request ID must never carry discarded pre-phase project-index streams")
 assert(string.find(runtimeSource, 'projectChangeMonitor:detectorEpoch() ~= currentProjectIndexDetectorEpoch', 1, true), "every preflight boundary must reject changes after the authoritative pre-Apply capture")
-assert(string.find(runtimeSource, "local function requireFinalizationGate", 1, true) and string.find(runtimeSource, 'requireFinalizationGate(message.payload, active.binding, "creator finalization")', 1, true) and string.find(runtimeSource, 'requireFinalizationGate(message.payload, recovery.recording, "interrupted creator recording cancellation", true)', 1, true) and string.find(runtimeSource, 'original.action ~= payload.replacesAction', 1, true) and string.find(runtimeSource, 'manifestId = recovery.projectIndexManifestId', 1, true), "every FinishRecording path must bind its durable recording cursor to the exact current monitored project capture; recovery cancellation must use only its durable recovery gate and explicit original-action provenance")
+assert(string.find(runtimeSource, "local function requireFinalizationGate", 1, true) and string.find(runtimeSource, 'requireFinalizationGate(message.payload, active.binding, "creator finalization")', 1, true) and string.find(runtimeSource, 'requireFinalizationGate(message.payload, recovery.recording, "interrupted creator recording cancellation", true)', 1, true) and string.find(runtimeSource, 'original.action == payload.replacesAction', 1, true) and string.find(runtimeSource, 'manifestId = recovery.projectIndexManifestId', 1, true), "every FinishRecording path must bind its durable recording cursor to the exact current monitored project capture; recovery cancellation must use only its durable recovery gate and explicit original-action provenance")
 assert(string.find(runtimeSource, "beforeProjectDetectorEpoch", 1, true) and string.find(runtimeSource, "expectedCurrentProjectDetectorEpoch", 1, true) and string.find(runtimeSource, "postApplyProjectDetectorEpoch", 1, true) and string.find(runtimeSource, "recoveryProjectDetectorEpoch", 1, true), "pre-Apply, provisional, recovery, and finalization receipts must retain their phase-appropriate monitor epochs")
 assert(string.find(runtimeSource, "requireDurableFinalizationGate(intent", 1, true) and string.find(authoringSource, "local function requirePreFinishGate", 1, true) and string.find(authoringSource, "finalization gate rejected", 1, true), "every durable intent must recheck its exact project-index and monitor gate immediately before FinishRecording")
 assert(string.find(runtimeSource, "provisional_cursor_persistence_failed", 1, true) and string.find(runtimeSource, "projectDetectorEpoch = post.detectorEpoch", 1, true), "a provisional persistence failure must bind its cancellation intent to the last complete post-Apply capture, not a later post-cancel capture")
 assert(string.find(authoringSource, "beforeProjectDetectorEpoch = prepared.beforeProjectDetectorEpoch", 1, true) and string.find(authoringSource, "payload.beforeProjectDetectorEpoch ~= beforeCapture.detectorEpoch", 1, true), "Prepare, preflight, and Apply must echo and enforce the exact pre-Apply detector epoch")
 assert(string.find(authoringSource, "finalizationKind = stored.finalization.finalizationKind", 1, true) and string.find(runtimeSource, "finalizationKind = receipt.finalizationKind", 1, true), "the durable intent, receipt, and protocol finalization gate must distinguish an ordinary action from recovery cancellation")
-assert(string.find(runtimeSource, "payload.replacesAction = replacesAction", 1, true) and string.find(runtimeSource, "payload.replacesAction = receipt.replacesAction", 1, true) and string.find(runtimeSource, 'recording.finalization.finalizationKind == "ordinary"', 1, true) and string.find(runtimeSource, "recording.finalization.recovery ~= true", 1, true) and string.find(authoringSource, "payload.replacesAction ~= stored.finalization.action", 1, true), "only an original ordinary finalization intent may expose recovery-cancel provenance; an uncertain recovery cancellation cannot advertise a retryable action")
+assert(string.find(runtimeSource, 'payload.cancellation = { kind = "replace_intent", action = replacesAction }', 1, true) and string.find(runtimeSource, "payload.replacesAction = receipt.replacesAction", 1, true) and string.find(runtimeSource, 'recording.finalization.finalizationKind == "ordinary"', 1, true) and string.find(runtimeSource, "recording.finalization.recovery ~= true", 1, true) and string.find(authoringSource, "payload.replacesAction == stored.finalization.action", 1, true), "only an original ordinary finalization intent exposes replacement provenance; an uncertain recovery cancellation cannot advertise another Finish")
 assert(string.find(authoringSource, "or not sameRecordingBinding(payload, stored)", 1, true), "recovery cancellation must preserve the complete original recording binding while its expected-current gate uses the later recovery capture")
 assert(string.find(runtimeSource, "clearFinalizationMonitorState", 1, true) and string.find(runtimeSource, "finalization_post_index_failed", 1, true), "a failed final project-index capture must clear exact monitor exemptions and leave recovery fail-closed")
 assert(string.find(projectIndexSource, '"StudioProjectEvidenceShard"', 1, true) and string.find(projectIndexSource, '"StudioSourceBlobManifest"', 1, true) and string.find(projectIndexSource, '"StudioSourceBlobChunk"', 1, true), "the connector must stream typed project-index artifacts")
@@ -1788,6 +1817,22 @@ recoveryBoundCursor.recovery = {
 	projectDetectorEpoch = 3,
 }
 recoveryBoundCursor = StudioAuthoring.sealTransactionCursorForTest(recoveryBoundCursor)
+do
+	local expected = recoveryBoundCursor.recovery
+	local intent = StudioAuthoring.beginRecoveryCancellationForTest(finalizationPlugin, recoveryBoundCursor, expected)
+	assert(intent.finalization.finalizationKind == "recovery_cancel" and intent.finalization.replacesAction == nil and intent.finalization.recovery == true, "an open cursor must create a recovery intent without fabricated replacement provenance")
+	assert(not pcall(function() StudioAuthoring.beginRecoveryCancellationForTest(finalizationPlugin, intent, expected) end), "an open-cursor cancellation intent cannot grant a second Finish")
+	local finishCalls = 0
+	local closed, finished = StudioAuthoring.closeAndPersistFinalizationForTest(finalizationPlugin, intent, recoveryBoundCursor.recordingId, function() finishCalls += 1 end, function() return false end, nil, function(actual)
+		assert(actual.finalization.expectedCurrentProjectIndexManifestId == expected.projectIndexManifestId and actual.finalization.expectedCurrentProjectRevisionHash == expected.projectRevisionHash and actual.finalization.expectedCurrentProjectDetectorEpoch == expected.projectDetectorEpoch, "open-cursor recovery must retain its fresh capture immediately before Finish")
+	end)
+	assert(closed and finishCalls == 1, "open-cursor cancellation must prove exact closure")
+	local authoring = StudioAuthoring.new(finalizationPlugin, {}, {})
+	local receipt = authoring:recordFinalizationEvidence(finished, { indexManifest = { id = "after_open_cancel" }, revision = { hash = string.rep("8", 64) }, detectorEpoch = 4 })
+	assert(receipt.finalizationKind == "recovery_cancel" and receipt.replacesAction == nil, "durable receipts must distinguish an open cursor from a displaced intent")
+	authoring:acknowledgeFinalization(receipt)
+	assert(not pcall(function() StudioAuthoring.beginRecoveryCancellationForTest(finalizationPlugin, recoveryBoundCursor, { projectIndexManifestId = expected.projectIndexManifestId, projectRevisionHash = expected.projectRevisionHash, projectDetectorEpoch = expected.projectDetectorEpoch + 1 }) end), "a stale recovery epoch must reject before writing intent")
+end
 local interruptedCommitIntent = StudioAuthoring.beginFinalizationForTest(finalizationPlugin, recoveryBoundCursor, "commit")
 assert(interruptedCommitIntent.finalization.expectedCurrentProjectRevisionHash == recoveryBoundCursor.provisional.postApplyProjectRevisionHash and interruptedCommitIntent.finalization.expectedCurrentProjectRevisionHash ~= recoveryBoundCursor.recovery.projectRevisionHash, "the interrupted ordinary intent must retain its original post-Apply gate, distinct from later recovery evidence")
 local recoveryCancelIntent = StudioAuthoring.beginRecoveryCancellationForTest(finalizationPlugin, interruptedCommitIntent, {
@@ -1873,4 +1918,5 @@ local reflected, reflectionFailure = StudioEvidenceCollector.reflectedPropertyVa
 }, "Beam", "Attachment0")
 assert(reflectionFailure == nil and reflected ~= nil and reflected.type.instanceType == "Attachment", "reflection must preserve raw class-reference information without claiming a verdict")
 
+assert(require("./test-directed-setter-effects"))
 print("plugin module tests passed")

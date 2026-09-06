@@ -27,6 +27,7 @@ export type {
   CreatorTurnType,
   CreatorWorkAdmission,
   CreatorWorkEpisodeSummary,
+  VisualObservationInput,
 } from "../../packages/creator-conversation/src/contracts.js";
 
 import type {

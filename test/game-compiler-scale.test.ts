@@ -45,6 +45,7 @@ test("the admitted 8192-operation profile compiles reproducibly within physical 
   const input = {
     design: {
       kind: "GameDesignSpec",
+      worldAuthoring: { mode: "none" },
       id: "scale",
       intent: "Exercise the admitted operation budget without a provider or Studio.",
       components: [

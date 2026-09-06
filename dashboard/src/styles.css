@@ -498,6 +498,14 @@ p {
   white-space: nowrap;
   margin-left: auto;
 }
+.project-link-save p {
+  margin: 0;
+}
+.project-link-save .project-link-save__hint {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
 .plan-steps {
   display: grid;
   gap: 16px;

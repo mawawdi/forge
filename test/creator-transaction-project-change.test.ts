@@ -86,13 +86,13 @@ interface DirtyConfirmationHarness {
       recordingId: string;
       projectIndexCapture: StudioProjectIndexCapture;
       projectDetectorEpoch: number;
-      replacesAction?: "commit" | "cancel";
+      cancellation?: { kind: "open" } | { kind: "replace_intent"; action: "commit" | "cancel" };
     }
   >;
   assertRecoveredFinalizationGate(
     value: CreatorSessionBundle,
     receipt: Extract<PluginToBackendMessage, { type: "CreatorChangeFinalized" }>["payload"],
-  ): void;
+  ): Promise<void>;
 }
 
 interface ChangeReviewHarness {
@@ -914,23 +914,50 @@ test("recovered recovery cancellation must echo its durable displaced action", a
   const { coordinator, bundle, directory } = await fixture({});
   try {
     const recoveryCapture = capture(true, "2026-09-01T00:00:03.000Z");
-    coordinator.recordingRecovery.set(bundle.session.id, {
+    const recoveryIndex = await writeCreatorProjectIndexArtifacts(
+      coordinator.artifactStore,
+      recoveryCapture,
+    );
+    const active = {
+      ...bundle.activeMutation!,
+      manifest: { hash: STUDIO_CAPABILITY_MANIFEST_HASH },
       recordingId: "recording_recovery_provenance",
-      projectIndexCapture: recoveryCapture,
-      projectDetectorEpoch: recoveryCapture.detectorEpoch,
-      replacesAction: "commit",
-    });
-    const receipt = {
-      creatorSessionId: bundle.session.id,
-      changeSetId: bundle.activeMutation!.changeSetId,
-      changeSetHash: bundle.activeMutation!.changeSetHash,
-      projectionId: bundle.activeMutation!.projectionId,
-      projectionHash: bundle.activeMutation!.projectionHash,
-      manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
-      beforeProjectIndexManifestId: recoveryCapture.indexManifest.id,
-      beforeProjectRevisionHash: bundle.activeMutation!.beforeIndexRevisionHash,
       beforeProjectDetectorEpoch: 0,
-      recordingId: "recording_recovery_provenance",
+    } as NonNullable<CreatorSessionBundle["activeMutation"]>;
+    const binding = {
+      creatorSessionId: bundle.session.id,
+      changeSetId: active.changeSetId,
+      changeSetHash: active.changeSetHash,
+      projectionId: active.projectionId,
+      projectionHash: active.projectionHash,
+      manifestHash: active.manifest.hash,
+      beforeProjectIndexManifestId: active.beforeIndexCapture.manifest.id,
+      beforeProjectRevisionHash: active.beforeIndexRevisionHash,
+      beforeProjectDetectorEpoch: active.beforeProjectDetectorEpoch,
+      recordingId: active.recordingId,
+    };
+    const recoveryRecord = await coordinator.artifactStore.write({
+      kind: "CreatorRecordingRecoveryRecord",
+      studioSessionId: studio.sessionId,
+      projectId: studio.projectId,
+      receivedAt: "2026-09-01T00:00:03.000Z",
+      payload: {
+        ...binding,
+        recordingState: "open",
+        cancellation: { kind: "replace_intent", action: "commit" },
+        recoveryProjectIndexManifestId: recoveryCapture.indexManifest.id,
+        recoveryProjectRevisionHash: recoveryCapture.revision.hash,
+        recoveryProjectDetectorEpoch: recoveryCapture.detectorEpoch,
+      },
+      projectIndex: recoveryIndex,
+    });
+    const retained = {
+      ...bundle,
+      activeMutation: { ...active, recordingRecovery: recoveryRecord },
+    };
+    coordinator.recordingRecovery.clear();
+    const receipt = {
+      ...binding,
       action: "cancel" as const,
       finalizationKind: "recovery_cancel" as const,
       replacesAction: "cancel" as const,
@@ -942,12 +969,19 @@ test("recovered recovery cancellation must echo its durable displaced action", a
       afterProjectRevisionHash: recoveryCapture.revision.hash,
       afterProjectDetectorEpoch: recoveryCapture.detectorEpoch,
     } as Extract<PluginToBackendMessage, { type: "CreatorChangeFinalized" }>["payload"];
-    assert.throws(
-      () => coordinator.assertRecoveredFinalizationGate(bundle, receipt),
+    await assert.rejects(
+      coordinator.assertRecoveredFinalizationGate(retained, receipt),
       /provenance mismatch/,
     );
-    assert.doesNotThrow(() =>
+    await assert.doesNotReject(
+      coordinator.assertRecoveredFinalizationGate(retained, {
+        ...receipt,
+        replacesAction: "commit",
+      }),
+    );
+    await assert.rejects(
       coordinator.assertRecoveredFinalizationGate(bundle, { ...receipt, replacesAction: "commit" }),
+      /no retained host authority/,
     );
   } finally {
     await rm(directory, { recursive: true, force: true });

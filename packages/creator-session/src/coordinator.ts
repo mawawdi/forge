@@ -1,4 +1,16 @@
 import { isNodeError } from "../../artifact-store/src/index.js";
+import {
+  validateVisualObservationInputs,
+  type VisualObservationInput,
+} from "../../visual-evidence/src/index.js";
+import {
+  CREATOR_VISUAL_CONTEXT_SCHEMA,
+  assertCreatorVisualObservations,
+  creatorVisualModelImages,
+  creatorVisualPrompt,
+  sealCreatorVisualObservations,
+  type CreatorVisualContext,
+} from "./visual-context.js";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, readdir } from "node:fs/promises";
 import { CreatorPlaytestContextStore } from "./playtest-context.js";
@@ -56,6 +68,7 @@ import {
   listStudioSourceDocuments,
   readStudioSourceAsync,
   searchStudioSourceAsync,
+  SourceConsultationRecorder,
   type CreatorSourceConsultation,
   type PinnedSourceAnalysisArtifact,
   type PinnedSourceAnalysisOutcome,
@@ -74,7 +87,9 @@ import {
   type CreatorChangePrepareDocument,
   type PluginToBackendMessage,
   type BackendToPluginMessage,
+  type CreatorRecordingCancellationAuthority,
 } from "../../studio-protocol/src/index.js";
+import { readCreatorRecordingRecoveryAuthority } from "./recording-recovery-authority.js";
 import {
   CREATOR_VERIFICATION_OBSERVATION_WINDOW_MS,
   assertStudioExecutionPlan,
@@ -150,6 +165,18 @@ import {
 } from "../../game-compiler/src/index.js";
 import { createGameBuildControlView } from "./game-build-view.js";
 import { captureCreatorOfflineRegression } from "./offline-regression.js";
+import { creatorGameCatalog } from "./game-authoring.js";
+import { recompileRetainedCreatorPlan } from "./plan-recompilation.js";
+import {
+  creatorPlanRefreshIsReadOnly,
+  verifyCreatorPlanRefreshLineage,
+} from "./plan-refresh-lineage.js";
+import { createCreatorBuildProposal } from "./build-proposal.js";
+import {
+  creatorBuildRecoveryBinding,
+  loadCreatorBuildRecovery,
+  writeCreatorBuildRecovery,
+} from "./build-recovery.js";
 import {
   createCreatorBuildAuthorityChangeNotice,
   createCreatorProjectChangeNotice,
@@ -211,6 +238,8 @@ export type CreatorTransactionControlAction =
       creatorSessionId: string;
       /** Host-issued conversation evidence, retained with the request. */
       contextCitations: readonly CreatorAgentContextCitation[];
+      visualObservations?: readonly VisualObservationInput[];
+      visualContext?: CreatorVisualContext;
       /** Exact provider execution reserved before the foreground job was published. */
       agentExecutions: readonly AgentExecutionSlot[];
     }
@@ -480,7 +509,7 @@ export class CreatorSessionCoordinator {
       projectIndexCapture: StudioProjectIndexCapture;
       projectIndexArtifact: ArtifactReference;
       projectDetectorEpoch: number;
-      replacesAction?: "commit" | "cancel";
+      cancellation?: CreatorRecordingCancellationAuthority;
     }
   >();
   private readonly recordingScans = new Map<
@@ -690,6 +719,72 @@ export class CreatorSessionCoordinator {
       await this.rehydrateTransactionProjectChangeBarriers(bundle);
       this.bundles.set(bundle.session.id, bundle);
     }
+    for (const bundle of [...this.bundles.values()]) {
+      if (
+        bundle.plan ||
+        bundle.session.status !== "incomplete" ||
+        !bundle.predecessorSessionId ||
+        !this.retainedRefreshPlan(bundle)
+      )
+        continue;
+      const binding = bundle.projectIndices.at(-1);
+      if (!binding) continue;
+      const capture = await readCreatorProjectIndexArtifacts(this.artifactStore, binding);
+      const notice = createCreatorRestartChangeNotice({
+        projectId: bundle.session.projectId,
+        connectorEpoch: capture.revision.connectorEpoch,
+      });
+      const artifact = await this.artifactStore.write(notice);
+      const refreshed = {
+        ...bundle,
+        projectChanges: [
+          ...bundle.projectChanges,
+          { notice, artifact, priorStatus: bundle.session.status },
+        ],
+        session: advanceSession(bundle.session, { status: "refresh_required" }),
+      };
+      this.bundles.set(refreshed.session.id, refreshed);
+      await this.persist(refreshed);
+      await this.rehydrateTransactionProjectChangeBarriers(refreshed);
+    }
+  }
+
+  private retainedRefreshPlan(
+    bundle: CreatorSessionBundle,
+  ): { origin: CreatorSessionBundle; lineage: CreatorSessionBundle[] } | undefined {
+    const lineage: CreatorSessionBundle[] = [];
+    const seen = new Set<string>();
+    let current: CreatorSessionBundle | undefined = bundle;
+    while (current && lineage.length < 32) {
+      if (
+        seen.has(current.session.id) ||
+        !creatorPlanRefreshIsReadOnly(current) ||
+        current.session.projectId !== bundle.session.projectId ||
+        current.session.promptHash !== bundle.session.promptHash
+      )
+        return undefined;
+      seen.add(current.session.id);
+      lineage.push(current);
+      if (current.plan) {
+        if (
+          lineage.length > 1 &&
+          !current.approvals.some(
+            (approval) =>
+              approval.decision === "approved" &&
+              approval.artifactKind === "plan" &&
+              approval.artifactHash === current!.plan!.hash,
+          )
+        )
+          return undefined;
+        return { origin: current, lineage };
+      }
+      const parent: CreatorSessionBundle | undefined = current.predecessorSessionId
+        ? this.bundles.get(current.predecessorSessionId)
+        : undefined;
+      if (parent?.successorSessionId !== current.session.id) return undefined;
+      current = parent;
+    }
+    return undefined;
   }
 
   /**
@@ -1991,6 +2086,8 @@ export class CreatorSessionCoordinator {
         action.creatorSessionId,
         action.contextCitations,
         requiredSingleAgentExecution(action.agentExecutions, "planner"),
+        action.visualObservations,
+        action.visualContext,
       );
     if (action.action === "resume")
       return this.resumePlanner(
@@ -2082,6 +2179,22 @@ export class CreatorSessionCoordinator {
       if (message.payload.connectorBuildHash !== session.connectorBuildHash)
         throw new Error("Play observation connector build mismatch");
       await this.playtestContext.append(session.projectId, message.payload);
+      return;
+    }
+    if (
+      message.type === "PluginError" &&
+      message.payload.code === "RECOVERY_REQUIRED" &&
+      message.requestId === undefined
+    ) {
+      // A previously clean inventory is no longer evidence of safe admission
+      // when the connector cannot read its durable transaction state.
+      this.recordingScans.set(session.sessionId, {
+        projectId: session.projectId,
+        status: "blocked",
+        detail: message.payload.message,
+      });
+      this.invalidateViewsForProject(session.projectId);
+      this.emit();
       return;
     }
     if (
@@ -2363,6 +2476,9 @@ export class CreatorSessionCoordinator {
             activeMutation: {
               ...active,
               recordingId: recoveryPayload.recordingId,
+              ...(recoveryPayload.cancellation
+                ? { recordingRecovery: recoveryRecordArtifact }
+                : {}),
             },
           };
           this.bundles.set(bundle.session.id, nextBundle);
@@ -2374,15 +2490,15 @@ export class CreatorSessionCoordinator {
             projectIndexCapture,
             projectIndexArtifact: projectIndexArtifacts.revision.artifact,
             projectDetectorEpoch: recoveryPayload.recoveryProjectDetectorEpoch,
-            ...(recoveryPayload.replacesAction === undefined
+            ...(recoveryPayload.cancellation === undefined
               ? {}
-              : { replacesAction: recoveryPayload.replacesAction }),
+              : { cancellation: recoveryPayload.cancellation }),
           });
           if (this.hasPendingTransactionProjectChange(nextBundle.session.id))
             this.scheduleTransactionProjectChangeConfirmation(nextBundle.session.id);
           await this.publishView(
             nextBundle,
-            recoveryPayload.recordingState === "open"
+            recoveryPayload.recordingState === "open" && recoveryPayload.cancellation !== undefined
               ? "Studio proved the exact interrupted recording is open. You may explicitly cancel it."
               : `Studio reported the interrupted recording as ${recoveryPayload.recordingState}; Forge will not mutate it automatically.`,
           );
@@ -3089,6 +3205,8 @@ export class CreatorSessionCoordinator {
     creatorSessionId: string,
     contextCitations: readonly CreatorAgentContextCitation[],
     execution: AgentExecutionSlot,
+    visualInputs: readonly VisualObservationInput[] = [],
+    visualContext: CreatorVisualContext = {},
   ): Promise<unknown> {
     const canonicalCreatorText = creatorText.trim();
     let canonicalAgentPrompt = agentPrompt.trim();
@@ -3167,6 +3285,15 @@ export class CreatorSessionCoordinator {
       ownership,
       model,
     });
+    const visualObservations = sealCreatorVisualObservations(
+      visualInputs,
+      visualContext,
+      session.projectId,
+      session.initialRevisionHash,
+    );
+    canonicalAgentPrompt += creatorVisualPrompt(visualObservations);
+    if (Buffer.byteLength(canonicalAgentPrompt, "utf8") > 256 * 1024)
+      throw new Error("Creator context and visual metadata exceed the model prompt byte limit");
     const creatorRequest = await this.artifactStore.write({
       kind: "CreatorRequest",
       sessionId: session.id,
@@ -3174,6 +3301,7 @@ export class CreatorSessionCoordinator {
       creatorText: canonicalCreatorText,
       agentPrompt: canonicalAgentPrompt,
       contextCitations: structuredClone(contextCitations),
+      ...(visualObservations.length ? { visualObservations } : {}),
     });
     let bundle: CreatorSessionBundle = {
       session,
@@ -3243,6 +3371,7 @@ export class CreatorSessionCoordinator {
         creatorPrompt: canonicalCreatorText,
         agentPrompt: canonicalAgentPrompt,
         contextCitations,
+        initialImages: creatorVisualModelImages(visualObservations),
         budgets: DEFAULT_AGENT_BUDGETS,
         execution,
       });
@@ -3422,6 +3551,7 @@ export class CreatorSessionCoordinator {
         creatorPrompt: request.creatorText,
         agentPrompt: request.agentPrompt,
         contextCitations: request.contextCitations,
+        initialImages: creatorVisualModelImages(request.visualObservations),
         budgets: DEFAULT_AGENT_BUDGETS,
         execution,
         resume: true,
@@ -3522,6 +3652,7 @@ export class CreatorSessionCoordinator {
     if (studio.projectId !== bundle.session.projectId)
       throw new Error("Project refresh requires the same paired Studio project");
     const before = await this.captureForBundle(bundle);
+    const retainedIntent = this.retainedRefreshPlan(bundle);
     bundle = {
       ...bundle,
       session: advanceSession(bundle.session, { status: "refreshing" }),
@@ -3552,7 +3683,7 @@ export class CreatorSessionCoordinator {
     const afterBinding = await this.persistProjectIndex(after);
     const delta = createCreatorProjectDelta(before, after);
     const deltaArtifact = await this.artifactStore.write(delta);
-    if (!delta.changed) {
+    if (!delta.changed && !(retainedIntent && !bundle.plan)) {
       const restoredStatus = noticeBinding.priorStatus;
       let restoredSession = advanceSession(bundle.session, {
         status: restoredStatus,
@@ -3603,6 +3734,10 @@ export class CreatorSessionCoordinator {
     }
 
     const priorRequest = await this.creatorRequest(bundle);
+    if (priorRequest.visualObservations?.length)
+      throw new Error(
+        "The project revision changed. Start a new creator turn with the visual attachments so their submission context can be reviewed again",
+      );
     const creatorPrompt = priorRequest.creatorText;
     const agentPrompt = priorRequest.agentPrompt;
     const nextView = projectIndexViewForCreator(studioProjectIndexMetadataView(after));
@@ -3647,7 +3782,7 @@ export class CreatorSessionCoordinator {
       agentPrompt,
       contextCitations: priorRequest.contextCitations,
     });
-    const successor: CreatorSessionBundle = {
+    let successor: CreatorSessionBundle = {
       session: successorSession,
       creatorRequest: successorRequest,
       projectIndices: [afterBinding],
@@ -3667,6 +3802,156 @@ export class CreatorSessionCoordinator {
       verifications: [],
       agentRuns: [],
     };
+    // A new connector epoch may change ephemeral identities without changing
+    // any observed project semantics. Recompile intent for a new review; never
+    // carry the old approval or mutation authority across that boundary.
+    if (
+      retainedIntent &&
+      !bundle.activeMutation &&
+      !bundle.closedMutation &&
+      bundle.mutationAttempts.length === 0 &&
+      bundle.rojoSourceMutations.length === 0 &&
+      bundle.changeSets.length === 0 &&
+      (bundle.gameBuilds?.length ?? 0) === 0 &&
+      !bundle.projectAuthority &&
+      !successor.projectAuthority
+    ) {
+      try {
+        await this.requireClearRecordingInventory(studio);
+        const analyzed = await this.analyzeProjectSources(after);
+        const consultation = new SourceConsultationRecorder(
+          analyzed.index,
+          analyzed.resolver,
+        ).seal();
+        const consultationArtifact = await this.artifactStore.write(consultation);
+        const origin = retainedIntent.origin;
+        const retainedPlan = origin.plan!;
+        const beforeBinding = origin.projectIndices.find(
+          (binding) => binding.captureHash === retainedPlan.projectCaptureHash,
+        );
+        if (!beforeBinding) throw new Error("Retained plan lost its original observation capture");
+        const planBefore = await readCreatorProjectIndexArtifacts(
+          this.artifactStore,
+          beforeBinding,
+        );
+        const predecessorPlan = await this.artifactStore.write(retainedPlan);
+        const refreshLineage = await Promise.all(
+          retainedIntent.lineage.map((item) => this.artifactStore.write(item)),
+        );
+        await verifyCreatorPlanRefreshLineage({
+          store: this.artifactStore,
+          references: refreshLineage,
+          immediatePredecessorSessionId: bundle.session.id,
+          plan: retainedPlan,
+        });
+        const compiled = recompileRetainedCreatorPlan({
+          previousPlan: retainedPlan,
+          predecessorPlan,
+          beforeCapture: planBefore,
+          afterCapture: after,
+          session: successorSession,
+          ownership,
+          sourceIndex: analyzed.index,
+          sourceConsultation: consultation,
+          creatorPrompt,
+          catalog: await creatorGameCatalog(),
+        });
+        const artifact = await this.artifactStore.write(compiled.recompilation);
+        successor = {
+          ...successor,
+          plan: compiled.plan,
+          planRecompilation: {
+            id: compiled.recompilation.id,
+            hash: compiled.recompilation.hash,
+            artifact,
+            sourceSession: await this.artifactStore.write(successorSession),
+            beforeCapture: beforeBinding,
+            refreshLineage,
+          },
+          sourceIndices: [
+            {
+              id: analyzed.index.id,
+              hash: analyzed.index.hash,
+              artifact: analyzed.indexArtifact,
+              analysis: {
+                id: analyzed.analysis.id,
+                hash: analyzed.analysis.hash,
+                artifact: analyzed.analysisArtifact,
+              },
+            },
+          ],
+          sourceConsultations: [
+            {
+              id: consultation.id,
+              hash: consultation.hash,
+              indexId: consultation.indexId,
+              indexHash: consultation.indexHash,
+              artifact: consultationArtifact,
+            },
+          ],
+          session: advanceSession(advanceSession(successorSession, { status: "planning" }), {
+            status: "awaiting_plan_approval",
+            plan: compiled.plan,
+          }),
+        };
+        const authority = retryBuildAuthority({
+          ...origin,
+          session: { ...origin.session, status: "incomplete" },
+        });
+        if (authority?.run && authority.contract) {
+          try {
+            const recoveryInput = {
+              store: this.artifactStore,
+              expected: creatorBuildRecoveryBinding({
+                session: origin.session,
+                plan: retainedPlan,
+                approval: authority.approval,
+                contract: authority.contract,
+              }),
+              plan: retainedPlan,
+              approval: authority.approval,
+              contract: authority.contract,
+              priorRun: authority.run.agentRun,
+              ...(origin.buildRecovery ? { priorRecovery: origin.buildRecovery } : {}),
+              ...(origin.buildProposal ? { initialProposal: origin.buildProposal } : {}),
+            };
+            const priorRecovery = origin.buildRecovery
+              ? await loadCreatorBuildRecovery({ ...recoveryInput, artifact: origin.buildRecovery })
+              : undefined;
+            const recovery = priorRecovery?.sourceRuns.some(
+              (run) => run.agentRunId === authority.run!.agentRunId,
+            )
+              ? { recovery: priorRecovery, artifact: origin.buildRecovery! }
+              : await writeCreatorBuildRecovery(recoveryInput);
+            const proposal = await createCreatorBuildProposal({
+              store: this.artifactStore,
+              plan: compiled.plan,
+              predecessor: {
+                plan: predecessorPlan,
+                approval: await this.artifactStore.write(authority.approval),
+                contract: await this.artifactStore.write(authority.contract),
+                recovery: recovery.artifact,
+              },
+            });
+            successor = { ...successor, buildProposal: await this.artifactStore.write(proposal) };
+          } catch (error) {
+            await this.artifactStore.write({
+              kind: "CreatorSourceProposalUnavailable",
+              predecessorSessionId: bundle.session.id,
+              planHash: compiled.plan.hash,
+              detail: detail(error),
+            });
+          }
+        }
+      } catch (error) {
+        await this.artifactStore.write({
+          kind: "CreatorPlanRecompilationUnavailable",
+          predecessorSessionId: bundle.session.id,
+          successorSessionId: successorSession.id,
+          detail: detail(error),
+        });
+      }
+    }
     const refresh = createCreatorProjectRefresh({
       predecessorSessionId: bundle.session.id,
       successorSessionId: successor.session.id,
@@ -3702,8 +3987,11 @@ export class CreatorSessionCoordinator {
     );
     await this.publishView(
       successor,
-      "Replanning from the complete refreshed project index. Studio remains read-only.",
+      successor.planRecompilation
+        ? "The retained design was compiled against the complete current project. Review this new plan and its observed additions; no earlier approval was inherited."
+        : "Replanning from the complete refreshed project index. Studio remains read-only.",
     );
+    if (successor.planRecompilation) return summary(successor);
     return this.planSuccessor(
       successor,
       creatorPrompt,
@@ -3892,8 +4180,9 @@ export class CreatorSessionCoordinator {
       "Building a virtual Studio change set. The live place remains unchanged.",
     );
     try {
-      const creatorPrompt = await this.creatorPrompt(bundle);
-      const agentPrompt = await this.agentPrompt(bundle);
+      const request = await this.creatorRequest(bundle);
+      const creatorPrompt = request.creatorText;
+      const agentPrompt = request.agentPrompt;
       const source = await this.sourceEvidence(bundle);
       const observation = await this.observationForBundle(bundle);
       const built = await this.input.worker.build({
@@ -3902,8 +4191,11 @@ export class CreatorSessionCoordinator {
         projectIndex: observation,
         creatorPrompt,
         agentPrompt,
+        initialImages: creatorVisualModelImages(request.visualObservations),
         plan,
         planApproval: approval,
+        ...(bundle.buildRecovery ? { buildRecovery: bundle.buildRecovery } : {}),
+        ...(bundle.buildProposal ? { buildProposal: bundle.buildProposal } : {}),
         ...source,
         budgets: DEFAULT_AGENT_BUDGETS,
         execution,
@@ -3914,7 +4206,7 @@ export class CreatorSessionCoordinator {
       if (liveAfterBuild?.session.status === "refresh_required") {
         const staleResultBundle: CreatorSessionBundle = {
           ...liveAfterBuild,
-          buildContracts: [...liveAfterBuild.buildContracts, built.buildContract],
+          buildContracts: retainBuildContract(liveAfterBuild, built.buildContract),
           agentRuns: [...liveAfterBuild.agentRuns, built.evidence],
           ...(built.status === "sealed"
             ? {
@@ -3941,7 +4233,7 @@ export class CreatorSessionCoordinator {
       }
       bundle = {
         ...bundle,
-        buildContracts: [...bundle.buildContracts, built.buildContract],
+        buildContracts: retainBuildContract(bundle, built.buildContract),
         agentRuns: [...bundle.agentRuns, built.evidence],
       };
       if (built.status === "unsealed") {
@@ -3952,7 +4244,10 @@ export class CreatorSessionCoordinator {
             failure: { code: built.failure.code, detail: built.failure.detail },
           }),
         };
-        return this.finish(bundle, `Builder stopped: ${built.failure.detail}`);
+        return this.finish(
+          bundle,
+          `Builder stopped: ${built.failure.detail}\n\nThe accepted plan is retained. Choose Retry build to verify and restore any completed draft work from the saved run, then continue.`,
+        );
       }
       bundle = await this.retainSourceWriteBlobs(bundle, built.sourceWriteBlobs);
       return await this.startGameBuild(
@@ -3979,7 +4274,28 @@ export class CreatorSessionCoordinator {
           code: "BUILD_PREPARATION_FAILED",
           detail: detail(error),
         });
-      return this.failIncomplete(bundle, "builder_execution_failed", detail(error));
+      // startGameBuild installs the coherent graph before persistence or native
+      // preparation. Preserve that exact candidate if either later step fails;
+      // the caller's earlier bundle has its sealed AgentRun but lacks the graph.
+      const retained =
+        liveAfterFailure &&
+        bundle.agentRuns.every((reference) =>
+          liveAfterFailure.agentRuns.some(
+            (candidate) =>
+              candidate.agentRunId === reference.agentRunId &&
+              candidate.agentRun.artifactHash === reference.agentRun.artifactHash,
+          ),
+        )
+          ? liveAfterFailure
+          : bundle;
+      if (retained.activeMutation || retained.session.status === "recovery_required") {
+        await this.publishView(
+          retained,
+          `Build continuation stopped: ${detail(error)}. The retained Studio transaction must be resolved before continuing.`,
+        );
+        return summary(retained);
+      }
+      return this.failIncomplete(retained, "builder_execution_failed", detail(error));
     }
   }
 
@@ -4003,6 +4319,9 @@ export class CreatorSessionCoordinator {
       ],
     };
     this.bundles.set(bundle.session.id, bundle);
+    // Keep the coherent graph in memory before either durable write can fail.
+    // A local persistence failure must not require another model generation.
+    await this.artifactStore.write(graph);
     await this.persist(bundle);
     return this.prepareNextGamePartition(bundle);
   }
@@ -4071,7 +4390,8 @@ export class CreatorSessionCoordinator {
       bundle = { ...bundle, session: advanceSession(bundle.session, { status: "incomplete" }) };
     this.bundles.set(bundle.session.id, bundle);
     await this.persist(bundle);
-    if (complete) return this.finish(bundle, build.summary);
+    if (complete)
+      return this.finish(bundle, gameBuildCompletionMessage(bundle.plan!, build.summary));
     if (recovering)
       return this.finish(
         bundle,
@@ -4112,11 +4432,13 @@ export class CreatorSessionCoordinator {
     const studio = await this.currentAttestedStudioSession();
     await this.requireClearRecordingInventory(studio);
     const capture = await this.collectProjectIndex(studio);
-    if (capture.revision.hash !== prefix.currentRevisionHash)
-      throw new Error(
-        "External edits changed the verified build prefix; explicit recovery or a revised plan is required",
-      );
     bundle = await this.retainProjectIndex(bundle, capture);
+    if (capture.revision.hash !== prefix.currentRevisionHash)
+      return this.requireBuildRefresh(
+        bundle,
+        studio,
+        `Studio changed after the last verified build checkpoint: expected ${prefix.currentRevisionHash}, observed ${capture.revision.hash}. Refresh to review a newly compiled plan; the mismatching complete index and existing build graph were retained.`,
+      );
     const observation = studioProjectIndexMetadataView(capture);
     if (this.input.projectAuthority?.rojo)
       bundle = {
@@ -4271,26 +4593,15 @@ export class CreatorSessionCoordinator {
     execution: AgentExecutionSlot,
   ): Promise<unknown> {
     const previous = bundle.preparationFailure;
-    const approval = bundle.approvals.find(
-      (entry) => entry.hash === bundle.session.planApproval?.hash,
-    );
-    if (
-      bundle.session.status !== "incomplete" ||
-      !previous ||
-      previous.execution.purpose !== "builder" ||
-      !bundle.plan ||
-      !approval ||
-      approval.decision !== "approved" ||
-      approval.artifactHash !== bundle.plan.hash ||
-      bundle.activeMutation ||
-      bundle.mutationAttempts.length > 0
-    )
+    const authority = retryBuildAuthority(bundle);
+    if (!authority || !bundle.plan)
       throw new Error(
         "This build cannot be retried against its previous approval. Refresh the project and review a new plan.",
       );
     if (
-      previous.execution.agentRunId === execution.agentRunId ||
-      previous.execution.journalId === execution.journalId
+      previous?.execution.agentRunId === execution.agentRunId ||
+      previous?.execution.journalId === execution.journalId ||
+      bundle.agentRuns.some((run) => run.agentRunId === execution.agentRunId)
     )
       throw new Error("Retry build requires a fresh execution reservation");
     try {
@@ -4302,21 +4613,54 @@ export class CreatorSessionCoordinator {
       const before = await this.captureForBundle(bundle);
       if (createCreatorProjectDelta(before, current).changed)
         return this.requireBuildRefresh(bundle, studio);
-      const live = this.bundles.get(bundle.session.id) ?? bundle;
+      let live = this.bundles.get(bundle.session.id) ?? bundle;
       if (live.session.status !== "incomplete") return summary(live);
-      return this.decidePlan(live, bundle.plan.hash, "approved", execution, approval);
+      if (authority.run && authority.contract) {
+        const input = {
+          store: this.artifactStore,
+          expected: creatorBuildRecoveryBinding({
+            session: live.session,
+            plan: bundle.plan,
+            approval: authority.approval,
+            contract: authority.contract,
+          }),
+          plan: bundle.plan,
+          approval: authority.approval,
+          contract: authority.contract,
+        };
+        const prior = live.buildRecovery
+          ? await loadCreatorBuildRecovery({ ...input, artifact: live.buildRecovery })
+          : undefined;
+        if (!prior?.sourceRuns.some((run) => run.agentRunId === authority.run!.agentRunId)) {
+          const retained = await writeCreatorBuildRecovery({
+            ...input,
+            priorRun: authority.run.agentRun,
+            ...(live.buildRecovery ? { priorRecovery: live.buildRecovery } : {}),
+            ...(live.buildProposal ? { initialProposal: live.buildProposal } : {}),
+          });
+          live = { ...live, buildRecovery: retained.artifact };
+          this.bundles.set(live.session.id, live);
+          await this.persist(live);
+        }
+      }
+      return this.decidePlan(live, bundle.plan.hash, "approved", execution, authority.approval);
     } catch (error) {
-      return this.recordPreparationFailure(bundle, execution, {
-        stage: "preparation",
-        code: "BUILD_PREPARATION_FAILED",
-        detail: detail(error),
-      });
+      return this.recordPreparationFailure(
+        this.bundles.get(bundle.session.id) ?? bundle,
+        execution,
+        {
+          stage: "preparation",
+          code: "BUILD_PREPARATION_FAILED",
+          detail: detail(error),
+        },
+      );
     }
   }
 
   private async requireBuildRefresh(
     bundle: CreatorSessionBundle,
     studio: StudioBridgeSession,
+    message = "Your project changed since this plan was approved. Refresh to review a new plan before building.",
   ): Promise<unknown> {
     const notice = createCreatorBuildAuthorityChangeNotice({
       projectId: studio.projectId,
@@ -4337,7 +4681,7 @@ export class CreatorSessionCoordinator {
         projectChanges: [...bundle.projectChanges, { notice, artifact, priorStatus: "incomplete" }],
         session: advanceSession(bundle.session, { status: "refresh_required" }),
       },
-      "Your project changed since this plan was approved. Refresh to review a new plan before building.",
+      message,
     );
   }
 
@@ -6566,8 +6910,9 @@ export class CreatorSessionCoordinator {
       (approval) => approval.artifactKind === "plan" && approval.decision === "approved",
     );
     if (!planApproval) throw new Error("Repair requires the original plan approval");
-    const creatorPrompt = await this.creatorPrompt(bundle);
-    const agentPrompt = await this.agentPrompt(bundle);
+    const request = await this.creatorRequest(bundle);
+    const creatorPrompt = request.creatorText;
+    const agentPrompt = request.agentPrompt;
     if (
       verification.status !== "failed" ||
       verification.failureFacts.length === 0 ||
@@ -6584,6 +6929,7 @@ export class CreatorSessionCoordinator {
       projectIndex: observation,
       creatorPrompt,
       agentPrompt,
+      initialImages: creatorVisualModelImages(request.visualObservations),
       plan: bundle.plan,
       planApproval,
       verificationFeedback: verification.failureFacts.map((fact) => fact.statement),
@@ -7027,12 +7373,14 @@ export class CreatorSessionCoordinator {
       !recovery ||
       recovery.recordingState !== "open" ||
       recovery.recordingId !== active.recordingId ||
-      recovery.replacesAction === undefined
+      recovery.cancellation === undefined
     )
       throw new Error("The exact interrupted Studio recording has not been proven open");
     const studio = await this.currentAttestedStudioSession();
     if (recovery.studioSessionId !== studio.sessionId)
       throw new Error("Recording recovery evidence belongs to a stale Studio pairing");
+    const replacesAction =
+      recovery.cancellation.kind === "replace_intent" ? recovery.cancellation.action : undefined;
     this.assertFinalizationGateClear(bundle.session.id);
     const messages: PluginToBackendMessage[] = [];
     const indexStreams = new StudioProjectIndexStreamRouter();
@@ -7063,7 +7411,7 @@ export class CreatorSessionCoordinator {
             beforeProjectDetectorEpoch: active.beforeProjectDetectorEpoch,
             action: "cancel",
             finalizationKind: "recovery_cancel",
-            replacesAction: recovery.replacesAction,
+            ...(replacesAction === undefined ? {} : { replacesAction }),
             expectedCurrentProjectIndexManifestId: recovery.projectIndexCapture.indexManifest.id,
             expectedCurrentProjectRevisionHash: recovery.projectIndexCapture.revision.hash,
             expectedCurrentProjectDetectorEpoch: recovery.projectDetectorEpoch,
@@ -7089,7 +7437,7 @@ export class CreatorSessionCoordinator {
           message.payload.recordingId === active.recordingId &&
           message.payload.action === "cancel" &&
           message.payload.finalizationKind === "recovery_cancel" &&
-          message.payload.replacesAction === recovery.replacesAction &&
+          message.payload.replacesAction === replacesAction &&
           message.payload.expectedCurrentProjectIndexManifestId ===
             recovery.projectIndexCapture.indexManifest.id &&
           message.payload.expectedCurrentProjectRevisionHash ===
@@ -7223,7 +7571,7 @@ export class CreatorSessionCoordinator {
     const active = bundle.activeMutation;
     if (!active) return;
     try {
-      this.assertRecoveredFinalizationGate(bundle, finalized.payload);
+      await this.assertRecoveredFinalizationGate(bundle, finalized.payload);
       const finalIndexCapture = this.resolveProjectIndexBinding(
         finalized.payload.afterProjectIndexManifestId,
         finalized.payload.afterProjectRevisionHash,
@@ -7460,20 +7808,33 @@ export class CreatorSessionCoordinator {
    * read-only recovery capture; every other finalization is fenced by the
    * direct post-Apply capture. Never infer either binding from a status.
    */
-  private assertRecoveredFinalizationGate(
+  private async assertRecoveredFinalizationGate(
     bundle: CreatorSessionBundle,
     receipt: Extract<PluginToBackendMessage, { type: "CreatorChangeFinalized" }>["payload"],
-  ): void {
+  ): Promise<void> {
     const active = bundle.activeMutation;
     if (!active) throw new Error("Recovered finalization has no active transaction cursor");
-    const recovery = this.recordingRecovery.get(bundle.session.id);
+    let recovery:
+      { projectIndexCapture: StudioProjectIndexCapture; projectDetectorEpoch: number } | undefined;
     if (receipt.finalizationKind === "recovery_cancel") {
-      if (
-        recovery?.recordingId !== receipt.recordingId ||
-        recovery.replacesAction === undefined ||
-        receipt.replacesAction !== recovery.replacesAction
-      )
+      if (!active.recordingRecovery)
+        throw new Error("Recovered recovery cancellation has no retained host authority");
+      const retained = await readCreatorRecordingRecoveryAuthority({
+        store: this.artifactStore,
+        reference: active.recordingRecovery,
+        sessionId: bundle.session.id,
+        projectId: bundle.session.projectId,
+        active,
+      });
+      const cancellation = retained.record.payload.cancellation!;
+      const replacesAction =
+        cancellation.kind === "replace_intent" ? cancellation.action : undefined;
+      if (receipt.replacesAction !== replacesAction)
         throw new Error("Recovered recovery cancellation provenance mismatch");
+      recovery = {
+        projectIndexCapture: retained.capture,
+        projectDetectorEpoch: retained.capture.detectorEpoch,
+      };
     }
     const expected =
       receipt.finalizationKind === "recovery_cancel" && recovery !== undefined
@@ -7967,13 +8328,11 @@ export class CreatorSessionCoordinator {
     );
     if (request.sessionId !== bundle.session.id || request.promptHash !== bundle.session.promptHash)
       throw new Error("Creator request artifact does not bind its session");
+    assertCreatorVisualObservations(request.visualObservations ?? [], bundle.session);
     return request;
   }
   private async creatorPrompt(bundle: CreatorSessionBundle): Promise<string> {
     return (await this.creatorRequest(bundle)).creatorText;
-  }
-  private async agentPrompt(bundle: CreatorSessionBundle): Promise<string> {
-    return (await this.creatorRequest(bundle)).agentPrompt;
   }
   private async sourceEvidence(bundle: CreatorSessionBundle): Promise<{
     sourceIndex: StudioSourceIndex;
@@ -8317,7 +8676,9 @@ export class CreatorSessionCoordinator {
           }
         : undefined,
       sourceSync,
-      recovery?.recordingState === "open" && recovery.recordingId === activeMutation?.recordingId,
+      recovery?.recordingState === "open" &&
+        recovery.cancellation !== undefined &&
+        recovery.recordingId === activeMutation?.recordingId,
       this.observingCreatorPlay.has(bundle.session.id),
       applyReady,
       Boolean(latestRojoMutation && !latestRojoMutation.revert),
@@ -9039,8 +9400,12 @@ export function restoredCreatorControlDetail(bundle: CreatorSessionBundle): stri
       return bundle.agentOutcome?.outcome.kind === "answer"
         ? bundle.agentOutcome.outcome.text
         : "Forge answered without requesting a Studio change.";
-    case "completed":
-      return requiredChangeSet(bundle).summary;
+    case "completed": {
+      const build = bundle.gameBuilds?.at(-1);
+      return build && bundle.plan
+        ? gameBuildCompletionMessage(bundle.plan, build.summary)
+        : requiredChangeSet(bundle).summary;
+    }
     case "creator_accepted":
       return "Changes kept. Save your place in Studio.";
     case "creator_rejected":
@@ -9071,6 +9436,9 @@ function restoredIncompleteDetail(bundle: CreatorSessionBundle): string {
   const reason = failure
     ? `${failure.code.replaceAll("_", " ")} (detail ${failure.detailHash.slice(0, 12)}…)`
     : "missing required evidence";
+  const build = bundle.gameBuilds?.at(-1);
+  if (!bundle.activeMutation && build && build.status === "incomplete")
+    return `The sealed build graph is retained with ${build.receipts.length} of ${build.graph.partitions.length} verified checkpoints: ${reason}. Choose Resume verified build to continue the unchanged graph without another model request; Forge will first compare a complete current Studio index with the verified prefix.`;
   const latestAttempt = bundle.mutationAttempts.at(-1);
   if (!latestAttempt && !bundle.activeMutation) {
     const boundary = bundle.session.changeApproval
@@ -9171,6 +9539,14 @@ export function assertCreatorTransactionControlAction(
       return structuredClone(execution);
     });
     requiredSingleAgentExecution(agentExecutions, "planner");
+    const visualObservations =
+      action.visualObservations === undefined
+        ? undefined
+        : validateVisualObservationInputs(action.visualObservations);
+    const visualContext =
+      action.visualContext === undefined
+        ? undefined
+        : CREATOR_VISUAL_CONTEXT_SCHEMA.parse(action.visualContext);
     return {
       action: "start",
       creatorText: action.creatorText.trim(),
@@ -9179,6 +9555,8 @@ export function assertCreatorTransactionControlAction(
       creatorSessionId: action.creatorSessionId,
       contextCitations,
       agentExecutions,
+      ...(visualObservations ? { visualObservations } : {}),
+      ...(visualContext ? { visualContext } : {}),
     };
   }
   if (
@@ -9206,6 +9584,7 @@ export function assertCreatorTransactionControlAction(
     /^[a-f0-9]{64}$/.test(action.viewHash) &&
     Array.isArray(action.agentExecutions) &&
     [
+      "transaction_resume_build",
       "transaction_approve_plan",
       "transaction_retry_build",
       "transaction_reject_plan",
@@ -9397,9 +9776,7 @@ function controlView(
     recoveryCancellationAvailable,
     changeApplicationAvailable,
     sourceRevertAvailable,
-    bundle.preparationFailure?.execution.purpose === "builder" &&
-      !bundle.activeMutation &&
-      bundle.mutationAttempts.length === 0,
+    creatorBuildRetryAvailable(bundle),
     bundle.session.status === "incomplete" &&
       !bundle.activeMutation &&
       !!bundle.gameBuilds?.some((build) => build.status !== "complete"),
@@ -9433,7 +9810,9 @@ function controlView(
     creatorSessionHash: bundle.session.hash,
     status: bundle.session.status,
     title: controlTitle(bundle.session.status, observingCreatorPlay),
-    detail: detailValue.slice(0, 4096),
+    detail: creatorBuildRetryAvailable(bundle)
+      ? "Your accepted plan is retained. Choose Retry build to verify and restore completed draft work from the saved run, then continue. Details contains the original error."
+      : detailValue.slice(0, 4096),
     ...(artifact ? { artifact } : {}),
     ...(evidence.length > 0 ? { evidence } : {}),
     ...(creatorReviewPrompts && creatorReviewPrompts.length > 0 ? { creatorReviewPrompts } : {}),
@@ -9447,6 +9826,74 @@ function controlView(
     actions,
   });
 }
+function retainBuildContract(
+  bundle: CreatorSessionBundle,
+  contract: CreatorSessionBundle["buildContracts"][number],
+): CreatorSessionBundle["buildContracts"] {
+  const retained = bundle.buildContracts.find((item) => item.id === contract.id);
+  if (!retained) return [...bundle.buildContracts, contract];
+  if (stableJson(retained) !== stableJson(contract))
+    throw new Error("Retried build contract changed its accepted authority");
+  return bundle.buildContracts;
+}
+
+function retryBuildAuthority(bundle: CreatorSessionBundle) {
+  if (bundle.session.status !== "incomplete" || !bundle.plan) return undefined;
+  const approval = bundle.approvals.find((item) => item.hash === bundle.session.planApproval?.hash);
+  if (
+    !approval ||
+    approval.decision !== "approved" ||
+    approval.artifactKind !== "plan" ||
+    approval.artifactId !== bundle.plan.id ||
+    approval.artifactHash !== bundle.plan.hash ||
+    bundle.activeMutation ||
+    bundle.closedMutation ||
+    bundle.mutationAttempts.length > 0 ||
+    bundle.rojoSourceMutations.length > 0 ||
+    bundle.changeSets.length > 0 ||
+    (bundle.gameBuilds?.length ?? 0) > 0
+  )
+    return undefined;
+  const run = [...bundle.agentRuns].reverse().find((item) => item.phase === "creator_builder");
+  if (run) {
+    const contract = bundle.buildContracts.find(
+      (item) => item.id === run.buildContract?.id && item.hash === run.buildContract.hash,
+    );
+    if (
+      run.outcome.status !== "unsealed" ||
+      !contract ||
+      contract.planId !== bundle.plan.id ||
+      contract.planHash !== bundle.plan.hash ||
+      contract.planApprovalId !== approval.id ||
+      contract.planApprovalHash !== approval.hash ||
+      contract.sessionId !== bundle.session.id ||
+      contract.initialRevisionHash !== bundle.plan.projectRevisionHash
+    )
+      return undefined;
+    return { approval, run, contract };
+  }
+  return bundle.preparationFailure?.execution.purpose === "builder" ? { approval } : undefined;
+}
+
+/** Retry eligibility grants no writes; journal recovery and fresh Studio evidence are checked on action. */
+export function creatorBuildRetryAvailable(bundle: CreatorSessionBundle): boolean {
+  return retryBuildAuthority(bundle) !== undefined;
+}
+
+function gameBuildCompletionMessage(
+  plan: NonNullable<CreatorSessionBundle["plan"]>,
+  summary: string,
+): string {
+  const authoring = plan.compiled.design.worldAuthoring;
+  const evidence =
+    authoring.mode === "persistent"
+      ? `Applied and reconciled the approved editor transactions. Persistent world roots: ${authoring.roots.join(", ")}.`
+      : authoring.mode === "runtime_generated"
+        ? `Applied and reconciled the approved editor transactions. This plan intentionally creates its primary world only during Play: ${authoring.rationale}`
+        : "Applied and reconciled the approved editor transactions. This plan declares no 3D world scope.";
+  return `${evidence}\n\nBuilder summary (not Play-test evidence): ${summary}`;
+}
+
 function controlActions(
   status: CreatorSessionBundle["session"]["status"],
   recoveryCancellationAvailable = false,

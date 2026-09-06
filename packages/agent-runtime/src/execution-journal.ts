@@ -11,12 +11,17 @@ import {
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 import type {
   ModelMessage,
+  ModelImage,
+  ModelToolArgumentSyntaxError,
   ModelResponseFacts,
   ModelRequestSizes,
   ModelTurnRequest,
   ModelTurnResult,
   ModelUsage,
 } from "../../model-client/src/contracts.js";
+import { diagnoseToolArgumentJson } from "../../model-client/src/tool-argument-syntax.js";
+import { assertModelToolCallWireEvidence } from "../../model-client/src/tool-call-wire-evidence.js";
+import { assertModelImages, assertModelMessageImages } from "../../model-client/src/images.js";
 import type {
   AgentModelTurn,
   AgentRuntimeResult,
@@ -26,7 +31,7 @@ import type {
 } from "./index.js";
 
 export type JournalModelMessage =
-  | { readonly role: "user"; readonly content: string }
+  | { readonly role: "user"; readonly content: string; readonly images?: readonly ModelImage[] }
   | {
       readonly role: "assistant";
       readonly content: string;
@@ -34,6 +39,7 @@ export type JournalModelMessage =
         readonly id: string;
         readonly name: string;
         readonly arguments: unknown;
+        readonly argumentSyntaxError?: ModelToolArgumentSyntaxError;
       }[];
       readonly continuation:
         | { readonly present: false }
@@ -287,8 +293,10 @@ const HEAD_DIRECTORY = "agent-execution-journals";
 const HEAD_SUFFIX = ".head.json";
 const HEAD_MAX_BYTES = 64 * 1024;
 const MAX_CHAIN_LENGTH = 1_000_000;
-const MAX_JOURNAL_CHECKPOINT_BYTES = 8 * 1024 * 1024;
-const MAX_JOURNAL_RESPONSE_BYTES = 4 * 1024 * 1024;
+const MAX_JOURNAL_CHECKPOINT_BYTES = 16 * 1024 * 1024;
+// Public content from a permitted 4MiB model response still needs journal
+// envelope headroom; opaque payloads remain separate. Tool/evidence bounds stay fixed.
+const MAX_JOURNAL_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_JOURNAL_TOOL_RECORD_BYTES = 4 * 1024 * 1024;
 const JOURNAL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/;
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
@@ -713,6 +721,7 @@ export function createRequestIntentCheckpoint(
   request: ModelTurnRequest,
   state: AgentExecutionBoundaryState,
 ): Extract<AgentExecutionCheckpoint, { checkpointType: "request_intent" }> {
+  assertModelMessageImages(request.messages);
   const sanitized: JournalModelRequest = {
     model: request.model,
     requestSizes: measureRequestSizes(request),
@@ -1001,7 +1010,11 @@ export function assertAgentExecutionJournalHead(
 function sanitizeModelMessage(message: ModelMessage): JournalModelMessage {
   switch (message.role) {
     case "user":
-      return { role: "user", content: message.content };
+      return {
+        role: "user",
+        content: message.content,
+        ...(message.images === undefined ? {} : { images: structuredClone(message.images) }),
+      };
     case "tool":
       return {
         role: "tool",
@@ -1177,6 +1190,9 @@ function assertJournalModelRequest(value: unknown): void {
       throw new Error(`Invalid request size ${field}`);
   if (!Array.isArray(record.messages)) throw new Error("Invalid journal request messages");
   for (const message of record.messages) assertJournalModelMessage(message);
+  assertModelImages(
+    record.messages.flatMap((message) => (message.role === "user" ? (message.images ?? []) : [])),
+  );
   if (!Array.isArray(record.tools)) throw new Error("Invalid journal request tools");
   for (const tool of record.tools) {
     const toolRecord = asRecord(tool, "Invalid journal tool definition");
@@ -1330,8 +1346,10 @@ function assertJournalModelMessage(value: unknown): void {
   const record = asRecord(value, "Invalid journal model message");
   if (record.role === "user") {
     if (typeof record.content !== "string") throw new Error("Invalid journal user message");
+    if ("images" in record) assertModelImages(record.images);
     return;
   }
+  if ("images" in record) throw new Error("Only journal user messages may contain images");
   if (record.role === "tool") {
     assertNonEmptyString(record.toolCallId, "journal tool message call ID");
     assertNonEmptyString(record.name, "journal tool message name");
@@ -1346,6 +1364,14 @@ function assertJournalModelMessage(value: unknown): void {
     assertUntrustedToolLabel(callRecord.id);
     assertUntrustedToolLabel(callRecord.name);
     if (!("arguments" in callRecord)) throw new Error("Journal tool-call arguments are missing");
+    if (
+      callRecord.argumentSyntaxError !== undefined &&
+      (typeof callRecord.arguments !== "string" ||
+        stableJson(callRecord.argumentSyntaxError) !==
+          stableJson(diagnoseToolArgumentJson(callRecord.arguments)) ||
+        callRecord.argumentSyntaxError === null)
+    )
+      throw new Error("Journal tool-call JSON syntax evidence does not match its raw arguments");
   }
   const continuation = asRecord(record.continuation, "Invalid journal continuation descriptor");
   if (continuation.present === false) {
@@ -1401,6 +1427,8 @@ function assertJournalModelResult(value: unknown): void {
 
 function assertModelResponseFacts(value: unknown): void {
   const record = asRecord(value, "Invalid journal model response facts");
+  if (record.toolCallWireEvidence !== undefined)
+    assertModelToolCallWireEvidence(record.toolCallWireEvidence);
   assertNonEmptyString(record.requestedModel, "journal response requested model");
   for (const key of ["resolvedModel", "servingProvider", "responseId", "finishReason"])
     if (record[key] !== null && typeof record[key] !== "string")

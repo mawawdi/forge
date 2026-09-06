@@ -1,5 +1,5 @@
 --!strict
--- ForgeRuntime, MIT. ABI forge-runtime@1. No Promise dependency.
+-- ForgeRuntime, MIT. ABI forge-runtime@2. No Promise dependency.
 local Task = {}
 
 type Scope = {
@@ -49,6 +49,15 @@ function Task.start(scope: Scope, work: (token: Token) -> any, options: Options?
 	local function current(): boolean
 		return active and scope:IsCurrent(generation) and (deadline == nil or scheduler.now() < deadline)
 	end
+	local function cancel(pending: thread?, result: Outcome)
+		if pending and pending ~= coroutine.running() and coroutine.status(pending) ~= "dead" then
+			local ok, failure = pcall(function(): any
+				scheduler.cancel(pending)
+				return nil
+			end)
+			if not ok then table.insert(result.cleanupErrors, describe(failure)) end
+		end
+	end
 	local function settle(status: Status, value: any?, message: string?)
 		if not active then return end
 		active = false
@@ -58,17 +67,8 @@ function Task.start(scope: Scope, work: (token: Token) -> any, options: Options?
 			release()
 			release = nil
 		end
-		local function cancel(pending: thread?)
-			if pending and pending ~= coroutine.running() and coroutine.status(pending) ~= "dead" then
-				local ok, failure = pcall(function(): any
-					scheduler.cancel(pending)
-					return nil
-				end)
-				if not ok then table.insert(result.cleanupErrors, describe(failure)) end
-			end
-		end
-		cancel(timer)
-		cancel(worker)
+		cancel(timer, result)
+		cancel(worker, result)
 		if settings.onComplete and scope:IsCurrent(generation) then
 			local callback = coroutine.create(settings.onComplete)
 			local ok, failure = coroutine.resume(callback, result)
@@ -99,6 +99,11 @@ function Task.start(scope: Scope, work: (token: Token) -> any, options: Options?
 			return handle
 		end
 		timer = result
+		if outcome then
+			-- A scheduler may invoke its callback before returning the handle.
+			cancel(timer, outcome)
+			return handle
+		end
 	end
 	local ok, result = pcall(scheduler.spawn, function()
 		if not current() then
@@ -111,7 +116,14 @@ function Task.start(scope: Scope, work: (token: Token) -> any, options: Options?
 		elseif completed then settle("completed", value, nil)
 		else settle("failed", nil, describe(value)) end
 	end)
-	if not ok then settle("failed", nil, describe(result)) else worker = result end
+	if not ok then
+		settle("failed", nil, describe(result))
+	else
+		worker = result
+		-- task.spawn resumes immediately. Work can close its Scope and yield
+		-- before this assignment, so settlement must also release late handles.
+		if outcome then cancel(worker, outcome) end
+	end
 	return handle
 end
 

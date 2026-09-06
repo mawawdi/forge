@@ -17,6 +17,7 @@ const fixedInputs = [
   "packages/game-runtime/luau/Event.luau",
   "packages/game-runtime/luau/Task.luau",
   "packages/game-runtime/luau/StateMachine.luau",
+  "packages/game-runtime/luau/Network.luau",
   "scripts/generate-studio-evidence.mjs",
   "scripts/runtime-build-manifest.mjs",
   "tsconfig.json",

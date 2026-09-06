@@ -62,6 +62,8 @@ export {
 export {
   getRobloxApiCatalogLookupEntry,
   lookupRobloxApiCatalog,
+  RobloxApiLookupError,
+  type RobloxApiLookupMissContext,
   type RobloxApiCatalogLookupEntry,
   type RobloxApiCatalogLookupRequest,
   type RobloxApiCatalogLookupResult,
@@ -137,6 +139,8 @@ export interface StudioManifestProperty {
   readonly setterFamily?: string;
   /** Lossless family state seeded from the bound before capture for scratch updates. */
   readonly setterFamilySeed?: string;
+  /** Direct native outputs/read aliases of this setter; never recursively invokes their setters. */
+  readonly setterEffects?: readonly string[];
   readonly serialized?: boolean;
   readonly allowed?: readonly string[];
   readonly minimum?: number;
@@ -810,6 +814,7 @@ export function assertStudioCapabilityManifest(
         "declaringClass",
         "setterFamily",
         "setterFamilySeed",
+        "setterEffects",
         "serialized",
         "allowed",
         "minimum",
@@ -855,6 +860,21 @@ export function assertStudioCapabilityManifest(
           }))
       )
         fail("manifest property setter family seed");
+      if (property.setterEffects !== undefined) {
+        const effects = stringArray(property.setterEffects, "manifest property setter effects");
+        if (
+          effects.length === 0 ||
+          effects.length > 64 ||
+          effects.some(
+            (name, index) =>
+              !/^[A-Za-z][A-Za-z0-9]{0,127}$/.test(name) ||
+              name === property.name ||
+              (index > 0 && effects[index - 1]! >= name) ||
+              !properties.some((candidate) => record(candidate, "manifest property").name === name),
+          )
+        )
+          fail("manifest property setter effects");
+      }
       const catalogType = property.catalogType as StudioCatalogType;
       assertReflectionTypeExpectation(property.reflection, catalogType);
       if ((property.codec === "enum_name") !== (catalogType.category === "enum"))
@@ -1669,9 +1689,21 @@ export function sortedStudioMutationPropertyNames(
   record(properties, "mutation properties");
   const names = Object.keys(properties).sort(compareText);
   const families = new Map<string, string>();
+  const outputs = new Map<string, string>();
   for (const name of names) {
     const property = classDefinition.properties.find((entry) => entry.name === name);
     if (property === undefined) fail(`mutation property outside manifest: ${name}`);
+    const familyOutputs =
+      property.setterFamily === undefined
+        ? []
+        : classDefinition.properties
+            .filter((candidate) => candidate.setterFamily === property.setterFamily)
+            .map((candidate) => candidate.name);
+    for (const output of new Set([name, ...(property.setterEffects ?? []), ...familyOutputs])) {
+      const previous = outputs.get(output);
+      if (previous !== undefined) fail(`coupled property setters: ${previous} and ${name}`);
+      outputs.set(output, name);
+    }
     if (property.setterFamily === undefined) continue;
     const previous = families.get(property.setterFamily);
     if (previous !== undefined) fail(`coupled property setters: ${previous} and ${name}`);
@@ -1685,8 +1717,15 @@ export function derivedStudioMutationPropertyNames(
   classDefinition: StudioManifestClass,
   properties: Readonly<Record<string, StudioValue>>,
 ): readonly string[] {
+  const names = sortedStudioMutationPropertyNames(classDefinition, properties);
+  const effects = new Set(
+    names.flatMap(
+      (name) =>
+        classDefinition.properties.find((property) => property.name === name)!.setterEffects ?? [],
+    ),
+  );
   const families = new Set(
-    sortedStudioMutationPropertyNames(classDefinition, properties).flatMap(
+    names.flatMap(
       (name) =>
         classDefinition.properties.find((property) => property.name === name)!.setterFamily ?? [],
     ),
@@ -1694,8 +1733,8 @@ export function derivedStudioMutationPropertyNames(
   return classDefinition.properties
     .filter(
       (property) =>
-        property.setterFamily !== undefined &&
-        families.has(property.setterFamily) &&
+        (effects.has(property.name) ||
+          (property.setterFamily !== undefined && families.has(property.setterFamily))) &&
         !Object.hasOwn(properties, property.name),
     )
     .map((property) => property.name)

@@ -97,6 +97,17 @@ export class AnalysisProcessDeadline {
     return output;
   }
 
+  /** Reused parser bytes still consume the current invocation's time/output budget. */
+  reuse(output: { stdout: string; stderr: string }): AnalysisProcessResult {
+    if (Math.floor(this.expiresAt - performance.now()) < 1)
+      return this.timeoutResult("before cached output could be consumed");
+    const bytes = Buffer.byteLength(output.stdout) + Buffer.byteLength(output.stderr);
+    if (bytes > this.remainingOutputBytes)
+      return { status: null, stdout: "", stderr: "", failure: this.outputFailure() };
+    this.remainingOutputBytes -= bytes;
+    return { status: 0, ...output };
+  }
+
   private outputFailure(): AnalysisProcessFailure {
     return {
       kind: "output_limit",

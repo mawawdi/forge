@@ -1,0 +1,181 @@
+.composer-attach-control {
+  flex-shrink: 0;
+}
+.composer-attach-control button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 6px;
+  color: var(--paper-muted);
+}
+.composer-attach-control button:hover:not(:disabled) {
+  color: var(--paper);
+  background: var(--surface-hover);
+}
+.composer-attach-control button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.composer-visuals {
+  margin: 0 0 12px;
+  min-width: 0;
+}
+.composer-visuals__list {
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-start;
+  flex-wrap: nowrap;
+  gap: 10px;
+  padding: 4px;
+  margin: -4px;
+  list-style: none;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-padding-inline: 4px;
+  scrollbar-width: thin;
+}
+.composer-visuals__item {
+  position: relative;
+  flex: 0 0 88px;
+  width: 88px;
+  height: 88px;
+}
+.composer-visuals__preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  background: var(--night);
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: zoom-in;
+  touch-action: manipulation;
+  transition:
+    border-color 140ms ease,
+    transform 140ms ease;
+}
+.composer-visuals__preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+.composer-visuals__preview:hover {
+  border-color: var(--paper-muted);
+}
+.composer-visuals__preview:active {
+  transform: scale(0.97);
+}
+.composer-visuals__preview:focus-visible,
+.composer-visuals__remove:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 2px;
+}
+.composer-visuals__remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--paper) 18%, transparent);
+  border-radius: 50%;
+  color: var(--paper);
+  background: color-mix(in srgb, var(--night) 90%, transparent);
+  opacity: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    opacity 120ms ease,
+    background 120ms ease;
+}
+.composer-visuals__item:hover .composer-visuals__remove,
+.composer-visuals__item:focus-within .composer-visuals__remove {
+  opacity: 1;
+}
+.composer-visuals__remove:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+.composer-visuals__remove:disabled {
+  cursor: default;
+}
+.composer-visuals__item:hover .composer-visuals__remove:disabled,
+.composer-visuals__item:focus-within .composer-visuals__remove:disabled {
+  opacity: 0.5;
+}
+.composer-visuals__error {
+  margin: 8px 2px 0;
+  color: var(--red);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .composer-visuals__item {
+    flex-basis: 72px;
+    width: 72px;
+    height: 72px;
+  }
+  .composer-attach-control button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  .composer-visuals__item {
+    flex-basis: 88px;
+    width: 88px;
+    height: 88px;
+  }
+  .composer-visuals__remove {
+    top: -4px;
+    right: -4px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    border: 0;
+    background: transparent;
+    opacity: 1;
+  }
+  .composer-visuals__remove::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    box-sizing: border-box;
+    border: 1px solid color-mix(in srgb, var(--paper) 18%, transparent);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--night) 90%, transparent);
+  }
+  .composer-visuals__remove .icon {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+  }
+  .composer-visuals__remove:hover:not(:disabled) {
+    background: transparent;
+  }
+  .composer-visuals__remove:disabled {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-visuals__preview,
+  .composer-visuals__remove {
+    transition: none;
+  }
+  .composer-visuals__preview:active {
+    transform: none;
+  }
+}

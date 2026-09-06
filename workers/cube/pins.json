@@ -1,0 +1,164 @@
+{
+  "kind": "CubeUpstreamPins",
+  "source": {
+    "repository": "https://github.com/Roblox/cube.git",
+    "revision": "3c6d06ddbef3160a1e1950cb13ab63dd12a61e50"
+  },
+  "models": {
+    "cube3d": {
+      "repository": "Roblox/cube3d-v0.5",
+      "revision": "8cab4886803e8210f4282aef212c6b6b92f68d16",
+      "files": [
+        {
+          "path": "shape_gpt.safetensors",
+          "sha256": "36af11294ceb19640753248bcbdb2d101cd88608fa3f34564a283d4714fe6ef1",
+          "bytes": 7174201808
+        },
+        {
+          "path": "shape_tokenizer.safetensors",
+          "sha256": "6eb144696b667411084ba3a74848a0e52a8846b78aa262ce80ec6d2fdda85391",
+          "bytes": 1095142004
+        }
+      ]
+    },
+    "cubepart": {
+      "repository": "Roblox/cubepart",
+      "revision": "28431d124e77040fcaf34c0a71623ff61d35a6c0",
+      "files": [
+        {
+          "path": "multi_part_dit.safetensors",
+          "sha256": "cf6a742369197a7206937dcd4142e6a4f3242ec2fafe79686473c9cb1694153a",
+          "bytes": 8582452032
+        },
+        {
+          "path": "vae.safetensors",
+          "sha256": "2baff7fb0c04168b841152a51fc0289228a490253925cb125e79f2ea2949d4d4",
+          "bytes": 1321276164
+        }
+      ]
+    },
+    "clip": {
+      "repository": "openai/clip-vit-large-patch14",
+      "revision": "32bd64288804d66eefd0ccbe215aa642df71cc41",
+      "files": [
+        {
+          "path": "config.json",
+          "sha256": "8a09b467700c58138c29d53c605b34ebc69beaadd13274a8a2af8ad2c2f4032a",
+          "bytes": 4519
+        },
+        {
+          "path": "merges.txt",
+          "sha256": "9fd691f7c8039210e0fced15865466c65820d09b63988b0174bfe25de299051a",
+          "bytes": 524619
+        },
+        {
+          "path": "model.safetensors",
+          "sha256": "a2bf730a0c7debf160f7a6b50b3aaf3703e7e88ac73de7a314903141db026dcb",
+          "bytes": 1710540580
+        },
+        {
+          "path": "preprocessor_config.json",
+          "sha256": "910e70b3956ac9879ebc90b22fb3bc8a75b6a0677814500101a4c072bd7857bd",
+          "bytes": 316
+        },
+        {
+          "path": "special_tokens_map.json",
+          "sha256": "f8c0d6c39aee3f8431078ef6646567b0aba7f2246e9c54b8b99d55c22b707cbf",
+          "bytes": 389
+        },
+        {
+          "path": "tokenizer.json",
+          "sha256": "a83e0809aa4c3af7208b2df632a7a69668c6d48775b3c3fe4e1b1199d1f8b8f4",
+          "bytes": 2224003
+        },
+        {
+          "path": "tokenizer_config.json",
+          "sha256": "deef455e52fa5e8151e339add0582e4235f066009601360999d3a9cda83b1129",
+          "bytes": 905
+        },
+        {
+          "path": "vocab.json",
+          "sha256": "3f0c4f7d2086b61b38487075278ea9ed04edb53a03cbb045b86c27190fa8fb69",
+          "bytes": 961143
+        }
+      ]
+    },
+    "qwen": {
+      "repository": "Qwen/Qwen3-VL-4B-Instruct",
+      "revision": "ebb281ec70b05090aa6165b016eac8ec08e71b17",
+      "files": [
+        {
+          "path": "chat_template.json",
+          "sha256": "6f8a6a55027e3da5160105556cda5dd69f6423f1c32645f6730d32de7773d0c4",
+          "bytes": 5502
+        },
+        {
+          "path": "config.json",
+          "sha256": "edac7703329133edfc53e46ac0081835144c99d7eebf28b71c732694d435224d",
+          "bytes": 1505
+        },
+        {
+          "path": "generation_config.json",
+          "sha256": "8469742d1fce0de951c8909b26a2c0c0d8490837ce476efb114da9e0cefc4d44",
+          "bytes": 269
+        },
+        {
+          "path": "merges.txt",
+          "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3",
+          "bytes": 1671839
+        },
+        {
+          "path": "model-00001-of-00002.safetensors",
+          "sha256": "30a01a0556622645a3cce87b655bbbbbc1f170c196099f1b666c93202c3339a9",
+          "bytes": 4967229296
+        },
+        {
+          "path": "model-00002-of-00002.safetensors",
+          "sha256": "046296a2a387efb43b0c997d5833c789604d168834f6e0d3064bf7bb13d002a6",
+          "bytes": 3908490048
+        },
+        {
+          "path": "model.safetensors.index.json",
+          "sha256": "58a7841d7bff2548dd91577d216274a83cf1b500bc6a534b809d6c1b1707cf2b",
+          "bytes": 64742
+        },
+        {
+          "path": "preprocessor_config.json",
+          "sha256": "27225450ac9c6529872ee1924fcb0962ff5634834f817040f444118116f4e516",
+          "bytes": 390
+        },
+        {
+          "path": "tokenizer.json",
+          "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
+          "bytes": 7032403
+        },
+        {
+          "path": "tokenizer_config.json",
+          "sha256": "c2da771801886ad9ae98181793ffd3dfb7f1af30f6f7c6a4e15d7dbba52e2399",
+          "bytes": 10868
+        },
+        {
+          "path": "video_preprocessor_config.json",
+          "sha256": "7768af27c1fafa9cc9011c1dc20067e03f8915e03b63504550e11d5066986d13",
+          "bytes": 385
+        },
+        {
+          "path": "vocab.json",
+          "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+          "bytes": 2776833
+        }
+      ]
+    },
+    "qwen_image": {
+      "repository": "Qwen/Qwen-Image",
+      "revision": "75e0b4be04f60ec59a75f475837eced720f823b6",
+      "files": [
+        {
+          "path": "transformer/config.json",
+          "sha256": "1bd1ef23f159b4eb3c894eaecc2ac2b9ab5ad31ca1bf8ecc0b0f71081f0730b5",
+          "bytes": 371
+        }
+      ]
+    }
+  }
+}

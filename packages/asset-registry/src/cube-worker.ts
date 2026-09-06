@@ -2,9 +2,10 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 import type { ArtifactReference } from "../../artifact-store/src/index.js";
+import type { RemoteCubeInstallation } from "./cube-remote.js";
 import {
   AssetError,
   AssetRegistry,
@@ -37,18 +38,55 @@ export interface CubeExecutionPolicy {
   maximumInputBytes: number;
   maximumOutputBytes: number;
 }
+/** Complete host configuration; this exact object is fingerprinted in worker evidence. */
+export interface LocalCreatorCubeInstallation {
+  kind: "CreatorCubeInstallation";
+  cube: CubeInstallation;
+  executablePin: { sha256: string; bytes: number };
+  policy: CubeExecutionPolicy;
+}
+export type CreatorCubeInstallation = LocalCreatorCubeInstallation | RemoteCubeInstallation;
+export function creatorCubeInstallationFingerprint(installation: CreatorCubeInstallation): string {
+  return contentHash(stableJson(installation));
+}
 export const DEFAULT_CUBE_EXECUTION_POLICY: Readonly<CubeExecutionPolicy> = Object.freeze({
   timeoutMs: 120000,
   maximumLogBytes: 1024 * 1024,
   maximumInputBytes: 16 * 1024 * 1024 * 1024,
   maximumOutputBytes: 16 * 1024 * 1024,
 });
+export interface CubeCapturedLog {
+  encoding: "base64";
+  content: string;
+  sha256: string;
+  bytes: number;
+}
+export interface CubeProcessResult {
+  stdout: CubeCapturedLog;
+  stderr: CubeCapturedLog;
+  logsTruncated: boolean;
+  exitCode: number | null;
+  signal: string | null;
+  reason?: string;
+}
+export interface CubeJobDiagnostic {
+  kind: "CubeJobDiagnostic";
+  intentHash: string;
+  installationKind: CubeInstallation["kind"] | "cube_remote";
+  installationHash: string;
+  status: "locally_inspected" | "recovery_required";
+  failureCode?: string;
+  reason?: string;
+  execution?: CubeProcessResult;
+  remote?: ArtifactReference;
+}
 export type CubeJobResult =
   | {
       status: "locally_inspected";
       intent: ArtifactReference;
       lock: AssetLock;
       receipt: ArtifactReference;
+      diagnostic: ArtifactReference;
       jobDirectory: string;
     }
   | {
@@ -56,6 +94,8 @@ export type CubeJobResult =
       intent: ArtifactReference;
       jobDirectory: string;
       reason: string;
+      failureCode: "intent_consumed" | "execution_incomplete" | "output_rejected";
+      diagnostic: ArtifactReference;
       mayRelaunch: false;
     };
 
@@ -94,15 +134,18 @@ export function cubeArgumentVector(
  */
 export async function runCubeJob(input: {
   intent: CubeJobIntent;
-  installation: CubeInstallation;
+  installation: LocalCreatorCubeInstallation;
   registry: AssetRegistry;
   jobRoot: string;
-  policy?: CubeExecutionPolicy;
   signal?: AbortSignal;
 }): Promise<CubeJobResult> {
-  const { intent, installation, registry } = input;
+  const { intent, registry } = input;
+  const hostInstallation = structuredClone(input.installation);
+  const { cube: installation, policy } = hostInstallation;
+  if (hostInstallation.kind !== "CreatorCubeInstallation")
+    throw new AssetError("invalid_installation", "Complete creator installation required");
+  const installationHash = creatorCubeInstallationFingerprint(hostInstallation);
   assertCubeJobIntent(intent);
-  const policy = input.policy ?? DEFAULT_CUBE_EXECUTION_POLICY;
   for (const value of Object.values(policy))
     if (!Number.isSafeInteger(value) || value < 1)
       throw new AssetError(
@@ -115,23 +158,46 @@ export async function runCubeJob(input: {
     throw new AssetError("unavailable", "This worker requires POSIX process-group cancellation");
   if (input.signal?.aborted)
     throw new AssetError("cancelled", "Cube job was cancelled before launch");
-  await validateInstallation(installation, intent, policy);
+  await validateCubeInstallation(installation, intent, policy);
+  const executablePin = {
+    path: basename(installation.executable),
+    ...hostInstallation.executablePin,
+  };
+  await verifyCubeInputPin(dirname(installation.executable), executablePin);
   const root = await ensureAssetDirectory(input.jobRoot);
   const jobDirectory = join(root, intent.jobId);
   // Immutable intent is persisted before the exclusive launch marker and subprocess.
   const intentReference = await registry.store.write(intent);
+  const failure = async (
+    failureCode: "intent_consumed" | "execution_incomplete" | "output_rejected",
+    reason: string,
+    execution?: CubeProcessResult,
+  ): Promise<CubeJobResult> => ({
+    status: "recovery_required",
+    failureCode,
+    intent: intentReference,
+    jobDirectory,
+    reason,
+    diagnostic: await registry.store.write({
+      kind: "CubeJobDiagnostic",
+      intentHash: intent.hash,
+      installationKind: installation.kind,
+      installationHash,
+      status: "recovery_required",
+      failureCode,
+      reason,
+      ...(execution ? { execution } : {}),
+    } satisfies CubeJobDiagnostic),
+    mayRelaunch: false,
+  });
   try {
     await mkdir(jobDirectory, { mode: 0o700 });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "EEXIST")
-      return {
-        status: "recovery_required",
-        intent: intentReference,
-        jobDirectory,
-        reason:
-          "This intent already has a job directory. Reconcile its recorded output/receipt before any new job; it will not be launched twice.",
-        mayRelaunch: false,
-      };
+      return failure(
+        "intent_consumed",
+        "This intent already has a job directory. Reconcile its recorded output/receipt before any new job; it will not be launched twice.",
+      );
     throw error;
   }
   const markerPath = join(jobDirectory, "launch.json");
@@ -148,6 +214,7 @@ export async function runCubeJob(input: {
           intentHash: intent.hash,
           intent: intentReference,
           installationKind: installation.kind,
+          installationHash,
         }) + "\n",
       );
       await marker.sync();
@@ -156,37 +223,21 @@ export async function runCubeJob(input: {
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "EEXIST")
-      return {
-        status: "recovery_required",
-        intent: intentReference,
-        jobDirectory,
-        reason:
-          "This intent has a persisted launch marker. Reconcile its recorded output/receipt before any new job; it will not be launched twice.",
-        mayRelaunch: false,
-      };
+      return failure(
+        "intent_consumed",
+        "This intent has a persisted launch marker. Reconcile its recorded output/receipt before any new job; it will not be launched twice.",
+      );
     throw error;
   }
   const outputDirectory = await ensureAssetDirectory(join(jobDirectory, "output"));
   const argv = cubeArgumentVector(installation, intent, outputDirectory);
   const result = await executeBounded(installation, argv, outputDirectory, policy, input.signal);
   if (result.reason !== undefined) {
-    await registry.store.write({
-      kind: "CubeJobInterrupted",
-      intentHash: intent.hash,
-      reason: result.reason,
-      stdoutHash: contentHash(result.stdout),
-      stderrHash: contentHash(result.stderr),
-    });
-    return {
-      status: "recovery_required",
-      intent: intentReference,
-      jobDirectory,
-      reason: result.reason,
-      mayRelaunch: false,
-    };
+    return failure("execution_incomplete", result.reason, result);
   }
   try {
-    await validateInstallation(installation, intent, policy);
+    await validateCubeInstallation(installation, intent, policy);
+    await verifyCubeInputPin(dirname(installation.executable), executablePin);
     const bytes = await readPinnedAssetFile(
       outputDirectory,
       "output.obj",
@@ -205,35 +256,58 @@ export async function runCubeJob(input: {
         checkpointHashes: intent.checkpointHashes,
       },
     });
+    const diagnostic = await registry.store.write({
+      kind: "CubeJobDiagnostic",
+      intentHash: intent.hash,
+      installationKind: installation.kind,
+      installationHash,
+      status: "locally_inspected",
+      execution: result,
+    } satisfies CubeJobDiagnostic);
     const receipt = await registry.store.write({
       kind: "CubeJobLocalReceipt",
       intentHash: intent.hash,
       installationKind: installation.kind,
+      installationHash,
       assetLock: lock.hash,
       sourceHash: lock.sourceHash,
       exitCode: 0,
-      stdoutHash: contentHash(result.stdout),
-      stderrHash: contentHash(result.stderr),
+      diagnostic,
       claims:
         "Local byte inspection only; no Roblox upload, native import, rendering, permissions or collision evidence.",
     });
-    return { status: "locally_inspected", intent: intentReference, lock, receipt, jobDirectory };
-  } catch (error) {
     return {
-      status: "recovery_required",
+      status: "locally_inspected",
       intent: intentReference,
+      lock,
+      receipt,
+      diagnostic,
       jobDirectory,
-      reason: error instanceof Error ? error.message : "Output inspection failed",
-      mayRelaunch: false,
     };
+  } catch (error) {
+    return failure(
+      "output_rejected",
+      error instanceof Error ? error.message : "Output inspection failed",
+      result,
+    );
   }
 }
 
-async function validateInstallation(
+export async function validateCubeInstallation(
   installation: CubeInstallation,
   intent: CubeJobIntent,
   policy: CubeExecutionPolicy,
 ): Promise<void> {
+  if (intent.generation.operation !== "cube3d" || intent.checkpointHashes.length !== 2)
+    throw new AssetError(
+      "invalid_installation",
+      "The local Cube3D worker requires a text generation and its two exact checkpoints",
+    );
+  if (intent.generation.seed !== 0)
+    throw new AssetError(
+      "unavailable",
+      "The upstream local CLI has no seed option; use the remote worker for controlled seeds. Zero denotes unspecified local sampling.",
+    );
   if (
     !isAbsolute(installation.executable) ||
     !isAbsolute(installation.root) ||
@@ -289,11 +363,11 @@ async function validateInstallation(
       (total += pin.bytes) > policy.maximumInputBytes
     )
       throw new AssetError("resource_limit", "Cube input inventory exceeds its hash/byte budget");
-    await verifyPinnedFile(installation.root, pin);
+    await verifyCubeInputPin(installation.root, pin);
   }
 }
 
-async function verifyPinnedFile(root: string, pin: CubeInputPin): Promise<void> {
+export async function verifyCubeInputPin(root: string, pin: CubeInputPin): Promise<void> {
   if (
     isAbsolute(pin.path) ||
     !/^[A-Za-z0-9][A-Za-z0-9_.-]*(\/[A-Za-z0-9][A-Za-z0-9_.-]*)*$/.test(pin.path) ||
@@ -347,7 +421,7 @@ function executeBounded(
   outputDirectory: string,
   policy: CubeExecutionPolicy,
   signal?: AbortSignal,
-): Promise<{ stdout: string; stderr: string; reason?: string }> {
+): Promise<CubeProcessResult> {
   return new Promise((complete) => {
     const child = spawn(installation.executable, args, {
       cwd: installation.root,
@@ -409,10 +483,22 @@ function executeBounded(
       if (reason === undefined && (code !== 0 || exitSignal !== null))
         reason = `Cube process exited without success (${String(code)}, ${String(exitSignal)})`;
       complete({
-        stdout: Buffer.concat(stdout).toString("utf8"),
-        stderr: Buffer.concat(stderr).toString("utf8"),
+        stdout: captureLog(Buffer.concat(stdout)),
+        stderr: captureLog(Buffer.concat(stderr)),
+        logsTruncated: count > policy.maximumLogBytes,
+        exitCode: code,
+        signal: exitSignal,
         ...(reason === undefined ? {} : { reason }),
       });
     });
   });
+}
+
+function captureLog(bytes: Buffer): CubeCapturedLog {
+  return {
+    encoding: "base64",
+    content: bytes.toString("base64"),
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    bytes: bytes.length,
+  };
 }

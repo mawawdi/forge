@@ -88,6 +88,7 @@ function source(
 function design(...components: Design["components"]): Design {
   return {
     kind: "GameDesignSpec",
+    worldAuthoring: { mode: "none" },
     id: "open-composition",
     intent:
       "Create a new interaction without prescribing a lifecycle, world, interface, or player count.",
@@ -96,6 +97,36 @@ function design(...components: Design["components"]): Design {
     artifactDependencies: [],
   };
 }
+
+test("world authoring is explicit, bounded, and canonical", () => {
+  const missing = design();
+  delete (missing as Partial<Design>).worldAuthoring;
+  rejected(missing, "invalid_game_design");
+
+  const runtime = design();
+  runtime.worldAuthoring = {
+    mode: "runtime_generated",
+    rationale: "The creator explicitly requested a fresh generated arena for every Play session.",
+  };
+  assert.equal(eligible(runtime).spec.worldAuthoring.mode, "runtime_generated");
+
+  const persistent = design();
+  persistent.worldAuthoring = {
+    mode: "persistent",
+    roots: ["Workspace/Zeta", "Workspace/Alpha"],
+  };
+  const admitted = eligible(persistent);
+  assert.deepEqual(
+    admitted.spec.worldAuthoring.mode === "persistent" ? admitted.spec.worldAuthoring.roots : [],
+    ["Workspace/Alpha", "Workspace/Zeta"],
+  );
+
+  persistent.worldAuthoring = {
+    mode: "persistent",
+    roots: ["Workspace/Scene", "Workspace/Scene"],
+  };
+  rejected(persistent, "duplicate_world_root");
+});
 
 function eligible(input: unknown, options: Options = OPTIONS) {
   const result = validateGameDesignSpec(input, options);
@@ -173,6 +204,7 @@ test("ordinary source-only admission has no universal round, UI, world, entrypoi
       "id",
       "intent",
       "kind",
+      "worldAuthoring",
     ]);
     assert.deepEqual(result.resolvedDefinitions, []);
     assert.deepEqual(result.obligations, []);

@@ -26,6 +26,7 @@ import {
   type CreatorSourceWriteBlobCapture,
 } from "../../studio-evidence/src/project-index.js";
 import { gameDataMatchesSchema } from "../../game-ir/src/recipes.js";
+import { gameActivationOperations } from "./activation.js";
 import type { GameJsonValue } from "../../game-ir/src/index.js";
 import {
   DEFAULT_GAME_ADMISSION_POLICY,
@@ -464,73 +465,16 @@ function compileGameBuildPartitions(
 ): GameBuildPartition[] {
   const topology = compileCreatorTransactionTopology({ initial: plan.initialTopology, operations });
   const byChange = new Map(operations.map((operation) => [operation.planChangeId, operation]));
-  const inventoryById = new Map(plan.inventory.map((item) => [item.id, item]));
   const creates = new Map(
     operations
       .filter((operation) => operation.kind === "create")
       .map((operation) => [studioObjectIdentityKey(operation.target.identity), operation]),
   );
-  const activation = new Set(
-    operations
-      .filter(
-        (operation) =>
-          ["create", "edit_source"].includes(operation.kind) &&
-          ["Script", "LocalScript"].includes(operation.target.className),
-      )
-      .map((operation) => operation.id),
-  );
-  let extended = true;
-  while (extended) {
-    extended = false;
-    const activeGroups = new Set(
-      plan.inventory
-        .filter((item) => item.atomicGroup && activation.has(byChange.get(item.id)!.id))
-        .map((item) => item.atomicGroup),
-    );
-    for (const operation of operations) {
-      if (activation.has(operation.id)) continue;
-      const item = inventoryById.get(operation.planChangeId)!;
-      const parent =
-        (operation.kind === "create" || operation.kind === "move") &&
-        operation.parent.kind === "instance"
-          ? creates.get(studioObjectIdentityKey(operation.parent.identity))
-          : undefined;
-      const references =
-        operation.kind === "create" || operation.kind === "move" || operation.kind === "update"
-          ? Object.values(operation.properties).flatMap((value) =>
-              value.kind === "instance_ref" && value.state === "reference"
-                ? [creates.get(studioObjectIdentityKey(value.identity))]
-                : [],
-            )
-          : [];
-      if (
-        (parent && activation.has(parent.id)) ||
-        references.some((reference) => reference && activation.has(reference.id)) ||
-        item.dependencies.some((id) => activation.has(byChange.get(id)!.id)) ||
-        (item.atomicGroup && activeGroups.has(item.atomicGroup))
-      ) {
-        activation.add(operation.id);
-        extended = true;
-      }
-    }
-  }
-  if (activation.size > plan.policy.maximumPartitionOperations)
-    throw new Error(
-      "Entrypoint activation component exceeds one bounded transaction; approve explicit inactive staging first",
-    );
-  if (
-    operations.some(
-      (operation) =>
-        activation.has(operation.id) &&
-        !(
-          ["create", "edit_source"].includes(operation.kind) &&
-          ["Script", "LocalScript"].includes(operation.target.className)
-        ),
-    )
-  )
-    throw new Error(
-      "Entrypoint activation includes dependent allocations; approve explicit inactive staging before activation",
-    );
+  const activation = gameActivationOperations({
+    inventory: plan.inventory,
+    operations,
+    maximumPartitionOperations: plan.policy.maximumPartitionOperations,
+  });
   const dependencies = new Map(operations.map((operation) => [operation.id, new Set<string>()]));
   for (const edge of topology.dependencyEdges)
     dependencies.get(edge.operationId)!.add(edge.dependencyId);

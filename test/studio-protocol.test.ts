@@ -22,6 +22,7 @@ import {
 } from "../packages/studio-evidence/src/index.js";
 import {
   assertBackendToPluginMessage,
+  assertCreatorRecordingRecoveryPayload,
   assertPluginToBackendMessage,
   assertStudioCommandSettledPayload,
   assertStudioProjectIdentityRejectionEvidence,
@@ -3583,7 +3584,7 @@ test("finalization gates reject impossible action, provenance, and settlement co
     () => new Date(sentAt),
   );
   assertBackendToPluginMessage(recovery);
-  assert.throws(
+  assert.doesNotThrow(
     () =>
       assertBackendToPluginMessage({
         ...recovery,
@@ -3592,8 +3593,7 @@ test("finalization gates reject impossible action, provenance, and settlement co
           replacesAction: undefined,
         },
       }),
-    /CancelInterruptedRecording/,
-    "recovery cancellation must retain the displaced action",
+    "cancelling an open cursor has no displaced action; native authority must prove that phase",
   );
 
   const recoveryReceipt = {
@@ -3621,14 +3621,13 @@ test("finalization gates reject impossible action, provenance, and settlement co
     /CreatorChangeFinalized/,
     "a finalization receipt must retain the exact post-finalization capture epoch",
   );
-  assert.throws(
+  assert.doesNotThrow(
     () =>
       assertPluginToBackendMessage({
         ...recoveryReceipt,
         payload: { ...recoveryReceipt.payload, replacesAction: undefined },
       }),
-    /CreatorChangeFinalized/,
-    "a recovery-cancel receipt must echo the displaced action",
+    "a pre-finalization recovery-cancel receipt has no displaced action",
   );
 
   const recoveryAcknowledgement = createBackendMessage(
@@ -3642,14 +3641,13 @@ test("finalization gates reject impossible action, provenance, and settlement co
     () => new Date(sentAt),
   );
   assertBackendToPluginMessage(recoveryAcknowledgement);
-  assert.throws(
+  assert.doesNotThrow(
     () =>
       assertBackendToPluginMessage({
         ...recoveryAcknowledgement,
         payload: { ...recoveryAcknowledgement.payload, replacesAction: undefined },
       }),
-    /AcknowledgeCreatorChangeFinalization/,
-    "a recovery-cancel acknowledgement must echo the displaced action",
+    "a pre-finalization recovery-cancel acknowledgement has no displaced action",
   );
 
   assert.throws(
@@ -3671,6 +3669,58 @@ test("finalization gates reject impossible action, provenance, and settlement co
       }),
     /CreatorChangeFinalized/,
     "a commit receipt cannot claim cancellation",
+  );
+});
+
+test("recording inventories distinguish open-cursor cancellation from displaced ordinary intents", () => {
+  const binding = {
+    creatorSessionId: "recovery_authority_session",
+    changeSetId: "recovery_authority_change",
+    changeSetHash: "a".repeat(64),
+    projectionId: "recovery_authority_projection",
+    projectionHash: "b".repeat(64),
+    manifestHash: STUDIO_CAPABILITY_MANIFEST_HASH,
+    beforeProjectIndexManifestId: "recovery_authority_before",
+    beforeProjectRevisionHash: "c".repeat(64),
+    beforeProjectDetectorEpoch: 1,
+    recordingId: "recovery_authority_recording",
+    recoveryProjectIndexManifestId: "recovery_authority_current",
+    recoveryProjectRevisionHash: "d".repeat(64),
+    recoveryProjectDetectorEpoch: 2,
+    recordingState: "open",
+  };
+  for (const cancellation of [
+    { kind: "open" },
+    { kind: "replace_intent", action: "commit" },
+    { kind: "replace_intent", action: "cancel" },
+  ])
+    assertCreatorRecordingRecoveryPayload({ ...binding, cancellation });
+  assertCreatorRecordingRecoveryPayload(binding);
+  for (const cancellation of [
+    null,
+    { kind: "open", action: "cancel" },
+    { kind: "replace_intent" },
+    { kind: "replace_intent", action: ["commit"] },
+    { kind: "replace_intent", action: "undo" },
+    { kind: "open", extra: true },
+  ])
+    assert.throws(
+      () => assertCreatorRecordingRecoveryPayload({ ...binding, cancellation }),
+      /CreatorRecordingRecovery/,
+    );
+  for (const recordingState of ["none", "not_open", "unknown", "finalizing"])
+    assert.throws(
+      () =>
+        assertCreatorRecordingRecoveryPayload({
+          ...binding,
+          recordingState,
+          cancellation: { kind: "open" },
+        }),
+      /CreatorRecordingRecovery/,
+    );
+  assert.throws(
+    () => assertCreatorRecordingRecoveryPayload({ ...binding, replacesAction: "commit" }),
+    /CreatorRecordingRecovery/,
   );
 });
 

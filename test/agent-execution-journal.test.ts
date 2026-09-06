@@ -22,6 +22,8 @@ import type {
   ModelTurnRequest,
   ModelTurnResult,
 } from "../packages/model-client/src/contracts.js";
+import { modelImageFixture } from "./fixtures/model-image-input.js";
+import { captureToolCallWireEvidence } from "../packages/model-client/src/tool-call-wire-evidence.js";
 
 const MODEL = "openai/test-model";
 
@@ -81,13 +83,17 @@ function descriptor(): ModelClient["descriptor"] {
         steps: 1,
         toolChoice: "auto",
         providerParallelToolCalls: "not_requested",
-        toolBatchExecution: "atomic_validate_then_sequential",
+        toolBatchExecution: "host_validated_then_sequential",
         toolNameEncoding: "openai_function_slug",
         maxRetries: 0,
         telemetry: false,
         timeoutPolicy: "bounded_turn_and_remaining_runtime_budget",
         maxDurationMsPerTurn: 1_200_000,
         maxOutputTokensPerTurn: 4_096,
+        maxOutputTokensByModel: {},
+        outputTokenLimitCatalogHash: null,
+        inputModalitiesByModel: {},
+        inputModalityCatalogHash: null,
       },
       continuation: { maxBytes: 256 * 1_024 },
     },
@@ -134,6 +140,9 @@ test("runtime journals every provider and tool boundary without opaque continuat
   const root = await directory();
   const journal = new AgentExecutionJournalStore(root);
   let turn = 0;
+  const wireEvidence = captureToolCallWireEvidence([
+    { id: "call-1", name: "project_inspect", arguments: '{"id":"door"}' },
+  ]);
   const client: ModelClient = {
     descriptor: descriptor(),
     async complete(request): Promise<ModelTurnResult> {
@@ -156,7 +165,7 @@ test("runtime journals every provider and tool boundary without opaque continuat
           stopReason: "tool_calls",
           requestHash: contentHash(stableJson(request)),
           responseHash: contentHash("response-1"),
-          responseFacts: responseFacts(request, 1),
+          responseFacts: { ...responseFacts(request, 1), toolCallWireEvidence: wireEvidence },
           usage: {
             reasoningTokens: null,
             cacheReadTokens: null,
@@ -239,6 +248,8 @@ test("runtime journals every provider and tool boundary without opaque continuat
   if (firstResponse?.checkpointType !== "response_received") assert.fail("missing response");
   assert.equal(firstResponse.result.kind, "assistant");
   if (firstResponse.result.kind !== "assistant") assert.fail("missing assistant response");
+  assert.deepEqual(firstResponse.result.responseFacts.toolCallWireEvidence, wireEvidence);
+  assert.deepEqual(result.turns[0]?.responseFacts?.toolCallWireEvidence, wireEvidence);
   assert.deepEqual(firstResponse.result.message.continuation, {
     present: true,
     transport: "test-transport",
@@ -581,7 +592,7 @@ for (const crashAfter of [
   });
 }
 
-test("explicit response resume preserves active duration budget across service downtime", async () => {
+test("explicit response resume preserves exact image input and active duration budget across service downtime", async () => {
   const root = await directory();
   const store = new AgentExecutionJournalStore(root);
   const journalId = "journal-resume-after-downtime";
@@ -598,6 +609,15 @@ test("explicit response resume preserves active duration budget across service d
   const client: ModelClient = {
     descriptor: descriptor(),
     async complete(request): Promise<ModelTurnResult> {
+      assert.deepEqual(
+        request.messages[0]?.role === "user" ? request.messages[0].images : undefined,
+        [modelImageFixture()],
+      );
+      assert.equal(
+        request.messages.filter((message) => message.role === "user" && message.images?.length)
+          .length,
+        1,
+      );
       providerCalls += 1;
       if (providerCalls === 1) {
         return {
@@ -643,6 +663,8 @@ test("explicit response resume preserves active duration budget across service d
       };
     },
   };
+  client.descriptor.configuration.request.inputModalitiesByModel = { [MODEL]: ["image", "text"] };
+  client.descriptor.configuration.request.inputModalityCatalogHash = "a".repeat(64);
   let toolExecutions = 0;
   const tools: AgentToolHost = {
     definitions: () => [
@@ -670,6 +692,7 @@ test("explicit response resume preserves active duration budget across service d
   const common = {
     systemPrompt: "system",
     prompt: "inspect",
+    initialImages: [modelImageFixture()],
     orientation: {} as AgentOrientation,
     tools,
     budgets,
@@ -688,6 +711,21 @@ test("explicit response resume preserves active duration budget across service d
     /simulate service exit/,
   );
   const interrupted = await store.load(journalId);
+  const resume = createAgentExecutionJournalResume(interrupted);
+  assert.deepEqual(
+    resume.request.messages[0]?.role === "user" ? resume.request.messages[0].images : undefined,
+    [modelImageFixture()],
+  );
+  await assert.rejects(
+    () =>
+      new ForgeNativeAgentRuntime(client).run({
+        ...common,
+        initialImages: [],
+        executionJournal: durableSink,
+        resumeFromJournal: resume,
+      }),
+    /creator request authority/,
+  );
   const nextDayClock = {
     now: () => new Date("2026-09-04T00:00:00.000Z"),
     monotonicNow: () => 0,

@@ -34,18 +34,21 @@ const context = {
   designHash: "a".repeat(64),
 };
 const project = { name: "Composition test", placeId: 0, universeId: 0 };
-const initialTopology: CreatorTransactionTopologyNode[] = ["Workspace", "StarterGui"].map(
-  (path) => ({
-    identity: { kind: "forge_attribute", stableId: "test-" + path },
-    path,
-    name: path,
-    className: path,
-    engineContainer: { path, className: path },
-  }),
-);
+const initialTopology: CreatorTransactionTopologyNode[] = [
+  "Workspace",
+  "StarterGui",
+  "ReplicatedStorage",
+].map((path) => ({
+  identity: { kind: "forge_attribute", stableId: "test-" + path },
+  path,
+  name: path,
+  className: path,
+  engineContainer: { path, className: path },
+}));
 function spec(definition: GameRecipeDefinition, config: unknown): GameDesignSpec {
   return {
     kind: "GameDesignSpec",
+    worldAuthoring: { mode: "none" },
     id: "optional-composition",
     intent: "Compose only the requested objects and controls.",
     components: [
@@ -221,10 +224,10 @@ test("scene only enforces declared constraints and rejects bad relative placemen
   assert.throws(() => compileScenePrimitives(context, badParent), /cycle/);
   const missing = scene();
   missing.nodes[1]!.placement.relativeTo = "missing";
-  assert.throws(() => compileScenePrimitives(context, missing), /Unknown placement/);
+  assert.throws(() => compileScenePrimitives(context, missing), /nodes\[1\].placement.relativeTo/);
   const badMaterial = scene();
   badMaterial.nodes[0]!.material = "InventedMaterial";
-  assert.throws(() => compileScenePrimitives(context, badMaterial), /allowlist/);
+  assert.throws(() => compileScenePrimitives(context, badMaterial), /material/);
 });
 
 test("UI tokens and arbitrary component trees compile without Workspace or a prescribed screen flow", () => {
@@ -232,7 +235,11 @@ test("UI tokens and arbitrary component trees compile without Workspace or a pre
   const output = compileResponsiveUi(context, config);
   assert.ok(
     output.inventory.every(
-      (item) => item.change.kind === "create" && item.change.path.startsWith("StarterGui/Tools"),
+      (item) =>
+        item.change.kind === "create" &&
+        (item.source
+          ? item.change.path === "ReplicatedStorage/ForgeUI_composition_Controller"
+          : item.change.path.startsWith("StarterGui/Tools")),
     ),
   );
   const compiled = plan(RESPONSIVE_UI_DEFINITION, config, output.inventory);
@@ -264,10 +271,36 @@ test("UI tokens and arbitrary component trees compile without Workspace or a pre
   );
 });
 
+test("UI local token, action and node identities preserve case and underscores", () => {
+  const config = ui();
+  config.tokens.colors[0]!.id = "Ink_Base";
+  config.tokens.semanticColors[0]!.primitive = "Ink_Base";
+  config.tokens.semanticColors[0]!.id = "SurfaceColor";
+  config.tokens.styles[0]!.background = "SurfaceColor";
+  config.tokens.styles[0]!.id = "Control_Button";
+  config.nodes[0]!.style = "Control_Button";
+  config.nodes[0]!.id = "InspectButton";
+  config.nodes[0]!.action = "inspectObject";
+  config.viewports[0]!.id = "phonePortrait";
+  const output = compileResponsiveUi(context, config);
+  const button = output.inventory.find((item) => item.outputId === "node/InspectButton")!;
+  assert.equal(button.attributes.UiNodeId, "InspectButton");
+  assert.equal(button.attributes.UiAction, "inspectObject");
+  assert.deepEqual(button.lockedProperties.BackgroundColor3, {
+    kind: "color3_rgb8",
+    r: 10,
+    g: 20,
+    b: 30,
+  });
+  assert.doesNotThrow(() => plan(RESPONSIVE_UI_DEFINITION, config, output.inventory));
+  config.tokens.semanticColors[0]!.primitive = "ink_base";
+  assert.throws(() => compileResponsiveUi(context, config), /semanticColors/);
+});
+
 test("responsive UI rejects missing tokens, poor contrast, small controls, overflow and hierarchy cycles", () => {
   const token = ui();
   token.tokens.semanticColors[0]!.primitive = "unknown";
-  assert.throws(() => compileResponsiveUi(context, token), /unknown primitive/);
+  assert.throws(() => compileResponsiveUi(context, token), /tokens.semanticColors\[0\].primitive/);
   const contrast = ui();
   contrast.tokens.styles[0]!.foreground = "surface";
   assert.throws(() => compileResponsiveUi(context, contrast), /contrast/);

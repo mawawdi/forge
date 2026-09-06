@@ -23,6 +23,23 @@ local Runtime = {}
 
 local function iso(): string return os.date("!%Y-%m-%dT%H:%M:%S.000Z") end
 local function messageId(prefix: string): string return prefix .. "_" .. HttpService:GenerateGUID(false) end
+
+local CREATOR_RECOVERY_READ_FAILURE = "Stored Forge transaction data cannot be read under this connector's contract. Studio writes are blocked. Preserve the plugin settings and close Studio before explicitly resetting the incompatible transaction data."
+
+local function inspectCreatorInventory(authoring: any): (any?, any?, string?)
+	local read, inventory = pcall(function()
+		return { recovery = authoring:recovery(), receipt = authoring:finalizationReceipt() }
+	end)
+	if not read or typeof(inventory.recovery) ~= "table" then
+		return nil, nil, CREATOR_RECOVERY_READ_FAILURE
+	end
+	return inventory.recovery, inventory.receipt, nil
+end
+
+local function possibleRecordingSafely(owner: any): boolean
+	local read, possible = pcall(function() return owner:hasPossibleRecording() end)
+	return not read or possible ~= false
+end
 local function capabilities()
 	return { "studio_evidence", "studio_project_index", "opaque_identity", "project_change_monitor", "semantic_message_stream", "sha256", "stable_identity", "reflection_attestation", "detached_preflight", "transactional_authoring", "recording_recovery", "studio_play_mode", "bounded_diagnostics", "project_identity", "http_polling" }
 end
@@ -127,6 +144,7 @@ function Runtime.start(plugin: Plugin)
 	local running, autoConnectEnabled, pairing = true, passiveContextOk and passiveArm == nil, false
 	local passiveResume = passiveArm ~= nil
 	local invalidPassiveState = not passiveContextOk
+	local creatorRecoveryFailure: string? = nil
 	local currentCreatorSessionId: string? = passiveArm and passiveArm.creatorSessionId or nil
 	local nextAutoPair, transportFailures = 0, 0
 	local pending = {} :: {{message: any, requestId: string?}}
@@ -261,6 +279,19 @@ function Runtime.start(plugin: Plugin)
 	local function pluginError(code: string, detail: any, retryable: boolean, requestId: string?)
 		if sessionId then send("PluginError", { code = code, message = string.sub(tostring(detail), 1, Constants.MAX_DIAGNOSTIC_CHARS), retryable = retryable }, requestId) end
 		state(code == "RECOVERY_REQUIRED" and "RECOVERY REQUIRED" or "EVIDENCE INCOMPLETE", string.sub(tostring(detail), 1, Constants.MAX_DIAGNOSTIC_CHARS))
+	end
+	local function readCreatorInventory(): (any?, any?)
+		if creatorRecoveryFailure ~= nil then return nil, nil end
+		local recovery, receipt, failure = inspectCreatorInventory(authoring)
+		if failure ~= nil then
+			-- Keep the paired transport and local UI alive, but do not publish a
+			-- fabricated empty inventory or admit another Studio command. The
+			-- strict reader retains the incompatible bytes without changing them.
+			creatorRecoveryFailure = failure
+			state("RECOVERY REQUIRED", failure)
+			pcall(function() pluginError("RECOVERY_REQUIRED", failure, false) end)
+		end
+		return recovery, receipt
 	end
 	local pendingProjectChangeNotice: any? = nil
 	local function queueProjectChangeNotice(notice: any)
@@ -404,24 +435,23 @@ function Runtime.start(plugin: Plugin)
 				or (payload.action ~= "commit" and payload.action ~= "cancel")
 				or (payload.finalizationKind ~= "ordinary" and payload.finalizationKind ~= "recovery_cancel")
 				or (payload.finalizationKind == "ordinary" and payload.replacesAction ~= nil)
-				or (payload.finalizationKind == "recovery_cancel" and (payload.action ~= "cancel" or (payload.replacesAction ~= "commit" and payload.replacesAction ~= "cancel")))
+				or (payload.finalizationKind == "recovery_cancel" and (payload.action ~= "cancel" or (payload.replacesAction ~= nil and payload.replacesAction ~= "commit" and payload.replacesAction ~= "cancel")))
 			then error("RECOVERY_REQUIRED: finalization gate is malformed") end
 			local capture = requireExpectedCurrentProjectIndex(boundary, payload.expectedCurrentProjectIndexManifestId, payload.expectedCurrentProjectRevisionHash, payload.expectedCurrentProjectDetectorEpoch)
 			local manifestId, revisionHash, detectorEpoch, finalizationKind, replacesAction: any
 			if initialRecoveryCancellation == true then
-				-- A recovery cancellation deliberately replaces a *prior ordinary*
-				-- finalization intent. Its expected-current gate must be the fresh,
-				-- durably retained recovery capture, not the original action's
-				-- post-Apply gate. Keep the original action solely as explicit
-				-- replacement provenance; never derive it from the ambient phase.
+				-- One recovery cancellation may close an open cursor or replace a
+				-- prior ordinary intent. Both use the fresh, durably retained recovery
+				-- capture. Only a replaced intent supplies original-action provenance;
+				-- an already attempted recovery cancellation never grants another Finish.
 				local original = binding.finalization
 				local recovery = binding.recovery
-				if typeof(original) ~= "table"
-					or original.finalizationKind ~= "ordinary"
-					or original.recovery == true
-					or original.action ~= payload.replacesAction
-					or typeof(recovery) ~= "table"
-				then error("RECOVERY_REQUIRED: recovery cancellation lacks an ordinary finalization intent and durable replacement provenance") end
+				local openCancellation = binding.phase == "open" and original == nil and payload.replacesAction == nil
+				local replacementCancellation = binding.phase == "finalization_intent"
+					and typeof(original) == "table" and original.finalizationKind == "ordinary"
+					and original.recovery ~= true and original.action == payload.replacesAction
+				if (not openCancellation and not replacementCancellation) or typeof(recovery) ~= "table"
+				then error("RECOVERY_REQUIRED: recovery cancellation lacks exact open-cursor or ordinary-intent authority") end
 				manifestId = recovery.projectIndexManifestId
 				revisionHash = recovery.projectRevisionHash
 				detectorEpoch = recovery.projectDetectorEpoch
@@ -491,7 +521,7 @@ function Runtime.start(plugin: Plugin)
 				or typeof(receipt.expectedCurrentProjectRevisionHash) ~= "string"
 				or typeof(receipt.expectedCurrentProjectDetectorEpoch) ~= "number"
 				or (receipt.finalizationKind ~= "ordinary" and receipt.finalizationKind ~= "recovery_cancel")
-				or (receipt.finalizationKind == "recovery_cancel" and receipt.replacesAction ~= "commit" and receipt.replacesAction ~= "cancel")
+				or (receipt.finalizationKind == "recovery_cancel" and receipt.replacesAction ~= nil and receipt.replacesAction ~= "commit" and receipt.replacesAction ~= "cancel")
 				or (receipt.finalizationKind == "ordinary" and receipt.replacesAction ~= nil)
 			then error("persisted finalization receipt is malformed") end
 			local payload: any = { creatorSessionId = receipt.creatorSessionId, changeSetId = receipt.changeSetId, changeSetHash = receipt.changeSetHash, projectionId = receipt.projectionId, projectionHash = receipt.projectionHash, manifestHash = receipt.manifestHash, beforeProjectIndexManifestId = receipt.beforeProjectIndexManifestId, beforeProjectRevisionHash = receipt.beforeProjectRevisionHash, beforeProjectDetectorEpoch = receipt.beforeProjectDetectorEpoch, recordingId = receipt.recordingId, action = receipt.action, finalizationKind = receipt.finalizationKind, status = receipt.status, expectedCurrentProjectIndexManifestId = receipt.expectedCurrentProjectIndexManifestId, expectedCurrentProjectRevisionHash = receipt.expectedCurrentProjectRevisionHash, expectedCurrentProjectDetectorEpoch = receipt.expectedCurrentProjectDetectorEpoch, afterProjectIndexManifestId = receipt.afterProjectIndexManifestId, afterProjectRevisionHash = receipt.afterProjectRevisionHash, afterProjectDetectorEpoch = receipt.afterProjectDetectorEpoch }
@@ -529,10 +559,12 @@ function Runtime.start(plugin: Plugin)
 	local function unpair(notifyBridge: boolean?, reason: string?, disableAutoConnect: boolean?)
 		if disableAutoConnect then autoConnectEnabled = false end
 		runtimeCapabilities:abort()
-		local needsRecovery = projectIdentity:hasPossibleRecording() or authoring:hasPossibleRecording()
-		if projectIdentity:hasPossibleRecording() then
+		local identityMayBeOpen = possibleRecordingSafely(projectIdentity)
+		local creatorMayBeOpen = possibleRecordingSafely(authoring)
+		local needsRecovery = identityMayBeOpen or creatorMayBeOpen
+		if identityMayBeOpen then
 			state("RECOVERY REQUIRED", "A Forge project-identity recording may still be open. Re-pair to inspect it; Forge will not change Studio automatically.")
-		elseif authoring:hasPossibleRecording() then
+		elseif creatorMayBeOpen then
 			state("RECOVERY REQUIRED", "A Forge creator recording may still be open. Re-pair to inspect it; Forge will not change Studio automatically.")
 		end
 		if connectorView then connectorView.setTestReady(false) end
@@ -580,14 +612,16 @@ function Runtime.start(plugin: Plugin)
 			-- consumed its one explicit cancellation authority: exposing its retained
 			-- provenance would make the host offer a command that Authoring must
 			-- reject rather than safely retrying FinishRecording.
-			if recording.phase == "finalization_intent"
+			if recordingState == "open" and recording.phase == "open" and recording.finalization == nil then
+				payload.cancellation = { kind = "open" }
+			elseif recordingState == "open" and recording.phase == "finalization_intent"
 				and typeof(recording.finalization) == "table"
 				and recording.finalization.finalizationKind == "ordinary"
 				and recording.finalization.recovery ~= true
 			then
 				local replacesAction = recording.finalization.action
 				if replacesAction ~= "commit" and replacesAction ~= "cancel" then error("RECOVERY_REQUIRED: finalization intent has no replacement-action provenance") end
-				payload.replacesAction = replacesAction
+				payload.cancellation = { kind = "replace_intent", action = replacesAction }
 			end
 			if finalizationRequestId then payload.finalizationRequestId = finalizationRequestId end
 		return payload
@@ -595,6 +629,7 @@ function Runtime.start(plugin: Plugin)
 
 	local function pairAutomatically(): boolean
 		if pairing or sessionId or not autoConnectEnabled then return false end
+		creatorRecoveryFailure = nil
 		if not substrateAvailable() then state("UNSUPPORTED STUDIO", "Forge requires SHA-256."); return false end
 		pairing = true; state("CONNECTING", "Discovering the local Forge bridge.")
 		local discovered, discovery = request("GET", "/pairing")
@@ -654,7 +689,8 @@ function Runtime.start(plugin: Plugin)
 			-- but it is still a separate durable transaction obligation. Re-emitting
 			-- it after reconnect is evidence delivery only: it never repeats a
 			-- commit, cancel, Apply, or other Studio mutation.
-			local receipt = authoring:finalizationReceipt()
+			local recovery, receipt = readCreatorInventory()
+			if recovery == nil then return end
 			if receipt then
 				sendRequired("CreatorChangeFinalized", finalizationPayload(receipt))
 			end
@@ -667,7 +703,6 @@ function Runtime.start(plugin: Plugin)
 			-- a later correlated inventory report proves what remains after the
 			-- receipt was actually consumed.  Never let an unrelated `none` report
 			-- clear that pending obligation.
-			local recovery = authoring:recovery()
 			if receipt then
 				-- CreatorChangeFinalized above is the complete pairing inventory for
 				-- now.  Its acknowledgement triggers a fresh recording scan.
@@ -686,7 +721,9 @@ function Runtime.start(plugin: Plugin)
 			end
 		end)
 		if not accepted then unpair(false, "session_replaced", true); state("CONNECTION REJECTED", tostring(setup)); return false end
-		if projectIdentity:hasPossibleRecording() or authoring:hasPossibleRecording() then
+		if creatorRecoveryFailure ~= nil then
+			state("RECOVERY REQUIRED", creatorRecoveryFailure)
+		elseif possibleRecordingSafely(projectIdentity) or possibleRecordingSafely(authoring) then
 			state("RECOVERY REQUIRED", "Connected. A Forge recording may still be open; review recovery in the dashboard.")
 		else
 			state("CONNECTED", "Manifest attestation sent. Forge will request a complete project index before any creator work.")
@@ -896,6 +933,7 @@ function Runtime.start(plugin: Plugin)
 	end
 	local function handle(message: any)
 		if typeof(message) ~= "table" or message.kind ~= "StudioProtocolMessage" or message.direction ~= "backend_to_plugin" or typeof(message.payload) ~= "table" or message.sessionId ~= sessionId then error("malformed backend message") end
+		if creatorRecoveryFailure ~= nil then error("RECOVERY_REQUIRED: " .. creatorRecoveryFailure) end
 		if creatorRecordingCommands[message.type] and projectIdentity:hasPossibleRecording() then
 			error("RECOVERY_REQUIRED: a project identity recording may still be active")
 		end
@@ -1097,7 +1135,10 @@ function Runtime.start(plugin: Plugin)
 			local recovery = authoring:recovery()
 			if not recovery.recording then error("recording recovery has no exact persisted cursor") end
 			recoveryProjectIndexProjection(recovery.recording)
-			local expected = recoveryPayload(recovery.recording, recovery.recordingState, nil)
+			-- The first recovery request has no retained recovery capture yet.
+			-- Authenticate its recording binding directly against the durable cursor
+			-- before collecting, then construct a receipt from the fresh capture.
+			local expected = recovery.recording
 			for _, key in ipairs({ "creatorSessionId", "changeSetId", "changeSetHash", "projectionId", "projectionHash", "manifestHash", "beforeProjectIndexManifestId", "beforeProjectRevisionHash", "beforeProjectDetectorEpoch", "recordingId" }) do
 				if message.payload[key] ~= expected[key] then error("recording recovery binding mismatch") end
 			end
@@ -1382,17 +1423,19 @@ function Runtime.start(plugin: Plugin)
 					transportFailures = 0
 					nextLeasePoll = os.clock() + 5
 					if not passiveResume and os.clock() >= nextHeartbeat then
-						local recovery = authoring:recovery()
-						local observedIdentity = projectIdentity:observe()
-						if projectId and currentProjectRevision then
-							pcall(function()
-								PlaytestContext.configure(plugin, projectId, currentProjectRevision, Generated.connectorBuildHash)
-								local observation = PlaytestContext.pending(plugin, projectId, Generated.connectorBuildHash)
-								if observation and postMessage(messageFor("StudioPlaytestObserved", observation, nil, observation.observationId, observation.endedAt)) then PlaytestContext.acknowledge(plugin, observation.observationId) end
-							end)
+						local recovery = readCreatorInventory()
+						if recovery ~= nil then
+							local observedIdentity = projectIdentity:observe()
+							if projectId and currentProjectRevision then
+								pcall(function()
+									PlaytestContext.configure(plugin, projectId, currentProjectRevision, Generated.connectorBuildHash)
+									local observation = PlaytestContext.pending(plugin, projectId, Generated.connectorBuildHash)
+									if observation and postMessage(messageFor("StudioPlaytestObserved", observation, nil, observation.observationId, observation.endedAt)) then PlaytestContext.acknowledge(plugin, observation.observationId) end
+								end)
+							end
+							local sent = send("Heartbeat", { project = observedIdentity.project, projectIdentity = observedIdentity, manifestHash = Generated.manifestHash, currentProjectIndexManifestId = currentProjectIndexManifestId, currentProjectRevisionHash = currentProjectRevision, activeRecording = recovery.recording and recovery.recording or nil })
+							if sent then adoptProjectIdentity(observedIdentity) end
 						end
-						local sent = send("Heartbeat", { project = observedIdentity.project, projectIdentity = observedIdentity, manifestHash = Generated.manifestHash, currentProjectIndexManifestId = currentProjectIndexManifestId, currentProjectRevisionHash = currentProjectRevision, activeRecording = recovery.recording and recovery.recording or nil })
-						if sent then adoptProjectIdentity(observedIdentity) end
 						nextHeartbeat = os.clock() + 15
 					end
 					idle = runtimeCapabilities.active and 0.1 or (#response.commands == 0 and math.min(3, idle * 1.5) or 0.1)

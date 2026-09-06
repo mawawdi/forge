@@ -1,27 +1,28 @@
+import {
+  compositionConfigDataSchema,
+  COMPOSITION_ID_SCHEMA,
+  COMPOSITION_NAME_SCHEMA,
+} from "./config-schema.js";
 import { z } from "zod";
+import { UI_CONTROLLER_SOURCE } from "./ui-runtime.js";
+import { assertUiValid } from "./ui-validation.js";
+export { UI_CONTROLLER_SOURCE } from "./ui-runtime.js";
 import { contentHash } from "../../contracts/src/index.js";
 import { gameRecipeDefinitionLock, type GameRecipeDefinition } from "../../game-ir/src/index.js";
 import type { GameInventoryItem } from "../../game-compiler/src/index.js";
 import {
   CompositionError,
-  arraySchema,
-  booleanSchema,
   bool,
   boundedConfig,
   color,
-  colorSchema,
   createItem,
   engineParent,
   enumeration,
-  idSchema,
   integer,
   itemId,
   num,
-  numberSchema,
-  objectSchema,
   outputParent,
   str,
-  textSchema,
   udim2,
   uniqueById,
   vec2,
@@ -37,7 +38,28 @@ const rgb = z
     b: z.number().int().min(0).max(255),
   })
   .strict();
-const token = z.object({ id: z.string(), primitive: z.string() }).strict();
+const colorToken = z
+  .object({
+    id: COMPOSITION_ID_SCHEMA,
+    primitive: COMPOSITION_ID_SCHEMA.describe(
+      "Existing primitive color ID from tokens.colors, not an RGB value or semantic color ID.",
+    ),
+  })
+  .strict();
+const sizeToken = z
+  .object({
+    id: COMPOSITION_ID_SCHEMA,
+    primitive: COMPOSITION_ID_SCHEMA.describe(
+      "Existing primitive size ID from tokens.sizes, not a number or semantic size ID.",
+    ),
+  })
+  .strict();
+const semanticColor = COMPOSITION_ID_SCHEMA.describe(
+  "Existing semantic color ID from tokens.semanticColors, not a primitive color ID.",
+);
+const semanticSize = COMPOSITION_ID_SCHEMA.describe(
+  "Existing semantic size ID from tokens.semanticSizes, not a primitive size ID.",
+);
 const layoutFields = {
   xScale: finite,
   xOffset: finite.int(),
@@ -54,24 +76,121 @@ const layoutFields = {
   maxWidth: finite.positive(),
   maxHeight: finite.positive(),
 };
-const configSchema = z
+const bindingFields = {
+  text: COMPOSITION_ID_SCHEMA.optional(),
+  visible: COMPOSITION_ID_SCHEMA.optional(),
+  enabled: COMPOSITION_ID_SCHEMA.optional(),
+  transparency: COMPOSITION_ID_SCHEMA.optional(),
+};
+const paddingSchema = z
+  .object({ top: semanticSize, right: semanticSize, bottom: semanticSize, left: semanticSize })
+  .strict();
+const listSchema = z
   .object({
-    rootName: z.string(),
+    direction: z.enum(["Horizontal", "Vertical"]),
+    gap: semanticSize,
+    horizontal: z.enum(["Left", "Center", "Right"]),
+    vertical: z.enum(["Top", "Center", "Bottom"]),
+    wraps: z.boolean().optional(),
+    horizontalFlex: z
+      .enum(["None", "Fill", "SpaceAround", "SpaceBetween", "SpaceEvenly"])
+      .optional(),
+    verticalFlex: z.enum(["None", "Fill", "SpaceAround", "SpaceBetween", "SpaceEvenly"]).optional(),
+  })
+  .strict();
+const aspectSchema = z
+  .object({ ratio: finite.positive().max(100), axis: z.enum(["Width", "Height"]) })
+  .strict();
+const gradientSchema = z
+  .object({ from: semanticColor, to: semanticColor, rotation: finite.min(-360).max(360) })
+  .strict();
+const scrollSchema = z.object({ axis: z.enum(["X", "Y", "XY"]), barSize: semanticSize }).strict();
+const stateSurfaceSchema = z
+  .object({ background: semanticColor, foreground: semanticColor })
+  .strict();
+const strokeSchema = z
+  .object({
+    color: semanticColor,
+    thickness: semanticSize,
+    transparency: finite.min(0).max(1).optional(),
+  })
+  .strict();
+const typographySchema = z
+  .object({
+    family: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/)
+      .describe(
+        "Built-in Roblox font-family basename, for example BuilderSans. Resolves only to rbxasset://fonts/families/<family>.json; uploaded font IDs are not admitted here. Verify the requested family and weight natively.",
+      ),
+    weight: z.enum([
+      "Thin",
+      "ExtraLight",
+      "Light",
+      "Regular",
+      "Medium",
+      "SemiBold",
+      "Bold",
+      "ExtraBold",
+      "Heavy",
+    ]),
+    style: z.enum(["Normal", "Italic"]),
+    horizontal: z.enum(["Left", "Center", "Right"]),
+    vertical: z.enum(["Top", "Center", "Bottom"]),
+    wrapped: z.boolean(),
+    lineHeight: finite.min(1).max(3),
+  })
+  .strict();
+export const RESPONSIVE_UI_CONFIG_SCHEMA = z
+  .object({
+    rootName: COMPOSITION_NAME_SCHEMA.describe(
+      "Name of the created ScreenGui. Its source-placement output alias is root.",
+    ),
+    controller: z
+      .boolean()
+      .optional()
+      .describe(
+        "Set true when importing this component's controller source export for an otherwise static UI, including Controller.Observe client observations. Scroll nodes, actions or state bindings also materialize the controller automatically; false does not disable those required exports. The library is emitted at ReplicatedStorage/ForgeUI_<componentId>_Controller; import its controller source export from client source and pass the actual PlayerGui screen to Mount. The module never mounts itself or proves native readiness.",
+      ),
     tokens: z
       .object({
-        colors: z.array(z.object({ id: z.string(), value: rgb }).strict()).max(128),
-        sizes: z.array(z.object({ id: z.string(), value: finite.nonnegative() }).strict()).max(128),
-        semanticColors: z.array(token).max(128),
-        semanticSizes: z.array(token).max(128),
+        colors: z.array(z.object({ id: COMPOSITION_ID_SCHEMA, value: rgb }).strict()).max(128),
+        sizes: z
+          .array(z.object({ id: COMPOSITION_ID_SCHEMA, value: finite.nonnegative() }).strict())
+          .max(128),
+        semanticColors: z.array(colorToken).max(128),
+        semanticSizes: z.array(sizeToken).max(128),
         styles: z
           .array(
             z
               .object({
-                id: z.string(),
-                background: z.string(),
-                foreground: z.string(),
-                textSize: z.string(),
-                cornerRadius: z.string(),
+                id: COMPOSITION_ID_SCHEMA,
+                background: semanticColor,
+                foreground: semanticColor,
+                textSize: semanticSize,
+                cornerRadius: semanticSize,
+                backgroundTransparency: finite.min(0).max(1).optional(),
+                typography: typographySchema
+                  .optional()
+                  .describe(
+                    "Shared text hierarchy, alignment and wrapping. Omission uses BuilderSans Regular, centered wrapped text with line height 1. Native text preferences are reflected in TextBounds; do not multiply TextSize again.",
+                  ),
+                stroke: strokeSchema.optional(),
+                interaction: z
+                  .object({
+                    hover: stateSurfaceSchema,
+                    pressed: stateSurfaceSchema,
+                    focused: stateSurfaceSchema,
+                    disabled: stateSurfaceSchema,
+                    focusRing: z.object({ color: semanticColor, thickness: semanticSize }).strict(),
+                  })
+                  .strict()
+                  .optional()
+                  .describe(
+                    "Optional button appearance states driven by native GuiState and selection. Requires all four states and a focus ring. Changes colors and an existing border without shifting layout or constructing runtime instances. Non-button users of the same style ignore these button states.",
+                  ),
               })
               .strict(),
           )
@@ -82,15 +201,28 @@ const configSchema = z
       .array(
         z
           .object({
-            id: z.string(),
-            parentId: z.string().optional(),
-            name: z.string(),
-            kind: z.enum(["panel", "text", "button"]),
-            style: z.string(),
+            id: COMPOSITION_ID_SCHEMA.describe(
+              "Local UI node ID. Its created output alias is node/<id>, usable as a source placement component_output parent.",
+            ),
+            parentId: COMPOSITION_ID_SCHEMA.optional(),
+            name: COMPOSITION_NAME_SCHEMA,
+            kind: z.enum(["panel", "group", "scroll", "text", "button"]),
+            style: COMPOSITION_ID_SCHEMA.describe(
+              "Existing component style ID from tokens.styles. Styles reference semantic tokens, which reference primitive token values.",
+            ),
             text: z.string().max(4096).optional(),
-            action: z.string().optional(),
+            action: COMPOSITION_ID_SCHEMA.optional(),
             layout: z.object(layoutFields).strict(),
             requireInsideParent: z.boolean(),
+            padding: paddingSchema.optional(),
+            list: listSchema.optional(),
+            aspect: aspectSchema.optional(),
+            gradient: gradientSchema.optional(),
+            scroll: scrollSchema.optional(),
+            order: finite.int().min(-100000).max(100000).optional(),
+            automaticSize: z.enum(["None", "X", "Y", "XY"]).optional(),
+            bindings: z.object(bindingFields).strict().optional(),
+            motionSeconds: finite.min(0).max(1).optional(),
           })
           .strict(),
       )
@@ -100,7 +232,7 @@ const configSchema = z
       .array(
         z
           .object({
-            id: z.string(),
+            id: COMPOSITION_ID_SCHEMA,
             width: finite.positive(),
             height: finite.positive(),
             insetLeft: finite.nonnegative(),
@@ -113,65 +245,13 @@ const configSchema = z
       .max(32),
   })
   .strict();
-export type ResponsiveUiConfig = z.infer<typeof configSchema>;
-const aliasSchema = objectSchema({ id: idSchema, primitive: idSchema });
-const layoutSchema = objectSchema(
-  Object.fromEntries(Object.keys(layoutFields).map((key) => [key, numberSchema])),
-);
-
+export type ResponsiveUiConfig = z.infer<typeof RESPONSIVE_UI_CONFIG_SCHEMA>;
 export const RESPONSIVE_UI_DEFINITION: GameRecipeDefinition = {
   kind: "GameRecipeDefinition",
-  sourceExports: [{ id: "action-bindings", context: "client" }],
+  sourceExports: [{ id: "controller", context: "client" }],
   id: "responsive-ui",
-  abi: "1",
-  configSchema: objectSchema({
-    rootName: idSchema,
-    tokens: objectSchema({
-      colors: arraySchema(objectSchema({ id: idSchema, value: colorSchema }), 128),
-      sizes: arraySchema(objectSchema({ id: idSchema, value: numberSchema }), 128),
-      semanticColors: arraySchema(aliasSchema, 128),
-      semanticSizes: arraySchema(aliasSchema, 128),
-      styles: arraySchema(
-        objectSchema({
-          id: idSchema,
-          background: idSchema,
-          foreground: idSchema,
-          textSize: idSchema,
-          cornerRadius: idSchema,
-        }),
-        128,
-      ),
-    }),
-    nodes: arraySchema(
-      objectSchema(
-        {
-          id: idSchema,
-          parentId: idSchema,
-          name: idSchema,
-          kind: { type: "string", maxLength: 16, enum: ["panel", "text", "button"] },
-          style: idSchema,
-          text: textSchema,
-          action: idSchema,
-          layout: layoutSchema,
-          requireInsideParent: booleanSchema,
-        },
-        ["id", "name", "kind", "style", "layout", "requireInsideParent"],
-      ),
-      512,
-    ),
-    viewports: arraySchema(
-      objectSchema({
-        id: idSchema,
-        width: numberSchema,
-        height: numberSchema,
-        insetLeft: numberSchema,
-        insetTop: numberSchema,
-        insetRight: numberSchema,
-        insetBottom: numberSchema,
-      }),
-      32,
-    ),
-  }),
+  abi: "5",
+  configSchema: compositionConfigDataSchema(RESPONSIVE_UI_CONFIG_SCHEMA),
   ports: [],
   obligations: [
     {
@@ -189,51 +269,19 @@ export const RESPONSIVE_UI_DEFINITION: GameRecipeDefinition = {
   ],
 };
 
-/** Explicitly invoked by caller source; it creates no automatic lifecycle or screen controller. */
-export const UI_ACTION_BINDINGS_SOURCE = `--!strict
-type Handler = (GuiButton) -> ()
-return function(root: Instance, handlers: {[string]: Handler}): () -> ()
-  local connections: {RBXScriptConnection} = {}
-  for _, instance in root:GetDescendants() do
-    if instance:IsA("GuiButton") then
-      local action = instance:GetAttribute("ActionId")
-      if typeof(action) == "string" then
-        local handler = handlers[action]
-        if handler then
-          table.insert(connections, instance.Activated:Connect(function() handler(instance) end))
-        end
-      end
-    end
-  end
-  local disposed = false
-  return function()
-    if disposed then return end
-    disposed = true
-    for _, connection in connections do connection:Disconnect() end
-    table.clear(connections)
-  end
-end
-`;
-
 export function compileResponsiveUi(
   context: CompositionContext,
   input: unknown,
 ): CompositionOutput {
   boundedConfig(input);
-  const config = configSchema.parse(input);
+  const config = RESPONSIVE_UI_CONFIG_SCHEMA.parse(input);
+  assertUiValid(config, context.componentId);
   const nodes = uniqueById(config.nodes);
-  uniqueById(config.viewports);
   const colors = uniqueById(config.tokens.colors);
   const sizes = uniqueById(config.tokens.sizes);
   const semanticColors = uniqueById(config.tokens.semanticColors);
   const semanticSizes = uniqueById(config.tokens.semanticSizes);
   const styles = uniqueById(config.tokens.styles);
-  for (const alias of semanticColors.values())
-    if (!colors.has(alias.primitive))
-      throw new CompositionError("invalid_token", "Semantic color references an unknown primitive");
-  for (const alias of semanticSizes.values())
-    if (!sizes.has(alias.primitive))
-      throw new CompositionError("invalid_token", "Semantic size references an unknown primitive");
   const resolveColor = (id: string) => {
     const alias = semanticColors.get(id);
     const value = alias && colors.get(alias.primitive)?.value;
@@ -247,20 +295,7 @@ export function compileResponsiveUi(
       throw new CompositionError("invalid_token", `Unknown semantic size: ${id}`);
     return value;
   };
-  for (const style of styles.values()) {
-    resolveColor(style.background);
-    resolveColor(style.foreground);
-    if (
-      resolveSize(style.textSize) < 12 ||
-      resolveSize(style.textSize) > 100 ||
-      resolveSize(style.cornerRadius) > 128
-    )
-      throw new CompositionError(
-        "invalid_token",
-        "This UI recipe admits text sizes 12–100 and corner radii 0–128",
-      );
-  }
-  const root = createItem(
+  const rootItem = createItem(
     context,
     "root",
     config.rootName,
@@ -272,6 +307,11 @@ export function compileResponsiveUi(
       ResetOnSpawn: bool(false),
     },
   );
+  const root = {
+    ...rootItem,
+    outputId: "root",
+    attributes: { UiRecipeAbi: "5", UiComponentId: context.componentId },
+  };
   const inventory: GameInventoryItem[] = [root];
   const created = new Map<string, GameInventoryItem>();
   const active = new Set<string>();
@@ -289,25 +329,18 @@ export function compileResponsiveUi(
       throw new CompositionError("invalid_token", `Unknown component style: ${node.style}`);
     const background = resolveColor(style.background);
     const foreground = resolveColor(style.foreground);
-    if (node.kind !== "panel" && (!node.text?.trim() || contrast(background, foreground) < 4.5))
-      throw new CompositionError(
-        "unreadable_ui",
-        "Text and buttons require a visible label and token contrast of at least 4.5:1",
-      );
-    if (node.kind !== "button" && node.action !== undefined)
-      throw new CompositionError("invalid_action", "Only buttons admit an action binding");
-    if (node.action !== undefined && !/^[a-z][a-z0-9-]{0,63}$/.test(node.action))
-      throw new CompositionError("invalid_action", "Action IDs must be bounded plain identifiers");
+    const typography = style.typography;
     const layout = node.layout;
-    if (layout.minWidth > layout.maxWidth || layout.minHeight > layout.maxHeight)
-      throw new CompositionError("unsatisfiable_layout", "Minimum layout size exceeds maximum");
-    if (node.kind === "button" && (layout.minWidth < 48 || layout.minHeight < 48))
-      throw new CompositionError(
-        "touch_target",
-        "This optional UI recipe requires a 48 by 48 minimum button target",
-      );
     const className =
-      node.kind === "panel" ? "Frame" : node.kind === "text" ? "TextLabel" : "TextButton";
+      node.kind === "panel"
+        ? "Frame"
+        : node.kind === "group"
+          ? "CanvasGroup"
+          : node.kind === "scroll"
+            ? "ScrollingFrame"
+            : node.kind === "text"
+              ? "TextLabel"
+              : "TextButton";
     const item = createItem(
       context,
       "node-" + id,
@@ -319,21 +352,50 @@ export function compileResponsiveUi(
         Position: udim2(layout.xScale, layout.xOffset, layout.yScale, layout.yOffset),
         Size: udim2(layout.widthScale, layout.widthOffset, layout.heightScale, layout.heightOffset),
         BackgroundColor3: color(background),
-        BackgroundTransparency: num(0),
+        BackgroundTransparency: num(style.backgroundTransparency ?? 0),
+        LayoutOrder: integer(node.order ?? [...nodes.keys()].sort().indexOf(id)),
+        AutomaticSize: enumeration(node.automaticSize ?? "None"),
+        ...(node.kind === "group" ? { GroupTransparency: num(0) } : {}),
+        ...(node.scroll
+          ? {
+              AutomaticCanvasSize: enumeration(node.scroll.axis),
+              CanvasSize: udim2(0, 0, 0, 0),
+              ScrollingDirection: enumeration(node.scroll.axis),
+              ScrollingEnabled: bool(true),
+              Active: bool(true),
+              ClipsDescendants: bool(true),
+              ElasticBehavior: enumeration("WhenScrollable"),
+              ScrollBarThickness: integer(Math.round(resolveSize(node.scroll.barSize))),
+              ScrollBarImageColor3: color(foreground),
+              VerticalScrollBarInset: enumeration(node.scroll.axis === "X" ? "None" : "ScrollBar"),
+              HorizontalScrollBarInset: enumeration(
+                node.scroll.axis === "Y" ? "None" : "ScrollBar",
+              ),
+            }
+          : {}),
         BorderSizePixel: integer(0),
-        ...(node.kind === "panel"
+        ...(["panel", "group", "scroll"].includes(node.kind)
           ? {}
           : {
               Text: str(node.text!),
               TextColor3: color(foreground),
               TextSize: num(resolveSize(style.textSize)),
-              TextWrapped: bool(true),
+              FontFace: {
+                kind: "font",
+                family: `rbxasset://fonts/families/${typography?.family ?? "BuilderSans"}.json`,
+                weight: typography?.weight ?? "Regular",
+                style: typography?.style ?? "Normal",
+              },
+              TextWrapped: bool(typography?.wrapped ?? true),
               TextScaled: bool(false),
               RichText: bool(false),
-              TextXAlignment: enumeration("Center"),
-              TextYAlignment: enumeration("Center"),
+              TextXAlignment: enumeration(typography?.horizontal ?? "Center"),
+              TextYAlignment: enumeration(typography?.vertical ?? "Center"),
+              LineHeight: num(typography?.lineHeight ?? 1),
             }),
-        ...(node.kind === "button" ? { Selectable: bool(true), AutoButtonColor: bool(true) } : {}),
+        ...(node.kind === "button"
+          ? { Selectable: bool(true), AutoButtonColor: bool(!style.interaction) }
+          : {}),
       },
       [parent.id],
     );
@@ -345,10 +407,70 @@ export function compileResponsiveUi(
       )
     )
       throw new CompositionError("duplicate_path", "UI sibling names must be unique");
-    const bound =
-      node.action === undefined ? item : { ...item, attributes: { ActionId: node.action } };
+    const bound = {
+      ...item,
+      outputId: "node/" + node.id,
+      attributes: {
+        UiNodeId: node.id,
+        UiRequireInsideParent: node.requireInsideParent,
+        UiBackgroundTransparency: style.backgroundTransparency ?? 0,
+        ...(node.kind === "button" && style.interaction
+          ? {
+              UiInteractionStyle: true,
+              UiBaseBackground: background.r * 65536 + background.g * 256 + background.b,
+              UiBaseForeground: foreground.r * 65536 + foreground.g * 256 + foreground.b,
+              ...Object.fromEntries(
+                Object.entries(style.interaction).flatMap(([state, surface]) => {
+                  if (state === "focusRing" || !("background" in surface)) return [];
+                  return (["background", "foreground"] as const).map((role) => {
+                    const rgb = resolveColor(surface[role]);
+                    return [
+                      `Ui${state[0]!.toUpperCase() + state.slice(1)}${role[0]!.toUpperCase() + role.slice(1)}`,
+                      rgb.r * 65536 + rgb.g * 256 + rgb.b,
+                    ];
+                  });
+                }),
+              ),
+            }
+          : {}),
+        ...(node.action === undefined ? {} : { UiAction: node.action }),
+        ...(node.bindings?.text === undefined ? {} : { UiTextState: node.bindings.text }),
+        ...(node.bindings?.visible === undefined ? {} : { UiVisibleState: node.bindings.visible }),
+        ...(node.bindings?.enabled === undefined ? {} : { UiEnabledState: node.bindings.enabled }),
+        ...(node.bindings?.transparency === undefined
+          ? {}
+          : { UiTransparencyState: node.bindings.transparency }),
+        ...(node.motionSeconds === undefined ? {} : { UiMotionSeconds: node.motionSeconds }),
+      },
+    };
     inventory.push(bound);
     const target = outputParent(context, bound);
+    for (const [role, stroke] of [
+      ["Stroke", style.stroke],
+      ["FocusRing", node.kind === "button" ? style.interaction?.focusRing : undefined],
+    ] as const) {
+      if (!stroke) continue;
+      inventory.push(
+        createItem(
+          context,
+          `${role.toLowerCase()}-${id}`,
+          role,
+          "UIStroke",
+          target,
+          {
+            Color: color(resolveColor(stroke.color)),
+            Thickness: num(resolveSize(stroke.thickness)),
+            Transparency: num("transparency" in stroke ? (stroke.transparency ?? 0) : 0),
+            ApplyStrokeMode: enumeration("Border"),
+            StrokeSizingMode: enumeration("FixedSize"),
+            BorderStrokePosition: enumeration("Inner"),
+            LineJoinMode: enumeration("Round"),
+            Enabled: bool(role !== "FocusRing"),
+          },
+          [item.id],
+        ),
+      );
+    }
     inventory.push(
       createItem(
         context,
@@ -376,79 +498,139 @@ export function compileResponsiveUi(
           [item.id],
         ),
       );
+    if (node.padding)
+      inventory.push(
+        createItem(
+          context,
+          "padding-" + id,
+          "Padding",
+          "UIPadding",
+          target,
+          Object.fromEntries(
+            Object.entries(node.padding).map(([side, token]) => [
+              "Padding" + side[0]!.toUpperCase() + side.slice(1),
+              { kind: "udim" as const, scale: 0, offset: Math.round(resolveSize(token)) },
+            ]),
+          ),
+          [item.id],
+        ),
+      );
+    if (node.list)
+      inventory.push(
+        createItem(
+          context,
+          "list-" + id,
+          "ListLayout",
+          "UIListLayout",
+          target,
+          {
+            FillDirection: enumeration(node.list.direction),
+            HorizontalAlignment: enumeration(node.list.horizontal),
+            VerticalAlignment: enumeration(node.list.vertical),
+            SortOrder: enumeration("LayoutOrder"),
+            Padding: { kind: "udim", scale: 0, offset: Math.round(resolveSize(node.list.gap)) },
+            Wraps: bool(node.list.wraps ?? false),
+            HorizontalFlex: enumeration(node.list.horizontalFlex ?? "None"),
+            VerticalFlex: enumeration(node.list.verticalFlex ?? "None"),
+          },
+          [item.id],
+        ),
+      );
+    if (node.aspect)
+      inventory.push(
+        createItem(
+          context,
+          "aspect-" + id,
+          "AspectRatio",
+          "UIAspectRatioConstraint",
+          target,
+          {
+            AspectRatio: num(node.aspect.ratio),
+            AspectType: enumeration("FitWithinMaxSize"),
+            DominantAxis: enumeration(node.aspect.axis),
+          },
+          [item.id],
+        ),
+      );
+    if (node.gradient)
+      inventory.push(
+        createItem(
+          context,
+          "gradient-" + id,
+          "Gradient",
+          "UIGradient",
+          target,
+          {
+            Color: {
+              kind: "color_sequence",
+              keypoints: [
+                { time: 0, color: resolveColor(node.gradient.from) },
+                { time: 1, color: resolveColor(node.gradient.to) },
+              ],
+            },
+            Rotation: num(node.gradient.rotation),
+            Enabled: bool(true),
+          },
+          [item.id],
+        ),
+      );
     created.set(id, bound);
     active.delete(id);
     return bound;
   };
   for (const id of [...nodes.keys()].sort()) create(id);
-  for (const viewport of config.viewports) {
-    const width = viewport.width - viewport.insetLeft - viewport.insetRight;
-    const height = viewport.height - viewport.insetTop - viewport.insetBottom;
-    if (width <= 0 || height <= 0)
+  // Reserve generated child names too; hierarchy ambiguity must fail before compilation.
+  const paths = new Set<string>();
+  for (const item of inventory) {
+    if (item.change.kind !== "create") continue;
+    if (paths.has(item.change.path))
       throw new CompositionError(
-        "unsatisfiable_layout",
-        "Viewport insets consume the entire available area",
+        "duplicate_path",
+        "UI node collides with a generated layout component",
       );
-    const boxes = new Map<string, { width: number; height: number }>();
-    const measure = (id: string): { width: number; height: number } => {
-      const known = boxes.get(id);
-      if (known) return known;
-      const node = nodes.get(id)!;
-      const parent = node.parentId ? measure(node.parentId) : { width, height };
-      const l = node.layout;
-      const w = Math.min(
-        l.maxWidth,
-        Math.max(l.minWidth, parent.width * Math.fround(l.widthScale) + l.widthOffset),
-      );
-      const h = Math.min(
-        l.maxHeight,
-        Math.max(l.minHeight, parent.height * Math.fround(l.heightScale) + l.heightOffset),
-      );
-      const x = parent.width * Math.fround(l.xScale) + l.xOffset - w * Math.fround(l.anchorX);
-      const y = parent.height * Math.fround(l.yScale) + l.yOffset - h * Math.fround(l.anchorY);
-      if (
-        node.requireInsideParent &&
-        (x < -0.001 || y < -0.001 || x + w > parent.width + 0.001 || y + h > parent.height + 0.001)
-      )
-        throw new CompositionError(
-          "unsatisfiable_layout",
-          `Node ${id} exceeds its parent at viewport ${viewport.id}`,
-        );
-      const result = { width: w, height: h };
-      boxes.set(id, result);
-      return result;
-    };
-    for (const id of nodes.keys()) measure(id);
+    paths.add(item.change.path);
   }
   const sources: CompositionOutput["sources"] = [];
-  if (config.nodes.some((node) => node.action !== undefined)) {
-    const id = itemId(context, "bindings");
+  if (
+    config.controller ||
+    config.nodes.some(
+      (node) =>
+        node.scroll !== undefined ||
+        (node.kind === "button" && styles.get(node.style)?.interaction !== undefined) ||
+        node.action !== undefined ||
+        Object.keys(node.bindings ?? {}).length > 0,
+    )
+  ) {
+    const id = itemId(context, "controller");
+    const parent = engineParent("ReplicatedStorage");
+    const name = `ForgeUI_${context.componentId}_Controller`;
     inventory.push({
       id,
       componentId: context.componentId,
+      outputId: "controller",
       change: {
         id,
         kind: "create",
-        path: outputParent(context, root).path + "/ActionBindings",
-        parent: outputParent(context, root),
+        path: parent.path + "/" + name,
+        parent,
         className: "ModuleScript",
         initialization: "inline_source_required",
       },
       lockedProperties: {},
       valueSlots: [],
       source: {
-        fileId: "action-bindings",
+        fileId: "controller",
         content: {
           kind: "locked",
-          sourceHash: contentHash(UI_ACTION_BINDINGS_SOURCE),
-          utf8Bytes: Buffer.byteLength(UI_ACTION_BINDINGS_SOURCE),
+          sourceHash: contentHash(UI_CONTROLLER_SOURCE),
+          utf8Bytes: Buffer.byteLength(UI_CONTROLLER_SOURCE),
         },
       },
       attributes: {},
       removedAttributes: [],
-      dependencies: [root.id],
+      dependencies: [],
     });
-    sources.push({ operationId: id, source: UI_ACTION_BINDINGS_SOURCE });
+    sources.push({ operationId: id, source: UI_CONTROLLER_SOURCE });
   }
   return {
     inventory,
@@ -458,24 +640,15 @@ export function compileResponsiveUi(
       ...obligation,
     })),
     limitations: [
-      "Viewport checks predict unrotated scale/offset rectangles with supplied insets. Actual Roblox layout, text fitting, preferred text size and input focus require native evidence.",
-      "The optional action module binds existing buttons only when caller source invokes it; handlers, future descendants and lifecycle ownership remain the caller's responsibility. No animations are introduced.",
+      "Static viewport checks cover only unrotated rectangles outside layout/padding/aspect/automatic-size subtrees. Those subtrees, actual TextBounds, preferred text size and input focus require native evidence.",
+      "The Controller library is emitted in ReplicatedStorage as ForgeUI_<componentId>_Controller. The caller passes the actual PlayerGui screen to Mount with complete declared state and synchronous action handlers, updates it, and unmounts it. It owns existing materialized nodes only; future descendants and application state remain caller responsibilities. Group fades are opt-in, cancel previous tweens, and honor reduced motion; no other animations are introduced.",
+      "Token contrast checks cover the declared base colors only; gradients, transparency, group compositing and rendered text need native visual review.",
+      "Optional scroll regions use native automatic canvas sizing and inset scrollbars; mount the Controller to honor reduced-motion elasticity. Controller.Observe returns a current-frame client observation of native geometry, text fit and scrolling, never authoritative verification or a settled-layout claim. Enable controller for an otherwise static interface to collect observations without mounting it.",
+      "Typography uses built-in font-family paths and explicit FontFace, alignment, wrapping and line height. Native font availability, preferred text size, wrapping/flex layout and all composited surface states require viewport review. Optional button states use native GuiState plus selection, with an inner focus ring and no runtime instance construction or layout animation.",
     ],
   };
 }
 
-function contrast(a: z.infer<typeof rgb>, b: z.infer<typeof rgb>): number {
-  const luminance = (value: z.infer<typeof rgb>) => {
-    const linear = (channel: number) => {
-      const s = channel / 255;
-      return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-    };
-    return linear(value.r) * 0.2126 + linear(value.g) * 0.7152 + linear(value.b) * 0.0722;
-  };
-  const x = luminance(a);
-  const y = luminance(b);
-  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
-}
 export const RESPONSIVE_UI_EXPANDER = {
   definition: gameRecipeDefinitionLock(RESPONSIVE_UI_DEFINITION),
   expand: (input: CompositionContext & { config: unknown }) =>

@@ -1,4 +1,5 @@
 import { join, resolve } from "node:path";
+import type { ModelImage } from "../../model-client/src/contracts.js";
 import type { GameBuildGraph } from "../../game-compiler/src/index.js";
 import {
   AgentExecutionJournalStore,
@@ -12,6 +13,8 @@ import {
 import { ImmutableJsonArtifactStore } from "../../artifact-store/src/index.js";
 import { HostPhaseRecorder } from "../../flight-recorder/src/host-phase.js";
 import type { ArtifactReference } from "../../artifact-store/src/index.js";
+import { creatorBuildRecoveryBinding, loadCreatorBuildRecovery } from "./build-recovery.js";
+import { loadCreatorBuildProposal } from "./build-proposal.js";
 import type {
   CreatorSourceConsultation,
   StudioSourceIndex,
@@ -46,6 +49,7 @@ export interface CreatorAgentWorker {
     sourceResolver: VerifiedSourceResolver;
     creatorPrompt: string;
     agentPrompt: string;
+    initialImages?: readonly ModelImage[];
     contextCitations?: readonly CreatorAgentContextCitation[];
     budgets: BudgetPolicy;
     execution: AgentExecutionSlot;
@@ -60,9 +64,12 @@ export interface CreatorAgentWorker {
     sourceResolver: VerifiedSourceResolver;
     creatorPrompt: string;
     agentPrompt: string;
+    initialImages?: readonly ModelImage[];
     plan: CreatorPlan;
     planApproval: CreatorApproval;
     sourceConsultation: CreatorSourceConsultation;
+    buildRecovery?: ArtifactReference;
+    buildProposal?: ArtifactReference;
     verificationFeedback?: readonly string[];
     budgets: BudgetPolicy;
     execution: AgentExecutionSlot;
@@ -130,6 +137,7 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
     sourceResolver: VerifiedSourceResolver;
     creatorPrompt: string;
     agentPrompt: string;
+    initialImages?: readonly ModelImage[];
     contextCitations?: readonly CreatorAgentContextCitation[];
     budgets: BudgetPolicy;
     execution: AgentExecutionSlot;
@@ -151,6 +159,7 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
       sourceResolver: input.sourceResolver,
       creatorPrompt: input.creatorPrompt,
       agentPrompt: input.agentPrompt,
+      ...(input.initialImages ? { initialImages: input.initialImages } : {}),
       ...(input.contextCitations ? { contextCitations: input.contextCitations } : {}),
       runtime: this.runtime,
       budgets: input.budgets,
@@ -230,11 +239,14 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
     projectIndex: CreatorProjectIndexView;
     creatorPrompt: string;
     agentPrompt: string;
+    initialImages?: readonly ModelImage[];
     plan: CreatorPlan;
     planApproval: CreatorApproval;
     sourceIndex: StudioSourceIndex;
     sourceResolver: VerifiedSourceResolver;
     sourceConsultation: CreatorSourceConsultation;
+    buildRecovery?: ArtifactReference;
+    buildProposal?: ArtifactReference;
     verificationFeedback?: readonly string[];
     budgets: BudgetPolicy;
     execution: AgentExecutionSlot;
@@ -255,16 +267,48 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
         revisionHash: input.session.currentRevisionHash,
       },
     };
+    let prepared: CreatorBuilderToolHost;
     try {
-      await timing.recorder.measure("build_preparation", timing.correlation, () => {
-        const prepared = new CreatorBuilderToolHost(input);
-        creatorBuilderSystemPrompt(
-          input.plan,
-          prepared.contract,
-          input.projectIndex,
-          input.verificationFeedback,
-        );
-      });
+      prepared = await timing.recorder.measure(
+        "build_preparation",
+        timing.correlation,
+        async () => {
+          const host = new CreatorBuilderToolHost({ ...input, timing });
+          creatorBuilderSystemPrompt(
+            input.plan,
+            host.contract,
+            input.projectIndex,
+            input.verificationFeedback,
+          );
+          if (input.buildProposal) {
+            const proposal = await loadCreatorBuildProposal({
+              store: artifactStore,
+              artifact: input.buildProposal,
+              plan: input.plan,
+            });
+            await host.restoreProposal(proposal);
+          }
+          if (input.buildRecovery) {
+            const recovery = await loadCreatorBuildRecovery({
+              store: artifactStore,
+              artifact: input.buildRecovery,
+              expected: creatorBuildRecoveryBinding({
+                session: input.session,
+                plan: input.plan,
+                approval: input.planApproval,
+                contract: host.contract,
+              }),
+              plan: input.plan,
+              approval: input.planApproval,
+              contract: host.contract,
+            });
+            if (JSON.stringify(recovery.initialProposal) !== JSON.stringify(input.buildProposal))
+              throw new Error("Recovery initial source proposal binding differs");
+            await host.restoreRecovery(recovery);
+          }
+          return host;
+        },
+      );
     } catch (error) {
       const failure = {
         stage: "preparation" as const,
@@ -283,6 +327,7 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
       return { status: "preparation_failed", failure, diagnostic };
     }
     const result = await runCreatorBuilder({
+      preparedHost: prepared,
       timing,
       session: input.session,
       ownership: input.ownership,
@@ -291,6 +336,7 @@ export class LocalCreatorAgentWorker implements CreatorAgentWorker {
       sourceResolver: input.sourceResolver,
       creatorPrompt: input.creatorPrompt,
       agentPrompt: input.agentPrompt,
+      ...(input.initialImages ? { initialImages: input.initialImages } : {}),
       plan: input.plan,
       planApproval: input.planApproval,
       sourceConsultation: input.sourceConsultation,

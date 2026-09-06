@@ -167,6 +167,7 @@ export function createGameBuildControlView(input: {
   }
   const view: GameBuildControlView = {
     planHash: compiled.hash,
+    worldAuthoring: structuredClone(compiled.design.worldAuthoring),
     ...(graph ? { graphHash: graph.hash } : {}),
     status,
     ...(stopped || recovery

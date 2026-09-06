@@ -285,6 +285,7 @@ function stateFor(action?: CreatorControlActionDescriptor): CreatorDashboardStat
         id: MODEL,
         displayName: "GPT-5.6 Luna",
         availability: "available",
+        imageInput: "supported",
         requiredCapabilities: ["tools"],
         providerFallback: "disabled",
       },

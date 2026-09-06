@@ -73,6 +73,8 @@ export interface CreatorConversationAppendInput {
 export interface CreatorConversationAppendResult {
   readonly head: CreatorConversationHead;
   readonly commit: CreatorConversationCommit;
+  /** Exact verified history published by this append; later loads verify disk again. */
+  readonly loaded: LoadedCreatorConversation;
   readonly references: {
     readonly conversation: ArtifactReference;
     readonly event: ArtifactReference;
@@ -147,8 +149,9 @@ export class CreatorConversationStore {
   }
 
   async append(input: CreatorConversationAppendInput): Promise<CreatorConversationAppendResult> {
-    assertCreatorConversationAppendInput(input);
-    return this.serialize(input.conversation.id, () => this.appendSerialized(input));
+    const captured = structuredClone(input);
+    assertCreatorConversationAppendInput(captured);
+    return this.serialize(captured.conversation.id, () => this.appendSerialized(captured));
   }
 
   async load(conversationId: string): Promise<LoadedCreatorConversation> {
@@ -207,12 +210,13 @@ export class CreatorConversationStore {
     validateAppendTransition(input, current);
     const episodes = new Map(current?.episodes.map((episode) => [episode.id, episode]));
     const turns = new Map(current?.turns.map((turn) => [turn.id, turn]));
+    const pendingTurns = new Map(turns);
     const jobs = new Map(current?.jobs.map((job) => [job.id, job]));
     if (input.episode) episodes.set(input.episode.id, input.episode);
-    if (input.turn) turns.set(input.turn.id, input.turn);
+    if (input.turn) pendingTurns.set(input.turn.id, input.turn);
     if (input.job) jobs.set(input.job.id, input.job);
     // Reject an unreadable head before publishing it, not on the next poll.
-    assertConversationEpisodeTopology(input.conversation, episodes, turns, jobs);
+    assertConversationEpisodeTopology(input.conversation, episodes, pendingTurns, jobs);
     await verifyExternalBindings(this.artifactStore, input);
 
     const conversationReference = await this.artifactStore.write(input.conversation);
@@ -304,11 +308,45 @@ export class CreatorConversationStore {
       updatedAt: input.conversation.updatedAt,
     };
     assertCreatorConversationHead(head);
+    const citations = new Map(current?.citations.map((citation) => [citation.id, citation]));
+    const memoryRevisions = new Map(current?.memoryRevisions.map((memory) => [memory.id, memory]));
+    const planRevisions = new Map(current?.planRevisions.map((plan) => [plan.id, plan]));
+    // The prior history was read from disk above. Validate the new immutable
+    // records with the same binding checks used by a full reload, then assemble
+    // the next snapshot without walking the historical evidence graph again.
+    await loadOptionalCommitRecords({
+      store: this.artifactStore,
+      commit,
+      event: input.event,
+      episodes,
+      turns,
+      citations,
+      memoryRevisions,
+      planRevisions,
+      jobs,
+      newerEpisodeSnapshots: new Map(),
+      newerJobSnapshots: new Map(),
+    });
+    const loaded = structuredClone(
+      assembleLoadedConversation({
+        head,
+        conversation: input.conversation,
+        commits: [...(current?.commits ?? []), commit],
+        events: [...(current?.events ?? []), input.event],
+        episodes,
+        turns,
+        citations,
+        memoryRevisions,
+        planRevisions,
+        jobs,
+      }),
+    );
     await this.options.beforePublishHead?.(head, commit);
     await this.writeHead(head);
     return {
       head,
       commit,
+      loaded,
       references: {
         conversation: conversationReference,
         event: eventReference,
@@ -432,37 +470,24 @@ export class CreatorConversationStore {
 
     const commits = reverseCommits.reverse();
     const events = reverseEvents.reverse();
-    assertLoadedHistoryContinuity(commits, events);
-    assertConversationMemoryHeads(currentConversation, memoryRevisions);
-    assertConversationEpisodeTopology(currentConversation, episodes, turns, jobs);
-    assertPlanRevisionTopology(currentConversation, episodes, planRevisions, events);
-    assertJobResumeTopology(jobs);
-    assertJobExecutionTopology(jobs);
+    const loaded = assembleLoadedConversation({
+      head,
+      conversation: currentConversation,
+      commits,
+      events,
+      episodes,
+      turns,
+      citations,
+      memoryRevisions,
+      planRevisions,
+      jobs,
+    });
     // The commit chain is the root of the complete immutable evidence graph.
     // Structured loading above validates the conversation records themselves;
     // this traversal additionally proves that every artifact they transitively
     // reference still exists and retains its exact canonical bytes.
     await verifyReachableArtifactGraph(this.artifactStore, [head.commit]);
-    return {
-      head,
-      conversation: currentConversation,
-      commits,
-      events,
-      episodes: sortedByOrdinal(episodes.values()),
-      turns: sortedByCreatedAt(turns.values()),
-      citations: [...citations.values()].sort((left, right) => left.id.localeCompare(right.id)),
-      memoryRevisions: [...memoryRevisions.values()].sort((left, right) =>
-        left.itemId === right.itemId
-          ? left.revision - right.revision
-          : left.itemId.localeCompare(right.itemId),
-      ),
-      planRevisions: [...planRevisions.values()].sort((left, right) =>
-        left.episodeId === right.episodeId
-          ? left.revision - right.revision
-          : left.episodeId.localeCompare(right.episodeId),
-      ),
-      jobs: sortedByCreatedAt(jobs.values()),
-    };
+    return loaded;
   }
 
   private async readHead(conversationId: string): Promise<CreatorConversationHead | undefined> {
@@ -573,6 +598,60 @@ export class CreatorConversationStore {
       if (this.tails.get(conversationId) === tail) this.tails.delete(conversationId);
     }
   }
+}
+
+function assembleLoadedConversation(input: {
+  readonly head: CreatorConversationHead;
+  readonly conversation: CreatorProjectConversation;
+  readonly commits: CreatorConversationCommit[];
+  readonly events: CreatorConversationEvent[];
+  readonly episodes: Map<string, CreatorWorkEpisode>;
+  readonly turns: Map<string, CreatorConversationTurn>;
+  readonly citations: Map<string, CreatorCitation>;
+  readonly memoryRevisions: Map<string, CreatorMemoryRevision>;
+  readonly planRevisions: Map<string, CreatorPlanRevision>;
+  readonly jobs: Map<string, CreatorWorkJob>;
+}): LoadedCreatorConversation {
+  const {
+    head,
+    conversation,
+    commits,
+    events,
+    episodes,
+    turns,
+    citations,
+    memoryRevisions,
+    planRevisions,
+    jobs,
+  } = input;
+  if (commits.length > MAX_CHAIN_LENGTH)
+    throw new Error("Creator conversation exceeds maximum chain length");
+  assertLoadedHistoryContinuity(commits, events);
+  assertConversationMemoryHeads(conversation, memoryRevisions);
+  assertConversationEpisodeTopology(conversation, episodes, turns, jobs);
+  assertPlanRevisionTopology(conversation, episodes, planRevisions, events);
+  assertJobResumeTopology(jobs);
+  assertJobExecutionTopology(jobs);
+  return {
+    head,
+    conversation,
+    commits,
+    events,
+    episodes: sortedByOrdinal(episodes.values()),
+    turns: sortedByCreatedAt(turns.values()),
+    citations: [...citations.values()].sort((left, right) => left.id.localeCompare(right.id)),
+    memoryRevisions: [...memoryRevisions.values()].sort((left, right) =>
+      left.itemId === right.itemId
+        ? left.revision - right.revision
+        : left.itemId.localeCompare(right.itemId),
+    ),
+    planRevisions: [...planRevisions.values()].sort((left, right) =>
+      left.episodeId === right.episodeId
+        ? left.revision - right.revision
+        : left.episodeId.localeCompare(right.episodeId),
+    ),
+    jobs: sortedByCreatedAt(jobs.values()),
+  };
 }
 
 export function sealCreatorProjectConversation(
@@ -946,29 +1025,12 @@ async function verifyExternalBindings(
   store: ImmutableJsonArtifactStore,
   input: CreatorConversationAppendInput,
 ): Promise<void> {
-  const references = new Map<string, ArtifactReference>();
-  const bindings: CreatorArtifactBinding[] = [];
-  const add = (reference: ArtifactReference): void => {
-    references.set(reference.artifactHash, reference);
-  };
-  const addBinding = (binding: CreatorArtifactBinding): void => {
-    bindings.push(binding);
-  };
-  if (input.episode !== undefined) addBinding(input.episode.sessionBundle);
-  for (const attachment of input.event.attachments) addBinding(attachment.binding);
-  for (const binding of eventDataArtifactBindings(input.event)) addBinding(binding);
-  if (input.planRevision !== undefined) {
-    addBinding(input.planRevision.plan);
-    if (input.planRevision.sourceConsultation !== undefined)
-      addBinding(input.planRevision.sourceConsultation);
-  }
-  if (input.turn?.role === "agent")
-    for (const citation of input.turn.citations)
-      if (citation.target.kind === "prior_evidence") addBinding(citation.target.evidence);
-  if (input.job !== undefined) add(input.job.admittedRequest);
-  if (input.job !== undefined) add(input.job.admissionAuthority);
-  if (input.job?.conversationContext !== undefined) add(input.job.conversationContext);
-  await verifyReachableArtifactGraph(store, references.values(), bindings);
+  const reachable = nestedArtifacts(input);
+  await verifyReachableArtifactGraph(
+    store,
+    reachable.filter((entry) => entry.binding === undefined).map((entry) => entry.reference),
+    reachable.flatMap((entry) => (entry.binding === undefined ? [] : [entry.binding])),
+  );
   await verifyPublishedIdentityEvent(store, input.event);
 }
 
@@ -1082,35 +1144,6 @@ async function verifyPublishedIdentityEvent(
     throw new Error("Published project identity event has an invalid continuity receipt");
 }
 
-function eventDataArtifactBindings(event: CreatorConversationEvent): CreatorArtifactLike[] {
-  switch (event.eventType) {
-    case "creator_turn":
-      return [event.data.turn, ...(event.data.job ? [event.data.job] : [])];
-    case "agent_turn":
-      return [event.data.turn];
-    case "activity":
-    case "job":
-      return [event.data.job];
-    case "decision":
-      return [
-        ...(event.data.job ? [event.data.job] : []),
-        ...(event.data.refinement ? [event.data.refinement.turn] : []),
-      ];
-    case "plan_revision":
-      return [event.data.planRevision];
-    case "change_set":
-      return [event.data.changeSet];
-    case "verification":
-      return [event.data.verification];
-    case "final_review":
-      return event.data.report === undefined ? [] : [event.data.report];
-    case "memory":
-      return [event.data.memoryRevision];
-    default:
-      return [];
-  }
-}
-
 function eventTurnBinding(event: CreatorConversationEvent): CreatorArtifactBinding | undefined {
   if (event.eventType === "creator_turn" || event.eventType === "agent_turn")
     return event.data.turn;
@@ -1121,12 +1154,6 @@ function eventJobBinding(event: CreatorConversationEvent): CreatorArtifactBindin
   if (event.eventType === "activity" || event.eventType === "job") return event.data.job;
   if (event.eventType === "creator_turn" || event.eventType === "decision") return event.data.job;
   return undefined;
-}
-
-interface CreatorArtifactLike {
-  readonly id: string;
-  readonly hash: string;
-  readonly artifact: ArtifactReference;
 }
 
 async function loadOptionalCommitRecords(input: {

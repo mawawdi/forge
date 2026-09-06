@@ -34,6 +34,43 @@ export type StudioProjectCompoundAttributeValue = Extract<
 export type StudioProjectAttributeValue =
   StudioPrimitiveValue | StudioProjectCompoundAttributeValue;
 
+/** Native observations can describe engine defaults outside the writable domain. */
+export type StudioObservedPropertyValue =
+  | StudioValue
+  | {
+      readonly kind: "observed_vector2_f32";
+      readonly x: number | "positive_infinity";
+      readonly y: number | "positive_infinity";
+    };
+
+/**
+ * Preserve the unbounded UISizeConstraint maximum without granting an
+ * infinity setter. Finite vectors retain their ordinary canonical kind.
+ */
+export function assertStudioObservedPropertyValueForProperty(
+  value: unknown,
+  property: StudioManifestProperty,
+): asserts value is StudioObservedPropertyValue {
+  if (isRecord(value) && value.kind === "observed_vector2_f32") {
+    if (
+      !hasOnly(value, ["kind", "x", "y"]) ||
+      property.declaringClass !== "UISizeConstraint" ||
+      property.name !== "MaxSize" ||
+      property.codec !== "vector2_f32" ||
+      (value.x !== "positive_infinity" && value.y !== "positive_infinity")
+    )
+      fail("project index unbounded Vector2 property");
+    for (const axis of [value.x, value.y]) {
+      if (axis === "positive_infinity") continue;
+      if (typeof axis !== "number" || !Number.isFinite(axis) || !Object.is(Math.fround(axis), axis))
+        fail("project index unbounded Vector2 axis");
+    }
+    return;
+  }
+  assertStudioValue(value);
+  assertStudioValueForProperty(value, property);
+}
+
 /**
  * The identity algebra deliberately keeps observation separate from mutation.
  * Existing Studio objects are read through a connector-epoch-bound digest; an
@@ -81,8 +118,8 @@ export const CREATOR_DEFAULT_RESOURCE_POLICY: CreatorResourcePolicy = Object.fre
  * Project-index coverage is closed over the generated manifest.  A node for a
  * manifest class must carry every projectable property exactly once; an
  * unknown class deliberately carries none.  Retain the property rows here as
- * well as their names so indexed values are validated with the same codec and
- * bounds as writer/readback evidence.
+ * well as their names so indexed values retain property-bound validation.
+ * Explicit observation-only values never expand writer/readback admission.
  */
 function projectPropertiesByClass(
   manifest: StudioCapabilityManifest,
@@ -350,7 +387,7 @@ export interface StudioProjectIndexMetadataView {
       readonly y: number;
       readonly z: number;
     };
-    readonly properties: Readonly<Record<string, StudioValue>>;
+    readonly properties: Readonly<Record<string, StudioObservedPropertyValue>>;
     readonly attributes: Readonly<Record<string, StudioProjectAttributeValue>>;
     readonly tags: readonly string[];
   }[];
@@ -381,7 +418,7 @@ export interface StudioProjectIndexView {
       readonly y: number;
       readonly z: number;
     };
-    readonly properties: Readonly<Record<string, StudioValue>>;
+    readonly properties: Readonly<Record<string, StudioObservedPropertyValue>>;
     readonly attributes: Readonly<Record<string, StudioProjectAttributeValue>>;
     readonly tags: readonly string[];
   }[];
@@ -846,13 +883,12 @@ function assertNodeWithManifestProperties(
   if (stableJson(value.coveredPropertyNames) !== stableJson(requiredPropertyNames))
     fail("project index manifest property coverage");
   for (const [name, property] of Object.entries(value.coveredProperties)) {
-    assertStudioValue(property);
     const metadata = requiredProperties?.get(name);
     // Exact name coverage above means this can only fail for an internal
     // invariant violation, never by treating an unsupported property as
     // observed coverage.
     if (metadata === undefined) fail("project index manifest property metadata");
-    assertStudioValueForProperty(property, metadata);
+    assertStudioObservedPropertyValueForProperty(property, metadata);
   }
   if (value.sourceManifestHash !== undefined)
     assertHash(value.sourceManifestHash, "project index source manifest hash");
@@ -1388,7 +1424,9 @@ export function studioProjectIndexMetadataView(
   const instances = capture.shards
     .flatMap((shard) => shard.nodes)
     .map((node) => {
-      const properties = node.coveredProperties as Readonly<Record<string, StudioValue>>;
+      const properties = node.coveredProperties as Readonly<
+        Record<string, StudioObservedPropertyValue>
+      >;
       const positionValue = properties.Position;
       const position =
         isRecord(positionValue) &&
@@ -1442,7 +1480,9 @@ export function studioProjectIndexView(
   const instances = capture.shards
     .flatMap((shard) => shard.nodes)
     .map((node) => {
-      const properties = node.coveredProperties as Readonly<Record<string, StudioValue>>;
+      const properties = node.coveredProperties as Readonly<
+        Record<string, StudioObservedPropertyValue>
+      >;
       const positionValue = properties.Position;
       const position =
         isRecord(positionValue) &&

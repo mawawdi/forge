@@ -29,6 +29,7 @@ import type {
   ModelTurnResult,
 } from "../packages/model-client/src/contracts.js";
 import { createPinnedLuauLspSourceIndex } from "../packages/source-intelligence/src/index.js";
+import { modelImageFixture } from "./fixtures/model-image-input.js";
 
 const MODEL = "fake/model";
 const PROMPT = "Explain the current project.";
@@ -103,13 +104,17 @@ function descriptor(): ModelClient["descriptor"] {
         steps: 1,
         toolChoice: "auto",
         providerParallelToolCalls: "not_requested",
-        toolBatchExecution: "atomic_validate_then_sequential",
+        toolBatchExecution: "host_validated_then_sequential",
         toolNameEncoding: "openai_function_slug",
         maxRetries: 0,
         telemetry: false,
         timeoutPolicy: "bounded_turn_and_remaining_runtime_budget",
         maxDurationMsPerTurn: 1_200_000,
         maxOutputTokensPerTurn: 4_096,
+        maxOutputTokensByModel: {},
+        outputTokenLimitCatalogHash: null,
+        inputModalitiesByModel: {},
+        inputModalityCatalogHash: null,
       },
       continuation: { maxBytes: 256 * 1_024 },
     },
@@ -298,6 +303,8 @@ test("creator worker rejects a preexisting execution journal before provider dis
 test("creator worker persists the supplied AgentRun identity and its exact journal binding", async () => {
   const root = await temporaryDirectory();
   const client = new AnsweringModelClient();
+  client.descriptor.configuration.request.inputModalitiesByModel = { [MODEL]: ["image", "text"] };
+  client.descriptor.configuration.request.inputModalityCatalogHash = "a".repeat(64);
   const worker = new LocalCreatorAgentWorker(new ForgeNativeAgentRuntime(client), root);
   const execution = createAgentExecutionSlot({
     purpose: "planner",
@@ -305,7 +312,10 @@ test("creator worker persists the supplied AgentRun identity and its exact journ
     agentRunId: "agent_run_supplied_worker_identity",
   });
   try {
-    const result = await worker.plan(plannerInput(execution));
+    const result = await worker.plan({
+      ...plannerInput(execution),
+      initialImages: [modelImageFixture()],
+    });
     assert.equal(result.status, "sealed");
     assert.equal(result.evidence.agentRunId, execution.agentRunId);
     assert.equal(client.calls, 1, "Publishing an answer must not buy another response");
@@ -319,6 +329,8 @@ test("creator worker persists the supplied AgentRun identity and its exact journ
       ),
     );
     assert.equal(firstUserMessage!.split(PROMPT).length - 1, 1);
+    const user = client.requests[0]!.messages[0]!;
+    assert.deepEqual(user.role === "user" ? user.images : undefined, [modelImageFixture()]);
 
     const artifactStore = new ImmutableJsonArtifactStore(root);
     const persistedRun = await artifactStore.read(result.evidence.agentRun);
@@ -327,6 +339,12 @@ test("creator worker persists the supplied AgentRun identity and its exact journ
     assert.equal(persistedRun.executionJournal?.journalId, execution.journalId);
 
     const journal = await new AgentExecutionJournalStore(artifactStore).load(execution.journalId);
+    const request = journal.entries[0]!.checkpoint;
+    assert.equal(request.checkpointType, "request_intent");
+    if (request.checkpointType === "request_intent") {
+      const user = request.request.messages[0]!;
+      assert.deepEqual(user.role === "user" ? user.images : undefined, [modelImageFixture()]);
+    }
     assert.equal(persistedRun.executionJournal?.sequence, journal.head.sequence);
     assert.equal(persistedRun.executionJournal?.entryHash, journal.head.entryHash);
     assert.deepEqual(persistedRun.executionJournal?.entry, journal.head.entry);

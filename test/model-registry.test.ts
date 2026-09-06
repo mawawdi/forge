@@ -13,8 +13,8 @@ import {
 
 const CHECKED_AT = "2026-09-03T08:00:00.000Z";
 
-test("creator model registry is canonical, complete, and Luna-default", () => {
-  assert.equal(DEFAULT_CREATOR_MODEL_ID, "openai/gpt-5.6-luna");
+test("creator model registry is canonical, complete, and Muse Spark-default", () => {
+  assert.equal(DEFAULT_CREATOR_MODEL_ID, "meta/muse-spark-1.3-contributor");
   assert.deepEqual(
     CREATOR_MODEL_REGISTRY.models.map((model) => model.id),
     [...CREATOR_MODEL_IDS],
@@ -24,7 +24,7 @@ test("creator model registry is canonical, complete, and Luna-default", () => {
     () =>
       assertCreatorModelRegistry({
         ...CREATOR_MODEL_REGISTRY,
-        defaultModelId: CREATOR_MODEL_IDS[0],
+        defaultModelId: CREATOR_MODEL_IDS.find((id) => id !== DEFAULT_CREATOR_MODEL_ID),
       }),
     /default or coverage/,
   );
@@ -125,6 +125,28 @@ test("metadata probe performs one bounded GET and never substitutes another mode
     resolveCreatorModelSelection(CREATOR_MODEL_IDS[2], catalog).requestedModel,
     CREATOR_MODEL_IDS[2],
   );
+});
+
+test("catalog retains only valid advertised completion limits and binds them to its hash", () => {
+  const values = [131072, 65536, null, -1, Number.MAX_SAFE_INTEGER + 1];
+  const catalog = parseOpenRouterModelCatalog(
+    {
+      data: CREATOR_MODEL_IDS.map((id, index) => ({
+        id,
+        supported_parameters: ["tools"],
+        top_provider: { max_completion_tokens: values[index] },
+      })),
+    },
+    CHECKED_AT,
+  );
+  assert.deepEqual(
+    catalog.models.map((entry) => entry.maxCompletionTokens),
+    [131072, 65536, null, null, null],
+  );
+  assertCreatorModelCatalog(catalog);
+  const tampered = structuredClone(catalog);
+  tampered.models[0]!.maxCompletionTokens = 262144;
+  assert.throws(() => assertCreatorModelCatalog(tampered), /hash/);
 });
 
 test("catalog transport and malformed payload failures remain unconfirmed", async () => {

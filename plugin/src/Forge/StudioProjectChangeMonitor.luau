@@ -16,6 +16,35 @@ local MAXIMUM_EXACT_MUTATION_EVENT_BUDGET = MAXIMUM_EXACT_MUTATION_FACTS * 2
 -- terminal event. Retaining arbitrary opaque identifiers would turn a missing
 -- Studio callback into an unbounded suppression set.
 local MAXIMUM_EXPECTED_RECORDING_FINISHES = 1
+local MAXIMUM_MUTATION_DIAGNOSTICS = 8
+local MAXIMUM_DIAGNOSTIC_COUNT = 1000000
+local MAXIMUM_DIAGNOSTIC_BYTES = 4096
+
+local function boundedDiagnosticText(value: any, maximum: number): string
+	if typeof(value) ~= "string" then return "<unavailable>" end
+	local result = string.sub(value, 1, maximum)
+	while #result > 0 and utf8.len(result) == nil do result = string.sub(result, 1, #result - 1) end
+	local sanitized = string.gsub(result, "[%z\1-\31\127]", "?")
+	return sanitized
+end
+
+local function diagnosticLocation(instance: any): (string, string)
+	local ok, className, path = pcall(function()
+		if instance == nil then return "<none>", "<none>" end
+		local names, cursor = {}, instance
+		for _ = 1, 32 do
+			if cursor == nil or cursor.ClassName == "DataModel" then break end
+			table.insert(names, 1, boundedDiagnosticText(cursor.Name, 96))
+			cursor = cursor.Parent
+		end
+		return boundedDiagnosticText(instance.ClassName, 48), boundedDiagnosticText(table.concat(names, "/"), 192)
+	end)
+	return if ok then className else "<unavailable>", if ok then path else "<unavailable>"
+end
+
+local function defaultDiagnosticSink(message: string)
+	warn("FORGE_UNMATCHED_MUTATIONS " .. message)
+end
 
 local function iso(): string return os.date("!%Y-%m-%dT%H:%M:%S.000Z") end
 
@@ -43,6 +72,9 @@ function StudioProjectChangeMonitor.new(callback: (any) -> (), dependencies: any
 		exactForgeMutationFacts = {} :: {any},
 		exactForgeMutationEventBudget = 0,
 		exactForgeMutationPhase = "after",
+		mutationDiagnostics = {} :: {any},
+		omittedMutationDiagnostics = 0,
+		diagnosticSink = if typeof(services.diagnosticSink) == "function" then services.diagnosticSink else defaultDiagnosticSink,
 		expectedForgeRecordingFinishes = {} :: {[string]: boolean},
 		expectedForgeRecordingFinishCount = 0,
 		monitoringFailed = false,
@@ -96,9 +128,25 @@ function StudioProjectChangeMonitor:setExactForgeMutationPhase(phase: string)
 end
 
 function StudioProjectChangeMonitor:clearExactForgeMutationFacts()
+	local diagnostics = self.mutationDiagnostics
+	local omitted = self.omittedMutationDiagnostics
+	self.mutationDiagnostics = {}
+	self.omittedMutationDiagnostics = 0
 	table.clear(self.exactForgeMutationFacts)
 	self.exactForgeMutationEventBudget = 0
 	self.exactForgeMutationPhase = "after"
+	-- A window emits one bounded diagnostic batch after its facts are cleared.
+	-- Logging has no authority and cannot prevent invalidation or finalization.
+	if #diagnostics > 0 then
+		pcall(function()
+			local lines = {}
+			for _, entry in diagnostics do
+				table.insert(lines, string.format("source=%s class=%s path=%s field=%s phase=%s reason=%s count=%d epochs=%d-%d", entry.source, entry.className, entry.path, entry.field, entry.phase, entry.reason, entry.count, entry.firstEpoch, entry.lastEpoch))
+			end
+			if omitted > 0 then table.insert(lines, "additional unmatched events=" .. tostring(omitted)) end
+			self.diagnosticSink(boundedDiagnosticText(table.concat(lines, " | "), MAXIMUM_DIAGNOSTIC_BYTES))
+		end)
+	end
 end
 
 -- ChangeHistory's finished signal carries the opaque recording identifier.
@@ -135,16 +183,20 @@ function StudioProjectChangeMonitor:recordingFinished(_name: any, _displayName: 
 	self:emit("change_history")
 end
 
-function StudioProjectChangeMonitor:matchesExactForgeMutation(source: string, instance: any?, field: any?): boolean
-	if attributableSources[source] ~= true or instance == nil then return false end
+function StudioProjectChangeMonitor:matchesExactForgeMutation(source: string, instance: any?, field: any?): (boolean, string?)
+	if attributableSources[source] ~= true or instance == nil then return false, "no_registered_fact" end
+	local found, available, matcherError = false, false, false
 	for index = #self.exactForgeMutationFacts, 1, -1 do
 		local fact = self.exactForgeMutationFacts[index]
 		if fact.source == source and fact.instance == instance and fact.field == field then
+			found = true
 			local isBefore = self.exactForgeMutationPhase == "before"
 			local remaining = if isBefore then fact.beforeEventsRemaining else fact.afterEventsRemaining
 			if remaining <= 0 then continue end
+			available = true
 			local matcher = if isBefore then fact.matchesBefore else fact.matchesAfter
 			local callable, matched = pcall(matcher)
+			if not callable then matcherError = true end
 			if callable and matched == true then
 				-- Consume only the active phase's exact event allowance. A
 				-- provisional Apply signal cannot exhaust the exact rollback
@@ -155,13 +207,36 @@ function StudioProjectChangeMonitor:matchesExactForgeMutation(source: string, in
 			end
 		end
 	end
-	return false
+	return false, if not found then "no_registered_fact" elseif not available then "phase_budget_exhausted" elseif matcherError then "matcher_error" else "state_mismatch"
+end
+
+function StudioProjectChangeMonitor:recordUnmatchedDiagnostic(source: string, instance: any?, field: any?, reason: string)
+	if #self.exactForgeMutationFacts == 0 then return end
+	local className, path = diagnosticLocation(instance)
+	local name = if field == nil then "<none>" else boundedDiagnosticText(field, 48)
+	for _, entry in self.mutationDiagnostics do
+		if entry.source == source and entry.className == className and entry.path == path and entry.field == name and entry.phase == self.exactForgeMutationPhase and entry.reason == reason then
+			entry.count = math.min(entry.count + 1, MAXIMUM_DIAGNOSTIC_COUNT)
+			entry.lastEpoch = self.epoch
+			return
+		end
+	end
+	if #self.mutationDiagnostics >= MAXIMUM_MUTATION_DIAGNOSTICS then
+		self.omittedMutationDiagnostics = math.min(self.omittedMutationDiagnostics + 1, MAXIMUM_DIAGNOSTIC_COUNT)
+		return
+	end
+	table.insert(self.mutationDiagnostics, { source = source, className = className, path = path, field = name, phase = self.exactForgeMutationPhase, reason = reason, count = 1, firstEpoch = self.epoch, lastEpoch = self.epoch })
 end
 
 function StudioProjectChangeMonitor:emit(source: string, instance: any?, field: any?)
 	if sourceOrder[source] == nil then error("unknown project change source") end
-	if self:matchesExactForgeMutation(source, instance, field) then return end
+	local matched, reason = self:matchesExactForgeMutation(source, instance, field)
+	if matched then return end
 	self.epoch += 1
+	-- Never re-run a matcher or read the property's value for diagnostics.
+	if #self.exactForgeMutationFacts > 0 then
+		pcall(function() self:recordUnmatchedDiagnostic(source, instance, field, reason or "state_mismatch") end)
+	end
 	self.callback({ epoch = self.epoch, observedAt = iso(), sources = { source } })
 end
 

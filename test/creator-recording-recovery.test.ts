@@ -14,6 +14,7 @@ import {
   type CreatorSessionBundle,
 } from "../packages/creator-session/src/index.js";
 import { writeCreatorProjectIndexArtifacts } from "../packages/creator-session/src/project-refresh.js";
+import { readCreatorRecordingRecoveryAuthority } from "../packages/creator-session/src/recording-recovery-authority.js";
 import {
   CREATOR_DEFAULT_RESOURCE_POLICY,
   STUDIO_CAPABILITY_MANIFEST_HASH,
@@ -71,6 +72,134 @@ const session: StudioBridgeSession = {
   sessionToken: "studio_session_token_recovery",
   connectedAt: sentAt,
 };
+
+test("recovery cancellation receipts use retained authority after the host loses its live map", async () => {
+  const root = await mkdtemp(join(tmpdir(), "forge-cancel-authority-"));
+  try {
+    const store = new ImmutableJsonArtifactStore(root);
+    const capture = recoveryProjectIndex();
+    const index = await writeCreatorProjectIndexArtifacts(store, capture);
+    const active = {
+      changeSetId: "cancel-change",
+      changeSetHash: "a".repeat(64),
+      projectionId: "cancel-projection",
+      projectionHash: "b".repeat(64),
+      manifest: { hash: STUDIO_CAPABILITY_MANIFEST_HASH },
+      recordingId: "cancel-recording",
+      beforeIndexCapture: index,
+      beforeIndexRevisionHash: capture.revision.hash,
+      beforeProjectDetectorEpoch: capture.detectorEpoch,
+    } as CreatorSessionBundle["activeMutation"] & {};
+    const binding = {
+      creatorSessionId: "cancel-session",
+      changeSetId: active.changeSetId,
+      changeSetHash: active.changeSetHash,
+      projectionId: active.projectionId,
+      projectionHash: active.projectionHash,
+      manifestHash: active.manifest.hash,
+      recordingId: active.recordingId!,
+      beforeProjectIndexManifestId: index.manifest.id,
+      beforeProjectRevisionHash: active.beforeIndexRevisionHash,
+      beforeProjectDetectorEpoch: active.beforeProjectDetectorEpoch,
+    };
+    for (const cancellation of [
+      { kind: "open" },
+      { kind: "replace_intent", action: "commit" },
+      { kind: "replace_intent", action: "cancel" },
+    ] as const) {
+      const record = {
+        kind: "CreatorRecordingRecoveryRecord",
+        studioSessionId: session.sessionId,
+        projectId: session.projectId,
+        payload: {
+          ...binding,
+          recordingState: "open",
+          cancellation,
+          recoveryProjectIndexManifestId: index.manifest.id,
+          recoveryProjectRevisionHash: capture.revision.hash,
+          recoveryProjectDetectorEpoch: capture.detectorEpoch,
+        },
+        projectIndex: index,
+        receivedAt: sentAt,
+      };
+      const reference = await store.write(record);
+      const context = {
+        store,
+        reference,
+        sessionId: binding.creatorSessionId,
+        projectId: session.projectId,
+        active,
+      };
+      assert.equal(
+        (await readCreatorRecordingRecoveryAuthority(context)).capture.hash,
+        capture.hash,
+      );
+      const bundle = {
+        session: { id: binding.creatorSessionId, projectId: session.projectId },
+        activeMutation: { ...active, recordingRecovery: reference },
+      } as CreatorSessionBundle;
+      const host = Object.create(CreatorSessionCoordinator.prototype) as {
+        artifactStore: ImmutableJsonArtifactStore;
+        assertRecoveredFinalizationGate(
+          bundle: CreatorSessionBundle,
+          receipt: Extract<PluginToBackendMessage, { type: "CreatorChangeFinalized" }>["payload"],
+        ): Promise<void>;
+      };
+      host.artifactStore = new ImmutableJsonArtifactStore(root);
+      const receipt = {
+        ...binding,
+        action: "cancel" as const,
+        finalizationKind: "recovery_cancel" as const,
+        status: "cancelled" as const,
+        ...(cancellation.kind === "replace_intent" ? { replacesAction: cancellation.action } : {}),
+        expectedCurrentProjectIndexManifestId: index.manifest.id,
+        expectedCurrentProjectRevisionHash: capture.revision.hash,
+        expectedCurrentProjectDetectorEpoch: capture.detectorEpoch,
+        afterProjectIndexManifestId: index.manifest.id,
+        afterProjectRevisionHash: capture.revision.hash,
+        afterProjectDetectorEpoch: capture.detectorEpoch,
+      };
+      await host.assertRecoveredFinalizationGate(bundle, receipt);
+      const { replacesAction: _replaced, ...withoutAction } = receipt;
+      const wrongProvenance =
+        cancellation.kind === "open"
+          ? { ...receipt, replacesAction: "commit" as const }
+          : withoutAction;
+      await assert.rejects(
+        host.assertRecoveredFinalizationGate(bundle, wrongProvenance),
+        /provenance/,
+      );
+      await assert.rejects(
+        host.assertRecoveredFinalizationGate(bundle, {
+          ...receipt,
+          expectedCurrentProjectDetectorEpoch: 1,
+        }),
+        /gate mismatch/,
+      );
+      for (const changed of [
+        { ...record, projectId: "other-project" },
+        { ...record, payload: { ...record.payload, recordingId: "other-recording" } },
+        { ...record, payload: { ...record.payload, recoveryProjectRevisionHash: "f".repeat(64) } },
+        {
+          ...record,
+          payload: Object.fromEntries(
+            Object.entries(record.payload).filter(([name]) => name !== "cancellation"),
+          ),
+        },
+        { ...record, payload: { ...record.payload, recordingState: "unknown" } },
+        { ...record, payload: { ...record.payload, replacesAction: "commit" } },
+      ])
+        await assert.rejects(
+          readCreatorRecordingRecoveryAuthority({
+            ...context,
+            reference: await store.write(changed),
+          }),
+        );
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("a matching closed-recording proof releases only its live cursor and survives persistence", async () => {
   const root = await mkdtemp(join(tmpdir(), "forge-closed-recording-"));
@@ -312,6 +441,106 @@ async function eventuallyDashboard(
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 }
+
+test("an unreadable native inventory revokes a previously clean admission scan", async () => {
+  const root = await mkdtemp(join(tmpdir(), "forge-unreadable-recording-"));
+  let handler:
+    | ((message: PluginToBackendMessage, studio: StudioBridgeSession) => void | Promise<void>)
+    | undefined;
+  const sent: BackendToPluginMessage[] = [];
+  const coordinator = new CreatorSessionCoordinator({
+    directory: root,
+    timeoutMs: 100,
+    connection: {
+      async send(message: BackendToPluginMessage) {
+        sent.push(message);
+      },
+      subscribeWithSession(next: NonNullable<typeof handler>) {
+        handler = next;
+        return () => {};
+      },
+      getSessions: () => [session],
+    } as unknown as StudioBridgeConnection,
+    worker: {} as CreatorAgentWorker,
+    sourceAnalysisHost: {
+      async analyze() {
+        throw new Error("Inventory admission must not analyze sources");
+      },
+    },
+  });
+  const state = coordinator as unknown as {
+    requireClearRecordingInventory(studio: StudioBridgeSession): Promise<void>;
+    bundles: Map<string, CreatorSessionBundle>;
+    views: Map<string, unknown>;
+  };
+  try {
+    assert.ok(handler);
+    await handler(
+      {
+        kind: "StudioProtocolMessage",
+        direction: "plugin_to_backend",
+        type: "CreatorRecordingRecovery",
+        messageId: "inventory-clean",
+        sentAt,
+        payload: { recordingState: "none" },
+      },
+      session,
+    );
+    await state.requireClearRecordingInventory(session);
+    assert.equal(
+      (await coordinator.dashboardState()).pairedStudio.transactionInventoryStatus,
+      "clear",
+    );
+
+    const failure = {
+      kind: "StudioProtocolMessage",
+      direction: "plugin_to_backend",
+      type: "PluginError",
+      messageId: "inventory-unreadable",
+      sentAt,
+      payload: {
+        code: "RECOVERY_REQUIRED",
+        message: "Stored Forge transaction data cannot be read. Studio writes are blocked.",
+        retryable: false,
+      },
+    } as const;
+    await handler({ ...failure, requestId: "scoped-command-failure" }, session);
+    await state.requireClearRecordingInventory(session);
+
+    const retained = {
+      session: { id: "retained", projectId: session.projectId },
+      activeMutation: { recordingId: "retained-recording" },
+    } as unknown as CreatorSessionBundle;
+    const unrelated = {
+      session: { id: "unrelated", projectId: "another-project" },
+    } as unknown as CreatorSessionBundle;
+    state.bundles.set("retained", retained);
+    state.bundles.set("unrelated", unrelated);
+    state.views.set("retained", { cached: true });
+    state.views.set("unrelated", { cached: true });
+    await handler(failure, session);
+    assert.equal(state.views.has("retained"), false);
+    assert.equal(state.views.has("unrelated"), true);
+    assert.equal(
+      state.bundles.get("retained"),
+      retained,
+      "Retained transaction truth is unchanged",
+    );
+    state.bundles.clear();
+    state.views.clear();
+    const dashboard = await coordinator.dashboardState();
+    assert.equal(dashboard.pairedStudio.transactionInventoryStatus, "blocked");
+    assert.equal(dashboard.pairedStudio.message, failure.payload.message);
+    await assert.rejects(
+      state.requireClearRecordingInventory(session),
+      /transaction data cannot be read/,
+    );
+    assert.deepEqual(sent, [], "Inventory failure must not issue recovery or mutation commands");
+  } finally {
+    coordinator.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("an orphaned proved-closed recording is blocked until its exact acknowledgement", async () => {
   const root = await mkdtemp(join(tmpdir(), "forge-recording-recovery-"));

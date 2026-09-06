@@ -13,10 +13,30 @@ import {
 
 /** Bounded data contracts; no executable callbacks, references or schema loaders. */
 export type GameDataSchema =
-  | { type: "string"; maxLength: number; enum?: readonly string[] | undefined }
-  | { type: "number" | "integer"; minimum?: number | undefined; maximum?: number | undefined }
+  | ({
+      type: "string";
+      minLength?: number | undefined;
+      pattern?: string | undefined;
+    } & (
+      | { maxLength: number; enum?: readonly string[] | undefined }
+      | { enum: readonly string[]; maxLength?: number | undefined }
+    ))
+  | {
+      type: "number" | "integer";
+      minimum?: number | undefined;
+      maximum?: number | undefined;
+      exclusiveMinimum?: number | undefined;
+      exclusiveMaximum?: number | undefined;
+    }
   | { type: "boolean" | "null" }
-  | { type: "array"; items: GameDataSchema; maxItems: number }
+  | {
+      type: "array";
+      items: GameDataSchema;
+      maxItems: number;
+      minItems?: number | undefined;
+      default?: readonly [] | undefined;
+    }
+  | { type: "union"; anyOf: readonly GameDataSchema[] }
   | {
       type: "object";
       properties: Readonly<Record<string, GameDataSchema>>;
@@ -24,29 +44,56 @@ export type GameDataSchema =
       additionalProperties: false;
     };
 
+// z.tuple([]) emits `prefixItems: []`, which is not valid JSON Schema and is
+// rejected by OpenRouter before inference. max(0) accepts the same sole value
+// while producing an ordinary array schema that provider tool validators accept.
+const EMPTY_ARRAY_VALUE_SCHEMA = z.array(z.unknown()).max(0) as unknown as z.ZodType<readonly []>;
+
+const GAME_DATA_SCALAR_SCHEMAS = [
+  z
+    .object({
+      type: z.literal("string"),
+      maxLength: z.number().int().safe().nonnegative(),
+      minLength: z.number().int().safe().nonnegative().optional(),
+      pattern: z.string().max(256).optional(),
+      enum: z.array(z.string()).min(1).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("string"),
+      enum: z.array(z.string()).min(1),
+      maxLength: z.number().int().safe().nonnegative().optional(),
+      minLength: z.number().int().safe().nonnegative().optional(),
+      pattern: z.string().max(256).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.enum(["number", "integer"]),
+      minimum: z.number().finite().optional(),
+      maximum: z.number().finite().optional(),
+      exclusiveMinimum: z.number().finite().optional(),
+      exclusiveMaximum: z.number().finite().optional(),
+    })
+    .strict(),
+  z.object({ type: z.enum(["boolean", "null"]) }).strict(),
+] as const;
+
 export const GAME_DATA_SCHEMA: z.ZodType<GameDataSchema> = z.lazy(() =>
   z.union([
-    z
-      .object({
-        type: z.literal("string"),
-        maxLength: z.number().int().nonnegative().safe(),
-        enum: z.array(z.string()).min(1).optional(),
-      })
-      .strict(),
-    z
-      .object({
-        type: z.enum(["number", "integer"]),
-        minimum: z.number().finite().optional(),
-        maximum: z.number().finite().optional(),
-      })
-      .strict(),
-    z.object({ type: z.enum(["boolean", "null"]) }).strict(),
+    ...GAME_DATA_SCALAR_SCHEMAS,
     z
       .object({
         type: z.literal("array"),
         items: GAME_DATA_SCHEMA,
-        maxItems: z.number().int().nonnegative().safe(),
+        maxItems: z.number().int().safe().nonnegative(),
+        minItems: z.number().int().safe().nonnegative().optional(),
+        default: EMPTY_ARRAY_VALUE_SCHEMA.optional(),
       })
+      .strict(),
+    z
+      .object({ type: z.literal("union"), anyOf: z.array(GAME_DATA_SCHEMA).min(2).max(32) })
       .strict(),
     z
       .object({
@@ -140,8 +187,24 @@ export function canonicalGameDataSchema(
           "Schema minimum exceeds maximum",
         );
       if (
+        (schema.exclusiveMinimum !== undefined &&
+          schema.maximum !== undefined &&
+          schema.exclusiveMinimum >= schema.maximum) ||
+        (schema.exclusiveMaximum !== undefined &&
+          schema.minimum !== undefined &&
+          schema.exclusiveMaximum <= schema.minimum) ||
+        (schema.exclusiveMinimum !== undefined &&
+          schema.exclusiveMaximum !== undefined &&
+          schema.exclusiveMinimum >= schema.exclusiveMaximum)
+      )
+        throw new GameAdmissionError(
+          "invalid_definition",
+          "schema",
+          "Schema exclusive bounds leave no values",
+        );
+      if (
         schema.type === "integer" &&
-        [schema.minimum, schema.maximum].some(
+        [schema.minimum, schema.maximum, schema.exclusiveMinimum, schema.exclusiveMaximum].some(
           (value) => value !== undefined && !Number.isSafeInteger(value),
         )
       )
@@ -152,7 +215,15 @@ export function canonicalGameDataSchema(
         );
       return { ...schema };
     case "string": {
-      if (schema.maxLength > policy.maximumStringUtf8Bytes)
+      const maxLength = gameStringMaximumLength(schema);
+      if (schema.minLength !== undefined && schema.minLength > maxLength)
+        throw new GameAdmissionError(
+          "invalid_definition",
+          "schema",
+          "String minimum exceeds maximum",
+        );
+      if (schema.pattern !== undefined) assertGameDataPattern(schema.pattern);
+      if (maxLength > policy.maximumStringUtf8Bytes)
         throw new GameAdmissionError(
           "resource_limit",
           "schema",
@@ -161,16 +232,33 @@ export function canonicalGameDataSchema(
       if (
         schema.enum &&
         (new Set(schema.enum).size !== schema.enum.length ||
-          schema.enum.some((value) => [...value].length > schema.maxLength))
+          schema.enum.some(
+            (value) =>
+              [...value].length > maxLength ||
+              [...value].length < (schema.minLength ?? 0) ||
+              (schema.pattern !== undefined && !new RegExp(schema.pattern).test(value)),
+          ))
       )
         throw new GameAdmissionError(
           "invalid_definition",
           "schema",
           "String enum contains duplicate or oversized members",
         );
-      return { ...schema, ...(schema.enum ? { enum: [...schema.enum].sort() } : {}) };
+      return { ...schema, maxLength, ...(schema.enum ? { enum: [...schema.enum].sort() } : {}) };
     }
     case "array":
+      if (schema.default !== undefined && (schema.minItems ?? 0) > 0)
+        throw new GameAdmissionError(
+          "invalid_definition",
+          "schema",
+          "An empty-array default must satisfy the array's minimum length",
+        );
+      if (schema.minItems !== undefined && schema.minItems > schema.maxItems)
+        throw new GameAdmissionError(
+          "invalid_definition",
+          "schema",
+          "Array minimum exceeds maximum",
+        );
       if (schema.maxItems > policy.maximumJsonNodes)
         throw new GameAdmissionError(
           "resource_limit",
@@ -178,6 +266,19 @@ export function canonicalGameDataSchema(
           "Array schema bound exceeds admission policy",
         );
       return { ...schema, items: canonicalGameDataSchema(schema.items, policy) };
+    case "union": {
+      const alternatives = schema.anyOf.map((item) => canonicalGameDataSchema(item, policy));
+      const entries = alternatives
+        .map((item) => [stableJson(item), item] as const)
+        .sort(([a], [b]) => compareGameStrings(a, b));
+      if (new Set(entries.map(([key]) => key)).size !== entries.length)
+        throw new GameAdmissionError(
+          "invalid_definition",
+          "schema",
+          "Union alternatives must be distinct",
+        );
+      return { type: "union", anyOf: entries.map(([, item]) => item) };
+    }
     case "object": {
       if (
         new Set(schema.required).size !== schema.required.length ||
@@ -304,6 +405,78 @@ export function assertGameDefinitionRegistry(registry: GameDefinitionRegistry): 
     );
 }
 
+/** JSON Schema length counts Unicode code points, independently of UTF-8 admission bytes. */
+function gameStringMaximumLength(schema: Extract<GameDataSchema, { type: "string" }>): number {
+  if (schema.maxLength !== undefined) return schema.maxLength;
+  if (!schema.enum?.length)
+    throw new GameAdmissionError(
+      "invalid_definition",
+      "schema",
+      "Open strings require a maximum length",
+    );
+  let maximum = 0;
+  for (const member of schema.enum) maximum = Math.max(maximum, [...member].length);
+  return maximum;
+}
+
+/** Materialize only declared empty-array defaults, before authority hashing; never infer values. */
+export function canonicalGameConfig(
+  value: GameJsonValue,
+  schema: GameDataSchema,
+  policy: GameAdmissionPolicy,
+): GameJsonValue {
+  if (!gameDataMatchesSchema(value, schema))
+    throw new GameAdmissionError(
+      "invalid_recipe_config",
+      "config",
+      "Recipe configuration does not match its declared schema",
+    );
+  let visits = 0;
+  const defaults = new Map<GameDataSchema, Array<[string, GameDataSchema]>>();
+  const visit = (item: GameJsonValue, declaration: GameDataSchema): GameJsonValue => {
+    if (++visits > policy.maximumJsonNodes)
+      throw new GameAdmissionError(
+        "resource_limit",
+        "config",
+        "Configuration default expansion exceeds its node budget",
+      );
+    if (declaration.type === "array")
+      return (item as GameJsonValue[]).map((entry) => visit(entry, declaration.items));
+    if (declaration.type === "object") {
+      const fields = item as Record<string, GameJsonValue>;
+      const entries = Object.entries(fields).map(
+        ([key, child]) => [key, visit(child, declaration.properties[key]!)] as const,
+      );
+      let declared = defaults.get(declaration);
+      if (!declared) {
+        declared = Object.entries(declaration.properties).filter(
+          ([, child]) => child.type === "array" && child.default !== undefined,
+        );
+        defaults.set(declaration, declared);
+      }
+      for (const [key, child] of declared)
+        if (!Object.hasOwn(fields, key)) entries.push([key, visit([], child)]);
+      return Object.fromEntries(entries);
+    }
+    if (declaration.type === "union") {
+      const candidates = declaration.anyOf
+        .filter((alternative) => gameDataMatchesSchema(item, alternative))
+        .map((alternative) => visit(item, alternative));
+      if (new Set(candidates.map((candidate) => stableJson(candidate))).size !== 1)
+        throw new GameAdmissionError(
+          "invalid_recipe_config",
+          "config",
+          "Matching union branches declare different configuration defaults",
+        );
+      return candidates[0]!;
+    }
+    return item;
+  };
+  const normalized = visit(value, schema);
+  assertBoundedGameJson(normalized, policy);
+  return normalized;
+}
+
 /** Checks declared configuration data, never candidate source exports or behavior. */
 export function gameDataMatchesSchema(value: GameJsonValue, schema: GameDataSchema): boolean {
   switch (schema.type) {
@@ -314,7 +487,9 @@ export function gameDataMatchesSchema(value: GameJsonValue, schema: GameDataSche
     case "string":
       return (
         typeof value === "string" &&
-        [...value].length <= schema.maxLength &&
+        [...value].length <= gameStringMaximumLength(schema) &&
+        [...value].length >= (schema.minLength ?? 0) &&
+        (schema.pattern === undefined || matchesGameDataPattern(value, schema.pattern)) &&
         (!schema.enum || schema.enum.includes(value))
       );
     case "number":
@@ -324,14 +499,19 @@ export function gameDataMatchesSchema(value: GameJsonValue, schema: GameDataSche
         Number.isFinite(value) &&
         (schema.type !== "integer" || Number.isSafeInteger(value)) &&
         (schema.minimum === undefined || value >= schema.minimum) &&
-        (schema.maximum === undefined || value <= schema.maximum)
+        (schema.maximum === undefined || value <= schema.maximum) &&
+        (schema.exclusiveMinimum === undefined || value > schema.exclusiveMinimum) &&
+        (schema.exclusiveMaximum === undefined || value < schema.exclusiveMaximum)
       );
     case "array":
       return (
         Array.isArray(value) &&
         value.length <= schema.maxItems &&
+        value.length >= (schema.minItems ?? 0) &&
         value.every((item) => gameDataMatchesSchema(item, schema.items))
       );
+    case "union":
+      return schema.anyOf.some((alternative) => gameDataMatchesSchema(value, alternative));
     case "object":
       if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
       return (
@@ -343,4 +523,31 @@ export function gameDataMatchesSchema(value: GameJsonValue, schema: GameDataSche
         )
       );
   }
+}
+
+/** Bounded identifier patterns only: no groups, alternation, backreferences or unbounded repeats. */
+function assertGameDataPattern(pattern: string): void {
+  const match = /^\^(\[[A-Za-z0-9 _-]+\])(\[[A-Za-z0-9 _-]+\])?(?:\{(\d+)(?:,(\d+))?\})?\$$/.exec(
+    pattern,
+  );
+  if (
+    !match ||
+    pattern.length > 256 ||
+    (match[3] !== undefined &&
+      (Number(match[3]) > Number(match[4] ?? match[3]) || Number(match[4] ?? match[3]) > 65536))
+  )
+    throw new GameAdmissionError(
+      "invalid_definition",
+      "schema",
+      "Pattern must be a bounded linear identifier expression",
+    );
+  try {
+    new RegExp(pattern);
+  } catch {
+    throw new GameAdmissionError("invalid_definition", "schema", "Invalid identifier pattern");
+  }
+}
+function matchesGameDataPattern(value: string, pattern: string): boolean {
+  assertGameDataPattern(pattern);
+  return new RegExp(pattern).test(value);
 }

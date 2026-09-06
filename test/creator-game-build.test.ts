@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -8,17 +8,28 @@ import {
   ImmutableJsonArtifactStore,
   type ArtifactReference,
 } from "../packages/artifact-store/src/index.js";
-import { CreatorSessionCoordinator } from "../packages/creator-session/src/coordinator.js";
+import {
+  CreatorSessionCoordinator,
+  restoredCreatorControlDetail,
+} from "../packages/creator-session/src/coordinator.js";
 import {
   advanceSession,
+  assertCreatorChangeSet,
   createCreatorApproval,
   createCreatorBuildContract,
   createCreatorPlan,
   createCreatorSession,
   createStudioOwnershipMap,
+  persistCreatorBundle,
   type CreatorSessionBundle,
   type CreatorChangeSet,
 } from "../packages/creator-session/src/index.js";
+import {
+  AgentExecutionJournalStore,
+  createAgentExecutionSlot,
+  createRequestIntentCheckpoint,
+  type AgentExecutionSlot,
+} from "../packages/agent-runtime/src/index.js";
 import {
   adaptCreatorChangeSetMutationOperations,
   creatorStructuralParentsFromProjectIndex,
@@ -180,6 +191,7 @@ async function fixture(directory: string, mode: "complete" | "lost_ack" | "exter
   const compiled = compileGamePlan({
     design: {
       kind: "GameDesignSpec",
+      worldAuthoring: { mode: "none" },
       id: "aggregate",
       intent: prompt,
       components: [
@@ -275,7 +287,14 @@ async function fixture(directory: string, mode: "complete" | "lost_ack" | "exter
   }).graph;
   const bundle: CreatorSessionBundle = {
     session,
-    creatorRequest: await store.write({ prompt }),
+    creatorRequest: await store.write({
+      kind: "CreatorRequest",
+      sessionId: session.id,
+      promptHash: session.promptHash,
+      creatorText: prompt,
+      agentPrompt: `Build the approved inventory.\n${prompt}`,
+      contextCitations: [],
+    }),
     projectIndices: [await writeCreatorProjectIndexArtifacts(store, current)],
     projectChanges: [],
     projectRefreshes: [],
@@ -302,6 +321,15 @@ async function fixture(directory: string, mode: "complete" | "lost_ack" | "exter
       contractHash: string,
       summary: string,
     ): Promise<unknown>;
+    decidePlan(
+      bundle: CreatorSessionBundle,
+      hash: string,
+      decision: "approved",
+      execution: AgentExecutionSlot,
+      retainedApproval: CreatorSessionBundle["approvals"][number],
+    ): Promise<unknown>;
+    sourceEvidence(): Promise<unknown>;
+    observationForBundle(): Promise<unknown>;
     recordGameCheckpoint(
       bundle: CreatorSessionBundle,
       attemptHash: string,
@@ -311,6 +339,11 @@ async function fixture(directory: string, mode: "complete" | "lost_ack" | "exter
     resumeGameBuild(bundle: CreatorSessionBundle): Promise<unknown>;
     currentAttestedStudioSession(): Promise<unknown>;
     requireClearRecordingInventory(): Promise<void>;
+    requireBuildRefresh(
+      bundle: CreatorSessionBundle,
+      studio: unknown,
+      message?: string,
+    ): Promise<unknown>;
     collectProjectIndex(): Promise<StudioProjectIndexCapture>;
     retainProjectIndex(
       bundle: CreatorSessionBundle,
@@ -332,6 +365,20 @@ async function fixture(directory: string, mode: "complete" | "lost_ack" | "exter
     projectId: PROJECT_ID,
   });
   coordinator.requireClearRecordingInventory = async () => {};
+  coordinator.requireBuildRefresh = async (retained) => {
+    const refreshed = {
+      ...retained,
+      ...(retained.gameBuilds
+        ? {
+            gameBuilds: retained.gameBuilds.map((build) =>
+              build.status === "complete" ? build : { ...build, status: "incomplete" as const },
+            ),
+          }
+        : {}),
+      session: advanceSession(retained.session, { status: "refresh_required" }),
+    };
+    return coordinator.finish(refreshed);
+  };
   coordinator.collectProjectIndex = async () => current;
   coordinator.retainProjectIndex = async (retained, next) => ({
     ...retained,
@@ -543,6 +590,9 @@ async function fixture(directory: string, mode: "complete" | "lost_ack" | "exter
     bundle,
     graph,
     contract,
+    approval,
+    sourceIndex,
+    observation,
     applies,
     get retainedAck() {
       return retainedAck;
@@ -558,12 +608,8 @@ test("coordinator consumes two exact partitions under one accepted plan and comp
   const directory = await mkdtemp(join(tmpdir(), "forge-aggregate-positive-"));
   try {
     const run = await fixture(directory, "complete");
-    await run.coordinator.startGameBuild(
-      run.bundle,
-      run.graph,
-      run.contract.hash,
-      "Created 129 folders.",
-    );
+    const summary = "Created 129 folders.\n" + "Verified checkpoint details.\n".repeat(400);
+    await run.coordinator.startGameBuild(run.bundle, run.graph, run.contract.hash, summary);
     assert.equal(
       run.currentBundle().session.failure,
       undefined,
@@ -574,6 +620,10 @@ test("coordinator consumes two exact partitions under one accepted plan and comp
       [128, 1],
     );
     assert.equal(run.currentBundle().session.status, "completed");
+    for (const changeSet of run.applies) {
+      assert.equal(changeSet.summary, summary);
+      assert.doesNotThrow(() => assertCreatorChangeSet(changeSet));
+    }
     assert.equal(run.currentBundle().gameBuilds![0]!.receipts.length, 2);
     assert.notEqual(run.applies[0]!.expectedRevisionHash, run.applies[1]!.expectedRevisionHash);
     assert.equal(run.applies[0]!.planHash, run.applies[1]!.planHash);
@@ -623,6 +673,7 @@ test("a lost consumed acknowledgement prevents the next partition and cannot rep
     assert.equal(run.currentBundle().session.status, "incomplete");
     assert.equal(run.currentBundle().gameBuilds![0]!.receipts.length, 1);
     assert.equal(run.applies.length, 1, "recovered acknowledgements require explicit continuation");
+    assert.match(restoredCreatorControlDetail(run.currentBundle()), /Resume verified build/);
     run.deliverAcknowledgements();
     await run.coordinator.resumeGameBuild(run.currentBundle());
     assert.equal(run.applies.length, 2);
@@ -632,7 +683,7 @@ test("a lost consumed acknowledgement prevents the next partition and cannot rep
   }
 });
 
-test("an external edit between verified partitions stops aggregate continuation", async () => {
+test("an external edit between verified partitions retains its index and requires refresh", async () => {
   const directory = await mkdtemp(join(tmpdir(), "forge-aggregate-drift-"));
   try {
     const run = await fixture(directory, "external_edit");
@@ -644,9 +695,250 @@ test("an external edit between verified partitions stops aggregate continuation"
     );
     assert.equal(run.applies.length, 1);
     assert.equal(run.currentBundle().gameBuilds![0]!.receipts.length, 1);
-    assert.equal(run.currentBundle().session.status, "incomplete");
-    assert.equal(run.currentBundle().session.failure?.code, "game_checkpoint_continuation_stopped");
+    assert.equal(run.currentBundle().session.status, "refresh_required");
+    assert.equal(run.currentBundle().session.failure, undefined);
+    assert.equal(run.currentBundle().projectIndices.length, 3);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+async function withPersistedWorkerBindings(run: Awaited<ReturnType<typeof fixture>>) {
+  const store = run.coordinator.artifactStore;
+  const consultation = new SourceConsultationRecorder(
+    run.sourceIndex,
+    createTestFixtureSourceResolver([]),
+  ).seal();
+  const indexArtifact = await store.write(run.sourceIndex);
+  const consultationArtifact = await store.write(consultation);
+  // This fixture mocks the worker boundary, not AgentRun/journal admission.
+  // The real bundle writer must still check the sealed phase/graph/contract edges.
+  const boundary = await store.write({ kind: "FixtureWorkerEvidence" });
+  const reference: CreatorSessionBundle["agentRuns"][number] = {
+    phase: "creator_builder",
+    agentRunId: "agent_run_persisted_aggregate",
+    agentRun: boundary,
+    traceId: "trace_persisted_aggregate",
+    trace: boundary,
+    traceBuildKey: "trace_build_persisted_aggregate",
+    creatorSessionHash: run.bundle.session.hash,
+    buildContract: { id: run.contract.id, hash: run.contract.hash },
+    outcome: {
+      status: "sealed",
+      artifact: { kind: "game_build_graph", id: run.graph.id, hash: run.graph.hash },
+      attemptHash: contentHash("fixture sealed attempt"),
+    },
+  };
+  return {
+    ...run.bundle,
+    sourceIndices: [
+      {
+        id: run.sourceIndex.id,
+        hash: run.sourceIndex.hash,
+        artifact: indexArtifact,
+        analysis: {
+          id: "fixture_analysis",
+          hash: boundary.artifactHash,
+          artifact: boundary,
+        },
+      },
+    ],
+    sourceConsultations: [
+      {
+        id: consultation.id,
+        hash: consultation.hash,
+        indexId: run.sourceIndex.id,
+        indexHash: run.sourceIndex.hash,
+        artifact: consultationArtifact,
+      },
+    ],
+    agentRuns: [reference],
+  } satisfies CreatorSessionBundle;
+}
+
+test("a sealed builder graph crosses real bundle persistence before native preparation", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "forge-aggregate-persistence-"));
+  try {
+    const run = await fixture(directory, "complete");
+    const bundle = await withPersistedWorkerBindings(run);
+    run.coordinator.persist = async (retained) => {
+      await persistCreatorBundle(retained, directory);
+    };
+    let preparations = 0;
+    run.coordinator.prepareNextGamePartition = async () => {
+      preparations++;
+    };
+    await run.coordinator.startGameBuild(bundle, run.graph, run.contract.hash, "Created folders.");
+    const saved = JSON.parse(
+      await readFile(join(directory, `${bundle.session.id}.json`), "utf8"),
+    ) as CreatorSessionBundle;
+    assert.equal(saved.session.status, "building");
+    assert.equal(saved.agentRuns[0]!.outcome.status, "sealed");
+    assert.equal(saved.gameBuilds![0]!.graph.hash, run.graph.hash);
+    assert.equal(saved.gameBuilds![0]!.receipts.length, 0);
+    assert.equal(preparations, 1);
+    assert.equal(run.applies.length, 0);
+    const graphArtifact = await run.coordinator.artifactStore.write(run.graph);
+    assert.deepEqual(await run.coordinator.artifactStore.read(graphArtifact), run.graph);
+    await assert.rejects(
+      persistCreatorBundle({ ...bundle, gameBuilds: [] }, directory),
+      /not linked to its build graph and contract/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+for (const boundary of ["artifact", "bundle"] as const) {
+  test(`a post-seal ${boundary} persistence failure retains the exact graph for provider-free explicit resume`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), "forge-aggregate-seal-recovery-"));
+    try {
+      const run = await fixture(directory, "complete");
+      const completedWorker = await withPersistedWorkerBindings(run);
+      const bundle: CreatorSessionBundle = {
+        ...completedWorker,
+        buildContracts: [],
+        agentRuns: [],
+        session: advanceSession(run.bundle.session, {
+          status: "incomplete",
+          failure: {
+            code: "BUILD_PREPARATION_FAILED",
+            detail: "Fixture retries before any worker execution.",
+          },
+        }),
+      };
+      const execution = createAgentExecutionSlot({
+        purpose: "builder",
+        ordinal: 1,
+        agentRunId: completedWorker.agentRuns[0]!.agentRunId,
+      });
+      await new AgentExecutionJournalStore(run.coordinator.artifactStore).append(
+        execution.journalId,
+        createRequestIntentCheckpoint(
+          1,
+          NOW,
+          {
+            model: "fixture",
+            system: "fixture",
+            messages: [],
+            tools: [],
+            maxOutputTokens: 100,
+            timeoutMs: 1000,
+          },
+          {
+            runtimeStartedAt: NOW,
+            usage: {
+              turns: 0,
+              inputTokens: 0,
+              outputTokens: 0,
+              costUsd: 0,
+              reasoningTokens: null,
+              cacheReadTokens: null,
+              cacheWriteTokens: null,
+            },
+            trialStarted: false,
+            remaining: {
+              turns: 10,
+              toolCalls: 100,
+              toolResultBytes: 1000000,
+              durationMs: 100000,
+              inputTokens: null,
+              outputTokens: null,
+              budgetUsd: null,
+            },
+            seenToolCallIds: [],
+            rejectedBatchRepeats: [],
+            noProgressBatchRepeats: [],
+            prematureCompletionRepairs: 0,
+            toolHostProgressTokenHash: null,
+            materializedToolCalls: 0,
+            materializedToolResultBytes: 0,
+          },
+        ),
+      );
+      let workerCalls = 0;
+      run.coordinator.input = {
+        worker: {
+          build: async (request: {
+            creatorPrompt: string;
+            agentPrompt: string;
+            initialImages: readonly unknown[];
+          }) => {
+            workerCalls++;
+            assert.equal(request.creatorPrompt, run.bundle.plan!.goal);
+            assert.equal(
+              request.agentPrompt,
+              `Build the approved inventory.\n${run.bundle.plan!.goal}`,
+            );
+            assert.deepEqual(request.initialImages, []);
+            return {
+              status: "sealed",
+              graph: run.graph,
+              buildContract: run.contract,
+              summary: "Created folders.",
+              sourceWriteBlobs: [],
+              evidence: completedWorker.agentRuns[0]!,
+            };
+          },
+        },
+      };
+      run.coordinator.sourceEvidence = async () => ({});
+      run.coordinator.observationForBundle = async () => run.observation;
+      let injected = false;
+      const writeArtifact = run.coordinator.artifactStore.write.bind(run.coordinator.artifactStore);
+      run.coordinator.artifactStore.write = async (value) => {
+        if (boundary === "artifact" && value === run.graph && !injected) {
+          injected = true;
+          throw new Error("fixture post-seal graph artifact persistence unavailable");
+        }
+        return writeArtifact(value);
+      };
+      run.coordinator.persist = async (retained) => {
+        if (boundary === "bundle" && retained.gameBuilds?.length && !injected) {
+          injected = true;
+          throw new Error("fixture post-seal bundle persistence unavailable");
+        }
+        await persistCreatorBundle(retained, directory);
+      };
+      run.coordinator.failIncomplete = (
+        CreatorSessionCoordinator.prototype as unknown as typeof run.coordinator
+      ).failIncomplete;
+      await run.coordinator.decidePlan(
+        bundle,
+        bundle.plan!.hash,
+        "approved",
+        execution,
+        run.approval,
+      );
+      const stopped = JSON.parse(
+        await readFile(join(directory, `${bundle.session.id}.json`), "utf8"),
+      ) as CreatorSessionBundle;
+      assert.equal(stopped.session.status, "incomplete");
+      assert.equal(stopped.session.failure?.code, "builder_execution_failed");
+      assert.equal(stopped.gameBuilds![0]!.status, "incomplete");
+      assert.equal(stopped.gameBuilds![0]!.graph.hash, run.graph.hash);
+      assert.equal(stopped.gameBuilds![0]!.receipts.length, 0);
+      assert.equal(run.applies.length, 0);
+      assert.equal(stopped.mutationAttempts.length, 0);
+      const resumed: CreatorChangeSet[] = [];
+      run.coordinator.apply = async (retained) => {
+        resumed.push(retained.changeSets.at(-1)!);
+      };
+      await run.coordinator.resumeGameBuild(stopped);
+      assert.equal(
+        workerCalls,
+        1,
+        "resume must consume the retained graph without invoking the worker",
+      );
+      assert.equal(run.currentBundle().session.status, "preflighting");
+      assert.equal(run.currentBundle().gameBuilds![0]!.graph.hash, run.graph.hash);
+      assert.equal(run.currentBundle().gameBuilds![0]!.receipts.length, 0);
+      assert.equal(resumed.length, 1);
+      assert.equal(resumed[0]!.operations.length, 128);
+      assert.equal(resumed[0]!.planApprovalHash, run.approval.hash);
+      assert.equal(resumed[0]!.partition.graphHash, run.graph.hash);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}

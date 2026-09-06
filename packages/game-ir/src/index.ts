@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 import { GAME_SOURCE_CONTENT_SCHEMA, GAME_SOURCE_PLACEMENT_SCHEMA } from "./source.js";
+import { GAME_VISUAL_DIRECTION_SCHEMA, validateGameVisualDirection } from "./visual-direction.js";
+export { GAME_VISUAL_DIRECTION_SCHEMA, gameVisualReviewStatements } from "./visual-direction.js";
+export type { GameVisualDirection } from "./visual-direction.js";
 export type { GameSourceContent, GameSourcePlacement, GamePlacementParent } from "./source.js";
 export { GAME_STUDIO_IDENTITY_SCHEMA } from "./source.js";
 import {
@@ -16,6 +19,7 @@ import {
 import {
   assertGameDefinitionRegistry,
   canonicalGamePorts,
+  canonicalGameConfig,
   GAME_DATA_SCHEMA,
   GAME_OBLIGATION_SCHEMA,
   gameDataMatchesSchema,
@@ -40,18 +44,32 @@ export type {
 } from "./recipes.js";
 
 const FILE_REFERENCE_SCHEMA = z.object({ componentId: entityId, fileId: entityId }).strict();
+const sourcePath = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*(\/[A-Za-z0-9][A-Za-z0-9_.-]*)*\.luau$/)
+  .describe(
+    "Relative source file path ending in .luau, e.g. Services/Interaction.luau. Editor placement belongs in placement; this is not a Roblox hierarchy path.",
+  );
 const SOURCE_FILE_SCHEMA = z
   .object({
     id: entityId,
-    path: z.string().min(1),
+    path: sourcePath,
     context: z.enum(["server", "client", "shared"]),
-    role: z.enum(["module", "entrypoint"]),
+    role: z
+      .enum(["module", "entrypoint"])
+      .describe(
+        "Per-file role. Entrypoints execute on server or client; shared files are modules.",
+      ),
     content: GAME_SOURCE_CONTENT_SCHEMA,
     placement: GAME_SOURCE_PLACEMENT_SCHEMA.optional(),
-    imports: z.array(FILE_REFERENCE_SCHEMA),
+    imports: z
+      .array(FILE_REFERENCE_SCHEMA)
+      .describe(
+        "Approved upper bound of modules this file may require. Actual static imports must be a subset. Unused declarations are warnings and remain conservative build dependencies; they do not require module execution.",
+      ),
   })
   .strict();
-const SOURCE_PACKAGE_SCHEMA = z
+export const GAME_SOURCE_PACKAGE_SCHEMA = z
   .object({
     kind: z.literal("source_package"),
     id: entityId,
@@ -69,7 +87,7 @@ const SOURCE_PACKAGE_SCHEMA = z
     obligations: z.array(GAME_OBLIGATION_SCHEMA),
   })
   .strict();
-const RECIPE_INSTANCE_SCHEMA = z
+export const GAME_RECIPE_INSTANCE_SCHEMA = z
   .object({
     kind: z.literal("recipe_instance"),
     id: entityId,
@@ -109,15 +127,60 @@ export const GAME_SEMANTIC_ARCHITECTURE_SCHEMA = z
   .strict();
 export type GameSemanticArchitecture = z.infer<typeof GAME_SEMANTIC_ARCHITECTURE_SCHEMA>;
 
+const persistentWorldRoot = z
+  .string()
+  .min(11)
+  .max(512)
+  .regex(
+    /^Workspace\/[^/\u0000-\u001f]+(?:\/[^/\u0000-\u001f]+)*$/u,
+    "Persistent world roots must be exact descendant paths under Workspace",
+  );
+
+/** Explicit authoring boundary for the creator-visible three-dimensional world. */
+export const GAME_WORLD_AUTHORING_SCHEMA = z.discriminatedUnion("mode", [
+  z
+    .object({
+      mode: z.literal("persistent"),
+      roots: z
+        .array(persistentWorldRoot)
+        .min(1)
+        .max(32)
+        .describe(
+          "Exact Workspace roots that contain the persistent, edit-mode world. Each root must exist in the compiled final topology and contain authored spatial geometry.",
+        ),
+    })
+    .strict(),
+  z
+    .object({
+      mode: z.literal("runtime_generated"),
+      rationale: z
+        .string()
+        .min(24)
+        .max(512)
+        .describe(
+          "Why the creator explicitly needs the primary world generated only while Play is running. Procedural geometry alone is not sufficient: Forge can compile procedural structure into persistent instances.",
+        ),
+    })
+    .strict(),
+  z.object({ mode: z.literal("none") }).strict(),
+]);
+export type GameWorldAuthoring = z.infer<typeof GAME_WORLD_AUTHORING_SCHEMA>;
+
 /** Internal schema: callers must use validation so plain-JSON budgets run first. */
 export const GAME_DESIGN_SPEC_SCHEMA = z
   .object({
     kind: z.literal("GameDesignSpec"),
     id: entityId,
     intent: z.string().min(1),
+    worldAuthoring: GAME_WORLD_AUTHORING_SCHEMA.describe(
+      "How the creator-visible 3D world is authored. Choose persistent for ordinary game scenes, runtime_generated only when the creator explicitly requests a Play-only generated world, and none when no 3D world is in scope.",
+    ),
     architecture: GAME_SEMANTIC_ARCHITECTURE_SCHEMA.optional(),
+    visualDirection: GAME_VISUAL_DIRECTION_SCHEMA.optional(),
     components: z
-      .array(z.discriminatedUnion("kind", [SOURCE_PACKAGE_SCHEMA, RECIPE_INSTANCE_SCHEMA]))
+      .array(
+        z.discriminatedUnion("kind", [GAME_SOURCE_PACKAGE_SCHEMA, GAME_RECIPE_INSTANCE_SCHEMA]),
+      )
       .min(1),
     connections: z.array(
       z.object({ id: entityId, from: PORT_REFERENCE_SCHEMA, to: PORT_REFERENCE_SCHEMA }).strict(),
@@ -126,9 +189,9 @@ export const GAME_DESIGN_SPEC_SCHEMA = z
   })
   .strict();
 type ParsedGameDesignSpec = z.infer<typeof GAME_DESIGN_SPEC_SCHEMA>;
-export type GameSourcePackage = z.infer<typeof SOURCE_PACKAGE_SCHEMA>;
+export type GameSourcePackage = z.infer<typeof GAME_SOURCE_PACKAGE_SCHEMA>;
 export type GameSourceFile = z.infer<typeof SOURCE_FILE_SCHEMA>;
-export type GameRecipeInstance = Omit<z.infer<typeof RECIPE_INSTANCE_SCHEMA>, "config"> & {
+export type GameRecipeInstance = Omit<z.infer<typeof GAME_RECIPE_INSTANCE_SCHEMA>, "config"> & {
   config: GameJsonValue;
 };
 export type GameDesignSpec = Omit<ParsedGameDesignSpec, "components"> & {
@@ -174,13 +237,25 @@ export function validateGameDesignSpec(
     assertGameDefinitionRegistry(options.registry);
     const parsed = GAME_DESIGN_SPEC_SCHEMA.safeParse(input);
     if (!parsed.success)
-      throw new GameAdmissionError(
-        "invalid_game_design",
-        "$",
-        "Input does not match the strict composition envelope",
-      );
+      return {
+        status: "rejected",
+        diagnostics: parsed.error.issues.map((issue) => ({
+          code: "invalid_game_design",
+          subject: issue.path.length ? issue.path.join(".") : "$",
+          detail: issue.message,
+        })),
+      };
     // Plain JSON admission has already excluded undefined, callbacks and other non-JSON config values.
     const spec = parsed.data as GameDesignSpec;
+    if (spec.worldAuthoring.mode === "persistent") {
+      if (new Set(spec.worldAuthoring.roots).size !== spec.worldAuthoring.roots.length)
+        throw new GameAdmissionError(
+          "duplicate_world_root",
+          spec.id,
+          "Persistent world roots must be distinct",
+        );
+      spec.worldAuthoring.roots.sort(compareGameStrings);
+    }
     if (
       spec.components.length > policy.maximumComponents ||
       spec.connections.length > policy.maximumConnections ||
@@ -194,6 +269,8 @@ export function validateGameDesignSpec(
     uniqueGameIds(spec.components, "components");
     uniqueGameIds(spec.connections, "connections");
     const components = new Map(spec.components.map((component) => [component.id, component]));
+    if (spec.visualDirection)
+      validateGameVisualDirection(spec.visualDirection, new Set(components.keys()));
     if (spec.architecture) {
       const architecture = spec.architecture;
       if (
@@ -280,6 +357,7 @@ export function validateGameDesignSpec(
             component.id,
             "Recipe configuration does not match its exact admitted definition",
           );
+        component.config = canonicalGameConfig(component.config, definition.configSchema, policy);
         componentPorts = definition.ports;
         componentObligations = definition.obligations;
         for (const exported of definition.sourceExports) {
@@ -295,15 +373,6 @@ export function validateGameDesignSpec(
         componentObligations = component.obligations;
         const paths = new Set<string>();
         for (const file of component.files) {
-          if (
-            !/^[A-Za-z0-9][A-Za-z0-9_.-]*(\/[A-Za-z0-9][A-Za-z0-9_.-]*)*\.luau$/.test(file.path) ||
-            file.path.split("/").some((segment) => segment === "." || segment === "..")
-          )
-            throw new GameAdmissionError(
-              "invalid_source_manifest",
-              component.id + "." + file.id,
-              "Source paths must be regular relative Luau paths",
-            );
           if (paths.has(file.path))
             throw new GameAdmissionError(
               "invalid_source_manifest",
@@ -386,7 +455,7 @@ export function validateGameDesignSpec(
         "Resolved definition count exceeds admission policy",
       );
 
-    // Imports are declared static source dependencies, not runtime event connections.
+    // Approved import bounds are conservative source dependencies, not runtime event connections.
     for (const component of spec.components) {
       if (component.kind !== "source_package") continue;
       for (const file of component.files) {
@@ -459,6 +528,7 @@ export function validateGameDesignSpec(
       (a, b) => compareGameStrings(a.from, b.from) || compareGameStrings(a.to, b.to),
     );
     // Stable JSON also orders config object keys while preserving config array order.
+    assertBoundedGameJson(spec, policy);
     const canonical = stableJson(spec);
     return {
       status: "eligible",

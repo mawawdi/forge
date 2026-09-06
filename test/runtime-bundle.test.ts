@@ -21,7 +21,6 @@ import {
 } from "../packages/game-ir/src/index.js";
 import {
   createForgeRuntimeRecipe,
-  emitScopedBootstrap,
   emitStaticModuleImport,
   forgeRuntimeSourcePackage,
   loadForgeRuntimeBundle,
@@ -48,7 +47,7 @@ const context: GameRecipeExpanderInput = {
 test("ForgeRuntime load verifies exact source, ABI and MIT provenance without dependencies", async () => {
   const bundle = await loadForgeRuntimeBundle({ root });
   assert.deepEqual(bundle, await loadForgeRuntimeBundle({ root }));
-  assert.equal(bundle.abi, "forge-runtime@1");
+  assert.equal(bundle.abi, "forge-runtime@2");
   assert.deepEqual(bundle.provenance.thirdPartyDependencies, []);
   assert.equal(
     bundle.provenance.licenseHash,
@@ -56,7 +55,7 @@ test("ForgeRuntime load verifies exact source, ABI and MIT provenance without de
   );
   assert.deepEqual(
     bundle.modules.map((module) => module.id),
-    ["event", "scope", "state-machine", "task"],
+    ["event", "network", "scope", "state-machine", "task"],
   );
   for (const module of bundle.modules) {
     assert.equal(module.sourceHash, contentHash(module.source));
@@ -106,7 +105,7 @@ test("runtime source package remains ordinary optional module material with exac
     parent: { kind: "generated", operationId: "runtime-folder" },
     rootPath: "ReplicatedStorage/Packages/ForgeRuntime",
   });
-  assert.equal(material.component.files.length, 4);
+  assert.equal(material.component.files.length, 5);
   assert.throws(
     () =>
       forgeRuntimeSourcePackage(bundle, {
@@ -129,6 +128,7 @@ test("runtime source package remains ordinary optional module material with exac
   );
   const utility: GameDesignSpec = {
     kind: "GameDesignSpec",
+    worldAuthoring: { mode: "none" },
     id: "utility",
     intent: "Install independent utility modules.",
     components: [material.component],
@@ -153,12 +153,13 @@ test("runtime source package remains ordinary optional module material with exac
   );
 });
 
-test("runtime recipe compiles folders and four locked modules into exact creator inventory", async () => {
+test("runtime recipe compiles folders and five locked modules into exact creator inventory", async () => {
   const bundle = await loadForgeRuntimeBundle({ root });
   const recipe = createForgeRuntimeRecipe(bundle);
   const registry = createGameDefinitionRegistry([recipe.definition]);
   const design: GameDesignSpec = {
     kind: "GameDesignSpec",
+    worldAuthoring: { mode: "none" },
     id: "runtime-install",
     intent: "Install optional lifecycle modules.",
     components: [
@@ -186,8 +187,8 @@ test("runtime recipe compiles folders and four locked modules into exact creator
     sessionId: "runtime-session",
     observedRevisionHash: "b".repeat(64),
   });
-  assert.equal(plan.inventory.length, 6);
-  assert.equal(plan.inventory.filter((item) => item.source).length, 4);
+  assert.equal(plan.inventory.length, 7);
+  assert.equal(plan.inventory.filter((item) => item.source).length, 5);
   assert.equal(
     plan.inventory.find((item) => item.id === "runtime-folder")?.dependencies[0],
     "runtime-packages",
@@ -205,7 +206,7 @@ test("runtime recipe compiles folders and four locked modules into exact creator
   bundle.modules[0]!.source = "return nil";
   assert.equal(
     recipe.expander.expand(context).length,
-    6,
+    7,
     "registered closure snapshots verified material",
   );
 });
@@ -231,7 +232,7 @@ test("runtime recipe reuses observed folder identities and rejects ambiguous or 
     initialTopology: [...context.initialTopology, packages, installed],
   };
   const items = recipe.expander.expand(observed);
-  assert.equal(items.length, 4);
+  assert.equal(items.length, 5);
   for (const item of items) {
     assert.ok(item.change.kind === "create");
     assert.deepEqual(item.change.parent, {
@@ -326,6 +327,7 @@ test("runtime recipe declares imported existing locked modules without rewriting
   const registry = createGameDefinitionRegistry([recipe.definition]);
   const design: GameDesignSpec = {
     kind: "GameDesignSpec",
+    worldAuthoring: { mode: "none" },
     id: "runtime-import",
     intent: "Import an already installed lifecycle module.",
     components: [
@@ -375,7 +377,7 @@ test("runtime recipe declares imported existing locked modules without rewriting
     recipeExpanders: [recipe.expander],
   };
   const expanded = expandGameDesign(input);
-  assert.equal(expanded.inventory.length, 4);
+  assert.equal(expanded.inventory.length, 5);
   assert.equal(
     expanded.inventory.some((item) => item.source?.fileId === "scope"),
     false,
@@ -395,22 +397,18 @@ test("runtime recipe declares imported existing locked modules without rewriting
   assert.throws(() => expandGameDesign({ ...input, observation: changed }), /source evidence/);
 });
 
-test("static imports and optional bootstrap reject injected identifiers and parse as Luau", async () => {
-  const temp = await mkdtemp(join(tmpdir(), "forge-runtime-bootstrap-"));
+test("static imports reject injected identifiers and parse as Luau", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "forge-runtime-import-"));
   try {
-    const source = emitScopedBootstrap({
-      scopeStudioPath: "ReplicatedStorage/Packages/ForgeRuntime/Scope",
-      modules: [
-        {
-          localName: "Controller",
-          studioPath: "ReplicatedStorage/User Modules/Controller",
-          startExport: "start",
-        },
-      ],
+    const source = emitStaticModuleImport({
+      localName: "Controller",
+      studioPath: "ReplicatedStorage/User Modules/Controller",
     });
-    assert.match(source, /scope:Close\(\)/);
-    assert.match(source, /Controller.start\(scope\)/);
-    const path = join(temp, "Bootstrap.server.luau");
+    assert.equal(
+      source,
+      'local Controller = require(game:GetService("ReplicatedStorage"):WaitForChild("User Modules"):WaitForChild("Controller"))',
+    );
+    const path = join(temp, "Import.luau");
     await writeFile(path, source);
     const result = spawnSync("luau-compile", ["--only-parse", path], {
       encoding: "utf8",
@@ -446,7 +444,7 @@ test("fixed repository Luau runtime suite executes real source with bounded host
   assert.equal(result.error, undefined);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /ForgeRuntime real Luau tests passed: 12/);
-  const modules = ["Scope", "Event", "Task", "StateMachine"].map((name) =>
+  const modules = ["Scope", "Event", "Task", "StateMachine", "Network"].map((name) =>
     join(root, "luau", name + ".luau"),
   );
   for (const [command, args] of [

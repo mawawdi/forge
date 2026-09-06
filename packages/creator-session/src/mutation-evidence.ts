@@ -10,6 +10,7 @@ import {
   derivedStudioMutationPropertyNames,
   isStudioCreatorMutationBinding,
   matchesStudioCreatorMutationBinding,
+  studioEvidenceFactKey,
   studioValuesEqual,
   type MutationEvidenceOperation,
   type MutationEvidenceProjectionInput,
@@ -29,6 +30,7 @@ import {
   studioObjectIdentityKey,
   type StudioProjectIndexCapture,
   type StudioProjectIndexNode,
+  type StudioObservedPropertyValue,
   type StudioIdentityEnrollment,
 } from "../../studio-evidence/src/project-index.js";
 import {
@@ -266,7 +268,7 @@ export function creatorDeleteSubtreesFromProjectIndex(
       name: node.name,
       className: node.className,
       ...(node.engineContainer === undefined ? {} : { engineContainer: node.engineContainer }),
-      properties: node.coveredProperties as Readonly<Record<string, StudioValue>>,
+      properties: node.coveredProperties as Readonly<Record<string, StudioObservedPropertyValue>>,
     })),
     operations: changeSet.operations,
   });
@@ -847,7 +849,7 @@ export function reconcileCreatorMutation(
           "Project index nodes, source, or identity changed without a Merkle-root change.",
         );
     }
-    validateOperationsInAfterCapture(changeSet.operations, after, addMismatch);
+    validateOperationsInAfterCapture(changeSet.operations, projection, after, addMismatch);
   }
 
   const status: CreatorMutationReconciliationStatus =
@@ -1673,10 +1675,15 @@ function moveSubtreeIds(
 
 function validateOperationsInAfterCapture(
   operations: readonly MutationEvidenceOperation[],
+  projection: StudioEvidenceProjection,
   after: StudioProjectIndexCapture,
   mismatch: (code: string, detail: string) => void,
 ): void {
   const nodes = captureNodes(after);
+  // This projection has already been recompiled from the exact operations and
+  // manifest. Compare the same canonical expectations used by preflight and
+  // direct readback, rather than the author's pre-canonical numeric values.
+  const requirements = new Map(projection.requirements.map((entry) => [entry.key, entry]));
   for (const operation of operations) {
     if (operation.target.kind !== "instance") continue;
     const objectId = mutationTargetObjectId(operation.target);
@@ -1712,8 +1719,14 @@ function validateOperationsInAfterCapture(
         "approved_structure_not_reflected",
         `Approved structure is not reflected by after capture: ${objectId}.`,
       );
-    for (const [name, value] of Object.entries(operation.attributes ?? {})) {
-      if (stableJson(captured.node.attributes[name]) !== stableJson(value))
+    for (const name of Object.keys(operation.attributes ?? {})) {
+      const expected = requirements.get(
+        studioEvidenceFactKey("attribute", operation.target, name),
+      )?.expected;
+      if (
+        expected === undefined ||
+        stableJson(captured.node.attributes[name]) !== stableJson(expected)
+      )
         mismatch(
           "approved_attribute_not_reflected",
           `Approved attribute is not reflected by after capture: ${objectId}.${name}.`,
@@ -1726,8 +1739,14 @@ function validateOperationsInAfterCapture(
           `Approved attribute remains in after capture: ${objectId}.${name}.`,
         );
     }
-    for (const [name, value] of Object.entries(operation.properties ?? {})) {
-      if (stableJson(captured.node.coveredProperties[name]) !== stableJson(value))
+    for (const name of Object.keys(operation.properties ?? {})) {
+      const expected = requirements.get(
+        studioEvidenceFactKey("property", operation.target, name),
+      )?.expected;
+      if (
+        expected === undefined ||
+        stableJson(captured.node.coveredProperties[name]) !== stableJson(expected)
+      )
         mismatch(
           "approved_property_not_reflected",
           `Approved property is not reflected by after capture: ${objectId}.${name}.`,

@@ -1,7 +1,15 @@
 import { z } from "zod";
 import { types } from "node:util";
 
-export const entityId = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
+/** Opaque, case-sensitive declaration keys; separators are reserved for host graph keys. */
+export const entityId = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(
+    /^[A-Za-z][A-Za-z0-9_-]{0,63}$/,
+    "Identifiers must start with a letter and contain only ASCII letters, digits, underscores or hyphens; spelling is case-sensitive",
+  );
 export const hashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 export function compareGameStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -12,17 +20,17 @@ export type GameJsonValue =
 /** Admission resources, not restrictions on the semantics of an experience. */
 export const GAME_ADMISSION_POLICY_SCHEMA = z
   .object({
-    maximumJsonBytes: z.number().int().positive().safe(),
+    maximumJsonBytes: z.number().int().safe().positive(),
     maximumJsonDepth: z.number().int().positive().max(64),
-    maximumJsonNodes: z.number().int().positive().safe(),
-    maximumStringUtf8Bytes: z.number().int().positive().safe(),
-    maximumComponents: z.number().int().positive().safe(),
-    maximumFiles: z.number().int().positive().safe(),
-    maximumDeclaredSourceBytes: z.number().int().positive().safe(),
-    maximumFileSourceBytes: z.number().int().positive().safe(),
-    maximumConnections: z.number().int().positive().safe(),
-    maximumArtifactDependencies: z.number().int().positive().safe(),
-    maximumDefinitions: z.number().int().positive().safe(),
+    maximumJsonNodes: z.number().int().safe().positive(),
+    maximumStringUtf8Bytes: z.number().int().safe().positive(),
+    maximumComponents: z.number().int().safe().positive(),
+    maximumFiles: z.number().int().safe().positive(),
+    maximumDeclaredSourceBytes: z.number().int().safe().positive(),
+    maximumFileSourceBytes: z.number().int().safe().positive(),
+    maximumConnections: z.number().int().safe().positive(),
+    maximumArtifactDependencies: z.number().int().safe().positive(),
+    maximumDefinitions: z.number().int().safe().positive(),
   })
   .strict();
 export type GameAdmissionPolicy = z.infer<typeof GAME_ADMISSION_POLICY_SCHEMA>;

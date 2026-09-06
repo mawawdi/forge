@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile, mkdtemp, mkdir, realpath, writeFile, symlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -15,6 +16,8 @@ import {
   runCubeJob,
   type AssetSpec,
   type CubeInstallation,
+  type CubeExecutionPolicy,
+  type LocalCreatorCubeInstallation,
 } from "../packages/asset-registry/src/index.js";
 import { ImmutableJsonArtifactStore } from "../packages/artifact-store/src/index.js";
 import { contentHash, stableJson } from "../packages/contracts/src/index.js";
@@ -67,6 +70,21 @@ async function installation(root: string): Promise<CubeInstallation> {
     license: "Offline worker regression fixture",
   };
 }
+async function hostInstallation(
+  cube: CubeInstallation,
+  policy: CubeExecutionPolicy = DEFAULT_CUBE_EXECUTION_POLICY,
+): Promise<LocalCreatorCubeInstallation> {
+  const bytes = await readFile(cube.executable);
+  return {
+    kind: "CreatorCubeInstallation",
+    cube,
+    executablePin: {
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      bytes: bytes.length,
+    },
+    policy,
+  };
+}
 
 test("recorded OBJ inspection measures geometry and computes a centered uniform fit without modifying bytes", async () => {
   const bytes = await readFile(fixturePath);
@@ -80,7 +98,7 @@ test("recorded OBJ inspection measures geometry and computes a centered uniform 
   assert.equal(hash(bytes), hash(await readFile(fixturePath)));
   assert.throws(
     () => fitAssetGeometry(geometry, { ...spec(), namedParts: ["Missing"] }),
-    /Requested OBJ group/,
+    /Requested OBJ object\/group/,
   );
 });
 
@@ -185,9 +203,10 @@ test("recorded Cube worker journals intent, uses fixed argv, verifies pinned inp
     assert.equal(args[args.indexOf("--prompt") + 1], requested.description);
     assert.equal(args[0], join(installed.root, "cube3d/generate.py"));
     const registry = new AssetRegistry(new ImmutableJsonArtifactStore(join(root, "store")));
+    const host = await hostInstallation(installed);
     const result = await runCubeJob({
       intent,
-      installation: installed,
+      installation: host,
       registry,
       jobRoot: join(root, "jobs"),
     });
@@ -196,7 +215,7 @@ test("recorded Cube worker journals intent, uses fixed argv, verifies pinned inp
     assert.equal(result.lock.provenance.kind, "recorded_obj");
     const repeat = await runCubeJob({
       intent,
-      installation: installed,
+      installation: host,
       registry,
       jobRoot: join(root, "jobs"),
     });
@@ -208,7 +227,7 @@ test("recorded Cube worker journals intent, uses fixed argv, verifies pinned inp
       () =>
         runCubeJob({
           intent,
-          installation: installed,
+          installation: host,
           registry,
           jobRoot: join(root, "fresh-jobs"),
         }),
@@ -224,6 +243,11 @@ test("Cube worker timeout/output failures preserve a recovery obligation without
   try {
     const installed = await installation(join(root, "installation"));
     const registry = new AssetRegistry(new ImmutableJsonArtifactStore(join(root, "store")));
+    const host = await hostInstallation(installed, {
+      ...DEFAULT_CUBE_EXECUTION_POLICY,
+      timeoutMs: 300,
+      maximumLogBytes: 1024,
+    });
     for (const description of ["hang", "overflow"]) {
       const intent = createCubeJobIntent({
         spec: { ...spec(), description },
@@ -233,10 +257,9 @@ test("Cube worker timeout/output failures preserve a recovery obligation without
       });
       const result = await runCubeJob({
         intent,
-        installation: installed,
+        installation: host,
         registry,
         jobRoot: join(root, "jobs"),
-        policy: { ...DEFAULT_CUBE_EXECUTION_POLICY, timeoutMs: 300, maximumLogBytes: 1024 },
       });
       assert.equal(result.status, "recovery_required");
       assert.ok(result.status === "recovery_required");
@@ -260,11 +283,12 @@ test("Cube refuses symlinked inputs and connected adapters report unavailable ra
       configurationHash: installed.configuration.sha256,
       checkpointHashes: [installed.gptCheckpoint.sha256, installed.shapeCheckpoint.sha256],
     });
+    const host = await hostInstallation(installed);
     await assert.rejects(
       () =>
         runCubeJob({
           intent,
-          installation: installed,
+          installation: host,
           registry: new AssetRegistry(new ImmutableJsonArtifactStore(join(root, "store"))),
           jobRoot: join(root, "jobs"),
         }),

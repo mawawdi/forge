@@ -10,6 +10,11 @@ import {
   loadWorkspaceCandidateArtifact,
 } from "../../agent-runtime/src/index.js";
 import { ImmutableJsonArtifactStore } from "../../artifact-store/src/index.js";
+import {
+  CreatorAssetJobs,
+  readCreatorAssetInput,
+  probeCreatorCubeInstallation,
+} from "../../asset-registry/src/index.js";
 import { stableJson } from "../../contracts/src/index.js";
 import {
   CreatorConversationCoordinator,
@@ -119,6 +124,7 @@ const execFile = promisify(execFileCallback);
 const args = process.argv.slice(2);
 
 async function main(): Promise<void> {
+  loadRootEnvironment();
   const [command, subcommand, ...rest] = args;
   if (command === "creator" && subcommand === "serve") return creatorServe(rest);
   if (command === "creator" && subcommand === "turn") return creatorTurn(rest);
@@ -134,6 +140,7 @@ async function main(): Promise<void> {
     return creatorReplayRegression(rest[0], rest.slice(1));
   if (command === "creator" && subcommand === "timings")
     return creatorTimings(rest[0], rest.slice(1));
+  if (command === "creator" && subcommand === "asset") return creatorAsset(rest);
   if (command === "experiment" && subcommand === "register")
     return experimentRegister(rest[0], rest.slice(1));
   if (command === "experiment" && subcommand === "build")
@@ -149,6 +156,96 @@ async function main(): Promise<void> {
   if (command === "trace" && subcommand === "show") return showTrace(rest[0], rest.slice(1));
   usage();
   process.exitCode = command === "--help" || command === "help" || command === undefined ? 0 : 2;
+}
+
+async function creatorAsset(values: string[]): Promise<void> {
+  const instructions =
+    "Usage: forge creator asset doctor --installation <host-json> | prepare --request-file <json> --installation <host-json> --store <path> | run|status|fetch <job-id> --store <path> | reconcile <job-id> --output-sha256 <hash> --store <path> | preview <job-id> --output <absolute.html> --store <path> | review <job-id> --lock-hash <hash> --store <path>\n";
+  const [operation, ...rest] = values;
+  if (
+    !operation ||
+    !["doctor", "prepare", "run", "status", "fetch", "reconcile", "review", "preview"].includes(
+      operation,
+    )
+  ) {
+    process.stderr.write(instructions);
+    process.exitCode = 2;
+    return;
+  }
+  const jobId = operation === "prepare" || operation === "doctor" ? undefined : rest.shift();
+  const expected =
+    operation === "doctor"
+      ? ["--installation"]
+      : operation === "prepare"
+        ? ["--request-file", "--installation", "--store"]
+        : operation === "reconcile"
+          ? ["--output-sha256", "--store"]
+          : operation === "review"
+            ? ["--lock-hash", "--store"]
+            : operation === "preview"
+              ? ["--output", "--store"]
+              : ["--store"];
+  const options = new Map<string, string>();
+  for (let index = 0; index < rest.length; index += 2) {
+    const key = rest[index];
+    const value = rest[index + 1];
+    if (!key || !value || value.startsWith("--") || !expected.includes(key) || options.has(key)) {
+      process.stderr.write(instructions);
+      process.exitCode = 2;
+      return;
+    }
+    options.set(key, value);
+  }
+  if (options.size !== expected.length || (!["prepare", "doctor"].includes(operation) && !jobId)) {
+    process.stderr.write(instructions);
+    process.exitCode = 2;
+    return;
+  }
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  process.once("SIGINT", cancel);
+  process.once("SIGTERM", cancel);
+  try {
+    if (operation === "doctor") {
+      process.stdout.write(
+        JSON.stringify(
+          await probeCreatorCubeInstallation(
+            await readCreatorAssetInput(options.get("--installation")!),
+          ),
+          null,
+          2,
+        ) + "\n",
+      );
+      return;
+    }
+    const jobs = new CreatorAssetJobs(resolve(options.get("--store")!));
+    const result =
+      operation === "prepare"
+        ? await jobs.prepare(
+            await readCreatorAssetInput(options.get("--request-file")!),
+            await readCreatorAssetInput(options.get("--installation")!),
+          )
+        : operation === "run"
+          ? await jobs.run(jobId!, controller.signal)
+          : operation === "fetch"
+            ? await jobs.fetch(jobId!, controller.signal)
+            : operation === "reconcile"
+              ? await jobs.reconcile(jobId!, options.get("--output-sha256")!)
+              : operation === "review"
+                ? await jobs.review(jobId!, options.get("--lock-hash")!)
+                : operation === "preview"
+                  ? await jobs.preview(jobId!, options.get("--output")!)
+                  : await jobs.status(jobId!);
+    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    if (["recovery_required", "dispatched", "failed", "queued", "running"].includes(result.status))
+      process.exitCode = 2;
+  } catch (error) {
+    process.stderr.write(`Creator asset preparation failed: ${message(error)}\n`);
+    process.exitCode = 2;
+  } finally {
+    process.removeListener("SIGINT", cancel);
+    process.removeListener("SIGTERM", cancel);
+  }
 }
 
 async function creatorServe(optionArgs: string[]): Promise<void> {
@@ -192,8 +289,10 @@ async function creatorServe(optionArgs: string[]): Promise<void> {
   let controlId: string | undefined;
   try {
     const apiKey = loadOpenRouterApiKey();
-    const runtime = new ForgeNativeAgentRuntime(new OpenRouterModelClient({ apiKey }));
     const modelCatalog = await new OpenRouterModelCatalogProbe({ apiKey }).probe();
+    const runtime = new ForgeNativeAgentRuntime(
+      new OpenRouterModelClient({ apiKey, modelCatalog }),
+    );
     const directory = resolve(options.sessionDirectory ?? CREATOR_DEFAULT_STORE);
     storeLease = await acquireCreatorStoreLease(directory);
     const sourceAnalysisHost = await PinnedSourceAnalysisHost.create({
@@ -1090,16 +1189,29 @@ async function persistPrivateRun(
 }
 
 function loadOpenRouterApiKey(): string {
-  if (process.env.OPENROUTER_API_KEY) return process.env.OPENROUTER_API_KEY;
+  const value = process.env.OPENROUTER_API_KEY;
+  if (value) return value;
+  throw new Error("OPENROUTER_API_KEY is required in the process environment or root .env");
+}
+
+/**
+ * Local operator credentials belong in the ignored root `.env`. Explicit process
+ * environment values always win, so CI and shell-provided secrets are never replaced.
+ */
+function loadRootEnvironment(): void {
   try {
     const source = readFileSync(resolve(process.cwd(), ".env"), "utf8");
-    const match = source.match(/^OPENROUTER_API_KEY=(.+)$/m);
-    const value = match?.[1]?.trim().replace(/^['"]|['"]$/g, "");
-    if (value) return value;
+    for (const line of source.split(/\r?\n/)) {
+      const match = line.match(/^([A-Z][A-Z0-9_]*)=(.*)$/);
+      const name = match?.[1];
+      const rawValue = match?.[2];
+      if (!name || rawValue === undefined || process.env[name] !== undefined) continue;
+      const value = rawValue.trim().replace(/^['"]|['"]$/g, "");
+      if (value) process.env[name] = value;
+    }
   } catch {
     /* Root .env is optional when the process environment is configured. */
   }
-  throw new Error("OPENROUTER_API_KEY is required in the process environment or root .env");
 }
 
 function parseSimpleTraceOptions(values: string[]): {
@@ -1379,7 +1491,7 @@ function parseStudioCanaryOptions(values: string[]): {
 }
 function usage(): void {
   process.stdout.write(
-    `Forge commands:\n  forge creator serve [--default-model <registered-model-id>]\n  forge creator state [conversation-id]\n  forge creator turn [conversation-id] (--prompt <message> | --prompt-file <file-or->) [--model <registered-model-id>] [--kind <turn-kind>]\n  forge creator act <conversation-id> <action-instance-id> [--text <value> | --text-file <file-or-> | --report <value> | --report-file <file-or->] [--model <registered-model-id>] [--memory-item-id <id> --memory-revision-id <id> --memory-revision-hash <hash>] [--memory-category <category>]\n  forge creator replay-verification <session-id> [--verification <id>] [--session-dir <path>]\n  forge creator replay-mutation <session-id> [--attempt <id>] [--session-dir <path>]\n  forge creator replay-regression <manifest-artifact-hash> [--session-dir <path>]\n  forge creator timings <session-id> [--session-dir <path>]\n  forge experiment register <seed> --prompt-file <file> --requirements <file> --acceptance <file> --runtime-plan <file> --runtime-configuration <file> --model <exact-model-id> --output <registration.json>\n  forge experiment build <seed> --registration <registration.json>\n  forge experiment evaluate <artifact> --registration <registration.json>\n  forge studio api-status\n  forge studio capabilities [--class <RobloxClass>] [--query <text>]\n  forge studio canary <seed> --plan <file>\n  forge studio bridge\n  forge verify <project>\n  forge trace show <trace-id>\n`,
+    `Forge commands:\n  forge creator serve [--default-model <registered-model-id>]\n  forge creator state [conversation-id]\n  forge creator turn [conversation-id] (--prompt <message> | --prompt-file <file-or->) [--model <registered-model-id>] [--kind <turn-kind>]\n  forge creator act <conversation-id> <action-instance-id> [--text <value> | --text-file <file-or-> | --report <value> | --report-file <file-or->] [--model <registered-model-id>] [--memory-item-id <id> --memory-revision-id <id> --memory-revision-hash <hash>] [--memory-category <category>]\n  forge creator replay-verification <session-id> [--verification <id>] [--session-dir <path>]\n  forge creator replay-mutation <session-id> [--attempt <id>] [--session-dir <path>]\n  forge creator replay-regression <manifest-artifact-hash> [--session-dir <path>]\n  forge creator timings <session-id> [--session-dir <path>]\n  forge creator asset doctor --installation <host-json>\n  forge creator asset prepare --request-file <json> --installation <host-json> --store <path>\n  forge creator asset run|status|fetch <job-id> --store <path>\n  forge creator asset reconcile <job-id> --output-sha256 <hash> --store <path>\n  forge creator asset preview <job-id> --output <absolute.html> --store <path>\n  forge creator asset review <job-id> --lock-hash <hash> --store <path>\n  forge experiment register <seed> --prompt-file <file> --requirements <file> --acceptance <file> --runtime-plan <file> --runtime-configuration <file> --model <exact-model-id> --output <registration.json>\n  forge experiment build <seed> --registration <registration.json>\n  forge experiment evaluate <artifact> --registration <registration.json>\n  forge studio api-status\n  forge studio capabilities [--class <RobloxClass>] [--query <text>]\n  forge studio canary <seed> --plan <file>\n  forge studio bridge\n  forge verify <project>\n  forge trace show <trace-id>\n`,
   );
 }
 function message(error: unknown): string {

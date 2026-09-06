@@ -2,7 +2,8 @@
 
 This document describes the implemented system. [Product principles](FORGE.md)
 define its invariants, [Evaluation policy](EVALS.md) defines claims, and
-[Roadmap](ROADMAP.md) contains future work. Research records are supporting
+[Roadmap](ROADMAP.md) contains future work. [Visual generation](VISUALS.md)
+collects the visual authoring and asset pipeline. Research records are supporting
 material, not schema or workflow authority.
 
 ## System overview
@@ -66,6 +67,12 @@ commit chain and an atomically replaced head. Commits cross-bind events, turns,
 episodes, jobs, citations, plans, and creator memory by hash. An episode binds one
 request and its work to a particular project revision.
 
+Conversation append captures its input before serialization, verifies the prior
+history and new bindings, then returns the exact verified snapshot published with
+the new head. The coordinator uses that returned snapshot instead of immediately
+reading the whole history again. Explicit later loads still verify persisted
+artifacts; the returned snapshot is not a durable verification cache.
+
 Pairing can prepare an empty starting conversation. An unused automatic entry is
 shown only for the currently paired project. Explicit Link/Fork receipts, creator
 actions, work, or a display name retain it in the workspace. Switching places does
@@ -91,6 +98,17 @@ SDK types stay inside adapters. The OpenRouter adapter has no SDK retries or mod
 fallback, preserves continuation needed by the provider, and uses medium reasoning.
 The creator response deadline is 20 minutes. Other resource limits are defined by
 `DEFAULT_AGENT_BUDGETS`; registered experiments may bind their own explicit budget.
+Creator response allowances use the selected model's advertised completion-token
+limit from the startup catalog, recorded before dispatch in the request journal.
+When the provider omits that metadata, the host retains a 32,768-token guard rather
+than inventing a supported limit. Opaque continuation allows up to 4 MiB, with an
+8 MiB response-journal envelope. HTTP errors preserve bounded diagnostic categories
+and codes without storing raw provider error prose that might echo private inputs.
+Malformed JSON tool arguments retain their original bytes and bounded syntax
+diagnostics in the journal. The runtime rejects their entire batch without execution
+and sends one native correction message. It does not replay SDK-synthesized empty
+arguments or a second SDK tool error containing the full malformed payload. Valid
+JSON values still pass through normal host schema validation without coercion.
 
 The [model registry](../packages/model-client/src/model-registry.ts) is the current
 allowlist and default. Availability is checked against provider tool support;
@@ -111,8 +129,20 @@ errors. Invalid IDs or unknown names use bounded rejection feedback without
 constructing invalid provider message pairs. Diagnostics follow discriminators and
 consolidate distinct actionable paths. Repeating the same unresolved semantic
 failure three times without accepted host progress stops the phase. Host completion
-is checked after each batch so a published result needs no extra inference to
-restate it.
+is checked before a fresh run's first provider request and after each batch, so
+restored eligible work and newly completed work need no inference to restate them.
+Journal resumption still consumes its retained response before completion checks.
+Builder context is rebased only after a build or repair changes its state. Read-only
+batches and non-mutating failures remain in context, including every result within
+a batch. A write checkpoint retains current operation receipts, gate diagnostics,
+the complete last batch and deduplicated immutable source, import, API and initial
+observation reads. The runtime retains the latest complete assistant/tool exchange
+alongside that snapshot, including its exact opaque provider continuation. This
+preserves pending design intent without reconstructing private reasoning or
+re-executing completed calls. Older exchanges remain in the journal. Draft pages
+remain explicitly historical and source-hash-bound.
+If the consulted-read cache or complete checkpoint exceeds 1 MiB, the host keeps
+the full conversation instead of compressing it or evicting observations.
 
 Independent searches and child queries support bounded batches. Source tools
 support revision-bound pagination. Builder staging accepts an atomic group of
@@ -134,6 +164,15 @@ coverage. Missing, duplicated, unordered, or malformed coverage is incomplete
 observation, not a mutation mismatch. Current editor buffers take precedence over
 stored Script source when Studio exposes an editor document.
 
+Project observations preserve the native unbounded `UISizeConstraint.MaxSize`
+default as `observed_vector2_f32`: each axis is an exact finite float32 or the
+literal `positive_infinity`, and at least one axis must be unbounded. This shape
+is admitted only for that exact manifested property. Complete captures, metadata,
+persisted evidence, builder observations and unchanged topology retain it. Authored
+`StudioValue`, property setters and final mutation facts remain finite-only; a
+finite approved assignment can replace the observed default. No raw JSON infinity,
+NaN, negative infinity or missing coverage is accepted.
+
 The pinned Rojo and Luau LSP toolchain supplies source symbols, references, and
 static dependency analysis. Tools return bounded ranges with source hashes and
 provenance. Dynamic requires remain unresolved. A `CreatorSourceConsultation`
@@ -144,6 +183,26 @@ claim that code executed successfully in Studio.
 Builder `studio.read_observations` retrieves bounded pages of properties from the
 immutable approved revision, scoped to authorized targets. It replaces the fixed
 property whitelist; missing slices can be requested without inventing current facts.
+`game.source_context` resolves accepted source imports from the complete final
+topology into exact lookup expressions. Pages bind the accepted plan and are capped
+at 32 imports and 16 KiB including the response envelope. Relative lookups preserve
+the same runtime copy; separate character/player/UI/tool copies remain explicit
+when no safe static lookup can be derived. Returned data cannot stage writes or add
+imports. The AST gate also rejects client/shared imports of modules physically in
+server-only storage, including observed source dependencies. Declared contexts do
+not make private instances replicate to clients.
+
+Before the builder's first request, the host supplies a plan-bound source reference:
+deduplicated import descriptors and per-slot lookup expressions, plus exact type,
+member-function signature and return excerpts from the pinned Luau parser. This
+uses accepted locked sources, never inferred exports or evaluated module code.
+Navigation is bounded to 32 KiB, parsing to 32 distinct sources and 2 MiB, and
+declaration material to 48 KiB. Deferred slots, pages and declarations remain explicit
+and available through the existing readers. Function implementations and returned
+anonymous functions are omitted; behavioral questions still require source reading.
+The builder is instructed to reuse supplied facts instead of confirming them again.
+API lookup misses can include bounded, provenance-bearing owner/member alternatives;
+these are suggestions, not matches or substituted platform authority.
 
 A Studio edit notification is a dirty hint, not a revision. A callback during index
 reading requires a bounded capture retry. A complete capture remains immutable
@@ -161,22 +220,163 @@ resource policy. It requires no round, countdown, scene, UI, player mode or rese
 The planner reads `game.catalog` and proposes this `GameDesignSpec`; the host's
 read-only `game-compiler` resolves the exact `GamePlan` before review. Generic source
 packages provide the extension path for unfamiliar mechanics. Optional host recipes
-currently provide primitive scenes, responsive UI, typed Studio edits and the
+currently provide primitive scenes, responsive UI, project assemblies, typed Studio edits and the
 content-addressed ForgeRuntime bundle. Recipes are trusted host code, never model
 supplied compiler implementations.
 
+Declaration IDs are case-sensitive ASCII keys of at most 64 characters: a letter,
+then letters, digits, underscores or hyphens. Component, source-file, port and local
+recipe references preserve exact spelling; IDs are never normalized into aliases.
+Source paths and Studio instance names retain their separate contracts. Scene
+constraints may be omitted: their declared empty-array default is materialized
+before draft retention and design/plan hashing, including constraints inside scene
+motifs. Explicit constraints still receive full validation. Other optional values
+are not inferred; default expansion is bounded and ambiguous union defaults reject.
+
+The host pins one compiler catalog before the planner's first model request.
+`creator.define_component` advertises a compact, non-recursive provider envelope with
+each installed recipe's exact lock. `game.catalog` returns compact capabilities by
+default and the exact configuration schemas for explicitly selected recipe definition
+IDs. Those detail schemas and host admission come from the same Zod validators used by
+the compiler. The provider envelope is guidance, not semantic authority: batch
+admission, repair diagnostics, draft retention and canonical hashing all use the exact
+host schema. Source manifest paths expose their relative `.luau` constraint in the
+tool schema; source role and execution context belong to each file. Tool schemas remain
+unchanged for the run and are cached by the planner host. UI token/reference failures
+are collected together with their field paths and valid target IDs before instance
+expansion.
+Planning stores structurally validated components under stable IDs and content hashes.
+The model supplies a component declaration; the host resolves its stable ID to the
+current private draft and guards the replacement synchronously. Model-authored
+draft hash bookkeeping is not part of the tool contract. The
+`creator.read_components` tool lists saved references and explicitly requested
+editable declarations. Its separate `attemptId` selector reads exact rejected input,
+marked as untrusted planning data without a saved reference. Unknown unsaved IDs
+point to available retained attempts. Attempt reads and error replies expose schema
+issue paths, current values and explicit omission counts; bounded subtree reads
+provide child navigation instead of truncated JSON. Source declarations omit a
+new script's class and an engine parent's class: the host derives the former from
+file role/context and the latter from the exact manifest path. Resolution precedes
+validation and canonical component hashing. Returned editable declarations use the
+same tool format; canonical checkpoints and approved plans retain the resolved
+classes. Existing instance and source-edit targets still carry exact observed
+metadata. Redundant class fields in new-source declarations are rejected.
+`creator.propose_plan` supplies complete design metadata, selected `componentIds`,
+and an ordered implementation-step breakdown. Every step has a short title, a
+substantive result-focused detail sentence, and exact component bindings. The host
+requires every selected component exactly once and requires at least two steps for
+two-component designs or three for larger designs. It then synchronously binds the
+current validated component versions into a detached `GameDesignSpec` for full
+admission and structural compilation, and resolves each step to exact compiled
+change IDs. The creator reviews exact immutable plan bytes and hashes; later draft
+edits cannot change that plan. Component bodies and model-copied hashes are not
+accepted by the proposal tool. A failed definition or proposal leaves the retained
+components intact; accepted component changes count as planner progress.
+
+Every `GameDesignSpec` also declares `worldAuthoring`. Ordinary three-dimensional
+scenes use `persistent` and bind exact `Workspace` roots. The compiler simulates the
+final transaction topology and rejects a persistent root that is absent, ambiguous,
+or contains no authored spatial geometry. `runtime_generated` is valid only when the
+creator explicitly requested a world that exists during Play and includes a visible
+rationale; `none` means no 3D world is in scope. Procedural construction means
+author-time compilation into persistent instances unless that explicit runtime mode
+was selected. Runtime source may still own transient effects, projectiles, remotes,
+and other lifecycle-bound objects; it cannot substitute a Play-only scene for a
+declared persistent world. The proposed-plan summary displays this boundary before
+its ordered steps.
+Draft storage is bounded by the game admission policy and grants no candidate,
+source staging, creator acceptance, or Studio authority. The journal preserves the
+definition calls and results for offline regression replay.
+Independent component-definition batches preserve valid siblings when another
+declaration fails schema validation. Malformed JSON, duplicate identities and mixed
+proposal batches remain rejected as a whole; Studio Build remains atomic. A failed
+component can return an immutable repair-attempt reference. `creator.repair_component`
+applies explicit `replace`, `remove`, or `add` operations and reruns full admission
+under the exact private draft guard. Replacement supplies a complete value; removal
+addresses an existing field or array entry; addition requires an absent named field
+under an existing object. Paths address the original attempt. Array removals run in
+descending index order after replacements, preserving the meaning of every target.
+Array insertion, implicit parent creation, overlapping paths and prototype path keys
+reject. Identity/recipe changes require a new declaration. Failed repairs provide
+the current attempt's exact inspection action; no rejected input becomes accepted
+without ordinary full validation.
+After a changed component definition, the planner can checkpoint the complete current
+draft, consulted read results including source bytes, provenance, and outstanding
+proposal diagnostics. Unresolved rejected and suppressed component attempts remain
+explicitly untrusted, unapproved context until a successful definition replaces that
+exact component ID. Schema-invalid, suppressed, and malformed proposal inputs also
+retain their exact arguments and feedback, including design intent that has not
+passed admission. An unidentifiable malformed argument remains exact in the journal
+and host storage. Checkpoints expose its scoped `syntaxAttemptId`, byte count, hash,
+syntax diagnostic and inspection action. The separate `creator.read_components`
+syntax selector reads exact UTF-8 text slices of at most 16 KiB, with explicit byte
+offsets and continuation; it never infers a component identity or creates editable
+authority. If retained material exceeds the existing aggregate budget, the runtime
+keeps its original history instead of emitting an incomplete checkpoint. Read-cache
+identity excludes activity narration; the retained input and result stay exact.
+Unchanged definitions and read-only calls retain conversation
+history. If the complete checkpoint or read cache exceeds the existing game JSON
+bound, rebasing is disabled without evicting evidence or restricting authoring.
+Creator tool results preserve complete JSON under each reader's own page bounds and
+the aggregate result budget; there is no generic 64 KiB preview truncation. Locked
+module and draft reads allow up to 2,000 lines per page, and final build summaries
+allow up to 64 KiB of text.
+Source placements can address a recipe-created parent by `component_output`,
+`componentId` and the recipe's documented `outputId`. The generic compiler resolves
+unique aliases to exact created inventory objects and dependencies before review;
+the model does not reconstruct compiler-generated identity hashes.
+
+The optional ForgeRuntime bundle contains Scope, Event, Task, StateMachine and
+Network under exact source/ABI locks. Network provides bounded closed payload
+validation, finite values, per-actor sequences and per-intent rate limits. Its fixed
+RemoteEvent adapter checks server context, uses the server-supplied Player and closes
+with its owning scope. Game source supplies non-yielding contextual validation and
+owns consequential commits; the library does not infer phase, distance, permissions
+or gameplay rules. Admission is not rollback, movement anti-cheat or confinement of
+arbitrary source. Native behavior still requires user-run evidence.
+Task releases scheduler handles returned after settlement, including work that
+closes its scope during an immediate first resume. Fixed adversarial scheduler tests
+cover late cancellation and an already-fired deadline. Application code retains
+explicit Scope ownership and calls Close; no self-destruction callback supplies a
+general lifecycle guarantee.
+
+`project-assembly` expands project-authored instance subtrees into independent copies
+through the existing Studio patch and topology compilers. Stable copy/node IDs bind
+each generated identity. Local references are remapped per copy; named shared
+references retain exact observed or generated targets. Explicit placements, property
+overrides and source-package parent anchors require no new content-specific recipe.
+The current expansion profile bounds the result to 4,096 operations. Installed copies
+are updated through reviewed patches/source replacements; there is no automatic
+propagation or curated kit requirement.
+
+Optional scene, lighting, and responsive-UI recipes share their model-visible
+configuration schemas with compiler validation, aggregate structural/design
+diagnostics before expansion, and lower only to admitted canonical inventory.
+Their behavior, limits, and native-evidence gaps are centralized in
+[Visual generation](VISUALS.md#implemented-visual-foundation).
 Plans contain every editor operation, generated parent/reference, source/value slot,
 dependency, identity and capability/compiler lock. Generated three-level hierarchies
 use the existing transaction topology compiler. Stable entity identities bind the
 project and semantic ID, independently of display names and array order. Existing
 targets still require observed identity, ownership and before hashes. Runtime objects
 constructed later by ordinary installed game code are separate from editor inventory.
+Planner orientation describes both observed parent anchors and exact generated
+parents; declared component-output aliases resolve to that approved topology before
+review, with identity, class, path and dependency-order checks.
 
 Plan publication and Build share approval-independent preparation validation.
 The host generates mandatory instance-existence and Luau syntax checks. Behavioral
-checks, preservation requirements, and creator review requests remain explicit.
-The dashboard presents concise plan steps and optional review guidance; internal
-check details remain accessible through Details.
+checks and preservation requirements remain explicit. Visual-direction view criteria
+remain host-derived creator-verification obligations for the later evidence phase;
+the proposal tool has no free-form review field and plan summaries do not display
+verification guidance.
+Optional existence checks admit supported descendants under allowlisted roots;
+engine-container parent authority does not admit engine roots or container classes
+to the fixed checks. Unsupported or unavailable optional targets return aggregate
+diagnostics with their input indices and observed path/class before charter sealing.
+The dashboard presents only the ordered implementation steps in the proposed-plan
+section; internal check and verification details remain accessible through Details
+and the later verification workflow.
 
 Accepting the immutable plan produces a `CreatorBuildContract`. It fixes operation
 IDs and kinds, exact targets, class policy, parents, paths, and preconditions. The
@@ -193,12 +393,42 @@ seals a `GameBuildGraph` and ends model work immediately. Compiler artifacts inc
 recursive dependency input hashes, source hashes and semantic provenance. Unchanged
 artifact bytes can be reused; reuse does not grant fresh mutation authority.
 
+Source repairs address complete line ranges against one exact draft hash. The host
+adds one LF separator when a nonempty replacement lacks a final newline before a
+following original line, preserving supplied LF/CRLF endings and untouched bytes.
+An empty replacement deletes the range; a replacement reaching the file end keeps
+its exact ending. Stale hashes, overlapping edits and invalid ranges reject the
+whole batch before any source changes. Byte-range source writes retain their exact
+replacement-byte contract.
+
+Pinned analyzer reports of missing native members become hash-bound source repair
+obligations. A later draft cannot clear a known invalid access merely by erasing its
+receiver type, adding a cast or renaming local variables. The bounded AST check
+accepts removal/replacement of the access or a supported, concretely established
+receiver; ambiguous matching remains incomplete. It preserves exact diagnostic
+source history through journal recovery and newly approved source proposals. This
+does not ban ordinary `any` use or prove the safety of previously unreported accesses;
+native runtime evaluation remains separate.
+
+Official Luau AST parsing reuses successful output in a bounded host-process cache
+keyed by exact source, parser binary and toolchain hashes. Each use revalidates source
+bytes and current document metadata, consumes the active output/deadline budget and
+reconstructs a fresh AST. Reused parses are recorded separately from new executions.
+Current import/topology checks and strict type analysis still run. This cache is not
+a persistent compiler artifact cache or incremental semantic analyzer.
+
 The coordinator partitions the sealed graph under the existing 128-operation,
 16,384-fact and 2 MiB evidence limits. The initial aggregate profile admits 8,192
 operations, 64 MiB graph material and 128 partitions. These are admission limits,
 not measured performance guarantees or limits on the IR's genres. Ordinary objects
 and modules precede a final entrypoint partition; an activation group exceeding a
 partition requires a revised staging plan. Studio writes stay serialized.
+
+Builder AgentRun outcomes bind `game_build_graph`. Before publishing the session
+bundle, the coordinator retains the exact sealed graph as an immutable artifact.
+A subsequent local persistence failure preserves the coherent graph, contract,
+source leaves and original approval for explicit continuation without another
+model invocation. Existing native mutation recovery state is preserved.
 
 Each partition binds the same accepted plan and sealed graph, a fresh authoritative
 project capture and a replayed contiguous checkpoint prefix. A checkpoint requires
@@ -215,25 +445,19 @@ declared implementation component IDs; group hierarchies are acyclic, while sema
 feedback relationships may cycle. There is no system or genre enum. The map is part
 of exact plan identity and describes intended behavior, not behavioral verification.
 
-The dashboard opens **Game map** beside Settings in a separate expandable window.
-Its canvas centers the game and shows the declared systems, their expandable
-components, authored icons and meaningful relationships. Files, hashes, checkpoints
-and mutation status belong to the existing Technical details panel, outside this
-window. A design without architecture shows an explicit empty game map. Historical
-views use only the selected immutable artifact. The separate implementation view
-derives progress from each concept's component closure; applied means verified
-editor writes, with gameplay evidence kept separate.
-
-Map and list modes share selection and search context. The game window supports
-keyboard pan, zoom/fit controls, branch expansion and a component inspector; narrow
-screens use a full-screen window with a stacked inspector. A saved map is labeled
-as such and opens from its immutable artifact preview without exposing raw JSON
-first. Technical implementation details use checkpoint progress, bounded browsing
-and explicit identity/source disclosures. Workspace colors and interaction states
-share dashboard tokens; motion respects the reduced-motion preference.
-
-The creator schema cutover uses `.forge/creator-compiled` as the default store. Old
-`.forge/creator` evidence is retained without a compatibility reader or migration.
+Visual authoring is an optional layer over the same generic plan and transaction.
+`GameDesignSpec.visualDirection` carries art direction and named review views;
+creator turns can retain up to four image attachments; and the `scene-primitives`,
+`scene-arrangement`, `scene-lighting`, and `responsive-ui` recipes lower admitted
+declarations into ordinary canonical inventory. The dashboard's Game map renders
+the declared semantic architecture separately from technical mutation state.
+None of these declarations captures a frame or proves appearance. Their exact
+contracts, limits, UI behavior, and Blender/Cube relationship are centralized in
+[Visual generation](VISUALS.md).
+The compiler ABI `@5` world-authoring cutover uses `.forge/creator-compiled-v4` as the
+default store. Earlier creator stores are retained without a compatibility reader or
+migration. Accepted plans from an earlier compiler require a new plan and acceptance
+in the current store.
 
 The local gate uses the real pinned Luau tools and a strict analysis configuration.
 Staged sourcemaps include non-script objects so their represented classes reach
@@ -243,7 +467,11 @@ Invoked analyzer processes share a host deadline and retained
 output budget; this is not an OS sandbox or proof of descendant-process isolation.
 An additional pinned official `luau-ast` pass checks materialized/observed modules
 against declared static imports and final topology without executing candidate
-source. It rejects undeclared/dynamic imports, aliases of global `require` and effective
+source. Declared imports are an approved upper bound: actual static edges must be a
+subset. Unused declarations produce nonblocking warnings and remain conservative
+build-order and content-reuse dependencies. They do not require a module to execute.
+The `approved-static-imports@2` evidence profile rejects undeclared/dynamic imports,
+aliases of global `require` and effective
 `--!nocheck`/`--!nonstrict` directives. Reflective environments produce an incomplete
 gate. Ordinary service access, runtime Instance creation and logging remain available.
 Installed source dependencies can be declared without redundant writes through
@@ -252,7 +480,41 @@ Staging, local eligibility, and a source diff do not mutate Studio. A preparatio
 failure preserves its stage, code, readable diagnostic, and artifact before any
 provider dispatch. Retry build uses a fresh execution slot and the existing approved
 plan only if project revision, capability policy, and transaction inventory still
-permit it. Work that never started gets no invented AgentRun or provider receipt.
+permit it. A terminal unsealed builder can retain its completed virtual work in a
+content-addressed `CreatorBuildRecovery`. Recovery verifies the accepted authority,
+originating AgentRuns and complete execution journals, then replays only recorded
+`studio.build` and `studio.repair` inputs through the fixed virtual writer. Operation
+and source receipts must match; the current analyzer supplies fresh diagnostics.
+Unknown tool outcomes, changed project evidence, or any native/Rojo mutation prevent
+this retry. The new run receives current draft receipts and diagnostics, and can
+read and repair the retained sources. It does not replay provider requests or
+manufacture a prior continuation. Successive retries retain their exact source
+lineage. Work that never started gets no invented AgentRun or provider receipt.
+
+An explicit refresh can recompile retained intent without a planner request when
+all original observed project facts are preserved and the plan only creates
+objects beneath engine or generated parents. This comparison resolves ephemeral
+identities through unique observed paths, rejects duplicate paths, and preserves
+durable identities and all represented properties, coverage, attributes, tags and
+source facts. Added objects and attributes are retained as exact, bounded review
+evidence, with separate before/after observation hashes. Changes or removals of
+original facts, new source-bearing objects, and new property references reject
+the shortcut. The comparison does not establish identity continuity or attribute
+the additions to a particular author.
+Observed-instance/source dependencies and any native/Rojo mutation prefix exclude
+this shortcut. The compiler uses the fresh topology and produces a new plan and
+immutable `CreatorPlanRecompilation`; the previous approval is not reused.
+The dashboard publishes that review with Forge attribution and records the reserved
+planner as never dispatched. Publication retains its successor identity across
+interruption. Equivalent custom source slots can retain journal-verified bytes as
+a `CreatorBuildProposal`. Only the new plan's approval allows the fixed builder to
+stage and check those bytes; later repairs retain that proposal in their lineage.
+Plans outside this deterministic path use ordinary planning against fresh evidence.
+An explicitly retried interrupted refresh can recover accepted intent through at
+most 32 immutable predecessor snapshots with the exact same request and no intervening
+plan or mutation. It binds the current successor's refresh action instead of replaying
+the consumed action. The fresh review retains the entire lower-session lineage;
+the abandoned provider request's unknown outcome remains unknown.
 
 ## Capability policy and Studio transactions
 
@@ -280,9 +542,29 @@ bound before-capture, applies the requested setter once, and reads the final ali
 without corrective writes. Derived aliases enter canonical projections without a
 model-supplied expected value. Reconciliation admits their delta only when scratch,
 direct readback and the complete after-index agree; unrelated changes still reject.
+Directed setter effects describe properties that a setter changes without treating
+all affected properties as interchangeable. For UICorner, CornerRadius writes the
+four independent radii; TopLeftRadius also changes the CornerRadius read alias.
+Overlapping write footprints reject, while four independent corner assignments
+remain legal. Effects are read from the final scratch graph and never recursively
+applied as setters. Offline tests cover asymmetric updates and unrelated-corner
+preservation; the expanded native/save-reopen fixture remains a separate proof gate.
+Explicit properties and attributes use the exact canonical expected values from
+the independently recompiled projection in all three checks. Numeric storage
+canonicalization never introduces an approximate comparison or ignores a changed value.
 The ScreenGui pairing follows Roblox's documented
 [inset coupling](https://raw.githubusercontent.com/Roblox/creator-docs/main/content/en-us/reference/engine/classes/ScreenGui.yaml).
-Offline regressions cover these families; native conformance remains user-run.
+Offline regressions cover these families. A user-run native fixture on Studio
+0.737.0.7371584 passed allocation for all 125 admitted classes, targeted physical
+and setter-family readback, and save/reopen of five samples. The
+[evidence record](RESEARCH.md#native-conformance-september-5) binds the exact fixture,
+manifest and saved place. It does not establish every setter/value range or the
+connector's full recorded Apply/reconciliation path.
+The fixed conformance place runs through the Command Bar, stages only its own new
+sample subtree and reads final properties after publication. It does not acquire or
+finish plugin-owned recordings. A completed receipt gates same-session reopen checks;
+fatal fixture failures clean only fixture-owned output and leave the run retryable.
+This characterization is separate from the connector's recorded transaction path.
 Structural Name/Parent rules are separate. Reflection attestation compares declaring
 class, engine/storage type, Luau type, enum/reference constraints, serialization,
 and permissions. Missing facts are incomplete; contradictory complete facts are
@@ -315,6 +597,17 @@ quantization, compound values, enums, explicit nullable values, and class-bound
 Instance references. The fixed runner interprets JSON data; it never evaluates
 arbitrary code, expressions, callbacks, or generic property access supplied by the
 model.
+
+The internal mutation monitor uses the same property-bound observation reader for
+an exact unbounded size-constraint before-state. Its private comparison marker
+never becomes an authored value or final mutation fact. A before-state read failure
+names the class and property. Offline tests cover exact finite/unbounded axis
+matching, transport and persisted capture, unchanged topology and finite replacement,
+and rejection at write/final-evidence boundaries. The September 6 fixed native
+fixture passed 139 before-save and seven reopen checks, including the unbounded
+default, exact mutation matchers, finite assignment and saved readback. This is
+property conformance evidence, not a completed creator transaction or demonstrated
+recording cancellation; see the [speed-run ledger](RESEARCH.md#visual-brief-trials-september-6).
 
 A mismatched or incomplete mutation may cancel only through the exact safe
 transaction gate and must retain complete post-cancel evidence. If closure cannot
@@ -351,6 +644,17 @@ fresh inventory releases its gate. Exact open-recording proof can permit explici
 cancellation. Exact complete `not_open` evidence permits acknowledgement of a stale
 cursor, not a guessed commit or cancellation. Unknown state blocks new work. A
 connector build change cannot adapt an ambiguous transaction to a different contract.
+An explicit recording-recovery request first compares its recording binding against
+the durable cursor, then captures and retains fresh project observations before
+publishing the recovery receipt. It does not require a prior recovery capture to
+collect the first one. A failed capture or retention publishes no recovery authority.
+The recovery inventory distinguishes a still-open cursor from a displaced ordinary
+finalization intent. Either can grant one explicit cancellation against the retained
+fresh capture; only the latter carries a replaced action. An uncertain recovery
+cancellation grants no additional Finish. The host persists the exact inventory
+artifact with the active mutation before dispatch, and reload verifies that record's
+transaction and complete capture before accepting a recovered cancellation receipt.
+The receipt cannot supply its own expected gate.
 
 Terminal publication is bound to the episode and exact outcome. Receipt cleanup
 cannot duplicate a completed answer, and rewording a failure cannot turn the same
@@ -392,7 +696,14 @@ or a model-quality score. See [Evaluation policy](EVALS.md).
 
 ## Storage and verification
 
-The private current store is `.forge/creator-compiled`. Immutable artifacts bind source,
+The optional creator asset service prepares, dispatches, reopens, reconciles,
+previews, and reviews exact pinned Cube/CubePart jobs. It persists immutable
+installation, source, diagnostic, geometry, fit, and creator-review evidence;
+uncertain dispatch remains recoverable and never auto-retries. Reviewed bindings
+still report native import as `incomplete` and cannot instantiate Studio content.
+The visual pipeline, OBJ review limits, remote worker, commands, and Blender reuse
+boundary are centralized in [Visual generation](VISUALS.md#cube-and-cubepart).
+The private current store is `.forge/creator-compiled-v4`. Immutable artifacts bind source,
 observations, plans, approvals, runs, traces, transactions, and checkpoints. Readers
 verify regular-file safety, canonical hashes, graph bindings, and commit order.
 Schema changes replace the format outright; there are no migration readers or
@@ -418,7 +729,7 @@ successful game, and private evaluator material is never added to builder contex
 
 Generated host/connector identity binds the evidence policy, protocol, transaction
 implementation, and plugin source. The compiled runtime manifest separately checks
-source/build agreement. The [development guide](DEVELOPMENT.md) defines the full
+source/build agreement. The [repository guide](../README.md#develop-and-verify) defines the full
 quality gate, including browser, plugin, temporary Rojo, and formal checks. Tests
 use fake providers and isolated stores; live model and Studio observations are
 separate evidence-producing work.

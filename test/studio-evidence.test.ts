@@ -508,7 +508,7 @@ test("every catalog row remains planner-queryable with official provenance", () 
     if (platformValid) assert.notEqual(entry.disposition, "unsupported");
   }
   const soundGroup = lookupRobloxApiCatalog({
-    className: "Sound",
+    ownerName: "Sound",
     query: "SoundGroup",
   });
   assert.equal(soundGroup.total, 1);

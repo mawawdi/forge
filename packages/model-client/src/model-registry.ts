@@ -11,7 +11,7 @@ export const CREATOR_MODEL_IDS = Object.freeze([
 export type CreatorModelId = (typeof CREATOR_MODEL_IDS)[number];
 export type CreatorModelAvailability = "available" | "unavailable" | "unconfirmed";
 
-export const DEFAULT_CREATOR_MODEL_ID: CreatorModelId = "openai/gpt-5.6-luna";
+export const DEFAULT_CREATOR_MODEL_ID: CreatorModelId = "meta/muse-spark-1.3-contributor";
 
 export interface CreatorModelDefinition {
   id: CreatorModelId;
@@ -95,6 +95,10 @@ export interface CreatorModelCatalogEntry {
   modelId: CreatorModelId;
   status: CreatorModelAvailability;
   reason: CreatorModelCatalogReason;
+  /** Null means the catalog did not establish a positive safe completion-token limit. */
+  maxCompletionTokens: number | null;
+  /** Exact sorted architecture.input_modalities; null means absent or malformed metadata. */
+  inputModalities: string[] | null;
 }
 
 export interface CreatorModelCatalog {
@@ -184,9 +188,34 @@ export function parseOpenRouterModelCatalog(
     const supported = candidate.supported_parameters.filter(
       (parameter): parameter is string => typeof parameter === "string",
     );
+    const advertised = isRecord(candidate.top_provider)
+      ? candidate.top_provider.max_completion_tokens
+      : undefined;
+    const maxCompletionTokens =
+      typeof advertised === "number" && Number.isSafeInteger(advertised) && advertised > 0
+        ? advertised
+        : null;
+    const modalities = isRecord(candidate.architecture)
+      ? candidate.architecture.input_modalities
+      : undefined;
+    const inputModalities =
+      Array.isArray(modalities) &&
+      modalities.length > 0 &&
+      modalities.length <= 32 &&
+      modalities.every(
+        (item) => typeof item === "string" && /^[a-z][a-z0-9_-]{0,63}$/.test(item),
+      ) &&
+      new Set(modalities).size === modalities.length
+        ? ([...modalities].sort() as string[])
+        : null;
     return supported.includes("tools")
-      ? { status: "available", reason: "catalog_confirmed" }
-      : { status: "unavailable", reason: "tools_not_supported" };
+      ? { status: "available", reason: "catalog_confirmed", maxCompletionTokens, inputModalities }
+      : {
+          status: "unavailable",
+          reason: "tools_not_supported",
+          maxCompletionTokens,
+          inputModalities,
+        };
   });
 }
 
@@ -230,6 +259,24 @@ export function assertCreatorModelCatalog(value: unknown): asserts value is Crea
 function validCatalogEntry(value: unknown, expectedModelId: CreatorModelId | undefined): boolean {
   if (!isRecord(value) || value.modelId !== expectedModelId || typeof value.reason !== "string")
     return false;
+  if (
+    value.inputModalities !== null &&
+    (!Array.isArray(value.inputModalities) ||
+      value.inputModalities.length < 1 ||
+      value.inputModalities.length > 32 ||
+      !value.inputModalities.every(
+        (item) => typeof item === "string" && /^[a-z][a-z0-9_-]{0,63}$/.test(item),
+      ) ||
+      stableJson(value.inputModalities) !== stableJson([...new Set(value.inputModalities)].sort()))
+  )
+    return false;
+  if (
+    value.maxCompletionTokens !== null &&
+    (typeof value.maxCompletionTokens !== "number" ||
+      !Number.isSafeInteger(value.maxCompletionTokens) ||
+      value.maxCompletionTokens < 1)
+  )
+    return false;
   if (value.status === "available") return value.reason === "catalog_confirmed";
   if (value.status === "unavailable")
     return value.reason === "model_not_listed" || value.reason === "tools_not_supported";
@@ -250,6 +297,8 @@ function materializeCatalog(
   statusFor: (modelId: CreatorModelId) => {
     status: CreatorModelAvailability;
     reason: CreatorModelCatalogReason;
+    maxCompletionTokens?: number | null;
+    inputModalities?: string[] | null;
   },
 ): CreatorModelCatalog {
   const body = {
@@ -257,7 +306,12 @@ function materializeCatalog(
     registryHash: CREATOR_MODEL_REGISTRY.hash,
     source: "openrouter_models_api" as const,
     checkedAt,
-    models: CREATOR_MODEL_IDS.map((modelId) => ({ modelId, ...statusFor(modelId) })),
+    models: CREATOR_MODEL_IDS.map((modelId) => ({
+      modelId,
+      maxCompletionTokens: null,
+      inputModalities: null,
+      ...statusFor(modelId),
+    })),
   };
   return { ...body, hash: contentHash(stableJson(body)) };
 }

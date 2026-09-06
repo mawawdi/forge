@@ -1,0 +1,24 @@
+# Linux qualification image. Direct pins; the sealed installation records every
+# resolved dependency version. Compatibility/GPU throughput remain unmeasured.
+modal==1.5.5
+fastapi==0.116.1
+httpx==0.28.1
+rfc8785==0.1.4
+torch==2.8.0
+torchvision==0.23.0
+transformers==4.57.1
+diffusers==0.35.1
+accelerate==1.10.1
+huggingface-hub==0.35.3
+safetensors==0.6.2
+omegaconf==2.3.0
+numpy==2.2.6
+scikit-image==0.25.2
+trimesh==4.8.3
+pillow==11.3.0
+tqdm==4.67.1
+einops==0.8.1
+warp-lang==1.9.1
+jaxtyping==0.3.2
+typeguard==4.4.4
+fpsample==0.3.3

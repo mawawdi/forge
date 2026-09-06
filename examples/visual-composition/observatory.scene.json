@@ -1,0 +1,1160 @@
+{
+  "rootName": "MeridianObservatory",
+  "parentPath": "Workspace",
+  "surfaces": [
+    {
+      "id": "stone",
+      "color": {
+        "r": 40,
+        "g": 48,
+        "b": 60
+      },
+      "material": "Slate"
+    },
+    {
+      "id": "structure",
+      "color": {
+        "r": 90,
+        "g": 111,
+        "b": 127
+      },
+      "material": "Metal",
+      "reflectance": 0.08
+    },
+    {
+      "id": "bronze",
+      "color": {
+        "r": 178,
+        "g": 132,
+        "b": 69
+      },
+      "material": "Metal",
+      "reflectance": 0.12
+    },
+    {
+      "id": "glass",
+      "color": {
+        "r": 89,
+        "g": 173,
+        "b": 190
+      },
+      "material": "Glass",
+      "transparency": 0.68,
+      "reflectance": 0.05,
+      "castShadow": false
+    },
+    {
+      "id": "glow",
+      "color": {
+        "r": 119,
+        "g": 228,
+        "b": 233
+      },
+      "material": "Neon",
+      "castShadow": false
+    }
+  ],
+  "motifs": [
+    {
+      "id": "arcade-bay",
+      "nodes": [
+        {
+          "id": "left-plinth",
+          "name": "left-plinth",
+          "surfaceId": "stone",
+          "shape": "Block",
+          "size": {
+            "x": 3,
+            "y": 1,
+            "z": 3
+          },
+          "placement": {
+            "offset": {
+              "x": -6,
+              "y": 0.5,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "right-plinth",
+          "name": "right-plinth",
+          "surfaceId": "stone",
+          "shape": "Block",
+          "size": {
+            "x": 3,
+            "y": 1,
+            "z": 3
+          },
+          "placement": {
+            "offset": {
+              "x": 6,
+              "y": 0.5,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "left-pier",
+          "name": "left-pier",
+          "surfaceId": "structure",
+          "shape": "Block",
+          "size": {
+            "x": 1.2,
+            "y": 10,
+            "z": 1.8
+          },
+          "placement": {
+            "offset": {
+              "x": -6,
+              "y": 5.8,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "right-pier",
+          "name": "right-pier",
+          "surfaceId": "structure",
+          "shape": "Block",
+          "size": {
+            "x": 1.2,
+            "y": 10,
+            "z": 1.8
+          },
+          "placement": {
+            "offset": {
+              "x": 6,
+              "y": 5.8,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "left-inlay",
+          "name": "left-inlay",
+          "surfaceId": "glow",
+          "shape": "Block",
+          "size": {
+            "x": 0.16,
+            "y": 7,
+            "z": 1.88
+          },
+          "placement": {
+            "offset": {
+              "x": -6,
+              "y": 5.8,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": false
+        },
+        {
+          "id": "right-inlay",
+          "name": "right-inlay",
+          "surfaceId": "glow",
+          "shape": "Block",
+          "size": {
+            "x": 0.16,
+            "y": 7,
+            "z": 1.88
+          },
+          "placement": {
+            "offset": {
+              "x": 6,
+              "y": 5.8,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": false
+        },
+        {
+          "id": "left-capital",
+          "name": "left-capital",
+          "surfaceId": "bronze",
+          "shape": "Block",
+          "size": {
+            "x": 2.2,
+            "y": 0.65,
+            "z": 2.6
+          },
+          "placement": {
+            "offset": {
+              "x": -6,
+              "y": 10.8,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "right-capital",
+          "name": "right-capital",
+          "surfaceId": "bronze",
+          "shape": "Block",
+          "size": {
+            "x": 2.2,
+            "y": 0.65,
+            "z": 2.6
+          },
+          "placement": {
+            "offset": {
+              "x": 6,
+              "y": 10.8,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "voussoir-1",
+          "name": "voussoir-1",
+          "surfaceId": "structure",
+          "shape": "Block",
+          "size": {
+            "x": 2.22,
+            "y": 0.95,
+            "z": 2.2
+          },
+          "placement": {
+            "offset": {
+              "x": 5.908847,
+              "y": 11.841889,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 100
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "voussoir-2",
+          "name": "voussoir-2",
+          "surfaceId": "structure",
+          "shape": "Block",
+          "size": {
+            "x": 2.22,
+            "y": 0.95,
+            "z": 2.2
+          },
+          "placement": {
+            "offset": {
+              "x": 5.196152,
+              "y": 13.8,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 120
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "voussoir-3",
+          "name": "voussoir-3",
+          "surfaceId": "structure",
+          "shape": "Block",
+          "size": {
+            "x": 2.22,
+            "y": 0.95,
+            "z": 2.2
+          },
+          "placement": {
+            "offset": {
+              "x": 3.856726,
+              "y": 15.396267,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 140
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "voussoir-4",
+          "name": "voussoir-4",
+          "surfaceId": "structure",
+          "shape": "Block",
+          "size": {
+            "x": 2.22,
+            "y": 0.95,
+            "z": 2.2
+          },
+          "placement": {
+            "offset": {
+              "x": 2.052121,
+              "y": 16.438156,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 160
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "voussoir-5",
+          "name": "voussoir-5",
+          "surfaceId": "bronze",
+          "shape": "Block",
+          "size": {
+            "x": 2.22,
+            "y": 0.95,
+            "z": 2.2
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 16.8,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 180
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "voussoir-6",
+          "name": "voussoir-6",
+          "surfaceId": "structure",
+          "shape": "Block",
+          "size": {
+            "x": 2.22,
+            "y": 0.95,
+            "z": 2.2
+          },
+          "placement": {
+            "offset": {
+              "x": -2.052121,
+              "y": 16.438156,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 200
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "voussoir-7",
+          "name": "voussoir-7",
+          "surfaceId": "structure",
+          "shape": "Block",
+          "size": {
+            "x": 2.22,
+            "y": 0.95,
+            "z": 2.2
+          },
+          "placement": {
+            "offset": {
+              "x": -3.856726,
+              "y": 15.396267,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 220
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "voussoir-8",
+          "name": "voussoir-8",
+          "surfaceId": "structure",
+          "shape": "Block",
+          "size": {
+            "x": 2.22,
+            "y": 0.95,
+            "z": 2.2
+          },
+          "placement": {
+            "offset": {
+              "x": -5.196152,
+              "y": 13.8,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 240
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "voussoir-9",
+          "name": "voussoir-9",
+          "surfaceId": "structure",
+          "shape": "Block",
+          "size": {
+            "x": 2.22,
+            "y": 0.95,
+            "z": 2.2
+          },
+          "placement": {
+            "offset": {
+              "x": -5.908847,
+              "y": 11.841889,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 260
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "keystone",
+          "name": "keystone",
+          "surfaceId": "bronze",
+          "shape": "Wedge",
+          "size": {
+            "x": 1.1,
+            "y": 1.8,
+            "z": 2.3
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 17.05,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 180
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "frosted-transom",
+          "name": "frosted-transom",
+          "surfaceId": "glass",
+          "shape": "Block",
+          "size": {
+            "x": 8,
+            "y": 2.4,
+            "z": 0.18
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 11.7,
+              "z": 0.25
+            }
+          },
+          "anchored": true,
+          "collidable": false
+        },
+        {
+          "id": "left-buttress",
+          "name": "left-buttress",
+          "surfaceId": "stone",
+          "shape": "Wedge",
+          "size": {
+            "x": 2.4,
+            "y": 4,
+            "z": 3
+          },
+          "placement": {
+            "offset": {
+              "x": -7.2,
+              "y": 2.5,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "right-buttress",
+          "name": "right-buttress",
+          "surfaceId": "stone",
+          "shape": "Wedge",
+          "size": {
+            "x": 2.4,
+            "y": 4,
+            "z": 3
+          },
+          "placement": {
+            "offset": {
+              "x": 7.2,
+              "y": 2.5,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 180,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        }
+      ],
+      "constraints": []
+    },
+    {
+      "id": "terraced-foundation",
+      "nodes": [
+        {
+          "id": "lower-deck",
+          "name": "lower-deck",
+          "surfaceId": "stone",
+          "shape": "Cylinder",
+          "size": {
+            "x": 2,
+            "y": 76,
+            "z": 76
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": -1,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 90
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "upper-deck",
+          "name": "upper-deck",
+          "surfaceId": "structure",
+          "shape": "Cylinder",
+          "size": {
+            "x": 0.4,
+            "y": 70,
+            "z": 70
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 0.2,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 90
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "central-dais",
+          "name": "central-dais",
+          "surfaceId": "stone",
+          "shape": "Cylinder",
+          "size": {
+            "x": 1.4,
+            "y": 19,
+            "z": 19
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 1.1,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 90
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "dais-collar",
+          "name": "dais-collar",
+          "surfaceId": "bronze",
+          "shape": "Cylinder",
+          "size": {
+            "x": 0.3,
+            "y": 19.4,
+            "z": 19.4
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 1.85,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 90
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        }
+      ],
+      "constraints": []
+    },
+    {
+      "id": "optical-instrument",
+      "nodes": [
+        {
+          "id": "socket",
+          "name": "socket",
+          "surfaceId": "bronze",
+          "shape": "Cylinder",
+          "size": {
+            "x": 0.8,
+            "y": 7,
+            "z": 7
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 2.4,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 90
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "pedestal",
+          "name": "pedestal",
+          "surfaceId": "stone",
+          "shape": "Cylinder",
+          "size": {
+            "x": 5,
+            "y": 3.5,
+            "z": 3.5
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 5.3,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 90
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "collar",
+          "name": "collar",
+          "surfaceId": "bronze",
+          "shape": "Cylinder",
+          "size": {
+            "x": 0.8,
+            "y": 5,
+            "z": 5
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 8.2,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 90
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "lens-shell",
+          "name": "lens-shell",
+          "surfaceId": "glass",
+          "shape": "Ball",
+          "size": {
+            "x": 9,
+            "y": 9,
+            "z": 9
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 12.9,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": false
+        },
+        {
+          "id": "luminous-core",
+          "name": "luminous-core",
+          "surfaceId": "glow",
+          "shape": "Ball",
+          "size": {
+            "x": 4.5,
+            "y": 4.5,
+            "z": 4.5
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 12.9,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": false
+        },
+        {
+          "id": "instrument-spine",
+          "name": "instrument-spine",
+          "surfaceId": "bronze",
+          "shape": "Cylinder",
+          "size": {
+            "x": 10,
+            "y": 0.55,
+            "z": 0.55
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 12.9,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 0,
+              "z": 90
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "finial",
+          "name": "finial",
+          "surfaceId": "bronze",
+          "shape": "CornerWedge",
+          "size": {
+            "x": 2,
+            "y": 3,
+            "z": 2
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 19,
+              "z": 0
+            },
+            "rotationDegrees": {
+              "x": 0,
+              "y": 45,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        }
+      ],
+      "constraints": []
+    },
+    {
+      "id": "crown-fin",
+      "nodes": [
+        {
+          "id": "upright",
+          "name": "upright",
+          "surfaceId": "bronze",
+          "shape": "Wedge",
+          "size": {
+            "x": 0.7,
+            "y": 7,
+            "z": 2.8
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "tip-inlay",
+          "name": "tip-inlay",
+          "surfaceId": "glow",
+          "shape": "Block",
+          "size": {
+            "x": 0.74,
+            "y": 1.4,
+            "z": 0.5
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 2.6,
+              "z": -0.8
+            }
+          },
+          "anchored": true,
+          "collidable": false
+        }
+      ],
+      "constraints": []
+    },
+    {
+      "id": "approach-inlay",
+      "nodes": [
+        {
+          "id": "threshold",
+          "name": "threshold",
+          "surfaceId": "bronze",
+          "shape": "Block",
+          "size": {
+            "x": 7,
+            "y": 0.18,
+            "z": 0.6
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "guide",
+          "name": "guide",
+          "surfaceId": "glow",
+          "shape": "Block",
+          "size": {
+            "x": 4,
+            "y": 0.2,
+            "z": 0.18
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 0.02,
+              "z": -0.15
+            }
+          },
+          "anchored": true,
+          "collidable": false
+        }
+      ],
+      "constraints": []
+    },
+    {
+      "id": "observing-bench",
+      "nodes": [
+        {
+          "id": "left-foot",
+          "name": "left-foot",
+          "surfaceId": "stone",
+          "shape": "Wedge",
+          "size": {
+            "x": 1.1,
+            "y": 2.2,
+            "z": 2.5
+          },
+          "placement": {
+            "offset": {
+              "x": -2,
+              "y": 1.1,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "right-foot",
+          "name": "right-foot",
+          "surfaceId": "stone",
+          "shape": "Wedge",
+          "size": {
+            "x": 1.1,
+            "y": 2.2,
+            "z": 2.5
+          },
+          "placement": {
+            "offset": {
+              "x": 2,
+              "y": 1.1,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "seat",
+          "name": "seat",
+          "surfaceId": "structure",
+          "shape": "Block",
+          "size": {
+            "x": 6,
+            "y": 0.65,
+            "z": 2.8
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 2.1,
+              "z": 0
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        },
+        {
+          "id": "seat-inlay",
+          "name": "seat-inlay",
+          "surfaceId": "bronze",
+          "shape": "Block",
+          "size": {
+            "x": 5.5,
+            "y": 0.12,
+            "z": 0.25
+          },
+          "placement": {
+            "offset": {
+              "x": 0,
+              "y": 2.48,
+              "z": 1.1
+            }
+          },
+          "anchored": true,
+          "collidable": true
+        }
+      ],
+      "constraints": []
+    }
+  ],
+  "arrangements": [
+    {
+      "id": "foundation",
+      "name": "Foundation",
+      "motifId": "terraced-foundation",
+      "frame": {
+        "offset": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "pattern": {
+        "kind": "explicit",
+        "members": [
+          {
+            "id": "base",
+            "offset": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "arcade",
+      "name": "Arcade",
+      "motifId": "arcade-bay",
+      "frame": {
+        "offset": {
+          "x": 0,
+          "y": 0.4,
+          "z": 0
+        }
+      },
+      "pattern": {
+        "kind": "radial",
+        "memberIds": [
+          "bay-1",
+          "bay-2",
+          "bay-3",
+          "bay-4",
+          "bay-5",
+          "bay-6",
+          "bay-7",
+          "bay-8",
+          "bay-9",
+          "bay-10",
+          "bay-11",
+          "bay-12"
+        ],
+        "radiusStuds": 30,
+        "startDegrees": 0,
+        "stepDegrees": 30,
+        "orientation": "outward"
+      }
+    },
+    {
+      "id": "instrument",
+      "name": "Instrument",
+      "motifId": "optical-instrument",
+      "frame": {
+        "offset": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "pattern": {
+        "kind": "explicit",
+        "members": [
+          {
+            "id": "center",
+            "offset": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "crown",
+      "name": "Crown",
+      "motifId": "crown-fin",
+      "frame": {
+        "relativeTo": "instrument",
+        "offset": {
+          "x": 0,
+          "y": 13,
+          "z": 0
+        }
+      },
+      "pattern": {
+        "kind": "radial",
+        "memberIds": ["fin-1", "fin-2", "fin-3", "fin-4", "fin-5", "fin-6", "fin-7", "fin-8"],
+        "radiusStuds": 4.7,
+        "startDegrees": 22.5,
+        "stepDegrees": 45,
+        "orientation": "outward"
+      }
+    },
+    {
+      "id": "approach",
+      "name": "Approach",
+      "motifId": "approach-inlay",
+      "frame": {
+        "offset": {
+          "x": 0,
+          "y": 0.45,
+          "z": 28
+        }
+      },
+      "pattern": {
+        "kind": "linear",
+        "memberIds": ["step-1", "step-2", "step-3", "step-4", "step-5", "step-6"],
+        "step": {
+          "x": 0,
+          "y": 0,
+          "z": -2.75
+        }
+      }
+    },
+    {
+      "id": "benches",
+      "name": "Benches",
+      "motifId": "observing-bench",
+      "frame": {
+        "offset": {
+          "x": 0,
+          "y": 0.4,
+          "z": 0
+        }
+      },
+      "pattern": {
+        "kind": "radial",
+        "memberIds": ["north-east", "north-west", "south-west", "south-east"],
+        "radiusStuds": 21,
+        "startDegrees": 45,
+        "stepDegrees": 90,
+        "orientation": "fixed"
+      }
+    }
+  ],
+  "separation": [
+    {
+      "first": {
+        "arrangementId": "benches",
+        "memberId": "north-east"
+      },
+      "second": {
+        "arrangementId": "benches",
+        "memberId": "north-west"
+      },
+      "clearanceStuds": 6
+    }
+  ]
+}

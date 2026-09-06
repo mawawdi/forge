@@ -1,6 +1,7 @@
 import {
   studioObjectIdentityKey,
   type StudioObjectIdentity,
+  type StudioObservedPropertyValue,
   type StudioValue,
 } from "../../studio-evidence/src/index.js";
 
@@ -20,7 +21,7 @@ export interface CreatorTransactionTopologyNode {
     readonly className: string;
   };
   /** Only captured properties are relevant to inbound Instance references. */
-  readonly properties?: Readonly<Record<string, StudioValue>>;
+  readonly properties?: Readonly<Record<string, StudioObservedPropertyValue>>;
 }
 
 export interface CreatorTransactionTopologyTarget {
@@ -95,7 +96,7 @@ export interface CreatorTransactionTopologyFinalNode {
   readonly path: string;
   readonly name: string;
   readonly className: string;
-  readonly properties: Readonly<Record<string, StudioValue>>;
+  readonly properties: Readonly<Record<string, StudioObservedPropertyValue>>;
 }
 
 export interface CreatorTransactionTopologyProjection<
@@ -123,7 +124,7 @@ interface MutableTopologyNode {
   readonly className: string;
   parentKey?: string;
   name: string;
-  properties: Readonly<Record<string, StudioValue>>;
+  properties: Readonly<Record<string, StudioObservedPropertyValue>>;
 }
 
 /**
@@ -690,7 +691,7 @@ function isWithin(
   return nodeKey === ancestorKey || isDescendantOf(nodeKey, ancestorKey, nodes);
 }
 
-function instanceReferenceKey(value: StudioValue): string | undefined {
+function instanceReferenceKey(value: StudioObservedPropertyValue): string | undefined {
   if (value.kind !== "instance_ref" || value.state !== "reference") return undefined;
   return identityKeyFor(value.identity, "Creator transaction instance_ref");
 }

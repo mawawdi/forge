@@ -60,16 +60,6 @@ function reflectionValue(
   };
 }
 
-async function eventually<T>(read: () => Promise<T>, accept: (value: T) => boolean): Promise<T> {
-  const deadline = Date.now() + 2_000;
-  while (true) {
-    const value = await read();
-    if (accept(value)) return value;
-    if (Date.now() >= deadline) throw new Error("timed out waiting for attestation state");
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-}
-
 test("creator control exposes backend-graded live attestation and authorizes its raw artifact", async () => {
   const root = await mkdtemp(join(tmpdir(), "forge-creator-attestation-"));
   const target = { kind: "project" as const };
@@ -189,7 +179,7 @@ test("creator control exposes backend-graded live attestation and authorizes its
       },
       projection,
     );
-    handler!(
+    await handler!(
       {
         kind: "StudioProtocolMessage",
         direction: "plugin_to_backend",
@@ -205,10 +195,8 @@ test("creator control exposes backend-graded live attestation and authorizes its
       },
       session,
     );
-    const verified = await eventually(
-      () => coordinator.dashboardState(),
-      (state) => state.pairedStudio.attestationStatus === "verified",
-    );
+    const verified = await coordinator.dashboardState();
+    assert.equal(verified.pairedStudio.attestationStatus, "verified");
     assert.equal(verified.pairedStudio.attestation?.totalFacts, facts.length);
     assert.equal(verified.pairedStudio.attestation?.mismatchedFacts, 0);
     assert.equal(verified.pairedStudio.attestationHash, complete.contentHash);
@@ -242,7 +230,7 @@ test("creator control exposes backend-graded live attestation and authorizes its
       },
       projection,
     );
-    handler!(
+    await handler!(
       {
         kind: "StudioProtocolMessage",
         direction: "plugin_to_backend",
@@ -258,10 +246,8 @@ test("creator control exposes backend-graded live attestation and authorizes its
       },
       session,
     );
-    const incompleteState = await eventually(
-      () => coordinator.dashboardState(),
-      (state) => state.pairedStudio.attestationStatus === "incomplete",
-    );
+    const incompleteState = await coordinator.dashboardState();
+    assert.equal(incompleteState.pairedStudio.attestationStatus, "incomplete");
     assert.equal(incompleteState.pairedStudio.attestation?.unavailableFacts, 1);
     assert.match(incompleteState.pairedStudio.attestation?.detail ?? "", /incomplete/);
     assert.equal(incompleteState.pairedStudio.attestationHash, incomplete.contentHash);

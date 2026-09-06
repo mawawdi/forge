@@ -1,7 +1,6 @@
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 import {
   DEFAULT_GAME_ADMISSION_POLICY,
-  type GameDataSchema,
   type GameDesignObligation,
 } from "../../game-ir/src/index.js";
 import { assertBoundedGameJson } from "../../game-ir/src/primitives.js";
@@ -29,29 +28,8 @@ export interface CompositionOutput {
   obligations: GameDesignObligation[];
   limitations: string[];
 }
-export class CompositionError extends Error {
-  constructor(
-    readonly code: string,
-    detail: string,
-  ) {
-    super(detail);
-  }
-}
-export const idSchema = { type: "string", maxLength: 64 } as const;
-export const numberSchema = { type: "number" } as const;
-export const booleanSchema = { type: "boolean" } as const;
-export const textSchema = { type: "string", maxLength: 4096 } as const;
-export const objectSchema = (
-  properties: Record<string, GameDataSchema>,
-  required = Object.keys(properties),
-): GameDataSchema => ({ type: "object", properties, required, additionalProperties: false });
-export const arraySchema = (items: GameDataSchema, maxItems: number): GameDataSchema => ({
-  type: "array",
-  items,
-  maxItems,
-});
-export const vectorSchema = objectSchema({ x: numberSchema, y: numberSchema, z: numberSchema });
-export const colorSchema = objectSchema({ r: numberSchema, g: numberSchema, b: numberSchema });
+import { COMPOSITION_ID_SCHEMA, CompositionError } from "./config-schema.js";
+export { CompositionError } from "./config-schema.js";
 
 export function boundedConfig(input: unknown): void {
   assertBoundedGameJson(input, DEFAULT_GAME_ADMISSION_POLICY);
@@ -59,7 +37,7 @@ export function boundedConfig(input: unknown): void {
 export function uniqueById<T extends { id: string }>(values: readonly T[]): Map<string, T> {
   const map = new Map<string, T>();
   for (const value of values) {
-    if (!/^[a-z][a-z0-9-]{0,63}$/.test(value.id) || map.has(value.id))
+    if (!COMPOSITION_ID_SCHEMA.safeParse(value.id).success || map.has(value.id))
       throw new CompositionError(
         "invalid_identity",
         `Invalid or duplicate composition id: ${value.id}`,
@@ -101,6 +79,7 @@ export function createItem(
   parent: StudioMutationParent,
   properties: Record<string, StudioValue>,
   dependencies: string[] = [],
+  outputId?: string,
 ): GameInventoryItem {
   if (!/^[A-Za-z0-9][A-Za-z0-9 _-]{0,95}$/.test(name))
     throw new CompositionError(
@@ -124,6 +103,7 @@ export function createItem(
   return {
     id,
     componentId: context.componentId,
+    ...(outputId === undefined ? {} : { outputId }),
     change: {
       id,
       kind: "create",

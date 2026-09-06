@@ -4,6 +4,7 @@ import { CopyButton } from "./CopyButton";
 import { RichText } from "./RichText";
 import { Icon, type IconName } from "./Icon";
 import { AgentActivity } from "./AgentActivity";
+import { ConversationVisualAttachment } from "./ConversationVisualAttachment";
 import {
   actionsForEvent,
   byteLength,
@@ -171,7 +172,11 @@ function foldActivityEvents(
         (latestActivity.get(event.data.job.id) === event.id &&
           ["failed", "outcome_unknown"].includes(event.data.status) &&
           (!event.episodeId || !completedEpisodes.has(event.episodeId)))) &&
-      !(event.eventType === "project_identity" && event.data.state === "linked") &&
+      !(
+        event.eventType === "project_identity" &&
+        event.data.state === "linked" &&
+        !isExplicitProjectLinkReceipt(event)
+      ) &&
       !(
         event.eventType === "decision" &&
         (!event.data.report || isSettingsDecision(event.data.decision))
@@ -196,6 +201,16 @@ function foldActivityEvents(
  * a transcript event, while never duplicating an action whose exact event is
  * already loaded.
  */
+function isExplicitProjectLinkReceipt(event: CreatorConversationEvent): boolean {
+  return (
+    event.eventType === "project_identity" &&
+    event.authority === "studio" &&
+    event.data.project.kind === "local_linked" &&
+    ["linked", "forked"].includes(event.data.state) &&
+    event.attachments.some((attachment) => attachment.role === "project_identity")
+  );
+}
+
 function actionsWithoutLoadedAuthorizer(
   controlView: CreatorControlView | undefined,
   events: readonly CreatorConversationEvent[],
@@ -361,6 +376,22 @@ function EventCard({
         ) : null}
       </header>
       <EventBody event={event} />
+      {event.eventType === "creator_turn" &&
+      event.conversationId === state.selectedConversationId &&
+      event.attachments.some((item) => item.role === "visual_observation") ? (
+        <div className="conversation-visuals" aria-label="Submitted images">
+          {event.attachments
+            .filter((item) => item.role === "visual_observation")
+            .slice(0, 4)
+            .map((attachment, index) => (
+              <ConversationVisualAttachment
+                key={`${event.conversationId}:${attachment.binding.artifact.artifactHash}:${index}`}
+                attachment={attachment}
+                conversationId={event.conversationId}
+              />
+            ))}
+        </div>
+      ) : null}
       {actions.length ? <EventActions state={state} actions={actions} snapshot={snapshot} /> : null}
     </article>
   );
@@ -399,39 +430,35 @@ function MessageText({
 }
 
 function PlanText({ text }: { readonly text: string }): React.JSX.Element {
-  // Verification checks and creator-review guidance remain in Details and the
-  // execution contract. The plan card presents only the work being proposed.
-  const visible = text.replace(/\n\nChecks\n[\s\S]*?(?=\n\nYour review\n|$)/, "");
-  const [work = ""] = visible.split(/\n\n(?=Your review\n)/);
+  const paragraphs = text.split("\n\n");
+  const steps = paragraphs.filter((paragraph) => /^\d+\. /.test(paragraph));
   const [expanded, setExpanded] = useState(false);
-  const steps = work.split(/\n\n(?=\d+\. )/);
-  const long = work.length > 2200 && steps.length > 2;
-  if (steps.every((step) => /^\d+\. /.test(step)))
-    return (
-      <>
-        <div className={`plan-outline${long && !expanded ? " plan-outline--collapsed" : ""}`}>
-          <ol className="plan-steps">
-            {(long && !expanded ? steps.slice(0, 2) : steps).map((step, index) => (
-              <li key={index}>
-                <RichText text={step.replace(/^\d+\. /, "")} />
-              </li>
-            ))}
-          </ol>
-        </div>
-        {long ? (
-          <button
-            type="button"
-            className="plan-expand"
-            aria-expanded={expanded}
-            onClick={() => setExpanded(!expanded)}
-          >
-            {expanded ? "Collapse plan" : "Read complete plan"}
-            <Icon name={expanded ? "arrowUp" : "arrowDown"} size={16} />
-          </button>
-        ) : null}
-      </>
-    );
-  return <MessageText text={work} markdown />;
+  const long = steps.join("\n\n").length > 2200 && steps.length > 2;
+  if (steps.length === 0) return <MessageText text="Plan steps unavailable." />;
+  return (
+    <>
+      <div className={`plan-outline${long && !expanded ? " plan-outline--collapsed" : ""}`}>
+        <ol className="plan-steps">
+          {(long && !expanded ? steps.slice(0, 2) : steps).map((step, index) => (
+            <li key={index}>
+              <RichText text={step.replace(/^\d+\. /, "")} />
+            </li>
+          ))}
+        </ol>
+      </div>
+      {long ? (
+        <button
+          type="button"
+          className="plan-expand"
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? "Collapse plan" : "Read complete plan"}
+          <Icon name={expanded ? "arrowUp" : "arrowDown"} size={16} />
+        </button>
+      ) : null}
+    </>
+  );
 }
 
 function EventBody({ event }: Pick<EventCardProps, "event">): React.JSX.Element {
@@ -502,8 +529,16 @@ function EventBody({ event }: Pick<EventCardProps, "event">): React.JSX.Element 
     case "final_review":
     case "source_sync":
     case "job":
-    case "project_identity":
       return <p>{messageFor(event)}</p>;
+    case "project_identity":
+      return isExplicitProjectLinkReceipt(event) ? (
+        <div className="project-link-save">
+          <p>Save your place in Studio to keep this link when you reopen it.</p>
+          <p className="project-link-save__hint">In Studio, choose File → Save to File.</p>
+        </div>
+      ) : (
+        <p>{messageFor(event)}</p>
+      );
     case "terminal_output":
       return <RichText text={event.data.message} />;
     case "memory":
@@ -902,7 +937,11 @@ function eventTitle(event: CreatorConversationEvent): string {
     case "job":
       return "Forge job";
     case "project_identity":
-      return "Project connection";
+      return isExplicitProjectLinkReceipt(event)
+        ? event.data.state === "forked"
+          ? "New project linked"
+          : "Project linked"
+        : "Project connection";
     case "terminal_output":
       return "Forge";
   }

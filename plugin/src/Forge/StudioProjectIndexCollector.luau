@@ -158,7 +158,7 @@ end
 local function canonicalProperties(instance: Instance, registry): (any, {string})
 	local properties, names = Canonical.object({}), {}
 	for _, property in ipairs(Generated.projectPropertyMetadata(instance.ClassName)) do
-		local value = Generated.read(instance, property.name, function(reference: Instance, referenceProperty: any)
+		local value = Generated.readProjectProperty(instance, property.name, function(reference: Instance, referenceProperty: any)
 			-- Reference values use the same closed identity algebra as mutation
 			-- targets. The display path/class are preconditions for human review,
 			-- never an authority fallback.

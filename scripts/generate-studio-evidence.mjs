@@ -627,6 +627,7 @@ function copyPropertyBounds(override) {
     "referenceClass",
     "setterFamily",
     "setterFamilySeed",
+    "setterEffects",
   ];
   const output = {};
   for (const [key, value] of Object.entries(override)) {
@@ -639,6 +640,22 @@ function copyPropertyBounds(override) {
       if (typeof value !== "string" || !/^[a-z][a-z0-9_]{0,127}$/.test(value))
         throw new Error("Property setter family must be a bounded identifier");
       output[key] = value;
+      continue;
+    }
+    if (key === "setterEffects") {
+      if (
+        !Array.isArray(value) ||
+        value.length === 0 ||
+        value.length > 64 ||
+        value.some(
+          (name, index) =>
+            typeof name !== "string" ||
+            !/^[A-Za-z][A-Za-z0-9]{0,127}$/.test(name) ||
+            (index > 0 && value[index - 1] >= name),
+        )
+      )
+        throw new Error("Property setter effects must be sorted distinct bounded property names");
+      output[key] = [...value];
       continue;
     }
     if (key === "setterFamilySeed") {
@@ -1270,6 +1287,21 @@ function validateManifest(manifest) {
           ))
       )
         throw new Error(`Invalid setter family seed: ${entry.name}.${property.name}`);
+      if (
+        property.setterEffects !== undefined &&
+        (!Array.isArray(property.setterEffects) ||
+          property.setterEffects.length === 0 ||
+          property.setterEffects.length > 64 ||
+          property.setterEffects.some(
+            (name, index) =>
+              typeof name !== "string" ||
+              !/^[A-Za-z][A-Za-z0-9]{0,127}$/.test(name) ||
+              name === property.name ||
+              (index > 0 && property.setterEffects[index - 1] >= name) ||
+              !entry.properties.some((candidate) => candidate.name === name),
+          ))
+      )
+        throw new Error(`Invalid setter effects: ${entry.name}.${property.name}`);
       const derivedReflection = deriveReflectionTypeExpectation(
         property.catalogType,
         property.codec,
@@ -1537,9 +1569,21 @@ function Generated.sortedMutationPropertyNames(className: any, properties: any):
 	table.sort(names)
 	-- One setter is allowed per family. Derived readback is separately bound
 	-- to the final detached canary; family membership alone proves no value.
-	local families = {}
+	local families, outputs = {}, {}
 	for _, name in ipairs(names) do
-		local family = class.properties[name].setterFamily
+		local property = class.properties[name]
+		local function claim(output: string)
+			if outputs[output] ~= nil and outputs[output] ~= name then error("coupled property setters: " .. outputs[output] .. " and " .. name) end
+			outputs[output] = name
+		end
+		claim(name)
+		for _, output in ipairs(property.setterEffects or {}) do claim(output) end
+		local family = property.setterFamily
+		if family ~= nil then
+			for _, candidate in ipairs(class.propertyList) do
+				if candidate.setterFamily == family then claim(candidate.name) end
+			end
+		end
 		if family ~= nil then
 			if families[family] ~= nil then error("coupled property setters: " .. families[family] .. " and " .. name) end
 			families[family] = name
@@ -1549,13 +1593,15 @@ function Generated.sortedMutationPropertyNames(className: any, properties: any):
 end
 function Generated.derivedMutationPropertyNames(className: string, properties: any): {string}
 	local class = Generated.classMetadata(className)
-	local families, result = {}, {}
+	local families, effects, result = {}, {}, {}
 	for _, name in ipairs(Generated.sortedMutationPropertyNames(className, properties)) do
-		local family = class.properties[name].setterFamily
+		local property = class.properties[name]
+		local family = property.setterFamily
 		if family ~= nil then families[family] = true end
+		for _, output in ipairs(property.setterEffects or {}) do effects[output] = true end
 	end
 	for _, property in ipairs(class.propertyList) do
-		if property.setterFamily ~= nil and families[property.setterFamily] and properties[property.name] == nil then table.insert(result, property.name) end
+		if (effects[property.name] or (property.setterFamily ~= nil and families[property.setterFamily])) and properties[property.name] == nil then table.insert(result, property.name) end
 	end
 	table.sort(result)
 	return result
@@ -1800,6 +1846,24 @@ function Generated.read(instance: Instance, propertyName: string, referenceEncod
 	local property = Generated.propertyMetadata(instance.ClassName, propertyName)
 	if property == nil then error("property is not manifest readable") end
 	return Generated.validateValue(property.codec, Generated.fromStudio(property.codec, (instance :: any)[propertyName], referenceEncoder, property), property)
+end
+-- Project observations must preserve the engine's unbounded size default.
+-- This closed observation value is deliberately not a StudioValue: write,
+-- preflight postconditions and final mutation evidence stay finite-only.
+function Generated.readProjectProperty(instance: Instance, propertyName: string, referenceEncoder: any?): any
+	local property = Generated.propertyMetadata(instance.ClassName, propertyName)
+	if property == nil then error("property is not manifest readable") end
+	if property.declaringClass == "UISizeConstraint" and property.name == "MaxSize" and property.codec == "vector2_f32" then
+		local native = (instance :: any)[propertyName]
+		if typeof(native) == "Vector2" and (native.X == math.huge or native.Y == math.huge) then
+			local function axis(value: number): any
+				if value == math.huge then return "positive_infinity" end
+				return f32(value)
+			end
+			return { kind = "observed_vector2_f32", x = axis(native.X), y = axis(native.Y) }
+		end
+	end
+	return Generated.read(instance, propertyName, referenceEncoder)
 end
 function Generated.canonicalAttribute(value: any): any
 	if typeof(value) == "boolean" then return value end

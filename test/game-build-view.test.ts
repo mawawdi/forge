@@ -68,6 +68,7 @@ function fixture(architecture?: GameSemanticArchitecture) {
   const compiled = compileGamePlan({
     design: {
       kind: "GameDesignSpec",
+      worldAuthoring: { mode: "none" },
       id: "view-test",
       intent: "Inspect an exact build graph.",
       ...(architecture ? { architecture } : {}),
@@ -144,6 +145,7 @@ test("build presentation comes from real sealed inventory, source slots, compone
   const { plan } = fixture();
   const view = createGameBuildControlView({ plan, sessionStatus: "awaiting_plan_approval" });
   assert.equal(view.planHash, plan.compiled.hash);
+  assert.deepEqual(view.worldAuthoring, { mode: "none" });
   assert.equal(view.status, "planned");
   assert.equal(view.nodes.length, 130);
   assert.equal(view.nodes.find((node) => node.id === "source")!.source?.maximumUtf8Bytes, 1024);

@@ -1,0 +1,18 @@
+User-reported Studio output, September 5, 2026. No native cases completed.
+No engine version or actual loaded-place checksum was supplied.
+
+15:13:17.170  > require(game:GetService("ServerStorage").ForgeNativeConformance).run()  -  Studio
+15:13:17.189  ServerStorage.ForgeNativeConformance:62: cannot open fixture recording  -  Edit - ForgeNativeConformance:62
+15:13:17.189  Stack Begin  -  Studio
+15:13:17.189  Script 'ServerStorage.ForgeNativeConformance', Line 62 - function run  -  Studio - ForgeNativeConformance:62
+15:13:17.189  Script 'CommandBar', Line 1  -  Studio
+15:13:17.189  Stack End  -  Studio
+15:13:17.222  ServerStorage.ForgeNativeConformance:62: cannot open fixture recording  -  Studio
+
+15:13:33.303  > require(game:GetService("ServerStorage").ForgeNativeConformance).verifyReopen()  -  Studio
+15:13:33.313  ServerStorage.ForgeNativeConformance:163: Close and reopen the saved place before collecting reopen evidence  -  Edit - ForgeNativeConformance:163
+15:13:33.313  Stack Begin  -  Studio
+15:13:33.313  Script 'ServerStorage.ForgeNativeConformance', Line 163 - function verifyReopen  -  Studio - ForgeNativeConformance:163
+15:13:33.313  Script 'CommandBar', Line 1  -  Studio
+15:13:33.313  Stack End  -  Studio
+15:13:33.346  ServerStorage.ForgeNativeConformance:163: Close and reopen the saved place before collecting reopen evidence  -  Studio

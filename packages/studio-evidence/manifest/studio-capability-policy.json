@@ -171,6 +171,8 @@
     "ScreenGui.DisplayOrder": {"minimum": -100000, "maximum": 100000},
     "ScreenGui.IgnoreGuiInset": {"setterFamily": "screen_gui_insets", "setterFamilySeed": "ScreenInsets"},
     "ScreenGui.ScreenInsets": {"setterFamily": "screen_gui_insets", "setterFamilySeed": "ScreenInsets"},
+    "UICorner.CornerRadius": {"setterEffects": ["BottomLeftRadius", "BottomRightRadius", "TopLeftRadius", "TopRightRadius"]},
+    "UICorner.TopLeftRadius": {"setterEffects": ["CornerRadius"]},
     "Sound.Looped": {},
     "Sound.PlaybackSpeed": {"minimum": 0, "maximum": 1000},
     "Sound.RollOffMaxDistance": {"minimum": 0, "maximum": 100000},

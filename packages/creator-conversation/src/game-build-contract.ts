@@ -1,6 +1,10 @@
 /** Browser-safe presentation of sealed inventory and coordinator-verified checkpoints. */
 export interface GameBuildControlView {
   readonly planHash: string;
+  readonly worldAuthoring:
+    | { readonly mode: "persistent"; readonly roots: readonly string[] }
+    | { readonly mode: "runtime_generated"; readonly rationale: string }
+    | { readonly mode: "none" };
   readonly graphHash?: string;
   readonly status:
     "planned" | "materialized" | "applying" | "complete" | "stopped" | "recovery_required";
@@ -98,6 +102,25 @@ export function assertGameBuildControlView(value: unknown): asserts value is Gam
       "recovery_required",
     ]) ||
     (record.stoppedReason !== undefined && !text(record.stoppedReason, 16384))
+  )
+    fail();
+  const worldAuthoring = object(record.worldAuthoring);
+  if (worldAuthoring.mode === "persistent") {
+    const roots = array(worldAuthoring.roots, 32);
+    if (
+      roots.length === 0 ||
+      new Set(roots).size !== roots.length ||
+      roots.some(
+        (root) =>
+          typeof root !== "string" ||
+          !/^Workspace\/[^/\u0000-\u001f]+(?:\/[^/\u0000-\u001f]+)*$/u.test(root),
+      )
+    )
+      fail();
+  } else if (
+    worldAuthoring.mode === "runtime_generated"
+      ? !text(worldAuthoring.rationale, 512) || String(worldAuthoring.rationale).length < 24
+      : worldAuthoring.mode !== "none"
   )
     fail();
   const nodes = array(record.nodes, 8192);

@@ -66,18 +66,12 @@ export interface CreatorOrientationContent {
     omittedClassCount: number;
   };
   exploration: {
-    projectTools: ["project.search", "project.children", "project.inspect"];
-    sourceTools: [
-      "source.search",
-      "source.read",
-      "source.symbols",
-      "source.references",
-      "source.dependencies",
-    ];
-    exactFactsRequireToolConsultation: true;
+    projectFacts: "use_supplied_revision_facts_retrieve_missing_through_offered_tools";
+    availableTools: "current_phase_tool_schema";
     cursorsBoundToRevision: true;
   };
   studioAuthoring: {
+    scope: "edit_mode_transactions_only";
     available: boolean;
     writableOwner: "studio_document";
     allowedClasses: string[];
@@ -87,20 +81,31 @@ export interface CreatorOrientationContent {
       scriptClasses: "inline_source_required";
       nonScriptClasses: "initial_properties";
     };
-    writeSourceTargets: "initial_snapshot_scripts_only";
-    createAndMoveParents: "must_exist_in_initial_snapshot_and_be_studio_writable";
-    plannedInstancesMayParentPlannedInstances: false;
+    writeSourceTargets: "approved_existing_scripts_or_generated_source_slots";
+    createAndMoveParents: {
+      existing: "observed_studio_writable_instances_or_manifest_engine_containers";
+      generated: "exact_parent_instances_in_compiled_inventory";
+      componentOutputs: "declared_component_output_aliases_resolved_before_approval";
+      validation: "exact_identity_class_path_and_acyclic_dependency_order";
+    };
     machineChecks: Array<
       "instance_exists" | "position_series" | "playtest_diagnostics" | "subtree_unchanged"
     >;
     checkScopes: {
-      instanceExists: "allowlisted_studio_roots";
+      instanceExists: "supported_descendant_classes_under_allowlisted_studio_roots";
       positionSeries: "Workspace_BasePart_only";
-      subtreeUnchanged: "initial_snapshot_allowlisted_studio_roots";
+      subtreeUnchanged: "initial_snapshot_supported_classes_under_allowlisted_studio_roots";
     };
     machineCheckStatements: "forge_generated_from_typed_fields";
     arbitraryCodeExecution: false;
     genericPropertyAccess: false;
+  };
+  gameRuntime: {
+    source: "ordinary_luau_in_approved_source_slots";
+    execution: "Roblox_script_context_permissions";
+    runtimeInstanceCreation: "transient_or_explicit_runtime_generated_world_only";
+    initialization: "create_owned_dependencies_before_consumers";
+    grantsEditorMutationAuthority: false;
   };
 }
 
@@ -209,18 +214,12 @@ export function compileCreatorOrientation(input: {
       omittedClassCount: sortedClassCounts.length - visibleClassCounts.length,
     },
     exploration: {
-      projectTools: ["project.search", "project.children", "project.inspect"],
-      sourceTools: [
-        "source.search",
-        "source.read",
-        "source.symbols",
-        "source.references",
-        "source.dependencies",
-      ],
-      exactFactsRequireToolConsultation: true,
+      projectFacts: "use_supplied_revision_facts_retrieve_missing_through_offered_tools",
+      availableTools: "current_phase_tool_schema",
       cursorsBoundToRevision: true,
     },
     studioAuthoring: {
+      scope: "edit_mode_transactions_only",
       available: availableAuthorities.includes("studio_document"),
       writableOwner: "studio_document",
       allowedClasses: [...input.allowedClasses].sort(),
@@ -230,9 +229,13 @@ export function compileCreatorOrientation(input: {
         scriptClasses: "inline_source_required",
         nonScriptClasses: "initial_properties",
       },
-      writeSourceTargets: "initial_snapshot_scripts_only",
-      createAndMoveParents: "must_exist_in_initial_snapshot_and_be_studio_writable",
-      plannedInstancesMayParentPlannedInstances: false,
+      writeSourceTargets: "approved_existing_scripts_or_generated_source_slots",
+      createAndMoveParents: {
+        existing: "observed_studio_writable_instances_or_manifest_engine_containers",
+        generated: "exact_parent_instances_in_compiled_inventory",
+        componentOutputs: "declared_component_output_aliases_resolved_before_approval",
+        validation: "exact_identity_class_path_and_acyclic_dependency_order",
+      },
       machineChecks: [
         "instance_exists",
         "playtest_diagnostics",
@@ -240,13 +243,20 @@ export function compileCreatorOrientation(input: {
         "subtree_unchanged",
       ],
       checkScopes: {
-        instanceExists: "allowlisted_studio_roots",
+        instanceExists: "supported_descendant_classes_under_allowlisted_studio_roots",
         positionSeries: "Workspace_BasePart_only",
-        subtreeUnchanged: "initial_snapshot_allowlisted_studio_roots",
+        subtreeUnchanged: "initial_snapshot_supported_classes_under_allowlisted_studio_roots",
       },
       machineCheckStatements: "forge_generated_from_typed_fields",
       arbitraryCodeExecution: false,
       genericPropertyAccess: false,
+    },
+    gameRuntime: {
+      source: "ordinary_luau_in_approved_source_slots",
+      execution: "Roblox_script_context_permissions",
+      runtimeInstanceCreation: "transient_or_explicit_runtime_generated_world_only",
+      initialization: "create_owned_dependencies_before_consumers",
+      grantsEditorMutationAuthority: false,
     },
   };
   return orientation("creator_session", input.revisionHash, content);

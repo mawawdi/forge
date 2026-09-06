@@ -1,0 +1,97 @@
+.chat-composer--drop {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 4px;
+}
+.unconfirmed-messages {
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  font-size: 13px;
+}
+.unconfirmed-messages > p {
+  margin: 0 0 8px;
+  color: var(--paper-muted);
+}
+.unconfirmed-messages > ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.unconfirmed-messages > ul > li + li {
+  margin-top: 12px;
+}
+.unconfirmed-messages summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+.unconfirmed-messages button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-1);
+  color: var(--paper);
+}
+.unconfirmed-messages__original {
+  max-height: 240px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.unconfirmed-messages__original > p {
+  white-space: pre-wrap;
+}
+.unconfirmed-messages__recovery {
+  color: var(--paper-muted);
+  line-height: 1.5;
+}
+.unconfirmed-messages__images {
+  display: flex;
+  justify-content: flex-start;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 4px;
+  list-style: none;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+.unconfirmed-messages__images > li {
+  flex: 0 0 88px;
+  width: 88px;
+  height: 88px;
+}
+.unconfirmed-messages .unconfirmed-messages__preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: zoom-in;
+  touch-action: manipulation;
+}
+.unconfirmed-messages__preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+.unconfirmed-messages__preview:hover {
+  border-color: var(--paper-muted);
+}
+.unconfirmed-messages__preview:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 2px;
+}
+@media (max-width: 600px) {
+  .unconfirmed-messages__images > li {
+    flex-basis: 72px;
+    width: 72px;
+    height: 72px;
+  }
+}

@@ -16,6 +16,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { LuauParseCache } from "./parse-cache.js";
 import { contentHash, stableJson } from "../../contracts/src/index.js";
 import {
   AnalysisProcessDeadline,
@@ -161,6 +162,12 @@ export interface PinnedLuauAstAnalysis {
   readonly toolchain: PinnedSourceAnalysisToolchainProof;
   readonly documents: readonly PinnedLuauAstDocument[];
   readonly executions: PinnedSourceAnalysisArtifact["executions"];
+  /** Exact successful parser outputs reused in this host process; these are not new executions. */
+  readonly reusedParses: readonly {
+    readonly documentId: string;
+    readonly sourceHash: string;
+    readonly parserOutputHash: string;
+  }[];
   readonly executionPolicy: AnalysisProcessDeadline["policy"];
 }
 export type PinnedLuauAstOutcome = PinnedLuauAstAnalysis | IncompletePinnedSourceAnalysisResult;
@@ -172,6 +179,7 @@ const LSP_MAX_MESSAGE_BYTES = 1_048_576;
 const LSP_MAX_SYMBOLS = 16_384;
 const LSP_MAX_REFERENCES_PER_SYMBOL = 4_096;
 const LSP_MAX_REFERENCE_ROWS = 65_536;
+const luauParseCache = new LuauParseCache();
 
 /**
  * Hard host-side admission limits. These are intentionally tighter than the
@@ -430,11 +438,23 @@ export class PinnedSourceAnalysisHost {
       const execution = new AnalysisProcessDeadline(options);
       const documents: PinnedLuauAstDocument[] = [];
       const executions: PinnedSourceAnalysisArtifact["executions"][number][] = [];
+      const reusedParses: PinnedLuauAstAnalysis["reusedParses"][number][] = [];
       for (const entry of staged.entries) {
-        const result = execution.run(parser.executable, [entry.file], {
-          cwd: temporaryRoot,
-          maxBuffer: 20 * 1024 * 1024,
-        });
+        const cacheKey = contentHash(
+          stableJson({
+            profile: "official-luau-ast-envelope@1",
+            toolchainHash: this.toolchain.hash,
+            parserHash: parser.binaryHash,
+            sourceHash: entry.document.sourceHash,
+          }),
+        );
+        const cached = luauParseCache.get(cacheKey);
+        const result = cached
+          ? execution.reuse(cached)
+          : execution.run(parser.executable, [entry.file], {
+              cwd: temporaryRoot,
+              maxBuffer: 20 * 1024 * 1024,
+            });
         if (result.failure)
           return {
             status: "incomplete",
@@ -465,13 +485,22 @@ export class PinnedSourceAnalysisHost {
           typeMode: astTypeMode(ast.commentLocations, entry.source),
           ast,
         });
-        executions.push(
-          executionRecord("luau-ast", ["<pinned-luau-ast>", entry.document.sourceHash], {
-            exitCode: result.status,
-            stdout: Buffer.from(result.stdout),
-            stderr: Buffer.from(result.stderr),
-          }),
-        );
+        if (cached) {
+          reusedParses.push({
+            documentId: entry.document.documentId,
+            sourceHash: entry.document.sourceHash,
+            parserOutputHash: contentHash(result.stdout),
+          });
+        } else {
+          luauParseCache.put(cacheKey, result);
+          executions.push(
+            executionRecord("luau-ast", ["<pinned-luau-ast>", entry.document.sourceHash], {
+              exitCode: result.status,
+              stdout: Buffer.from(result.stdout),
+              stderr: Buffer.from(result.stderr),
+            }),
+          );
+        }
       }
       const payload = {
         kind: "PinnedLuauAstAnalysis" as const,
@@ -480,6 +509,7 @@ export class PinnedSourceAnalysisHost {
         toolchain: this.proof(),
         documents,
         executions,
+        reusedParses,
         executionPolicy: execution.policy,
       };
       return { ...payload, hash: contentHash(stableJson(payload)) };

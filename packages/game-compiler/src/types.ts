@@ -29,12 +29,15 @@ export interface GameValueSlot {
 export interface GameInventoryItem {
   readonly id: string;
   readonly componentId: string;
+  /** Trusted recipe output alias, unique within the component; never a Studio identity. */
+  readonly outputId?: string;
   readonly change: CreatorPlanChange;
   readonly lockedProperties: Readonly<Record<string, StudioValue>>;
   readonly valueSlots: readonly GameValueSlot[];
   readonly source?: { readonly fileId: string; readonly content: GameSourceContent };
   readonly attributes: Readonly<Record<string, string | number | boolean>>;
   readonly removedAttributes: readonly string[];
+  /** Required operation order; component content dependencies remain in the design DAG. */
   readonly dependencies: readonly string[];
   readonly atomicGroup?: string;
   /** Exact observed creator-index object hash, required for existing object mutation. */

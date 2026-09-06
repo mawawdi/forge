@@ -27,6 +27,10 @@ import type {
   ModelTurnResult,
 } from "../packages/model-client/src/contracts.js";
 import {
+  DEFAULT_CREATOR_MODEL_ID,
+  OpenRouterModelClient,
+} from "../packages/model-client/src/index.js";
+import {
   createRequirementSet,
   resolveRequirementView,
   type RequirementSet,
@@ -34,6 +38,7 @@ import {
 import { compileAgentOrientation } from "../packages/context-compiler/src/index.js";
 import { createProjectSnapshot } from "../packages/semantic-map/src/index.js";
 import type { FlightRecorderClock } from "../packages/flight-recorder/src/index.js";
+import { modelImageFixture } from "./fixtures/model-image-input.js";
 
 const VULNERABLE = resolve("test/fixtures/client-controlled-authoritative-state");
 const SAFE = resolve("test/fixtures/authoritative-state-safe");
@@ -46,6 +51,213 @@ const CREATOR_SESSION = {
   id: "creator_session_test",
   hash: contentHash("creator_session_test"),
 } as const;
+
+test("malformed provider JSON gets syntax feedback, preserves raw arguments, and recovers without coercing JSON strings", async () => {
+  const raw = '{"label":"🚀",\n"broken":true false,"ending":"complete"}';
+  const validSibling = {
+    component: {
+      id: "saved-scene",
+      nodes: ["first", "second", "third"],
+      source: "-- authored bytes remain exact λ\nreturn { label = 'doorway' }\n".repeat(1024),
+    },
+  };
+  const host = completionRequiredToolHost();
+  const definitions = host.definitions;
+  host.definitions = () =>
+    definitions().map((definition) => ({
+      ...definition,
+      schema: {
+        type: "object",
+        properties: { component: { type: "object", additionalProperties: true } },
+        additionalProperties: false,
+      },
+    }));
+  const validate = host.validateBatch;
+  host.validateBatch = (calls, seen) =>
+    calls.some((call) => typeof call.arguments !== "object" || call.arguments === null)
+      ? {
+          valid: false,
+          budgetExhausted: false,
+          feedback: calls.map((call) => ({
+            id: call.id,
+            name: call.name,
+            result: rejectedToolResult(
+              typeof call.arguments === "string" ? "TOOL_ARGUMENTS_INVALID" : "TOOL_BATCH_REJECTED",
+              "input: expected object, received string",
+            ),
+          })),
+        }
+      : validate(calls, seen);
+  let executions = 0;
+  const execute = host.execute;
+  host.execute = async (name, input) => {
+    executions++;
+    return execute(name, input);
+  };
+  let turn = 0;
+  const client = new OpenRouterModelClient({
+    apiKey: "test-key",
+    fetchImpl: async (_url, init) => {
+      turn++;
+      const body = JSON.parse(String(init?.body)) as {
+        messages: Array<{ role: string; content?: string }>;
+      };
+      const feedback = body.messages
+        .filter((message) => message.role === "tool")
+        .map((message) => JSON.parse(message.content ?? "{}") as ToolResult);
+      if (turn === 2) {
+        assert.equal(
+          executions,
+          0,
+          "Malformed and otherwise valid sibling calls reject atomically",
+        );
+        const repair = JSON.parse(body.messages.at(-1)?.content ?? "{}") as {
+          forgeToolBatchRejected: boolean;
+          rule: string;
+          origin: {
+            kind: string;
+            turnSequence: number;
+            requestIntentHash: string;
+            responseHash: string;
+          };
+          attemptedCalls: Array<{
+            index: number;
+            id: string;
+            name: string;
+            arguments: unknown;
+            argumentsHash: string;
+            argumentRepresentation: string;
+          }>;
+          feedback: Array<{ result: ToolResult }>;
+        };
+        assert.equal(repair.forgeToolBatchRejected, true);
+        assert.match(repair.rule, /quoted untrusted model output/);
+        assert.equal(repair.origin.kind, "rejected_model_tool_batch");
+        assert.equal(repair.origin.turnSequence, 1);
+        assert.match(repair.origin.requestIntentHash, /^[a-f0-9]{64}$/);
+        assert.match(repair.origin.responseHash, /^[a-f0-9]{64}$/);
+        assert.deepEqual(repair.attemptedCalls, [
+          {
+            index: 0,
+            id: "malformed",
+            name: "phase.seal",
+            arguments: raw,
+            argumentsHash: contentHash(stableJson(raw)),
+            argumentRepresentation: "invalid_json_text",
+          },
+          {
+            index: 1,
+            id: "valid-sibling",
+            name: "phase.seal",
+            arguments: validSibling,
+            argumentsHash: contentHash(stableJson(validSibling)),
+            argumentRepresentation: "parsed_json_value",
+          },
+        ]);
+        assert.doesNotMatch(JSON.stringify(repair), /PRIVATE_REASONING_SENTINEL/);
+        assert.equal(body.messages.filter((message) => message.role === "assistant").length, 0);
+        assert.equal(feedback.length, 0, "No duplicate SDK and Forge tool results enter replay");
+        assert.equal(repair.feedback[0]?.result.error?.code, "TOOL_ARGUMENTS_JSON_INVALID");
+        assert.match(
+          repair.feedback[0]?.result.error?.message ?? "",
+          /zero-based UTF-16 offset 29 \(line 2, column 15\)/,
+        );
+        assert.match(repair.feedback[0]?.result.error?.message ?? "", /true false/);
+        assert.doesNotMatch(
+          repair.feedback[0]?.result.error?.message ?? "",
+          /truncat|received string/i,
+        );
+        assert.equal(repair.feedback[1]?.result.error?.code, "TOOL_BATCH_REJECTED");
+      }
+      if (turn === 3) {
+        assert.equal(executions, 0);
+        assert.equal(feedback.at(-1)?.error?.code, "TOOL_ARGUMENTS_INVALID");
+        assert.match(feedback.at(-1)?.error?.message ?? "", /expected object/);
+      }
+      const calls =
+        turn === 1
+          ? [
+              { id: "malformed", arguments: raw },
+              { id: "valid-sibling", arguments: JSON.stringify(validSibling) },
+            ]
+          : turn === 2
+            ? [{ id: "encoded-string", arguments: JSON.stringify(raw) }]
+            : [{ id: "fixed-object", arguments: "{}" }];
+      assert.ok(turn <= 3);
+      return new Response(
+        JSON.stringify({
+          id: `response-${turn}`,
+          model: DEFAULT_CREATOR_MODEL_ID,
+          provider: "OpenAI",
+          choices: [
+            {
+              index: 0,
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: null,
+                ...(turn === 1 ? { reasoning: "PRIVATE_REASONING_SENTINEL" } : {}),
+                tool_calls: calls.map((call) => ({
+                  id: call.id,
+                  type: "function",
+                  function: { name: "phase_seal", arguments: call.arguments },
+                })),
+              },
+            },
+          ],
+          usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    },
+  });
+  const root = await directory();
+  const store = new AgentExecutionJournalStore(
+    new (await import("../packages/artifact-store/src/index.js")).ImmutableJsonArtifactStore(root),
+  );
+  const journalId = "agent_execution_journal_json_syntax";
+  const result = await new ForgeNativeAgentRuntime(client).run({
+    systemPrompt: "Seal the test phase.",
+    prompt: "Test tool arguments.",
+    orientation: await genericOrientation(),
+    tools: host,
+    budgets: DEFAULT_AGENT_BUDGETS,
+    model: DEFAULT_CREATOR_MODEL_ID,
+    executionJournal: store.sink(journalId),
+  });
+  assert.equal(result.status, "completed", JSON.stringify(result));
+  assert.equal(executions, 1);
+  assert.equal(result.toolCalls[0]?.input, raw);
+  assert.equal(result.toolCalls[0]?.inputHash, contentHash(stableJson(raw)));
+  assert.deepEqual(result.toolCalls[1]?.input, validSibling);
+  assert.equal(result.toolCalls[1]?.inputHash, contentHash(stableJson(validSibling)));
+  assert.equal(
+    result.toolCalls[2]?.input,
+    raw,
+    "A JSON-encoded string remains that string, not an object",
+  );
+  const journal = await store.load(journalId);
+  const responses = journal.entries.flatMap((entry) =>
+    entry.checkpoint.checkpointType === "response_received" &&
+    entry.checkpoint.result.kind === "assistant"
+      ? [entry.checkpoint.result]
+      : [],
+  );
+  assert.equal(responses[0]?.message.toolCalls[0]?.arguments, raw);
+  assert.equal(
+    responses[0]?.message.toolCalls[0]?.argumentSyntaxError?.positionUtf16,
+    raw.indexOf("false"),
+  );
+  assert.equal(responses[1]?.message.toolCalls[0]?.argumentSyntaxError, undefined);
+  const recovery = journal.entries.find(
+    (entry) =>
+      entry.checkpoint.checkpointType === "request_intent" && entry.checkpoint.turnSequence === 2,
+  );
+  assert.ok(recovery?.checkpoint.checkpointType === "request_intent");
+  const quoted = JSON.parse(recovery.checkpoint.request.messages.at(-1)!.content);
+  assert.equal(quoted.origin.responseHash, responses[0]!.responseHash);
+  assert.deepEqual(quoted.attemptedCalls[1].arguments, validSibling);
+});
 
 test("a rejected well-formed batch preserves the complete assistant continuation and matching tool errors", async () => {
   const host = completionRequiredToolHost();
@@ -132,6 +344,31 @@ test("a rejected well-formed batch preserves the complete assistant continuation
     result.turns[0]!.requestSizes.systemInstructions,
     Buffer.byteLength("Publish the result."),
   );
+});
+
+test("retaining rejected arguments does not bypass ordinary runtime budgets or truncate authored inputs", async () => {
+  const argumentsValue = {
+    source: "-- source preserved even when the run budget ends λ\n".repeat(2048),
+    order: ["third", "first", "second"],
+  };
+  const client = new ScriptedModelClient([
+    assistant(1, [{ id: "rejected", name: "unknown.tool", arguments: argumentsValue }]),
+  ]);
+  const result = await new ForgeNativeAgentRuntime(client).run({
+    systemPrompt: "Use only declared tools.",
+    prompt: "Preserve the attempted source when a request fails.",
+    orientation: await genericOrientation(),
+    tools: recordlessRejectingToolHost(),
+    budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 1 },
+    model: "fake/model",
+  });
+  assert.equal(result.status, "budget_exhausted");
+  assert.equal(result.error, "Turn budget exhausted");
+  assert.equal(result.turns.length, 1, "retention never buys an extra provider turn");
+  assert.equal(result.toolCalls.length, 1);
+  assert.equal(result.toolCalls[0]!.disposition, "rejected");
+  assert.deepEqual(result.toolCalls[0]!.input, argumentsValue);
+  assert.equal(result.toolCalls[0]!.inputHash, contentHash(stableJson(argumentsValue)));
 });
 
 async function directory(): Promise<string> {
@@ -260,13 +497,17 @@ class ScriptedModelClient implements ModelClient {
         steps: 1,
         toolChoice: "auto",
         providerParallelToolCalls: "not_requested",
-        toolBatchExecution: "atomic_validate_then_sequential",
+        toolBatchExecution: "host_validated_then_sequential",
         toolNameEncoding: "openai_function_slug",
         maxRetries: 0,
         telemetry: false,
         timeoutPolicy: "bounded_turn_and_remaining_runtime_budget",
         maxDurationMsPerTurn: 1_200_000,
         maxOutputTokensPerTurn: 4096,
+        maxOutputTokensByModel: {},
+        outputTokenLimitCatalogHash: null,
+        inputModalitiesByModel: {},
+        inputModalityCatalogHash: null,
       },
       continuation: { maxBytes: 256 * 1024 },
     },
@@ -1516,6 +1757,38 @@ test("model responses allow twenty minutes while respecting the remaining run bu
   }
 });
 
+test("runtime selects a model-specific output cap before journaling and respects a smaller remaining budget", async () => {
+  for (const budget of [1000000, 48000]) {
+    const expected = Math.min(131072, budget);
+    const client = new ScriptedModelClient([
+      (request) => {
+        assert.equal(request.maxOutputTokens, expected);
+        assert.equal(request.timeoutMs, 1200000);
+        return assistant(1, [], "Done.")(request);
+      },
+    ]);
+    client.descriptor.configuration.request.maxOutputTokensPerTurn = 262144;
+    client.descriptor.configuration.request.maxOutputTokensByModel = { "fake/model": 131072 };
+    const store = new AgentExecutionJournalStore(await directory());
+    const sink = store.sink(`model-output-${budget}`);
+    const result = await new ForgeNativeAgentRuntime(client).run({
+      systemPrompt: "Test runtime",
+      prompt: CREATOR_PROMPT,
+      orientation: await genericOrientation(),
+      tools: recordlessRejectingToolHost(),
+      budgets: { ...DEFAULT_AGENT_BUDGETS, maxOutputTokens: budget },
+      model: "fake/model",
+      executionJournal: sink,
+    });
+    assert.equal(result.status, "completed");
+    const journal = await store.load(`model-output-${budget}`);
+    const intent = journal.entries[0]?.checkpoint;
+    assert.equal(intent?.checkpointType, "request_intent");
+    if (intent?.checkpointType === "request_intent")
+      assert.equal(intent.request.maxOutputTokens, expected);
+  }
+});
+
 test("varied rejected tool batches remain bounded by the ordinary turn budget", async () => {
   const runtime = new ForgeNativeAgentRuntime(
     new ScriptedModelClient([
@@ -1656,7 +1929,74 @@ test("no-progress repetition is scoped to one accepted host-state epoch", async 
   );
 });
 
-test("a semantic checkpoint bounds provider context without discarding run evidence", async () => {
+test("an already-complete fresh host seals a terminal journal without any provider request", async () => {
+  let requests = 0;
+  const client = new ScriptedModelClient([
+    () => {
+      requests += 1;
+      throw new Error("Completed work must not request inference");
+    },
+  ]);
+  const host: AgentToolHost = {
+    definitions: () => [],
+    validateBatch: () => {
+      throw new Error("No tool validation expected");
+    },
+    execute: async () => {
+      throw new Error("No tool execution expected");
+    },
+    completionStatus: () => ({ ready: true }),
+  };
+  const store = new AgentExecutionJournalStore(
+    new (await import("../packages/artifact-store/src/index.js")).ImmutableJsonArtifactStore(
+      await directory(),
+    ),
+  );
+  const journalId = "agent_execution_journal_already_complete";
+  const result = await new ForgeNativeAgentRuntime(client).run({
+    systemPrompt: "Finish a verified restored draft.",
+    prompt: "Retry the accepted build.",
+    tools: host,
+    budgets: DEFAULT_AGENT_BUDGETS,
+    model: "fake/model",
+    executionJournal: store.sink(journalId),
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(requests, 0);
+  assert.equal(result.trialStarted, false);
+  assert.deepEqual(result.turns, []);
+  assert.deepEqual(result.toolCalls, []);
+  assert.equal(result.usage.inputTokens, 0);
+  assert.equal(result.usage.outputTokens, 0);
+  assert.equal(result.usage.costUsd, 0);
+  const journal = await store.load(journalId);
+  assert.deepEqual(
+    journal.entries.map((entry) => entry.checkpoint.checkpointType),
+    ["terminal"],
+  );
+});
+
+test("initial completion errors are attributed to the host before provider dispatch", async () => {
+  const host = completionRequiredToolHost();
+  host.completionStatus = () => {
+    throw new Error("restored candidate is inconsistent");
+  };
+  const result = await new ForgeNativeAgentRuntime(new ScriptedModelClient([])).run({
+    systemPrompt: "Finish",
+    prompt: "Retry",
+    tools: host,
+    budgets: DEFAULT_AGENT_BUDGETS,
+    model: "fake/model",
+  });
+  assert.equal(result.status, "failed");
+  assert.equal(result.failureKind, "harness");
+  assert.equal(result.failureCode, "TOOL_COMPLETION_CHECK_FAILED");
+  assert.equal(result.error, "restored candidate is inconsistent");
+  assert.equal(result.trialStarted, false);
+  assert.deepEqual(result.turns, []);
+});
+
+test("a semantic checkpoint preserves the latest complete exchange and opaque continuation", async () => {
   let state = 0;
   const host: AgentToolHost = {
     definitions: () => [
@@ -1670,7 +2010,7 @@ test("a semantic checkpoint bounds provider context without discarding run evide
     validateBatch: () => ({ valid: true, budgetExhausted: false, feedback: [] }),
     async execute(): Promise<ToolResult> {
       state += 1;
-      const value = { state, largePriorResult: "x".repeat(8_000) };
+      const value = { state, largePriorResult: `${state}:` + "x".repeat(8_000) };
       const serialized = stableJson(value);
       return {
         ok: true,
@@ -1681,29 +2021,90 @@ test("a semantic checkpoint bounds provider context without discarding run evide
       };
     },
     progressToken: () => contentHash(`state-${state}`),
-    contextCheckpoint: () => stableJson({ state, next: state === 1 ? "finish" : "done" }),
+    contextCheckpoint: () => stableJson({ state, next: state < 3 ? "continue" : "done" }),
     completionStatus: () =>
-      state === 2
+      state === 3
         ? { ready: true }
         : { ready: false, code: "MORE_WORK", message: "One bounded step remains." },
   };
+  const continuations = [1, 2].map((step) => {
+    const payload = { opaque: `pending design intent ${step}` };
+    return {
+      transport: "test",
+      payload,
+      hash: contentHash(stableJson(payload)),
+      bytes: Buffer.byteLength(stableJson(payload)),
+    };
+  });
+  const withContinuation = (sequence: number, id: string) => (request: ModelTurnRequest) => {
+    const result = assistant(sequence, [{ id, name: "phase.step", arguments: {} }])(request);
+    assert.equal(result.kind, "assistant");
+    if (result.kind === "assistant") {
+      result.message.content = `Next design decision ${sequence}`;
+      result.message.continuation = continuations[sequence - 1]!;
+    }
+    return result;
+  };
   const client = new ScriptedModelClient([
-    assistant(1, [{ id: "first", name: "phase.step", arguments: {} }]),
+    withContinuation(1, "first"),
     (request) => {
-      assert.equal(request.messages.length, 2);
+      assert.equal(request.messages.length, 4);
+      assert.deepEqual(
+        request.messages[0]?.role === "user" ? request.messages[0].images : undefined,
+        [modelImageFixture()],
+      );
+      assert.equal(
+        request.messages.filter((message) => message.role === "user" && message.images?.length)
+          .length,
+        1,
+      );
       assert.equal(request.messages[0]?.role, "user");
       assert.equal(request.messages[1]?.role, "user");
       assert.match(
         request.messages[1]?.role === "user" ? request.messages[1].content : "",
         /forge_semantic_checkpoint.*\"state\":1/s,
       );
-      assert.doesNotMatch(stableJson(request.messages), /largePriorResult/);
-      return assistant(2, [{ id: "second", name: "phase.step", arguments: {} }])(request);
+      assert.deepEqual(request.messages[2], {
+        role: "assistant",
+        content: "Next design decision 1",
+        toolCalls: [{ id: "first", name: "phase.step", arguments: {} }],
+        continuation: continuations[0],
+      });
+      assert.equal(request.messages[3]?.role, "tool");
+      if (request.messages[3]?.role === "tool") {
+        assert.equal(request.messages[3].toolCallId, "first");
+        assert.equal(JSON.parse(request.messages[3].content).value.state, 1);
+      }
+      return withContinuation(2, "second")(request);
+    },
+    (request) => {
+      assert.equal(request.messages.length, 4, "completed history remains bounded to one exchange");
+      assert.deepEqual(request.messages[2], {
+        role: "assistant",
+        content: "Next design decision 2",
+        toolCalls: [{ id: "second", name: "phase.step", arguments: {} }],
+        continuation: continuations[1],
+      });
+      assert.equal(request.messages[3]?.role, "tool");
+      if (request.messages[3]?.role === "tool") {
+        assert.equal(request.messages[3].toolCallId, "second");
+        assert.equal(JSON.parse(request.messages[3].content).value.state, 2);
+      }
+      assert.doesNotMatch(
+        stableJson(request.messages),
+        /pending design intent 1|Next design decision 1/,
+      );
+      return assistant(3, [{ id: "third", name: "phase.step", arguments: {} }])(request);
     },
   ]);
+  client.descriptor.configuration.request.inputModalitiesByModel = {
+    "fake/model": ["image", "text"],
+  };
+  client.descriptor.configuration.request.inputModalityCatalogHash = "a".repeat(64);
   const result = await new ForgeNativeAgentRuntime(client).run({
     systemPrompt: "Test bounded semantic compaction.",
     prompt: CREATOR_PROMPT,
+    initialImages: [modelImageFixture()],
     orientation: await genericOrientation(),
     tools: host,
     budgets: { ...DEFAULT_AGENT_BUDGETS, maxTurns: 4 },
@@ -1711,12 +2112,77 @@ test("a semantic checkpoint bounds provider context without discarding run evide
   });
 
   assert.equal(result.status, "completed");
-  assert.equal(result.turns.length, 2);
+  assert.equal(result.turns.length, 3);
   assert.deepEqual(
     result.toolCalls.map((call) => call.toolCallId),
-    ["first", "second"],
+    ["first", "second", "third"],
     "the immutable run still retains tool evidence omitted from provider context",
   );
+});
+
+test("native runtime rejects unconfirmed image support before dispatch and validates image integrity", async () => {
+  let called = 0;
+  const client = new ScriptedModelClient([
+    () => {
+      called++;
+      throw new Error("must not dispatch");
+    },
+  ]);
+  const input = {
+    systemPrompt: "Review",
+    prompt: "Inspect this image",
+    model: "fake/model",
+    tools: completionRequiredToolHost(),
+    budgets: DEFAULT_AGENT_BUDGETS,
+    initialImages: [modelImageFixture()],
+  };
+  const runtime = new ForgeNativeAgentRuntime(client);
+  const result = await runtime.run(input);
+  assert.equal(result.status, "failed");
+  assert.equal(result.failureCode, "MODEL_IMAGE_INPUT_UNCONFIRMED");
+  assert.equal(result.trialStarted, false);
+  assert.equal(result.turns.length, 0);
+  await assert.rejects(
+    () => runtime.run({ ...input, initialImages: [{ ...modelImageFixture(), width: 2 }] }),
+    /dimensions/,
+  );
+  assert.equal(called, 0);
+});
+
+test("native conversation compaction receives original images without converting them into text", async () => {
+  const client = new ScriptedModelClient([
+    (request) => {
+      assert.deepEqual(request.messages, [
+        {
+          role: "user",
+          content: "Preserve the attached visual reference in this handoff.",
+          images: [modelImageFixture()],
+        },
+      ]);
+      return assistant(1, [
+        {
+          id: "compact-image",
+          name: "context.compact",
+          arguments: {
+            summary:
+              "The visual reference remains attached; its appearance has not been natively evaluated.",
+          },
+        },
+      ])(request);
+    },
+  ]);
+  client.descriptor.configuration.request.inputModalitiesByModel = {
+    "fake/model": ["image", "text"],
+  };
+  client.descriptor.configuration.request.inputModalityCatalogHash = "a".repeat(64);
+  const result = await new ForgeNativeAgentRuntime(client).compact({
+    prompt: "Preserve the attached visual reference in this handoff.",
+    model: "fake/model",
+    initialImages: [modelImageFixture()],
+    executionJournal: { checkpoint: async () => {} },
+  });
+  assert.equal(result.result.status, "completed");
+  assert.match(result.summary!, /remains attached/);
 });
 
 test("a seal-ready host completes immediately without another inference", async () => {

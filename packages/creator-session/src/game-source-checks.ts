@@ -20,7 +20,7 @@ export interface GameSourceImportCheck {
   readonly hash: string;
   readonly issues: readonly {
     ruleId: string;
-    severity: "error";
+    severity: "error" | "warning";
     category: "source" | "tooling";
     message: string;
     path?: string;
@@ -32,6 +32,7 @@ export interface GameSourceImportCheck {
 
 const LIMITATIONS = [
   "This checks syntactic require authority against the final editor topology, not runtime execution, type soundness or an OS sandbox.",
+  "Declared imports are an approved upper bound. Unused declarations are warnings and remain conservative build dependencies; they do not require module execution.",
   "Runtime code may construct instances and use services. Changes to topology during execution can invalidate static paths and need native runtime evidence.",
   "The profile accepts direct global require calls with immutable local instance aliases; require values, dynamic targets and environment introspection cannot certify a complete declared graph.",
 ];
@@ -62,11 +63,12 @@ export function checkGameSourceImports(input: {
     document?: PinnedLuauAstDocument,
     node?: Ast,
     tooling = false,
+    severity: "error" | "warning" = "error",
   ) => {
     if (tooling) incomplete = true;
     issues.push({
       ruleId: code,
-      severity: "error",
+      severity,
       category: tooling ? "tooling" : "source",
       message,
       ...(document ? { path: document.path } : {}),
@@ -82,7 +84,20 @@ export function checkGameSourceImports(input: {
       const { hash, ...payload } = analysis;
       if (
         hash !== contentHash(stableJson(payload)) ||
-        analysis.snapshotHash !== input.plan.observedRevisionHash
+        analysis.snapshotHash !== input.plan.observedRevisionHash ||
+        !Array.isArray(analysis.reusedParses) ||
+        analysis.executions.length + analysis.reusedParses.length !== analysis.documents.length ||
+        new Set(analysis.reusedParses.map((entry) => entry.documentId)).size !==
+          analysis.reusedParses.length ||
+        analysis.reusedParses.some(
+          (entry) =>
+            !/^[a-f0-9]{64}$/.test(entry.parserOutputHash) ||
+            !analysis.documents.some(
+              (document) =>
+                document.documentId === entry.documentId &&
+                document.sourceHash === entry.sourceHash,
+            ),
+        )
       )
         throw new Error(
           "AST evidence is not bound to the approved revision and exact parser output",
@@ -135,15 +150,24 @@ export function checkGameSourceImports(input: {
         };
         sources.set(binding.key, binding);
       }
-      for (const source of input.plan.observedSources)
+      for (const source of input.plan.observedSources) {
+        const component = input.plan.design.components.find(
+          (entry) => entry.id === source.componentId,
+        );
+        const file =
+          component?.kind === "source_package"
+            ? component.files.find((entry) => entry.id === source.fileId)
+            : undefined;
         sources.set(source.componentId + "/" + source.fileId, {
           key: source.componentId + "/" + source.fileId,
           path: source.target.path,
           className: source.target.className,
           sourceHash: source.sourceHash,
           utf8Bytes: source.utf8Bytes,
+          ...(file ? { context: file.context } : {}),
           declared: new Set(source.imports.map((entry) => entry.componentId + "/" + entry.fileId)),
         });
+      }
       const byPath = new Map<string, SourceBinding[]>();
       for (const source of sources.values())
         byPath.set(source.path, [...(byPath.get(source.path) ?? []), source]);
@@ -364,6 +388,18 @@ export function checkGameSourceImports(input: {
           }
           const key = target[0]!.key;
           actual.add(key);
+          if (
+            (source.context ?? document.executionContext) !== "server" &&
+            ["ServerScriptService", "ServerStorage"].some((root) => path.startsWith(root + "/"))
+          ) {
+            issue(
+              "game_import_server_only_target",
+              `${source.key} declares ${source.context ?? document.executionContext} execution but imports ${path}, which does not replicate to clients. Revise the source placement or its declared execution context.`,
+              document,
+              parent,
+            );
+            rejectedDocument = true;
+          }
           if (!source.declared.has(key)) {
             issue(
               "game_import_undeclared_edge",
@@ -382,6 +418,9 @@ export function checkGameSourceImports(input: {
                 "game_import_unused_declaration",
                 `${source.key} declares ${expected} but its source has no matching require`,
                 document,
+                undefined,
+                false,
+                "warning",
               );
       }
       if (used.size !== analysis.documents.length)
@@ -405,7 +444,7 @@ export function checkGameSourceImports(input: {
   const result = {
     status: (incomplete
       ? "incomplete"
-      : issues.length
+      : issues.some((issue) => issue.severity === "error")
         ? "rejected"
         : "eligible") as GameSourceImportCheck["status"],
     issues,
@@ -420,7 +459,7 @@ export function checkGameSourceImports(input: {
         planHash: input.plan.hash,
         analysis: input.analysis.status === "complete" ? input.analysis.hash : input.analysis,
         catalogHash: ROBLOX_API_CATALOG_HASH,
-        profile: "declared-static-imports@1",
+        profile: "approved-static-imports@2",
       }),
     ),
   };

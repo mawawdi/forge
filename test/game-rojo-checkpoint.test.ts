@@ -214,6 +214,7 @@ test("Rojo graph checkpoints replay guarded source receipts and independently ca
     });
     const design: GameDesignSpec = {
       kind: "GameDesignSpec",
+      worldAuthoring: { mode: "none" },
       id: "rojo-package",
       intent: "Change one ordinary source module through its existing guarded source authority.",
       connections: [],
